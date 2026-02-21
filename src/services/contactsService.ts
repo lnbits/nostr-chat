@@ -230,12 +230,16 @@ class ContactsService {
     }
 
     const db = await this.getDatabase();
-    const result = db.exec(
-      'SELECT 1 FROM contacts WHERE LOWER(public_key) = LOWER(?) LIMIT 1',
-      [normalized]
+    const statement = db.prepare(
+      'SELECT 1 FROM contacts WHERE LOWER(public_key) = LOWER(?) LIMIT 1'
     );
 
-    return (result[0]?.values?.length ?? 0) > 0;
+    try {
+      statement.bind([normalized]);
+      return statement.step();
+    } finally {
+      statement.free();
+    }
   }
 
   async createContact(input: CreateContactInput): Promise<ContactRecord | null> {
