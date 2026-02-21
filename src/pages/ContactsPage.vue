@@ -15,6 +15,7 @@
               round
               icon="person_add_alt"
               aria-label="Add Contact"
+              @click="openAddContactDialog"
             >
               <q-tooltip>Add Contact</q-tooltip>
             </q-btn>
@@ -60,6 +61,44 @@
         <ChatThread :chat="chatStore.selectedChat" :messages="currentMessages" @send="handleSend" />
       </section>
     </div>
+
+    <q-dialog v-model="isAddContactDialogOpen">
+      <q-card class="add-contact-dialog">
+        <q-card-section class="add-contact-dialog__header">
+          <div class="add-contact-dialog__title">Add Contact</div>
+        </q-card-section>
+
+        <q-card-section>
+          <q-input
+            v-model="newContactIdentifier"
+            outlined
+            autofocus
+            label="Identfier or Public Key"
+            @keydown.enter.prevent="handleAddContact"
+          />
+        </q-card-section>
+
+        <q-card-actions align="right" class="add-contact-dialog__actions">
+          <q-btn
+            outline
+            color="primary"
+            no-caps
+            label="Cancel"
+            class="add-contact-dialog__action"
+            @click="closeAddContactDialog"
+          />
+          <q-btn
+            unelevated
+            color="primary"
+            no-caps
+            label="Add"
+            class="add-contact-dialog__action"
+            :disable="newContactIdentifier.trim().length === 0"
+            @click="handleAddContact"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -79,6 +118,8 @@ const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const contactQuery = ref('');
+const isAddContactDialogOpen = ref(false);
+const newContactIdentifier = ref('');
 
 const sortedContacts = computed(() => {
   return [...chatStore.chats].sort((first, second) => first.name.localeCompare(second.name));
@@ -112,6 +153,30 @@ function handleSelectContact(chatId: string): void {
 
   if (isMobile.value) {
     void router.push({ name: 'chat', params: { chatId } });
+  }
+}
+
+function openAddContactDialog(): void {
+  isAddContactDialogOpen.value = true;
+}
+
+function closeAddContactDialog(): void {
+  isAddContactDialogOpen.value = false;
+  newContactIdentifier.value = '';
+}
+
+function handleAddContact(): void {
+  const created = chatStore.addContact(newContactIdentifier.value);
+
+  if (!created) {
+    return;
+  }
+
+  chatStore.selectChat(created.id);
+  closeAddContactDialog();
+
+  if (isMobile.value) {
+    void router.push({ name: 'chat', params: { chatId: created.id } });
   }
 }
 
@@ -201,6 +266,30 @@ function handleSend(text: string): void {
   padding: 14px;
   text-align: center;
   opacity: 0.7;
+}
+
+.add-contact-dialog {
+  width: min(92vw, 420px);
+}
+
+.add-contact-dialog__header {
+  border-bottom: 1px solid var(--tg-border);
+  background: var(--tg-sidebar);
+  padding: 10px 14px;
+}
+
+.add-contact-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.add-contact-dialog__actions {
+  gap: 8px;
+}
+
+.add-contact-dialog__action {
+  border-radius: 999px;
+  min-width: 74px;
 }
 
 @media (max-width: 1023px) {
