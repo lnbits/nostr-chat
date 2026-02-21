@@ -3,8 +3,10 @@
     <div class="relays-content">
       <q-input
         v-model="newRelay"
+        class="tg-input"
         outlined
         dense
+        rounded
         label="Relay URL"
         placeholder="wss://example-relay.io"
         @keydown.enter.prevent="addRelay"

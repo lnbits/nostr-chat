@@ -13,6 +13,7 @@
 
           <q-input
             v-model="searchQuery"
+            class="tg-input"
             dense
             outlined
             rounded

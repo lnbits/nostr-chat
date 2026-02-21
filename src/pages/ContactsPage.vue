@@ -23,6 +23,7 @@
 
           <q-input
             v-model="contactQuery"
+            class="tg-input"
             dense
             outlined
             rounded
@@ -80,7 +81,10 @@
         <q-card-section>
           <q-input
             v-model="newContactIdentifier"
+            class="tg-input"
+            dense
             outlined
+            rounded
             autofocus
             label="Identfier or Public Key"
             :error="Boolean(newContactIdentifierError)"
@@ -91,8 +95,10 @@
 
           <q-input
             v-model="newContactGivenName"
-            class="q-mt-sm"
+            class="q-mt-sm tg-input"
+            dense
             outlined
+            rounded
             label="Given Name"
             @keydown.enter.prevent="handleAddContact"
           />

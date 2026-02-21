@@ -3,7 +3,7 @@
     <q-input
       ref="inputRef"
       v-model="draft"
-      class="composer__input"
+      class="composer__input tg-input"
       dense
       outlined
       rounded
@@ -28,8 +28,10 @@
             <div class="emoji-menu__search">
               <q-input
                 v-model="emojiSearch"
+                class="tg-input"
                 dense
                 outlined
+                rounded
                 clearable
                 placeholder="Search emoji"
               >

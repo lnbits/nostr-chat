@@ -27,3 +27,17 @@ body {
     radial-gradient(circle at 84% 10%, rgba(86, 191, 156, 0.12) 0, transparent 30%),
     var(--tg-bg);
 }
+
+.tg-input .q-field__control {
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--tg-sidebar) 95%, transparent);
+}
+
+.tg-input.q-field--outlined .q-field__control::before {
+  border-color: var(--tg-border);
+}
+
+.tg-input.q-field--focused .q-field__control::before,
+.tg-input.q-field--focused .q-field__control::after {
+  border-color: var(--q-primary);
+}
