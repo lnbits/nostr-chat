@@ -84,18 +84,22 @@ class ContactsService {
 
   async createContact(input: CreateContactInput): Promise<ContactRecord | null> {
     const publicKey = input.public_key.trim();
-    const name = input.name.trim();
+    const name = input.name.trim() || publicKey;
     const meta = input.meta?.trim() ?? '';
 
-    if (!publicKey || !name) {
+    if (!publicKey) {
       return null;
     }
 
     const db = await this.getDatabase();
-    db.run('INSERT INTO contacts (public_key, name, meta) VALUES (?, ?, ?)', [publicKey, name, meta]);
+    const insertStatement = db.prepare('INSERT INTO contacts (public_key, name, meta) VALUES (?, ?, ?)');
+    try {
+      insertStatement.run([publicKey, name, meta]);
+    } finally {
+      insertStatement.free();
+    }
 
     const insertedResult = db.exec(`${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`);
-    console.log('## Inserted contact result', insertedResult);
     const inserted = insertedResult[0]?.values?.[0];
     return inserted ? rowToContact(inserted) : null;
   }
@@ -134,14 +138,25 @@ class ContactsService {
     params.push(id);
 
     const db = await this.getDatabase();
-    db.run(`UPDATE contacts SET ${setClause} WHERE id = ?`, params);
+    const updateStatement = db.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`);
+    try {
+      updateStatement.run(params);
+    } finally {
+      updateStatement.free();
+    }
 
     return this.getContactById(id);
   }
 
   async deleteContact(id: number): Promise<boolean> {
     const db = await this.getDatabase();
-    db.run('DELETE FROM contacts WHERE id = ?', [id]);
+    const deleteStatement = db.prepare('DELETE FROM contacts WHERE id = ?');
+    try {
+      deleteStatement.run([id]);
+    } finally {
+      deleteStatement.free();
+    }
+
     return db.getRowsModified() > 0;
   }
 
