@@ -46,7 +46,7 @@
               </q-item-section>
 
               <q-item-section>
-                <q-item-label class="contact-item__name">{{ contact.name }}</q-item-label>
+                <q-item-label class="contact-item__name">{{ contactDisplayName(contact) }}</q-item-label>
               </q-item-section>
             </q-item>
 
@@ -76,6 +76,14 @@
             outlined
             autofocus
             label="Identfier or Public Key"
+            @keydown.enter.prevent="handleAddContact"
+          />
+
+          <q-input
+            v-model="newContactGivenName"
+            class="q-mt-sm"
+            outlined
+            label="Given Name"
             @keydown.enter.prevent="handleAddContact"
           />
         </q-card-section>
@@ -127,6 +135,7 @@ const isAddContactDialogOpen = ref(false);
 const isLoadingContacts = ref(false);
 const isCreatingContact = ref(false);
 const newContactIdentifier = ref('');
+const newContactGivenName = ref('');
 const selectedContactId = ref<number | null>(null);
 const contacts = ref<ContactRecord[]>([]);
 
@@ -198,7 +207,16 @@ function contactAvatar(contact: ContactRecord): string {
     return meta.avatar.trim().slice(0, 2).toUpperCase();
   }
 
-  return buildAvatar(contact.name || contact.public_key);
+  return buildAvatar(contactDisplayName(contact) || contact.public_key);
+}
+
+function contactDisplayName(contact: ContactRecord): string {
+  const givenName = contact.given_name?.trim();
+  if (givenName) {
+    return givenName;
+  }
+
+  return contact.name || contact.public_key;
 }
 
 function syncSelectedContact(): void {
@@ -256,7 +274,7 @@ async function ensureChatForContact(contact: ContactRecord): Promise<string | nu
     return chatId;
   }
 
-  const createdChat = chatStore.addContact(contact.name || contact.public_key);
+  const createdChat = chatStore.addContact(contactDisplayName(contact) || contact.public_key);
   if (!createdChat) {
     return null;
   }
@@ -299,6 +317,7 @@ function openAddContactDialog(): void {
 function closeAddContactDialog(): void {
   isAddContactDialogOpen.value = false;
   newContactIdentifier.value = '';
+  newContactGivenName.value = '';
 }
 
 async function handleAddContact(): Promise<void> {
@@ -313,6 +332,7 @@ async function handleAddContact(): Promise<void> {
     const created = await contactsService.createContact({
       public_key: identifier,
       name: identifier,
+      given_name: newContactGivenName.value.trim() || null,
       meta: ''
     });
 

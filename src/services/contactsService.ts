@@ -13,6 +13,7 @@ const CONTACTS_TABLE_SQL = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     public_key TEXT NOT NULL,
     name TEXT NOT NULL,
+    given_name TEXT NULL,
     meta TEXT NOT NULL
   );
 `;
@@ -23,7 +24,7 @@ const CONTACTS_INDEXES_SQL = `
 `;
 
 const CONTACT_SELECT_SQL = `
-  SELECT id, public_key, name, meta
+  SELECT id, public_key, name, given_name, meta
   FROM contacts
 `;
 
@@ -59,7 +60,8 @@ function rowToContact(row: unknown[]): ContactRecord {
     id: Number(row[0]),
     public_key: String(row[1] ?? ''),
     name: String(row[2] ?? ''),
-    meta: String(row[3] ?? '')
+    given_name: row[3] == null ? null : String(row[3]),
+    meta: String(row[4] ?? '')
   };
 }
 
@@ -94,10 +96,13 @@ class ContactsService {
     const result = db.exec(
       `
         ${CONTACT_SELECT_SQL}
-        WHERE LOWER(public_key) LIKE ? OR LOWER(name) LIKE ?
+        WHERE
+          LOWER(public_key) LIKE ?
+          OR LOWER(name) LIKE ?
+          OR LOWER(COALESCE(given_name, '')) LIKE ?
         ORDER BY name COLLATE NOCASE ASC
       `,
-      [likeQuery, likeQuery]
+      [likeQuery, likeQuery, likeQuery]
     );
 
     return mapContacts(result);
@@ -113,6 +118,7 @@ class ContactsService {
   async createContact(input: CreateContactInput): Promise<ContactRecord | null> {
     const publicKey = input.public_key.trim();
     const name = input.name.trim() || publicKey;
+    const givenName = input.given_name?.trim() || null;
     const meta = input.meta?.trim() ?? '';
 
     if (!publicKey) {
@@ -120,9 +126,11 @@ class ContactsService {
     }
 
     const db = await this.getDatabase();
-    const insertStatement = db.prepare('INSERT INTO contacts (public_key, name, meta) VALUES (?, ?, ?)');
+    const insertStatement = db.prepare(
+      'INSERT INTO contacts (public_key, name, given_name, meta) VALUES (?, ?, ?, ?)'
+    );
     try {
-      insertStatement.run([publicKey, name, meta]);
+      insertStatement.run([publicKey, name, givenName, meta]);
     } finally {
       insertStatement.free();
     }
@@ -137,7 +145,10 @@ class ContactsService {
   }
 
   async updateContact(id: number, input: UpdateContactInput): Promise<ContactRecord | null> {
-    const updates: Array<{ field: 'public_key' | 'name' | 'meta'; value: string }> = [];
+    const updates: Array<{
+      field: 'public_key' | 'name' | 'given_name' | 'meta';
+      value: string | null;
+    }> = [];
 
     if (input.public_key !== undefined) {
       const publicKey = input.public_key.trim();
@@ -157,6 +168,11 @@ class ContactsService {
       updates.push({ field: 'name', value: name });
     }
 
+    if (input.given_name !== undefined) {
+      const givenName = input.given_name?.trim() || null;
+      updates.push({ field: 'given_name', value: givenName });
+    }
+
     if (input.meta !== undefined) {
       updates.push({ field: 'meta', value: input.meta.trim() });
     }
@@ -166,7 +182,7 @@ class ContactsService {
     }
 
     const setClause = updates.map((update) => `${update.field} = ?`).join(', ');
-    const params: Array<number | string> = updates.map((update) => update.value);
+    const params: Array<number | string | null> = updates.map((update) => update.value);
     params.push(id);
 
     const db = await this.getDatabase();
@@ -249,8 +265,13 @@ class ContactsService {
     }
 
     db.run(CONTACTS_TABLE_SQL);
+    const didMigrateSchema = this.ensureSchema(db);
     db.run(CONTACTS_INDEXES_SQL);
     this.seedContacts(db);
+
+    if (didMigrateSchema) {
+      this.persistDatabase(db);
+    }
 
     return db;
   }
@@ -262,12 +283,15 @@ class ContactsService {
       return;
     }
 
-    const statement = db.prepare('INSERT INTO contacts (public_key, name, meta) VALUES (?, ?, ?)');
+    const statement = db.prepare(
+      'INSERT INTO contacts (public_key, name, given_name, meta) VALUES (?, ?, ?, ?)'
+    );
 
     for (const chat of mockChats) {
       statement.run([
         `pk_${chat.id}`,
         chat.name,
+        null,
         JSON.stringify({
           chatId: chat.id,
           avatar: chat.avatar
@@ -277,6 +301,19 @@ class ContactsService {
 
     statement.free();
     this.persistDatabase(db);
+  }
+
+  private ensureSchema(db: SqlJsDatabase): boolean {
+    const tableInfo = db.exec('PRAGMA table_info(contacts)');
+    const rows = tableInfo[0]?.values ?? [];
+    const hasGivenName = rows.some((row) => String(row[1] ?? '') === 'given_name');
+
+    if (!hasGivenName) {
+      db.run('ALTER TABLE contacts ADD COLUMN given_name TEXT NULL');
+      return true;
+    }
+
+    return false;
   }
 
   private loadPersistedDatabase(): Uint8Array | null {
