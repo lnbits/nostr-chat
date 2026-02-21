@@ -39,7 +39,7 @@
           <q-card flat bordered class="auth-warning">
             <q-card-section class="auth-warning__content">
               <q-icon name="warning" size="20px" class="auth-warning__icon" />
-              <div>Entering your private key is not the preferred method for authentication. Use a Nostr Remote Signer.</div>
+              <div>Entering your private key strongly discouraged. Use a Nostr Remote Signer.</div>
            
             </q-card-section>
           </q-card>
@@ -52,6 +52,8 @@
             rounded
             type="password"
             label="Private Key (nsec)"
+            :error="Boolean(privateKeyError)"
+            :error-message="privateKeyError"
             @keydown.enter.prevent="handleLogin"
           />
          
@@ -61,7 +63,7 @@
             no-caps
             label="Login"
             class="auth-card__button"
-            :disable="privateKey.trim().length === 0"
+            :disable="!canLogin"
             @click="handleLogin"
           />
         </q-card-section>
@@ -71,23 +73,55 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { nip19 } from '@nostr-dev-kit/ndk';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
 const isLoginMode = ref(false);
 const privateKey = ref('');
+const privateKeyError = computed(() => validateNsec(privateKey.value.trim()));
+const canLogin = computed(() => {
+  const value = privateKey.value.trim();
+  return value.length > 0 && privateKeyError.value.length === 0;
+});
 
 function openLoginCard(): void {
   isLoginMode.value = true;
 }
 
 function handleLogin(): void {
-  if (!privateKey.value.trim()) {
+  if (!canLogin.value) {
     return;
   }
 
   goToHome();
+}
+
+function validateNsec(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const decoded = nip19.decode(value);
+    if (decoded.type !== 'nsec') {
+      return 'Enter a valid nsec private key.';
+    }
+
+    const data = decoded.data as unknown;
+    if (data instanceof Uint8Array) {
+      return data.length === 32 ? '' : 'Enter a valid nsec private key.';
+    }
+
+    if (typeof data === 'string') {
+      return /^[0-9a-fA-F]{64}$/.test(data) ? '' : 'Enter a valid nsec private key.';
+    }
+
+    return 'Enter a valid nsec private key.';
+  } catch {
+    return 'Enter a valid nsec private key.';
+  }
 }
 
 function goToHome(): void {
