@@ -7,16 +7,7 @@
 
       <aside class="settings-sidebar">
         <div class="settings-sidebar__top">
-          <div class="settings-sidebar__row">
-            <div class="settings-sidebar__title">Settings</div>
-            <q-btn
-              dense
-              flat
-              no-caps
-              :label="$q.dark.isActive ? 'Light' : 'Dark'"
-              @click="toggleDarkMode"
-            />
-          </div>
+          <div class="settings-sidebar__title">Settings</div>
         </div>
 
         <q-list class="settings-menu q-pa-sm">
@@ -57,6 +48,7 @@ const isMobile = computed(() => $q.screen.lt.md);
 
 const settingsItems = [
   { key: 'profile', label: 'Profile', routeName: 'settings-profile' },
+  { key: 'theme', label: 'Theme', routeName: 'settings-theme' },
   { key: 'language', label: 'Language', routeName: 'settings-language' },
   { key: 'notifications', label: 'Notifications', routeName: 'settings-notifications' }
 ] as const;
@@ -65,10 +57,6 @@ const activeSettingKey = computed(() => {
   const match = settingsItems.find((item) => item.routeName === route.name);
   return match?.key ?? 'profile';
 });
-
-function toggleDarkMode(): void {
-  $q.dark.toggle();
-}
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   if (section === 'chats') {
@@ -81,7 +69,9 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   }
 }
 
-function goToSetting(routeName: 'settings-profile' | 'settings-language' | 'settings-notifications'): void {
+function goToSetting(
+  routeName: 'settings-profile' | 'settings-theme' | 'settings-language' | 'settings-notifications'
+): void {
   void router.push({ name: routeName });
 }
 </script>
@@ -124,12 +114,6 @@ function goToSetting(routeName: 'settings-profile' | 'settings-language' | 'sett
 .settings-sidebar__top {
   padding: 12px;
   border-bottom: 1px solid var(--tg-border);
-}
-
-.settings-sidebar__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .settings-sidebar__title {
