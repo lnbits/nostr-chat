@@ -133,7 +133,7 @@ import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import type { ContactMetadata, ContactRecord } from 'src/types/contact';
-import { validateNostrPublicKey } from 'src/utils/nostrPublicKey';
+import { resolveNostrIdentifier } from 'src/utils/nostrPublicKey';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -363,35 +363,45 @@ async function handleAddContact(): Promise<void> {
     return;
   }
 
-  const validation = await validateNostrPublicKey(newContactIdentifier.value);
-  if (!validation.isValid || !validation.normalizedPubkey) {
-    newContactIdentifierError.value = 'Enter a valid hex pubkey or npub.';
-    return;
-  }
-
-  newContactIdentifierError.value = '';
-  const normalizedPublicKey = validation.normalizedPubkey;
-
-  const alreadyExists = await contactsService.publicKeyExists(normalizedPublicKey);
-  console.log('Public key exists:', alreadyExists);
-  if (alreadyExists) {
-    newContactIdentifierError.value = 'This public key already exists.';
-    $q.notify({
-      type: 'warning',
-      message: 'Contact already exists',
-      caption: 'This public key is already in your contacts.',
-      position: 'top',
-      timeout: 2600
-    });
-    return;
-  }
-
   isCreatingContact.value = true;
 
   try {
+    const resolution = await resolveNostrIdentifier(newContactIdentifier.value);
+    if (!resolution.isValid || !resolution.normalizedPubkey) {
+      if (resolution.identifierType === 'nip05') {
+        newContactIdentifierError.value =
+          resolution.error === 'nip05_unresolved'
+            ? 'NIP-05 could not be resolved. Please verify the identifier.'
+            : 'Enter a valid NIP-05 identifier (name@domain).';
+      } else {
+        newContactIdentifierError.value = 'Enter a valid hex pubkey, npub, or NIP-05 email.';
+      }
+
+      return;
+    }
+
+    newContactIdentifierError.value = '';
+    const normalizedPublicKey = resolution.normalizedPubkey;
+
+    const alreadyExists = await contactsService.publicKeyExists(normalizedPublicKey);
+    if (alreadyExists) {
+      newContactIdentifierError.value = 'This public key already exists.';
+      $q.notify({
+        type: 'warning',
+        message: 'Contact already exists',
+        caption: 'This public key is already in your contacts.',
+        position: 'top',
+        timeout: 2600
+      });
+      return;
+    }
+
+    const fallbackName = newContactIdentifier.value.trim().slice(0, 32) || normalizedPublicKey.slice(0, 32);
+    const resolvedName = resolution.resolvedName?.trim() || fallbackName;
+
     const created = await contactsService.createContact({
       public_key: normalizedPublicKey,
-      name: newContactIdentifier.value.substring(0, 32), // Fallback name if display name is not set
+      name: resolvedName,
       given_name: newContactGivenName.value.trim() || null,
       meta: {}
     });
