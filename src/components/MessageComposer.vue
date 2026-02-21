@@ -25,19 +25,38 @@
           @click="rememberSelection"
         >
           <q-menu anchor="top right" self="bottom right" class="emoji-menu">
+            <div class="emoji-menu__search">
+              <q-input
+                v-model="emojiSearch"
+                dense
+                outlined
+                clearable
+                placeholder="Search emoji"
+              >
+                <template #prepend>
+                  <q-icon name="search" />
+                </template>
+              </q-input>
+            </div>
+
             <div class="emoji-menu__scroll">
               <div class="emoji-grid">
                 <button
-                  v-for="emoji in TOP_500_EMOJIS"
-                  :key="emoji"
+                  v-for="entry in filteredEmojis"
+                  :key="entry.emoji"
                   type="button"
                   class="emoji-grid__item"
                   v-close-popup
                   @mousedown.prevent
-                  @click="insertEmoji(emoji)"
+                  @click="insertEmoji(entry.emoji)"
+                  :title="entry.label"
+                  :aria-label="entry.label"
                 >
-                  {{ emoji }}
+                  <span class="emoji-grid__char">{{ entry.emoji }}</span>
                 </button>
+              </div>
+              <div v-if="filteredEmojis.length === 0" class="emoji-menu__empty">
+                No emoji found.
               </div>
             </div>
           </q-menu>
@@ -50,17 +69,28 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { TOP_500_EMOJIS } from 'src/data/topEmojis';
 
 const draft = ref('');
 const inputRef = ref<{ $el: HTMLElement } | null>(null);
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
+const emojiSearch = ref('');
 
 const emit = defineEmits<{
   (event: 'send', text: string): void;
 }>();
+
+const filteredEmojis = computed(() => {
+  const query = emojiSearch.value.trim().toLowerCase();
+
+  if (!query) {
+    return TOP_500_EMOJIS;
+  }
+
+  return TOP_500_EMOJIS.filter((entry) => entry.label.toLowerCase().includes(query));
+});
 
 function getInputElement(): HTMLInputElement | HTMLTextAreaElement | null {
   return inputRef.value?.$el.querySelector('textarea, input') ?? null;
@@ -108,6 +138,7 @@ function handleSend(): void {
 
   emit('send', cleanText);
   draft.value = '';
+  emojiSearch.value = '';
   selectionStart.value = 0;
   selectionEnd.value = 0;
 }
@@ -133,18 +164,25 @@ function handleSend(): void {
 }
 
 .emoji-menu {
-  width: 324px;
+  width: 360px;
+}
+
+.emoji-menu__search {
+  padding: 8px;
+  border-bottom: 1px solid var(--tg-border);
+  background: var(--tg-sidebar);
 }
 
 .emoji-menu__scroll {
-  height: 280px;
+  max-height: 300px;
+  overflow-y: auto;
   width: 100%;
 }
 
 .emoji-grid {
   display: grid;
-  grid-template-columns: repeat(9, minmax(0, 1fr));
-  gap: 2px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
   padding: 8px;
 }
 
@@ -152,13 +190,38 @@ function handleSend(): void {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  font-size: 21px;
   line-height: 1;
-  padding: 6px 0;
+  padding: 8px 6px;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .emoji-grid__item:hover {
   background: rgba(55, 119, 245, 0.14);
+}
+
+.emoji-grid__char {
+  font-size: 21px;
+}
+
+.emoji-grid__label {
+  font-size: 10px;
+  line-height: 1.15;
+  max-width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.72;
+}
+
+.emoji-menu__empty {
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.7;
 }
 </style>
