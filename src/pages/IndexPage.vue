@@ -1,6 +1,10 @@
 <template>
   <q-page class="home-page">
     <div class="home-shell" :class="{ 'home-shell--mobile': isMobile }">
+      <aside v-if="!isMobile" class="rail-panel">
+        <AppNavRail v-model="activeRailSection" />
+      </aside>
+
       <aside class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-top__row">
@@ -39,9 +43,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
+import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatList from 'src/components/ChatList.vue';
 import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
@@ -53,6 +58,7 @@ const chatStore = useChatStore();
 const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const activeRailSection = ref<'chats' | 'contacts' | 'favourites' | 'settings'>('chats');
 
 const currentMessages = computed(() => {
   return messageStore.getMessages(chatStore.selectedChatId);
@@ -96,7 +102,7 @@ function handleSend(text: string): void {
 
 .home-shell {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 88px 340px minmax(0, 1fr);
   gap: 10px;
   height: 100%;
 }
@@ -105,12 +111,17 @@ function handleSend(text: string): void {
   grid-template-columns: 1fr;
 }
 
+.rail-panel,
 .sidebar,
 .thread-panel {
   border: 1px solid var(--tg-border);
   border-radius: 16px;
   overflow: hidden;
   background: var(--tg-sidebar);
+}
+
+.rail-panel {
+  background: var(--tg-rail);
 }
 
 .sidebar {

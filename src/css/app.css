@@ -7,6 +7,7 @@
   --tg-sent: #d5f5c8;
   --tg-received: #ffffff;
   --tg-border: #d8dfea;
+  --tg-rail: #eef2f8;
 }
 
 body.body--dark {
@@ -16,6 +17,7 @@ body.body--dark {
   --tg-sent: #1f6f5e;
   --tg-received: #273449;
   --tg-border: #334155;
+  --tg-rail: #141b27;
 }
 
 body {
