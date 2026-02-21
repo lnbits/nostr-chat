@@ -6,8 +6,9 @@
           v-if="showBackButton"
           flat
           dense
-          no-caps
-          label="Back"
+          round
+          icon="arrow_back"
+          aria-label="Back"
           @click="$emit('back')"
         />
         <q-avatar color="primary" text-color="white">{{ chat.avatar }}</q-avatar>
