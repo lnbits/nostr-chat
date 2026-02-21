@@ -1,7 +1,5 @@
 <template>
-  <div class="settings-detail q-pa-lg">
-    <div class="text-subtitle1 q-mb-md">Theme</div>
-
+  <SettingsDetailLayout title="Theme">
     <q-card flat bordered class="theme-card">
       <q-card-section class="row items-center justify-between q-gutter-md">
         <div>
@@ -19,12 +17,13 @@
         />
       </q-card-section>
     </q-card>
-  </div>
+  </SettingsDetailLayout>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useQuasar } from 'quasar';
+import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 
 const $q = useQuasar();
 
@@ -37,10 +36,6 @@ const darkMode = computed({
 </script>
 
 <style scoped>
-.settings-detail {
-  height: 100%;
-}
-
 .theme-card {
   max-width: 520px;
   background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);

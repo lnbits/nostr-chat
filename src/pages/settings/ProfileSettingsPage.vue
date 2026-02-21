@@ -1,9 +1,7 @@
 <template>
-  <div class="settings-detail"></div>
+  <SettingsDetailLayout title="Profile" />
 </template>
 
-<style scoped>
-.settings-detail {
-  height: 100%;
-}
-</style>
+<script setup lang="ts">
+import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+</script>
