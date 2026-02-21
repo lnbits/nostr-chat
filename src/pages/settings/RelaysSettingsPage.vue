@@ -9,6 +9,8 @@
         rounded
         label="Relay URL"
         placeholder="wss://example-relay.io"
+        :error="Boolean(relayValidationError)"
+        :error-message="relayValidationError"
         @keydown.enter.prevent="addRelay"
       >
         <template #append>
@@ -20,7 +22,7 @@
             icon="add"
             size="sm"
             aria-label="Add relay"
-            :disable="newRelay.trim().length === 0"
+            :disable="!canAddRelay"
             @click="addRelay"
           />
         </template>
@@ -50,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 
 const relays = ref<string[]>([
@@ -59,15 +61,41 @@ const relays = ref<string[]>([
   'wss://nostr.mom'
 ]);
 const newRelay = ref('');
+const relayValidationError = computed(() => validateRelayUrl(newRelay.value.trim()));
+const canAddRelay = computed(() => {
+  const value = newRelay.value.trim();
+  return value.length > 0 && relayValidationError.value.length === 0;
+});
 
 function addRelay(): void {
   const value = newRelay.value.trim();
-  if (!value) {
+  if (!value || relayValidationError.value) {
     return;
   }
 
   relays.value = [...relays.value, value];
   newRelay.value = '';
+}
+
+function validateRelayUrl(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+      return 'Relay must use ws:// or wss://';
+    }
+
+    if (!url.hostname) {
+      return 'Relay URL must include a hostname';
+    }
+
+    return '';
+  } catch {
+    return 'Relay must be a valid ws:// or wss:// URL';
+  }
 }
 
 function removeRelay(index: number): void {
