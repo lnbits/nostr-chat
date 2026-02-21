@@ -5,30 +5,39 @@
         v-for="item in topItems"
         :key="item.key"
         unelevated
-        no-caps
         class="nav-rail__btn"
         :class="{ 'nav-rail__btn--active': modelValue === item.key }"
-        :label="item.label"
+        :aria-label="item.label"
         @click="$emit('update:modelValue', item.key)"
-      />
+      >
+        <q-icon :name="item.icon" size="20px" />
+
+        <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
+          {{ item.label }}
+        </q-tooltip>
+      </q-btn>
     </div>
 
     <q-btn
       unelevated
-      no-caps
       class="nav-rail__btn"
       :class="{ 'nav-rail__btn--active': modelValue === 'settings' }"
-      label="Settings"
+      aria-label="Settings"
       @click="$emit('update:modelValue', 'settings')"
-    />
+    >
+      <q-icon name="settings" size="20px" />
+      <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
+        Settings
+      </q-tooltip>
+    </q-btn>
   </aside>
 </template>
 
 <script setup lang="ts">
 const topItems = [
-  { key: 'chats', label: 'Chats' },
-  { key: 'contacts', label: 'Contacts' },
-  { key: 'favourites', label: 'Favourites' }
+  { key: 'chats', label: 'Chats', icon: 'chat' },
+  { key: 'contacts', label: 'Contacts', icon: 'contacts' },
+  { key: 'favourites', label: 'Favourites', icon: 'star' }
 ] as const;
 
 defineProps<{
@@ -57,9 +66,11 @@ defineEmits<{
 
 .nav-rail__btn {
   border-radius: 12px;
-  min-height: 42px;
-  font-size: 12px;
-  font-weight: 600;
+  min-height: 44px;
+  min-width: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #64748b;
   background: transparent;
   border: 1px solid transparent;

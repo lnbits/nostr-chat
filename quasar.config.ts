@@ -3,6 +3,7 @@ import { configure } from 'quasar/wrappers';
 export default configure(() => {
   return {
     css: ['app.css'],
+    extras: ['material-icons'],
 
     build: {
       target: {
