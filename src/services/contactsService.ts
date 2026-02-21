@@ -1,7 +1,13 @@
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { mockChats } from 'src/data/mockData';
-import type { ContactRecord, CreateContactInput, UpdateContactInput } from 'src/types/contact';
+import type {
+  ContactBirthday,
+  ContactMetadata,
+  ContactRecord,
+  CreateContactInput,
+  UpdateContactInput
+} from 'src/types/contact';
 
 type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>;
 type SqlJsDatabase = InstanceType<SqlJsStatic['Database']>;
@@ -55,13 +61,115 @@ function base64ToBytes(value: string): Uint8Array {
   return output;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized || undefined;
+}
+
+function normalizeBirthday(value: unknown): ContactBirthday | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const birthday: ContactBirthday = {};
+  const year = value.year;
+  const month = value.month;
+  const day = value.day;
+
+  if (typeof year === 'number' && Number.isInteger(year)) {
+    birthday.year = year;
+  }
+
+  if (typeof month === 'number' && Number.isInteger(month)) {
+    birthday.month = month;
+  }
+
+  if (typeof day === 'number' && Number.isInteger(day)) {
+    birthday.day = day;
+  }
+
+  return Object.keys(birthday).length > 0 ? birthday : undefined;
+}
+
+function normalizeContactMeta(value: unknown): ContactMetadata {
+  if (!isPlainObject(value)) {
+    return {};
+  }
+
+  const meta: ContactMetadata = {};
+  const displayName = readOptionalString(value.display_name);
+  const website = readOptionalString(value.website);
+  const banner = readOptionalString(value.banner);
+  const chatId = readOptionalString(value.chatId);
+  const avatar = readOptionalString(value.avatar);
+  const birthday = normalizeBirthday(value.birthday);
+
+  if (displayName) {
+    meta.display_name = displayName;
+  }
+
+  if (website) {
+    meta.website = website;
+  }
+
+  if (banner) {
+    meta.banner = banner;
+  }
+
+  if (typeof value.bot === 'boolean') {
+    meta.bot = value.bot;
+  }
+
+  if (birthday) {
+    meta.birthday = birthday;
+  }
+
+  if (chatId) {
+    meta.chatId = chatId;
+  }
+
+  if (avatar) {
+    meta.avatar = avatar;
+  }
+
+  return meta;
+}
+
+function parseStoredMeta(value: unknown): ContactMetadata {
+  if (typeof value !== 'string') {
+    return normalizeContactMeta(value);
+  }
+
+  if (!value.trim()) {
+    return {};
+  }
+
+  try {
+    return normalizeContactMeta(JSON.parse(value));
+  } catch {
+    return {};
+  }
+}
+
+function serializeContactMeta(meta: ContactMetadata | undefined): string {
+  return JSON.stringify(normalizeContactMeta(meta ?? {}));
+}
+
 function rowToContact(row: unknown[]): ContactRecord {
   return {
     id: Number(row[0]),
     public_key: String(row[1] ?? ''),
     name: String(row[2] ?? ''),
     given_name: row[3] == null ? null : String(row[3]),
-    meta: String(row[4] ?? '')
+    meta: parseStoredMeta(row[4])
   };
 }
 
@@ -119,7 +227,7 @@ class ContactsService {
     const publicKey = input.public_key.trim();
     const name = input.name.trim() || publicKey;
     const givenName = input.given_name?.trim() || null;
-    const meta = input.meta?.trim() ?? '';
+    const meta = normalizeContactMeta(input.meta);
 
     if (!publicKey) {
       return null;
@@ -130,7 +238,7 @@ class ContactsService {
       'INSERT INTO contacts (public_key, name, given_name, meta) VALUES (?, ?, ?, ?)'
     );
     try {
-      insertStatement.run([publicKey, name, givenName, meta]);
+      insertStatement.run([publicKey, name, givenName, serializeContactMeta(meta)]);
     } finally {
       insertStatement.free();
     }
@@ -174,7 +282,7 @@ class ContactsService {
     }
 
     if (input.meta !== undefined) {
-      updates.push({ field: 'meta', value: input.meta.trim() });
+      updates.push({ field: 'meta', value: serializeContactMeta(input.meta) });
     }
 
     if (updates.length === 0) {
@@ -266,10 +374,11 @@ class ContactsService {
 
     db.run(CONTACTS_TABLE_SQL);
     const didMigrateSchema = this.ensureSchema(db);
+    const didNormalizeMeta = this.normalizeStoredMeta(db);
     db.run(CONTACTS_INDEXES_SQL);
     this.seedContacts(db);
 
-    if (didMigrateSchema) {
+    if (didMigrateSchema || didNormalizeMeta) {
       this.persistDatabase(db);
     }
 
@@ -292,7 +401,8 @@ class ContactsService {
         `pk_${chat.id}`,
         chat.name,
         null,
-        JSON.stringify({
+        serializeContactMeta({
+          display_name: chat.name,
           chatId: chat.id,
           avatar: chat.avatar
         })
@@ -314,6 +424,37 @@ class ContactsService {
     }
 
     return false;
+  }
+
+  private normalizeStoredMeta(db: SqlJsDatabase): boolean {
+    const rows = db.exec('SELECT id, meta FROM contacts')[0]?.values ?? [];
+    if (rows.length === 0) {
+      return false;
+    }
+
+    let didChange = false;
+    const updateStatement = db.prepare('UPDATE contacts SET meta = ? WHERE id = ?');
+
+    try {
+      for (const row of rows) {
+        const id = Number(row[0] ?? 0);
+        if (!id) {
+          continue;
+        }
+
+        const rawMeta = typeof row[1] === 'string' ? row[1] : '';
+        const normalizedMeta = serializeContactMeta(parseStoredMeta(row[1]));
+
+        if (rawMeta !== normalizedMeta) {
+          updateStatement.run([normalizedMeta, id]);
+          didChange = true;
+        }
+      }
+    } finally {
+      updateStatement.free();
+    }
+
+    return didChange;
   }
 
   private loadPersistedDatabase(): Uint8Array | null {

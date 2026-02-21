@@ -122,7 +122,7 @@ import ChatThread from 'src/components/ChatThread.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
-import type { ContactRecord } from 'src/types/contact';
+import type { ContactMetadata, ContactRecord } from 'src/types/contact';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -140,11 +140,6 @@ const selectedContactId = ref<number | null>(null);
 const contacts = ref<ContactRecord[]>([]);
 
 let latestSearchRequestId = 0;
-
-interface ContactMeta {
-  chatId?: string;
-  avatar?: string;
-}
 
 onMounted(() => {
   void initializeContacts();
@@ -174,19 +169,6 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   }
 }
 
-function parseContactMeta(meta: string): ContactMeta {
-  if (!meta.trim()) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(meta) as ContactMeta;
-    return typeof parsed === 'object' && parsed !== null ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 function buildAvatar(value: string): string {
   const compactValue = value.replace(/\s+/g, ' ').trim();
   if (!compactValue) {
@@ -202,7 +184,7 @@ function buildAvatar(value: string): string {
 }
 
 function contactAvatar(contact: ContactRecord): string {
-  const meta = parseContactMeta(contact.meta);
+  const meta = contact.meta;
   if (meta.avatar?.trim()) {
     return meta.avatar.trim().slice(0, 2).toUpperCase();
   }
@@ -211,6 +193,11 @@ function contactAvatar(contact: ContactRecord): string {
 }
 
 function contactDisplayName(contact: ContactRecord): string {
+  const displayName = contact.meta.display_name?.trim();
+  if (displayName) {
+    return displayName;
+  }
+
   const givenName = contact.given_name?.trim();
   if (givenName) {
     return givenName;
@@ -227,7 +214,7 @@ function syncSelectedContact(): void {
   }
 
   const linkedContact = contacts.value.find(
-    (contact) => parseContactMeta(contact.meta).chatId === selectedChatId
+    (contact) => contact.meta.chatId === selectedChatId
   );
 
   selectedContactId.value = linkedContact?.id ?? null;
@@ -267,7 +254,7 @@ async function loadContacts(query = ''): Promise<void> {
 }
 
 async function ensureChatForContact(contact: ContactRecord): Promise<string | null> {
-  const meta = parseContactMeta(contact.meta);
+  const meta = contact.meta;
   const chatId = meta.chatId;
 
   if (chatId && chatStore.chats.some((chat) => chat.id === chatId)) {
@@ -279,11 +266,11 @@ async function ensureChatForContact(contact: ContactRecord): Promise<string | nu
     return null;
   }
 
-  const nextMeta = JSON.stringify({
+  const nextMeta: ContactMetadata = {
     ...meta,
     chatId: createdChat.id,
     avatar: createdChat.avatar
-  });
+  };
 
   const updatedContact = await contactsService.updateContact(contact.id, { meta: nextMeta });
   if (updatedContact) {
@@ -333,7 +320,7 @@ async function handleAddContact(): Promise<void> {
       public_key: identifier,
       name: identifier,
       given_name: newContactGivenName.value.trim() || null,
-      meta: ''
+      meta: {}
     });
 
     if (!created) {
