@@ -76,6 +76,9 @@
             outlined
             autofocus
             label="Identfier or Public Key"
+            :error="Boolean(newContactIdentifierError)"
+            :error-message="newContactIdentifierError"
+            @update:model-value="clearPublicKeyError"
             @keydown.enter.prevent="handleAddContact"
           />
 
@@ -123,6 +126,7 @@ import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import type { ContactMetadata, ContactRecord } from 'src/types/contact';
+import { validateNostrPublicKey } from 'src/utils/nostrPublicKey';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -136,6 +140,7 @@ const isLoadingContacts = ref(false);
 const isCreatingContact = ref(false);
 const newContactIdentifier = ref('');
 const newContactGivenName = ref('');
+const newContactIdentifierError = ref('');
 const selectedContactId = ref<number | null>(null);
 const contacts = ref<ContactRecord[]>([]);
 
@@ -305,20 +310,34 @@ function closeAddContactDialog(): void {
   isAddContactDialogOpen.value = false;
   newContactIdentifier.value = '';
   newContactGivenName.value = '';
+  newContactIdentifierError.value = '';
+}
+
+function clearPublicKeyError(): void {
+  if (newContactIdentifierError.value) {
+    newContactIdentifierError.value = '';
+  }
 }
 
 async function handleAddContact(): Promise<void> {
-  const identifier = newContactIdentifier.value.trim();
-  if (!identifier || isCreatingContact.value) {
+  if (isCreatingContact.value) {
     return;
   }
 
+  const validation = await validateNostrPublicKey(newContactIdentifier.value);
+  if (!validation.isValid || !validation.normalizedPubkey) {
+    newContactIdentifierError.value = 'Enter a valid hex pubkey or npub.';
+    return;
+  }
+
+  newContactIdentifierError.value = '';
+  const normalizedPublicKey = validation.normalizedPubkey;
   isCreatingContact.value = true;
 
   try {
     const created = await contactsService.createContact({
-      public_key: identifier,
-      name: identifier,
+      public_key: normalizedPublicKey,
+      name: normalizedPublicKey,
       given_name: newContactGivenName.value.trim() || null,
       meta: {}
     });
