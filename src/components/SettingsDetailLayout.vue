@@ -1,6 +1,16 @@
 <template>
   <div class="settings-detail-layout">
     <div class="settings-detail-layout__header">
+      <q-btn
+        v-if="showMobileBackButton"
+        flat
+        dense
+        round
+        icon="arrow_back"
+        aria-label="Back to settings"
+        class="settings-detail-layout__back"
+        @click="goBack"
+      />
       <q-icon v-if="icon" :name="icon" size="20px" class="settings-detail-layout__icon" />
       <div class="settings-detail-layout__title">{{ title }}</div>
     </div>
@@ -12,10 +22,26 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useQuasar } from 'quasar';
+import { useRoute, useRouter } from 'vue-router';
+
 defineProps<{
   title: string;
   icon?: string;
 }>();
+
+const $q = useQuasar();
+const route = useRoute();
+const router = useRouter();
+
+const showMobileBackButton = computed(() => {
+  return $q.screen.lt.md && String(route.name ?? '').startsWith('settings-');
+});
+
+function goBack(): void {
+  void router.push({ name: 'settings' });
+}
 </script>
 
 <style scoped>
@@ -42,6 +68,10 @@ defineProps<{
 .settings-detail-layout__icon {
   margin-right: 10px;
   opacity: 0.82;
+}
+
+.settings-detail-layout__back {
+  margin-right: 8px;
 }
 
 .settings-detail-layout__body {

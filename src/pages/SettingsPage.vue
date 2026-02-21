@@ -5,7 +5,7 @@
         <AppNavRail active="settings" @select="handleRailSelect" />
       </aside>
 
-      <aside class="settings-sidebar">
+      <aside v-if="!isMobile || isSettingsListView" class="settings-sidebar">
         <div class="settings-sidebar__top">
           <div class="settings-sidebar__title">Settings</div>
         </div>
@@ -31,7 +31,7 @@
         </q-list>
       </aside>
 
-      <section class="settings-content-panel">
+      <section v-if="!isMobile || !isSettingsListView" class="settings-content-panel">
         <router-view />
       </section>
     </div>
@@ -39,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
@@ -49,6 +49,7 @@ const route = useRoute();
 const router = useRouter();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const isSettingsListView = computed(() => route.name === 'settings');
 
 const settingsItems = [
   { key: 'profile', label: 'Profile', icon: 'face', routeName: 'settings-profile' },
@@ -64,8 +65,18 @@ const settingsItems = [
 
 const activeSettingKey = computed(() => {
   const match = settingsItems.find((item) => item.routeName === route.name);
-  return match?.key ?? 'profile';
+  return match?.key ?? null;
 });
+
+watch(
+  [isMobile, () => route.name],
+  ([mobile, routeName]) => {
+    if (!mobile && routeName === 'settings') {
+      void router.replace({ name: 'settings-profile' });
+    }
+  },
+  { immediate: true }
+);
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   if (section === 'chats') {

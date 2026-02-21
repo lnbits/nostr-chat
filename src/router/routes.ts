@@ -17,12 +17,9 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'settings',
+        name: 'settings',
         component: () => import('pages/SettingsPage.vue'),
         children: [
-          {
-            path: '',
-            redirect: { name: 'settings-profile' }
-          },
           {
             path: 'profile',
             name: 'settings-profile',

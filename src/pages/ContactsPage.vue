@@ -177,7 +177,7 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   }
 
   if (section === 'settings') {
-    void router.push({ name: 'settings-profile' });
+    void router.push({ name: 'settings' });
   }
 }
 

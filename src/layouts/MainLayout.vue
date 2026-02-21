@@ -62,7 +62,7 @@ const activeSection = computed<NavigationSection>(() => {
     return 'contacts';
   }
 
-  if (routeName.startsWith('settings-')) {
+  if (routeName === 'settings' || routeName.startsWith('settings-')) {
     return 'settings';
   }
 
@@ -88,8 +88,8 @@ function goToSection(section: NavigationSection): void {
     return;
   }
 
-  if (!String(route.name ?? '').startsWith('settings-')) {
-    void router.push({ name: 'settings-profile' });
+  if (route.name !== 'settings' && !String(route.name ?? '').startsWith('settings-')) {
+    void router.push({ name: 'settings' });
   }
 }
 </script>
