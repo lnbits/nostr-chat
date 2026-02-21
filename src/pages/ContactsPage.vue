@@ -154,6 +154,8 @@ const contacts = ref<ContactRecord[]>([]);
 let latestSearchRequestId = 0;
 
 onMounted(() => {
+  void chatStore.init();
+  void messageStore.init();
   void initializeContacts();
 });
 
@@ -305,7 +307,10 @@ async function ensureChatForContact(contact: ContactRecord): Promise<string | nu
     return chatId;
   }
 
-  const createdChat = chatStore.addContact(contactDisplayName(contact) || contact.public_key);
+  const createdChat = await chatStore.addContact(
+    contactDisplayName(contact) || contact.public_key,
+    contact.public_key
+  );
   if (!createdChat) {
     return null;
   }
@@ -421,15 +426,15 @@ async function handleAddContact(): Promise<void> {
   }
 }
 
-function handleSend(text: string): void {
+async function handleSend(text: string): Promise<void> {
   if (!chatStore.selectedChatId) {
     return;
   }
 
-  const created = messageStore.sendMessage(chatStore.selectedChatId, text);
+  const created = await messageStore.sendMessage(chatStore.selectedChatId, text);
 
   if (created) {
-    chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
+    await chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
   }
 }
 </script>

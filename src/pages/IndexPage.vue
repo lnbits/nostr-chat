@@ -36,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
@@ -51,6 +51,11 @@ const chatStore = useChatStore();
 const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
+
+onMounted(() => {
+  void chatStore.init();
+  void messageStore.init();
+});
 
 const currentMessages = computed(() => {
   return messageStore.getMessages(chatStore.selectedChatId);
@@ -80,15 +85,15 @@ function handleSelectChat(chatId: string): void {
   }
 }
 
-function handleSend(text: string): void {
+async function handleSend(text: string): Promise<void> {
   if (!chatStore.selectedChatId) {
     return;
   }
 
-  const created = messageStore.sendMessage(chatStore.selectedChatId, text);
+  const created = await messageStore.sendMessage(chatStore.selectedChatId, text);
 
   if (created) {
-    chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
+    await chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
   }
 }
 </script>

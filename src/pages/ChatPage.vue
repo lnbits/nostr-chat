@@ -36,7 +36,9 @@ const messages = computed(() => messageStore.getMessages(activeChatId.value));
 
 watch(
   activeChatId,
-  (chatId) => {
+  async (chatId) => {
+    await chatStore.init();
+
     if (!chatId) {
       void router.replace({ name: 'home' });
       return;
@@ -49,6 +51,7 @@ watch(
     }
 
     chatStore.selectChat(chatId);
+    await messageStore.loadMessages(chatId);
   },
   { immediate: true }
 );
@@ -67,15 +70,15 @@ function goBack(): void {
   void router.push({ name: 'home' });
 }
 
-function handleSend(text: string): void {
+async function handleSend(text: string): Promise<void> {
   if (!activeChatId.value) {
     return;
   }
 
-  const created = messageStore.sendMessage(activeChatId.value, text);
+  const created = await messageStore.sendMessage(activeChatId.value, text);
 
   if (created) {
-    chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
+    await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
   }
 }
 </script>
