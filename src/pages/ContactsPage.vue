@@ -337,7 +337,7 @@ async function handleAddContact(): Promise<void> {
   try {
     const created = await contactsService.createContact({
       public_key: normalizedPublicKey,
-      name: normalizedPublicKey,
+      name: newContactIdentifier.value.substring(0, 32), // Fallback name if display name is not set
       given_name: newContactGivenName.value.trim() || null,
       meta: {}
     });
