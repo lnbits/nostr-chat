@@ -2,7 +2,11 @@
   <q-page class="settings-page">
     <div class="settings-shell" :class="{ 'settings-shell--mobile': isMobile }">
       <aside v-if="!isMobile" class="rail-panel">
-        <AppNavRail active="settings" @select="handleRailSelect" />
+        <AppNavRail
+          active="settings"
+          :is-console-open="consoleStore.isOpen"
+          @select="handleRailSelect"
+        />
       </aside>
 
       <aside v-if="!isMobile || isSettingsListView" class="settings-sidebar">
@@ -43,10 +47,12 @@ import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
+import { useConsoleStore } from 'src/stores/consoleStore';
 
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
+const consoleStore = useConsoleStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const isSettingsListView = computed(() => route.name === 'settings');
@@ -104,7 +110,7 @@ function goToSetting(
 
 <style scoped>
 .settings-page {
-  height: calc(100vh - env(safe-area-inset-top));
+  height: calc(100vh - env(safe-area-inset-top) - var(--app-console-height, 0px));
   padding: 10px;
 }
 

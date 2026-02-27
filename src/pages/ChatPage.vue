@@ -87,7 +87,7 @@ async function handleSend(text: string): Promise<void> {
 .chat-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - env(safe-area-inset-top));
+  height: calc(100vh - env(safe-area-inset-top) - var(--app-console-height, 0px));
   padding: 10px;
 }
 
