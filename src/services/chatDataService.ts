@@ -1,7 +1,6 @@
 import { dbService, type AppDatabase } from 'src/services/dbService';
 
 type SqlExecParams = Parameters<AppDatabase['exec']>[1];
-export const LOCAL_AUTHOR_PUBLIC_KEY = 'me';
 
 export interface ChatRow {
   id: number;

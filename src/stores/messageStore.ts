@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { LOCAL_AUTHOR_PUBLIC_KEY, chatDataService } from 'src/services/chatDataService';
+import { chatDataService } from 'src/services/chatDataService';
+import { useNostrStore } from 'src/stores/nostrStore';
 import type { Message } from 'src/types/chat';
 
 function parseChatId(value: string): number | null {
@@ -16,7 +17,7 @@ function mapMessageRowToMessage(
   row: Awaited<ReturnType<typeof chatDataService.listMessages>>[number]
 ): Message {
   const authorKey = row.author_public_key.trim();
-  const isMine = authorKey.toLowerCase() === LOCAL_AUTHOR_PUBLIC_KEY.toLowerCase();
+  const isMine = authorKey.toLowerCase() === window.localStorage.getItem('npub')?.toLowerCase();
 
   return {
     id: String(row.id),
@@ -30,6 +31,7 @@ function mapMessageRowToMessage(
 }
 
 export const useMessageStore = defineStore('messageStore', () => {
+  const nostrStore = useNostrStore();
   const messagesByChat = ref<Record<string, Message[]>>({});
   const loadedChatIds = new Set<string>();
   const loadingChatPromises = new Map<string, Promise<void>>();
@@ -97,9 +99,14 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     await chatDataService.init();
+    const chat = await chatDataService.getChatById(chatNumericId);
+    if (!chat) {
+      return null;
+    }
+
     const created = await chatDataService.createMessage({
       chat_it: chatNumericId,
-      author_public_key: LOCAL_AUTHOR_PUBLIC_KEY,
+      author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: new Date().toISOString(),
       meta: {}
@@ -116,6 +123,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     loadedChatIds.add(chatId);
     messagesByChat.value[chatId] = [...messagesByChat.value[chatId], newMessage];
+    await nostrStore.sendDirectMessage(chat.public_key, newMessage.text);
     return newMessage;
   }
 

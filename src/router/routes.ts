@@ -4,6 +4,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/auth',
     name: 'auth',
+    alias: '/login',
     component: () => import('pages/AuthPage.vue')
   },
   {

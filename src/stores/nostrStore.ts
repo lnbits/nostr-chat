@@ -37,6 +37,7 @@ export interface NostrNip05DataResult {
 }
 
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
+const PUBLIC_KEY_STORAGE_KEY = 'npub';
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -79,7 +80,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return false;
     }
 
+    const signer = new NDKPrivateKeySigner(normalized);
     window.localStorage.setItem(PRIVATE_KEY_STORAGE_KEY, normalized);
+    window.localStorage.setItem(PUBLIC_KEY_STORAGE_KEY, signer.pubkey);
     return true;
   }
 
@@ -89,6 +92,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+    window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
   }
 
   function validateNsec(input: string): NostrNsecValidationResult {
@@ -240,6 +244,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function sendDirectMessage(recipientPublicKey: string, textMessage: string): Promise<NostrEvent> {
+    console.log('Preparing to send DM to', recipientPublicKey, 'with message:', textMessage);
     const message = textMessage.trim();
     if (!message) {
       throw new Error('Message cannot be empty.');
@@ -269,20 +274,28 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const ndk = new NDK();
     const signer = new NDKPrivateKeySigner(senderPrivateKeyHex, ndk);
     ndk.signer = signer;
+    const createdAt = Math.floor(Date.now() / 1000);
 
     const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
     const nip17Event = new NDKEvent(ndk, {
       kind: NDKKind.PrivateDirectMessage,
+      created_at: createdAt,
+      pubkey: signer.pubkey,
       content: message,
       tags: [['p', normalizedRecipientPubkey]]
     });
 
+    console.log('### Created NIP-17 event:', nip17Event);
+    console.log('### Gift-wrapping event for recipient:', recipient);
+    console.log('### Signer:', signer);
     const nip59Event = await giftWrap(nip17Event, recipient, signer, {
       rumorKind: NDKKind.PrivateDirectMessage
     });
 
-    const dmEvent = nip59Event.toNostrEvent();
+    const dmEvent = await nip59Event.toNostrEvent();
     console.log('Sending DM event:', dmEvent);
+
+    return dmEvent;
 
   }
 
