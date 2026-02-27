@@ -86,6 +86,20 @@ function normalizeRelays(value: unknown): string[] {
 }
 
 export const useNostrStore = defineStore('nostrStore', () => {
+  const ndk = new NDK();
+  let cachedSigner: NDKPrivateKeySigner | null = null;
+  let cachedSignerPrivateKeyHex: string | null = null;
+
+  function getOrCreateSigner(privateKeyHex: string): NDKPrivateKeySigner {
+    if (!cachedSigner || cachedSignerPrivateKeyHex !== privateKeyHex) {
+      cachedSigner = new NDKPrivateKeySigner(privateKeyHex, ndk);
+      cachedSignerPrivateKeyHex = privateKeyHex;
+    }
+
+    ndk.signer = cachedSigner;
+    return cachedSigner;
+  }
+
   function getPrivateKeyHex(): string | null {
     if (!hasStorage()) {
       return null;
@@ -118,6 +132,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
     window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
+    cachedSigner = null;
+    cachedSignerPrivateKeyHex = null;
   }
 
   function validateNsec(input: string): NostrNsecValidationResult {
@@ -197,7 +213,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     try {
-      const ndk = new NDK();
       const user = await NDKUser.fromNip05(value, ndk, true);
       const normalizedPubkey = user?.pubkey?.toLowerCase() ?? null;
 
@@ -315,9 +330,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Cannot send DM without contact relays.');
     }
 
-    const ndk = new NDK();
-    const signer = new NDKPrivateKeySigner(senderPrivateKeyHex, ndk);
-    ndk.signer = signer;
+    const signer = getOrCreateSigner(senderPrivateKeyHex);
     const createdAt = Math.floor(Date.now() / 1000);
 
     const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
