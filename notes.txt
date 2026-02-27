@@ -1,8 +1,11 @@
 const { chatDataService } = await import('/src/services/chatDataService.ts');
 const { contactsService } = await import('/src/services/contactsService.ts');
+const { relaysService } = await import('/src/services/relaysService.ts');
 
 
 console.table(await chatDataService.listChats());
 console.table(await chatDataService.listMessages(1));
 
 console.table(await contactsService.listContacts());
+
+console.table(await relaysService.listAllRelays())

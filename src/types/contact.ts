@@ -21,6 +21,7 @@ export interface ContactRecord {
   name: string;
   given_name: string | null;
   meta: ContactMetadata;
+  relays?: string[];
 }
 
 export interface CreateContactInput {
@@ -28,6 +29,7 @@ export interface CreateContactInput {
   name: string;
   given_name?: string | null;
   meta?: ContactMetadata;
+  relays?: string[];
 }
 
 export interface UpdateContactInput {
@@ -35,4 +37,5 @@ export interface UpdateContactInput {
   name?: string;
   given_name?: string | null;
   meta?: ContactMetadata;
+  relays?: string[];
 }

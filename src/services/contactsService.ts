@@ -1,4 +1,5 @@
 import { dbService, type AppDatabase } from 'src/services/dbService';
+import { relaysService } from 'src/services/relaysService';
 import type {
   ContactBirthday,
   ContactMetadata,
@@ -155,7 +156,7 @@ class ContactsService {
   async listContacts(): Promise<ContactRecord[]> {
     const db = await this.getDatabase();
     const rows = this.queryRows(db, `${CONTACT_SELECT_SQL} ORDER BY name COLLATE NOCASE ASC`);
-    return mapContactRows(rows);
+    return this.attachRelays(mapContactRows(rows));
   }
 
   async searchContacts(searchText: string): Promise<ContactRecord[]> {
@@ -180,13 +181,18 @@ class ContactsService {
       [likeQuery, likeQuery, likeQuery]
     );
 
-    return mapContactRows(rows);
+    return this.attachRelays(mapContactRows(rows));
   }
 
   async getContactById(id: number): Promise<ContactRecord | null> {
     const db = await this.getDatabase();
     const contact = this.querySingleRow(db, `${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
-    return contact ? rowToContact(contact) : null;
+    if (!contact) {
+      return null;
+    }
+
+    const [mapped] = await this.attachRelays([rowToContact(contact)]);
+    return mapped ?? null;
   }
 
   async publicKeyExists(publicKey: string): Promise<boolean> {
@@ -235,11 +241,15 @@ class ContactsService {
       db,
       `${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
     );
-    if (inserted) {
-      await dbService.persist();
+    if (!inserted) {
+      return null;
     }
 
-    return inserted ? rowToContact(inserted) : null;
+    const contact = rowToContact(inserted);
+    const relays = await relaysService.replaceRelaysForContact(contact.id, input.relays ?? []);
+    await dbService.persist();
+
+    return { ...contact, relays };
   }
 
   async updateContact(id: number, input: UpdateContactInput): Promise<ContactRecord | null> {
@@ -276,29 +286,41 @@ class ContactsService {
       updates.push({ field: 'meta', value: serializeContactMeta(input.meta) });
     }
 
-    if (updates.length === 0) {
+    if (updates.length === 0 && input.relays === undefined) {
       return this.getContactById(id);
     }
 
-    const setClause = updates.map((update) => `${update.field} = ?`).join(', ');
-    const params: Array<number | string | null> = updates.map((update) => update.value);
-    params.push(id);
+    if (updates.length > 0) {
+      const setClause = updates.map((update) => `${update.field} = ?`).join(', ');
+      const params: Array<number | string | null> = updates.map((update) => update.value);
+      params.push(id);
 
-    const updateStatement = db.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`);
-    try {
-      updateStatement.run(params);
-    } catch (error) {
-      console.error('Failed to update contact', error);
+      const updateStatement = db.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`);
+      try {
+        updateStatement.run(params);
+      } catch (error) {
+        console.error('Failed to update contact', error);
+        return null;
+      } finally {
+        updateStatement.free();
+      }
+
+      if (db.getRowsModified() > 0) {
+        await dbService.persist();
+      }
+    }
+
+    const contact = await this.getContactById(id);
+    if (!contact) {
       return null;
-    } finally {
-      updateStatement.free();
     }
 
-    if (db.getRowsModified() > 0) {
-      await dbService.persist();
+    if (input.relays === undefined) {
+      return contact;
     }
 
-    return this.getContactById(id);
+    const relays = await relaysService.replaceRelaysForContact(id, input.relays);
+    return { ...contact, relays };
   }
 
   async deleteContact(id: number): Promise<boolean> {
@@ -312,6 +334,7 @@ class ContactsService {
 
     const hasChanges = db.getRowsModified() > 0;
     if (hasChanges) {
+      await relaysService.deleteRelaysForContact(id);
       await dbService.persist();
     }
 
@@ -342,6 +365,7 @@ class ContactsService {
     const db = await dbService.getDatabase();
 
     db.run(CONTACTS_TABLE_SQL);
+    await relaysService.init();
     const didMigrateSchema = this.ensureSchema(db);
     const didNormalizeMeta = this.normalizeStoredMeta(db);
     db.run(CONTACTS_INDEXES_SQL);
@@ -359,6 +383,21 @@ class ContactsService {
 
   private seedContacts(db: AppDatabase): void {
     void db;
+  }
+
+  private async attachRelays(contacts: ContactRecord[]): Promise<ContactRecord[]> {
+    if (contacts.length === 0) {
+      return contacts;
+    }
+
+    const withRelays = await Promise.all(
+      contacts.map(async (contact) => ({
+        ...contact,
+        relays: await relaysService.listRelaysByContactId(contact.id)
+      }))
+    );
+
+    return withRelays;
   }
 
   private ensureSchema(db: AppDatabase): boolean {
