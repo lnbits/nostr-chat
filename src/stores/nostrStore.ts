@@ -9,6 +9,7 @@ import NDK, {
   isValidNip05,
   isValidPubkey,
   nip19,
+  normalizeRelayUrl,
   type NostrEvent
 } from '@nostr-dev-kit/ndk';
 
@@ -87,8 +88,12 @@ function normalizeRelays(value: unknown): string[] {
 
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
+  const INITIAL_CONNECT_TIMEOUT_MS = 3000;
   let cachedSigner: NDKPrivateKeySigner | null = null;
   let cachedSignerPrivateKeyHex: string | null = null;
+  const configuredRelayUrls = new Set<string>();
+  let connectPromise: Promise<void> | null = null;
+  let hasActivatedPool = false;
 
   function getOrCreateSigner(privateKeyHex: string): NDKPrivateKeySigner {
     if (!cachedSigner || cachedSignerPrivateKeyHex !== privateKeyHex) {
@@ -98,6 +103,35 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     ndk.signer = cachedSigner;
     return cachedSigner;
+  }
+
+  async function ensureRelayConnections(relayUrls: string[]): Promise<void> {
+    for (const relayUrl of relayUrls) {
+      const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+      if (configuredRelayUrls.has(normalizedRelayUrl)) {
+        continue;
+      }
+
+      ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
+      configuredRelayUrls.add(normalizedRelayUrl);
+    }
+
+    if (hasActivatedPool) {
+      return;
+    }
+
+    if (!connectPromise) {
+      connectPromise = ndk
+        .connect(INITIAL_CONNECT_TIMEOUT_MS)
+        .then(() => {
+          hasActivatedPool = true;
+        })
+        .finally(() => {
+          connectPromise = null;
+        });
+    }
+
+    await connectPromise;
   }
 
   function getPrivateKeyHex(): string | null {
@@ -329,6 +363,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (relayUrls.length === 0) {
       throw new Error('Cannot send DM without contact relays.');
     }
+    await ensureRelayConnections(relayUrls);
 
     const signer = getOrCreateSigner(senderPrivateKeyHex);
     const createdAt = Math.floor(Date.now() / 1000);

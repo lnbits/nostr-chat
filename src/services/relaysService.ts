@@ -244,8 +244,10 @@ class RelaysService {
 
   private async initializeSchema(): Promise<void> {
     const db = await dbService.getDatabase();
-    db.run(CONTACT_RELAYS_TABLE_SQL);
-    db.run(CONTACT_RELAYS_INDEXES_SQL);
+    const didResetSchema = this.ensureSchema(db);
+    if (didResetSchema) {
+      await dbService.persist();
+    }
   }
 
   private async getDatabase(): Promise<AppDatabase> {
@@ -270,6 +272,44 @@ class RelaysService {
     } finally {
       statement.free();
     }
+  }
+
+  private ensureSchema(db: AppDatabase): boolean {
+    const hasTable = this.hasSchemaObject(db, 'table', 'contact_relays');
+    if (!hasTable) {
+      db.run(CONTACT_RELAYS_TABLE_SQL);
+      db.run(CONTACT_RELAYS_INDEXES_SQL);
+      return true;
+    }
+
+    const columns = this.queryRows(db, 'PRAGMA table_info(contact_relays)');
+    const hasPublicKey = columns.some((row) => String(row[1] ?? '') === 'public_key');
+    const hasRelayWs = columns.some((row) => String(row[1] ?? '') === 'relay_ws');
+
+    if (!hasPublicKey || !hasRelayWs) {
+      db.run('DROP TABLE contact_relays');
+      db.run(CONTACT_RELAYS_TABLE_SQL);
+      db.run(CONTACT_RELAYS_INDEXES_SQL);
+      return true;
+    }
+
+    db.run(CONTACT_RELAYS_INDEXES_SQL);
+    return false;
+  }
+
+  private hasSchemaObject(db: AppDatabase, objectType: 'table' | 'index', objectName: string): boolean {
+    const rows = this.queryRows(
+      db,
+      `
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = ? AND name = ?
+        LIMIT 1
+      `,
+      [objectType, objectName]
+    );
+
+    return rows.length > 0;
   }
 }
 

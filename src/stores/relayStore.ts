@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
 
-const RELAYS_STORAGE_KEY = 'telegram-ui-relays';
+const RELAYS_STORAGE_KEY = 'relays';
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -15,7 +15,7 @@ function readStoredRelays(): string[] | null {
 
   try {
     const value = window.localStorage.getItem(RELAYS_STORAGE_KEY);
-    if (!value) {
+    if (value === null  || value === undefined || value.trim() === '') {
       return null;
     }
 
@@ -28,7 +28,7 @@ function readStoredRelays(): string[] | null {
       .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
       .filter((entry) => entry.length > 0);
 
-    return relays.length > 0 ? relays : null;
+    return relays;
   } catch (error) {
     console.warn('Failed to read relay list from localStorage', error);
     return null;
@@ -57,7 +57,9 @@ export const useRelayStore = defineStore('relayStore', () => {
     }
 
     const storedRelays = readStoredRelays();
-    relays.value = storedRelays ? [...storedRelays] : [...DEFAULT_RELAYS];
+    // don't restore if storage is empty; avoids overriding defaults
+    relays.value = storedRelays?.length === 0 ? [...storedRelays] : [...DEFAULT_RELAYS];
+    writeStoredRelays(relays.value);
     isInitialized.value = true;
   }
 
