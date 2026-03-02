@@ -3,7 +3,7 @@
     <div class="profile-content">
       <q-card flat bordered class="profile-card">
         <q-card-section class="profile-card__section">
-          <div class="profile-card__title">NIP-01 Kind 0: User Metadata</div>
+          <div class="profile-card__title">User Metadata (NIP-01)</div>
 
           <q-input
             v-model="profileMetadata.name"
@@ -41,7 +41,7 @@
 
       <q-card flat bordered class="profile-card q-mt-md">
         <q-card-section class="profile-card__section">
-          <div class="profile-card__title">NIP-24 Kind 0: Extra Metadata Fields</div>
+          <div class="profile-card__title">Extra Metadata Fields (NIP-24 Kind 0)</div>
 
           <q-input
             v-model="profileMetadata.display_name"
