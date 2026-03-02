@@ -1,6 +1,25 @@
 <template>
   <div class="contact-profile">
-    <div class="profile-lookup">
+    <div v-if="showHeader" class="profile-header">
+      <q-avatar color="primary" text-color="white">{{ headerAvatar }}</q-avatar>
+      <div class="profile-header__meta">
+        <div class="profile-header__name">{{ headerName }}</div>
+        <div class="profile-header__subtitle">{{ headerSubtitle }}</div>
+      </div>
+      <q-btn
+        flat
+        dense
+        round
+        icon="chat_bubble"
+        color="primary"
+        aria-label="Open Chat"
+        class="profile-header__action"
+        :disable="!normalizedHeaderPubkey"
+        @click="emit('open-chat')"
+      />
+    </div>
+
+    <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
       <div class="profile-card__title">Contact Lookup</div>
       <q-input
         v-model="localPubkey"
@@ -228,15 +247,18 @@ interface Props {
   modelValue: ContactProfileForm;
   pubkey: string;
   readOnly?: boolean;
+  showHeader?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  readOnly: false
+  readOnly: false,
+  showHeader: false
 });
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: ContactProfileForm): void;
   (event: 'update:pubkey', value: string): void;
+  (event: 'open-chat'): void;
 }>();
 
 const nostrStore = useNostrStore();
@@ -258,6 +280,31 @@ const relayListCsv = computed({
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
   }
+});
+
+const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
+
+const headerName = computed(() => {
+  const displayName = localProfile.display_name.trim();
+  if (displayName) {
+    return displayName;
+  }
+
+  const name = localProfile.name.trim();
+  if (name) {
+    return name;
+  }
+
+  return shortPubkey(normalizedHeaderPubkey.value) || 'Contact';
+});
+
+const headerSubtitle = computed(() => {
+  const pubkey = normalizedHeaderPubkey.value;
+  return pubkey ? `Pubkey ${shortPubkey(pubkey)}` : 'Contact profile';
+});
+
+const headerAvatar = computed(() => {
+  return buildAvatar(headerName.value || normalizedHeaderPubkey.value || 'NA');
 });
 
 watch(
@@ -318,6 +365,29 @@ function normalizePubkeyInput(input: string): string | null {
 
   const npubValidation = nostrStore.validateNpub(value);
   return npubValidation.isValid ? npubValidation.normalizedPubkey : null;
+}
+
+function shortPubkey(value: string): string {
+  const compact = value.trim();
+  if (compact.length <= 16) {
+    return compact;
+  }
+
+  return `${compact.slice(0, 8)}...${compact.slice(-8)}`;
+}
+
+function buildAvatar(value: string): string {
+  const compactValue = value.replace(/\s+/g, ' ').trim();
+  if (!compactValue) {
+    return 'NA';
+  }
+
+  const parts = compactValue.split(' ');
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return compactValue.slice(0, 2).toUpperCase();
 }
 
 function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
@@ -418,9 +488,42 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   width: 100%;
 }
 
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--tg-border);
+  border-radius: 16px;
+  background: var(--tg-sidebar);
+}
+
+.profile-header__meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.profile-header__name {
+  font-weight: 600;
+}
+
+.profile-header__subtitle {
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+.profile-header__action {
+  color: #64748b;
+}
+
 .profile-lookup {
   display: grid;
   gap: 6px;
+}
+
+.profile-lookup--with-header {
+  margin-top: 12px;
 }
 
 .profile-card {

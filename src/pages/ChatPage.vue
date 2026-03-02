@@ -7,6 +7,7 @@
         :show-back-button="true"
         @send="handleSend"
         @back="goBack"
+        @open-profile="handleOpenProfile"
       />
     </div>
   </q-page>
@@ -80,6 +81,15 @@ async function handleSend(text: string): Promise<void> {
   if (created) {
     await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
   }
+}
+
+function handleOpenProfile(publicKey: string): void {
+  const normalized = publicKey.trim();
+  if (!normalized) {
+    return;
+  }
+
+  void router.push({ name: 'contacts', query: { pubkey: normalized } });
 }
 </script>
 

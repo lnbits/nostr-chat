@@ -16,7 +16,16 @@
           <div class="thread-header__name">{{ chat.name }}</div>
           <div class="thread-header__time">Last active {{ headerTime }}</div>
         </div>
-        <q-btn flat dense round icon="badge" aria-label="Badge" color="primary" class="thread-header__action" />
+        <q-btn
+          flat
+          dense
+          round
+          icon="badge"
+          aria-label="Open Profile"
+          color="primary"
+          class="thread-header__action"
+          @click="handleOpenProfile"
+        />
       </div>
 
       <div ref="threadBodyRef" class="thread-body">
@@ -50,9 +59,10 @@ const props = withDefaults(
   }
 );
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'send', text: string): void;
   (event: 'back'): void;
+  (event: 'open-profile', publicKey: string): void;
 }>();
 
 const threadBodyRef = ref<HTMLElement | null>(null);
@@ -76,6 +86,14 @@ async function scrollToBottom(): Promise<void> {
   if (threadBodyRef.value) {
     threadBodyRef.value.scrollTop = threadBodyRef.value.scrollHeight;
   }
+}
+
+function handleOpenProfile(): void {
+  if (!props.chat?.publicKey) {
+    return;
+  }
+
+  emit('open-profile', props.chat.publicKey);
 }
 
 watch(

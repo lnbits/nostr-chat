@@ -74,6 +74,8 @@
               v-model="selectedContactProfile"
               v-model:pubkey="selectedContactPubkey"
               :read-only="true"
+              :show-header="true"
+              @open-chat="handleOpenChat"
             />
           </div>
           <div v-else class="contacts-empty-state">Select a contact to view profile.</div>
@@ -140,17 +142,20 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';
 import { contactsService } from 'src/services/contactsService';
+import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { ContactRecord } from 'src/types/contact';
 import { createEmptyContactProfileForm } from 'src/types/contactProfile';
 
 const $q = useQuasar();
+const route = useRoute();
 const router = useRouter();
+const chatStore = useChatStore();
 const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
@@ -169,12 +174,21 @@ const contacts = ref<ContactRecord[]>([]);
 let latestSearchRequestId = 0;
 
 onMounted(() => {
+  void chatStore.init();
   void initializeContacts();
 });
 
 watch(contactQuery, (query) => {
   void loadContacts(query);
 });
+
+watch(
+  () => parsePubkeyQuery(route.query.pubkey),
+  (pubkey) => {
+    selectContactByPublicKey(pubkey);
+  },
+  { immediate: true }
+);
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   if (section === 'chats') {
@@ -288,6 +302,11 @@ async function loadContacts(query = ''): Promise<void> {
       selectedContactPubkey.value = '';
       selectedContactProfile.value = createEmptyContactProfileForm();
     }
+
+    const queryPubkey = parsePubkeyQuery(route.query.pubkey);
+    if (queryPubkey) {
+      selectContactByPublicKey(queryPubkey);
+    }
   } catch (error) {
     console.error('Failed to load contacts', error);
   } finally {
@@ -297,10 +316,28 @@ async function loadContacts(query = ''): Promise<void> {
   }
 }
 
-function handleSelectContact(contact: ContactRecord): void {
+function handleSelectContact(contact: ContactRecord, syncRoute = true): void {
   selectedContactId.value = contact.id;
   selectedContactPubkey.value = contact.public_key;
   selectedContactProfile.value = createEmptyContactProfileForm();
+
+  if (!syncRoute) {
+    return;
+  }
+
+  const routePubkey = parsePubkeyQuery(route.query.pubkey).toLowerCase();
+  const selectedPubkey = contact.public_key.toLowerCase();
+  if (routePubkey === selectedPubkey) {
+    return;
+  }
+
+  void router.replace({
+    name: 'contacts',
+    query: {
+      ...route.query,
+      pubkey: contact.public_key
+    }
+  });
 }
 
 function openAddContactDialog(): void {
@@ -380,12 +417,75 @@ async function handleAddContact(): Promise<void> {
     closeAddContactDialog();
     contactQuery.value = '';
     await loadContacts();
-    handleSelectContact(created);
+    handleSelectContact(created, true);
   } catch (error) {
     console.error('Failed to create contact', error);
   } finally {
     isCreatingContact.value = false;
   }
+}
+
+function parsePubkeyQuery(value: unknown): string {
+  if (Array.isArray(value)) {
+    return parsePubkeyQuery(value[0]);
+  }
+
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim();
+}
+
+function selectContactByPublicKey(pubkey: string): void {
+  const normalizedPubkey = pubkey.trim().toLowerCase();
+  if (!normalizedPubkey) {
+    return;
+  }
+
+  const matchedContact = contacts.value.find(
+    (contact) => contact.public_key.trim().toLowerCase() === normalizedPubkey
+  );
+
+  if (matchedContact) {
+    handleSelectContact(matchedContact, false);
+    return;
+  }
+
+  selectedContactId.value = null;
+  selectedContactPubkey.value = pubkey.trim();
+  selectedContactProfile.value = createEmptyContactProfileForm();
+}
+
+async function handleOpenChat(): Promise<void> {
+  const contactPubkey = selectedContactPubkey.value.trim();
+  if (!contactPubkey) {
+    return;
+  }
+
+  await chatStore.init();
+
+  const selectedContact = contacts.value.find(
+    (contact) => contact.public_key.trim().toLowerCase() === contactPubkey.toLowerCase()
+  );
+  const fallbackName = contactPubkey.slice(0, 32);
+  const chatName = selectedContact
+    ? contactDisplayName(selectedContact) || selectedContact.public_key
+    : fallbackName;
+
+  const chat = await chatStore.addContact(chatName, contactPubkey);
+  if (!chat) {
+    return;
+  }
+
+  chatStore.selectChat(chat.id);
+
+  if (isMobile.value) {
+    void router.push({ name: 'chat', params: { chatId: chat.id } });
+    return;
+  }
+
+  void router.push({ name: 'home' });
 }
 </script>
 

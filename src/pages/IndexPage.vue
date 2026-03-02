@@ -30,7 +30,12 @@
       </aside>
 
       <section v-if="!isMobile" class="thread-panel">
-        <ChatThread :chat="chatStore.selectedChat" :messages="currentMessages" @send="handleSend" />
+        <ChatThread
+          :chat="chatStore.selectedChat"
+          :messages="currentMessages"
+          @send="handleSend"
+          @open-profile="handleOpenProfile"
+        />
       </section>
     </div>
   </q-page>
@@ -96,6 +101,15 @@ async function handleSend(text: string): Promise<void> {
   if (created) {
     await chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
   }
+}
+
+function handleOpenProfile(publicKey: string): void {
+  const normalized = publicKey.trim();
+  if (!normalized) {
+    return;
+  }
+
+  void router.push({ name: 'contacts', query: { pubkey: normalized } });
 }
 </script>
 
