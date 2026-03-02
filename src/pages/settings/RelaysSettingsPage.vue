@@ -48,15 +48,28 @@
           @show="handleRelayExpand(relay)"
         >
           <template #header>
-            <q-item-section avatar class="relay-status-cell">
-              <span
-                class="relay-status-dot"
-                :class="
-                  isRelayConnected(relay)
-                    ? 'relay-status-dot--connected'
-                    : 'relay-status-dot--disconnected'
-                "
-              />
+            <q-item-section avatar class="relay-header-cell">
+              <div class="relay-header-badges">
+                <q-avatar v-if="relayIconUrl(relay)" size="22px" class="relay-icon">
+                  <img
+                    :src="relayIconUrl(relay) || ''"
+                    :alt="`${relay} icon`"
+                    @error="handleRelayIconError(relay)"
+                  />
+                </q-avatar>
+                <q-avatar v-else size="22px" class="relay-icon relay-icon--fallback">
+                  <q-icon name="satellite_alt" size="14px" />
+                </q-avatar>
+
+                <span
+                  class="relay-status-dot"
+                  :class="
+                    isRelayConnected(relay)
+                      ? 'relay-status-dot--connected'
+                      : 'relay-status-dot--disconnected'
+                  "
+                />
+              </div>
             </q-item-section>
 
             <q-item-section>
@@ -120,6 +133,7 @@ const newRelay = ref('');
 const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
 const relayInfoErrorByUrl = ref<Record<string, string>>({});
 const relayInfoLoadingByUrl = ref<Record<string, boolean>>({});
+const relayIconErrorByUrl = ref<Record<string, boolean>>({});
 const relayValidationError = computed(() => validateRelayUrl(newRelay.value.trim()));
 const canAddRelay = computed(() => {
   const value = newRelay.value.trim();
@@ -142,6 +156,10 @@ watch(
     void nostrStore.ensureRelayConnections(relays).catch((error) => {
       console.warn('Failed to connect relays for status checks', error);
     });
+
+    for (const relay of relays) {
+      void loadRelayInfo(relay);
+    }
   },
   { immediate: true }
 );
@@ -179,6 +197,12 @@ function pruneRelayInfoCache(relays: string[]): void {
       delete relayInfoLoadingByUrl.value[key];
     }
   }
+
+  for (const key of Object.keys(relayIconErrorByUrl.value)) {
+    if (!activeRelayKeys.has(key)) {
+      delete relayIconErrorByUrl.value[key];
+    }
+  }
 }
 
 async function loadRelayInfo(relay: string, force = false): Promise<void> {
@@ -198,6 +222,7 @@ async function loadRelayInfo(relay: string, force = false): Promise<void> {
   try {
     const relayInfo = await nostrStore.fetchRelayNip11Info(relay, force);
     relayInfoByUrl.value[key] = relayInfo;
+    relayIconErrorByUrl.value[key] = false;
   } catch (error) {
     relayInfoByUrl.value[key] = null;
     relayInfoErrorByUrl.value[key] =
@@ -225,6 +250,25 @@ function isRelayInfoLoading(relay: string): boolean {
 
 function retryRelayInfo(relay: string): void {
   void loadRelayInfo(relay, true);
+}
+
+function relayIconUrl(relay: string): string | null {
+  const key = relayKey(relay);
+  if (relayIconErrorByUrl.value[key]) {
+    return null;
+  }
+
+  const icon = relayInfo(relay)?.icon;
+  if (typeof icon !== 'string') {
+    return null;
+  }
+
+  const trimmed = icon.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function handleRelayIconError(relay: string): void {
+  relayIconErrorByUrl.value[relayKey(relay)] = true;
 }
 
 function addRelay(): void {
@@ -293,8 +337,33 @@ function restoreDefaults(): void {
   display: inline-block;
 }
 
-.relay-status-cell {
-  min-width: 24px;
+.relay-header-cell {
+  min-width: 56px;
+}
+
+.relay-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.relay-icon {
+  border: 1px solid var(--tg-border);
+  background: color-mix(in srgb, var(--tg-sidebar) 84%, transparent);
+}
+
+.relay-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.relay-icon--fallback {
+  color: #64748b;
+}
+
+body.body--dark .relay-icon--fallback {
+  color: #9ca3af;
 }
 
 .relay-status-dot--connected {
