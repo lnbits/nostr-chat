@@ -4,6 +4,7 @@ import NDK, {
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
+  type NDKRelayInformation,
   NDKRelayStatus,
   NDKRelaySet,
   NDKUser,
@@ -169,6 +170,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return relay.status >= NDKRelayStatus.CONNECTED ? 'connected' : 'issue';
+  }
+
+  async function fetchRelayNip11Info(
+    relayUrl: string,
+    force = false
+  ): Promise<NDKRelayInformation> {
+    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+    const relay = ndk.pool.getRelay(normalizedRelayUrl, false);
+    return relay.fetchInfo(force);
   }
 
   function getPrivateKeyHex(): string | null {
@@ -436,6 +446,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   return {
     clearPrivateKey,
     ensureRelayConnections,
+    fetchRelayNip11Info,
     getNip05Data,
     getPrivateKeyHex,
     getRelayConnectionState,
