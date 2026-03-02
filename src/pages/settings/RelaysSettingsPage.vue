@@ -674,7 +674,20 @@ function restoreDefaults(): void {
 .relay-header-actions {
   display: flex;
   align-items: center;
+  position: relative;
   margin-left: 8px;
+  padding-left: 8px;
+}
+
+.relay-header-actions::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 22px;
+  transform: translateY(-50%);
+  background: var(--tg-border);
 }
 
 .relay-io-toggles {
@@ -762,6 +775,11 @@ body.body--dark .relay-icon--fallback {
 
   .relay-header-actions {
     margin-left: 6px;
+    padding-left: 6px;
+  }
+
+  .relay-header-actions::before {
+    height: 18px;
   }
 
   .relay-io-toggles {
