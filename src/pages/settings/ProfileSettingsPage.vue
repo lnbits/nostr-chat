@@ -175,14 +175,35 @@
           </div>
         </q-card-section>
       </q-card>
+
+      <q-card flat bordered class="profile-card q-mt-md">
+        <q-card-section class="profile-card__section">
+          <div class="profile-card__title">Relays (NIP-65)</div>
+          <div class="text-caption text-grey-6">
+            These relays are configured in Relays > My Relays (NIP-65).
+          </div>
+
+          <q-input
+            :model-value="nip65RelaysSummary"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            readonly
+            label="Relay URLs"
+            placeholder="No NIP-65 relays configured"
+          />
+        </q-card-section>
+      </q-card>
     </div>
   </SettingsDetailLayout>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import type { PublishUserMetadataInput } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
@@ -208,7 +229,9 @@ interface ProfileMetadataForm {
 const $q = useQuasar();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
+const nip65RelayStore = useNip65RelayStore();
 const isPublishing = ref(false);
+const nip65RelaysSummary = computed(() => nip65RelayStore.relays.join(', '));
 
 const profileMetadata = reactive<ProfileMetadataForm>({
   name: '',
@@ -229,6 +252,7 @@ const profileMetadata = reactive<ProfileMetadataForm>({
 });
 
 relayStore.init();
+nip65RelayStore.init();
 
 function cleanString(value: string): string | undefined {
   const trimmed = value.trim();
