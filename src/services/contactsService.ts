@@ -74,12 +74,42 @@ function normalizeContactMeta(value: unknown): ContactMetadata {
   }
 
   const meta: ContactMetadata = {};
+  const name = readOptionalString(value.name);
+  const about = readOptionalString(value.about);
+  const picture = readOptionalString(value.picture);
+  const nip05 = readOptionalString(value.nip05);
+  const lud06 = readOptionalString(value.lud06);
+  const lud16 = readOptionalString(value.lud16);
   const displayName = readOptionalString(value.display_name);
   const website = readOptionalString(value.website);
   const banner = readOptionalString(value.banner);
   const chatId = readOptionalString(value.chatId);
   const avatar = readOptionalString(value.avatar);
   const birthday = normalizeBirthday(value.birthday);
+
+  if (name) {
+    meta.name = name;
+  }
+
+  if (about) {
+    meta.about = about;
+  }
+
+  if (picture) {
+    meta.picture = picture;
+  }
+
+  if (nip05) {
+    meta.nip05 = nip05;
+  }
+
+  if (lud06) {
+    meta.lud06 = lud06;
+  }
+
+  if (lud16) {
+    meta.lud16 = lud16;
+  }
 
   if (displayName) {
     meta.display_name = displayName;

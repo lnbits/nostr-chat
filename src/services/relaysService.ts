@@ -1,4 +1,5 @@
 import { dbService, type AppDatabase } from 'src/services/dbService';
+import type { ContactRelay } from 'src/types/contact';
 
 type SqlExecParams = Parameters<AppDatabase['exec']>[1];
 
@@ -25,11 +26,20 @@ function normalizeRelayWs(value: string): string | null {
   return normalized ? normalized : null;
 }
 
-function normalizeRelays(relays: string[]): string[] {
+function normalizeRelayUrl(relay: ContactRelay): string | null {
+  const normalizedUrl = normalizeRelayWs(relay.url);
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  return normalizedUrl;
+}
+
+function normalizeRelays(relays: ContactRelay[]): string[] {
   const uniqueRelays = new Set<string>();
 
   for (const relay of relays) {
-    const normalized = normalizeRelayWs(relay);
+    const normalized = normalizeRelayUrl(relay);
     if (!normalized) {
       continue;
     }
@@ -47,7 +57,7 @@ class RelaysService {
     await this.ensureInitialized();
   }
 
-  async listRelaysByPublicKey(publicKey: string): Promise<string[]> {
+  async listRelaysByPublicKey(publicKey: string): Promise<ContactRelay[]> {
     const normalizedPublicKey = normalizePublicKey(publicKey);
     if (!normalizedPublicKey) {
       return [];
@@ -65,7 +75,22 @@ class RelaysService {
       [normalizedPublicKey]
     );
 
-    return rows.map((row) => String(row[0] ?? ''));
+    return rows
+      .map((row) => {
+        const url = String(row[0] ?? '').trim();
+        if (!url) {
+          return null;
+        }
+
+        const relay: ContactRelay = {
+          url,
+          read: true,
+          write: true
+        };
+
+        return relay;
+      })
+      .filter((relay): relay is ContactRelay => relay !== null);
   }
 
   async listAllRelays(): Promise<string[]> {
@@ -82,20 +107,18 @@ class RelaysService {
     return rows.map((row) => String(row[0] ?? ''));
   }
 
-  async createRelay(publicKey: string, relayWs: string): Promise<boolean> {
+  async createRelay(publicKey: string, relay: ContactRelay): Promise<boolean> {
     const normalizedPublicKey = normalizePublicKey(publicKey);
-    const normalizedRelayWs = normalizeRelayWs(relayWs);
-    if (!normalizedPublicKey || !normalizedRelayWs) {
+    const normalizedRelayUrl = normalizeRelayUrl(relay);
+    if (!normalizedPublicKey || !normalizedRelayUrl) {
       return false;
     }
 
     const db = await this.getDatabase();
-    const statement = db.prepare(
-      'INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)'
-    );
+    const statement = db.prepare('INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)');
 
     try {
-      statement.run([normalizedPublicKey, normalizedRelayWs]);
+      statement.run([normalizedPublicKey, normalizedRelayUrl]);
     } catch (error) {
       console.error('Failed to create contact relay', error);
       return false;
@@ -111,11 +134,15 @@ class RelaysService {
     return hasChanges;
   }
 
-  async updateRelay(publicKey: string, previousRelayWs: string, nextRelayWs: string): Promise<boolean> {
+  async updateRelay(
+    publicKey: string,
+    previousRelayWs: string,
+    nextRelay: ContactRelay
+  ): Promise<boolean> {
     const normalizedPublicKey = normalizePublicKey(publicKey);
     const normalizedPreviousRelayWs = normalizeRelayWs(previousRelayWs);
-    const normalizedNextRelayWs = normalizeRelayWs(nextRelayWs);
-    if (!normalizedPublicKey || !normalizedPreviousRelayWs || !normalizedNextRelayWs) {
+    const normalizedNextRelayUrl = normalizeRelayUrl(nextRelay);
+    if (!normalizedPublicKey || !normalizedPreviousRelayWs || !normalizedNextRelayUrl) {
       return false;
     }
 
@@ -129,7 +156,7 @@ class RelaysService {
     );
 
     try {
-      statement.run([normalizedNextRelayWs, normalizedPublicKey, normalizedPreviousRelayWs]);
+      statement.run([normalizedNextRelayUrl, normalizedPublicKey, normalizedPreviousRelayWs]);
     } catch (error) {
       console.error('Failed to update contact relay', error);
       return false;
@@ -171,25 +198,23 @@ class RelaysService {
     return hasChanges;
   }
 
-  async replaceRelaysForPublicKey(publicKey: string, relays: string[]): Promise<string[]> {
+  async replaceRelaysForPublicKey(publicKey: string, relays: ContactRelay[]): Promise<ContactRelay[]> {
     const normalizedPublicKey = normalizePublicKey(publicKey);
     if (!normalizedPublicKey) {
       return [];
     }
 
-    const normalizedRelays = normalizeRelays(relays);
+    const normalizedRelayUrls = normalizeRelays(relays);
     const db = await this.getDatabase();
     const deleteStatement = db.prepare('DELETE FROM contact_relays WHERE LOWER(public_key) = LOWER(?)');
-    const insertStatement = db.prepare(
-      'INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)'
-    );
+    const insertStatement = db.prepare('INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)');
 
     try {
       db.run('BEGIN TRANSACTION');
       deleteStatement.run([normalizedPublicKey]);
 
-      for (const relayWs of normalizedRelays) {
-        insertStatement.run([normalizedPublicKey, relayWs]);
+      for (const relayUrl of normalizedRelayUrls) {
+        insertStatement.run([normalizedPublicKey, relayUrl]);
       }
 
       db.run('COMMIT');
@@ -208,7 +233,7 @@ class RelaysService {
     }
 
     await dbService.persist();
-    return normalizedRelays;
+    return this.listRelaysByPublicKey(normalizedPublicKey);
   }
 
   async deleteRelaysForPublicKey(publicKey: string): Promise<boolean> {

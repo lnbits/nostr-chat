@@ -125,7 +125,13 @@ export const useMessageStore = defineStore('messageStore', () => {
     loadedChatIds.add(chatId);
     messagesByChat.value[chatId] = [...messagesByChat.value[chatId], newMessage];
     const contactRelays = await relaysService.listRelaysByPublicKey(chat.public_key);
-    await nostrStore.sendDirectMessage(chat.public_key, newMessage.text, contactRelays);
+    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
+    const fallbackRelays = contactRelays.map((relay) => relay.url);
+    await nostrStore.sendDirectMessage(
+      chat.public_key,
+      newMessage.text,
+      preferredRelays.length > 0 ? preferredRelays : fallbackRelays
+    );
     return newMessage;
   }
 

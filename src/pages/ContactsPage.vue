@@ -419,7 +419,11 @@ async function handleAddContact(): Promise<void> {
       name: resolvedName,
       given_name: newContactGivenName.value.trim() || null,
       meta: {},
-      relays: resolution.relays
+      relays: resolution.relays.map((url) => ({
+        url,
+        read: true,
+        write: true
+      }))
     });
 
     if (!created) {

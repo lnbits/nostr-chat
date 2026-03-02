@@ -5,6 +5,12 @@ export interface ContactBirthday {
 }
 
 export interface ContactMetadata {
+  name?: string;
+  about?: string;
+  picture?: string;
+  nip05?: string;
+  lud06?: string;
+  lud16?: string;
   display_name?: string;
   website?: string;
   banner?: string;
@@ -15,13 +21,19 @@ export interface ContactMetadata {
   avatar?: string;
 }
 
+export interface ContactRelay {
+  url: string;
+  read: boolean;
+  write: boolean;
+}
+
 export interface ContactRecord {
   id: number;
   public_key: string;
   name: string;
   given_name: string | null;
   meta: ContactMetadata;
-  relays?: string[];
+  relays?: ContactRelay[];
 }
 
 export interface CreateContactInput {
@@ -29,7 +41,7 @@ export interface CreateContactInput {
   name: string;
   given_name?: string | null;
   meta?: ContactMetadata;
-  relays?: string[];
+  relays?: ContactRelay[];
 }
 
 export interface UpdateContactInput {
@@ -37,5 +49,5 @@ export interface UpdateContactInput {
   name?: string;
   given_name?: string | null;
   meta?: ContactMetadata;
-  relays?: string[];
+  relays?: ContactRelay[];
 }
