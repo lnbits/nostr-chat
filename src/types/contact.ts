@@ -8,6 +8,7 @@ export interface ContactMetadata {
   name?: string;
   about?: string;
   picture?: string;
+  picture_url?: string;
   nip05?: string;
   npub?: string;
   nprofile?: string;

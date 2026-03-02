@@ -1,10 +1,7 @@
 <template>
   <div class="contact-profile">
     <div v-if="showHeader" class="profile-header">
-      <q-avatar color="primary" text-color="white">
-        <img v-if="headerPictureUrl" :src="headerPictureUrl" :alt="headerName">
-        <span v-else>{{ headerAvatar }}</span>
-      </q-avatar>
+      <CachedAvatar :src="headerPictureUrl" :alt="headerName" :fallback="headerAvatar" />
       <div class="profile-header__meta">
         <div class="profile-header__name">{{ headerName }}</div>
         <div class="profile-header__subtitle">{{ headerSubtitle }}</div>
@@ -237,6 +234,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { isValidPubkey } from '@nostr-dev-kit/ndk';
+import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { ContactRecord } from 'src/types/contact';
@@ -310,8 +308,7 @@ const headerAvatar = computed(() => {
 });
 
 const headerPictureUrl = computed(() => {
-  const picture = localProfile.picture.trim();
-  return picture || '';
+  return localProfile.picture.trim();
 });
 
 watch(
@@ -398,11 +395,13 @@ function buildAvatar(value: string): string {
 }
 
 function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
+  const picture = contact.meta.picture ?? contact.meta.picture_url ?? '';
+
   return {
     ...createEmptyContactProfileForm(),
     name: contact.meta.name ?? contact.name ?? '',
     about: contact.meta.about ?? '',
-    picture: contact.meta.picture ?? '',
+    picture,
     nip05: contact.meta.nip05 ?? '',
     lud06: contact.meta.lud06 ?? '',
     lud16: contact.meta.lud16 ?? '',

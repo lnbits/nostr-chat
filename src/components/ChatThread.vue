@@ -11,10 +11,7 @@
           aria-label="Back"
           @click="$emit('back')"
         />
-        <q-avatar color="primary" text-color="white">
-          <img v-if="avatarImageUrl" :src="avatarImageUrl" :alt="chat.name">
-          <span v-else>{{ chat.avatar }}</span>
-        </q-avatar>
+        <CachedAvatar :src="avatarImageUrl" :alt="chat.name" :fallback="chat.avatar" />
         <div class="thread-header__meta">
           <div class="thread-header__name">{{ chat.name }}</div>
           <div class="thread-header__time">Last active {{ headerTime }}</div>
@@ -49,6 +46,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
+import CachedAvatar from 'src/components/CachedAvatar.vue';
 import type { Chat, Message } from 'src/types/chat';
 
 const props = withDefaults(

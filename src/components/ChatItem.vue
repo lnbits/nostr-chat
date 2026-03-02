@@ -7,10 +7,7 @@
     @click="$emit('select', chat.id)"
   >
     <q-item-section avatar>
-      <q-avatar color="primary" text-color="white">
-        <img v-if="avatarImageUrl" :src="avatarImageUrl" :alt="chat.name">
-        <span v-else>{{ chat.avatar }}</span>
-      </q-avatar>
+      <CachedAvatar :src="avatarImageUrl" :alt="chat.name" :fallback="chat.avatar" />
     </q-item-section>
 
     <q-item-section>
@@ -30,6 +27,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Chat } from 'src/types/chat';
+import CachedAvatar from 'src/components/CachedAvatar.vue';
 
 const props = defineProps<{
   chat: Chat;

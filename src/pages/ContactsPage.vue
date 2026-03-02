@@ -43,14 +43,11 @@
               @click="handleSelectContact(contact)"
             >
               <q-item-section avatar>
-                <q-avatar color="primary" text-color="white">
-                  <img
-                    v-if="contactPictureUrl(contact)"
-                    :src="contactPictureUrl(contact)"
-                    :alt="contactListTitle(contact)"
-                  >
-                  <span v-else>{{ contactAvatar(contact) }}</span>
-                </q-avatar>
+                <CachedAvatar
+                  :src="contactPictureUrl(contact)"
+                  :alt="contactListTitle(contact)"
+                  :fallback="contactAvatar(contact)"
+                />
               </q-item-section>
 
               <q-item-section>
@@ -153,6 +150,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';
+import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -240,9 +238,9 @@ function contactPictureUrl(contact: ContactRecord): string {
     return picture;
   }
 
-  const pictureUrl = (contact.meta as Record<string, unknown>).picture_url;
-  if (typeof pictureUrl === 'string' && pictureUrl.trim()) {
-    return pictureUrl.trim();
+  const pictureUrl = contact.meta.picture_url?.trim();
+  if (pictureUrl) {
+    return pictureUrl;
   }
 
   return '';
@@ -295,11 +293,13 @@ function contactListCaption(contact: ContactRecord): string {
 }
 
 function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
+  const picture = contact.meta.picture ?? contact.meta.picture_url ?? '';
+
   return {
     ...createEmptyContactProfileForm(),
     name: contact.meta.name ?? contact.name ?? '',
     about: contact.meta.about ?? '',
-    picture: contact.meta.picture ?? '',
+    picture,
     nip05: contact.meta.nip05 ?? '',
     lud06: contact.meta.lud06 ?? '',
     lud16: contact.meta.lud16 ?? '',
