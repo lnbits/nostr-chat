@@ -4,6 +4,7 @@ import NDK, {
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
+  NDKRelayList,
   type NDKUserProfile,
   type NDKRelayInformation,
   NDKRelayStatus,
@@ -219,6 +220,41 @@ export const useNostrStore = defineStore('nostrStore', () => {
     user.ndk = ndk;
     user.profile = metadata as NDKUserProfile;
     await user.publish();
+  }
+
+  async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
+    const senderPrivateKeyHex = getPrivateKeyHex();
+    if (!senderPrivateKeyHex) {
+      return [];
+    }
+
+    const relayList = normalizeRelays(relayUrls);
+    if (relayList.length === 0) {
+      return [];
+    }
+
+    await ensureRelayConnections(relayList);
+
+    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const user = await signer.user();
+    user.ndk = ndk;
+
+    const relayListEvent = await ndk.fetchEvent({
+      kinds: [NDKKind.RelayList],
+      authors: [user.pubkey]
+    });
+    if (!relayListEvent) {
+      return [];
+    }
+
+    const parsedRelayList = NDKRelayList.from(relayListEvent);
+    const combinedRelays = [
+      ...parsedRelayList.readRelayUrls,
+      ...parsedRelayList.writeRelayUrls,
+      ...parsedRelayList.bothRelayUrls
+    ].map((relay) => String(relay));
+
+    return normalizeRelays(combinedRelays);
   }
 
   function getPrivateKeyHex(): string | null {
@@ -487,6 +523,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     clearPrivateKey,
     ensureRelayConnections,
     fetchRelayNip11Info,
+    fetchMyRelayList,
     getNip05Data,
     getPrivateKeyHex,
     getRelayConnectionState,

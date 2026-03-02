@@ -1,119 +1,182 @@
 <template>
   <SettingsDetailLayout title="Relays" icon="satellite_alt">
     <div class="relays-content">
-      <div class="relays-toolbar">
-        <q-input
-          v-model="newRelay"
-          class="tg-input relays-toolbar__input"
-          outlined
-          dense
-          rounded
-          label="Relay URL"
-          placeholder="wss://example-relay.io"
-          :error="Boolean(relayValidationError)"
-          :error-message="relayValidationError"
-          @keydown.enter.prevent="addRelay"
-        >
-          <template #append>
-            <q-btn
-              unelevated
-              round
-              dense
-              color="primary"
-              icon="add"
-              size="sm"
-              aria-label="Add relay"
-              :disable="!canAddRelay"
-              @click="addRelay"
-            />
-          </template>
-        </q-input>
+      <q-tabs
+        v-model="activeTab"
+        dense
+        no-caps
+        align="left"
+        active-color="primary"
+        indicator-color="primary"
+        class="relays-tabs"
+      >
+        <q-tab name="my" label="My Relays" />
+        <q-tab name="app" label="App Relays" />
+        <q-tab name="contacts" label="Contacts Relays" />
+      </q-tabs>
 
-        <q-btn
-          flat
-          color="primary"
-          label="Restore Default Relays"
-          icon="restart_alt"
-          :disable="!canRestoreDefaults"
-          @click="restoreDefaults"
-        />
-      </div>
+      <q-tab-panels v-model="activeTab" animated class="relays-panels">
+        <q-tab-panel name="my" class="relays-panel">
+          <div v-if="isTabLoading('my')" class="relays-tab-state">Loading relays...</div>
 
-      <q-list bordered separator class="relays-content__list q-mt-md">
-        <q-expansion-item
-          v-for="(relay, index) in relayStore.relays"
-          :key="`${relay}-${index}`"
-          expand-separator
-          class="relay-expansion-item"
-          @show="handleRelayExpand(relay)"
-        >
-          <template #header>
-            <q-item-section avatar class="relay-header-cell">
-              <div class="relay-header-badges">
-                <q-avatar v-if="relayIconUrl(relay)" size="22px" class="relay-icon">
-                  <img
-                    :src="relayIconUrl(relay) || ''"
-                    :alt="`${relay} icon`"
-                    @error="handleRelayIconError(relay)"
-                  />
-                </q-avatar>
-                <q-avatar v-else size="22px" class="relay-icon relay-icon--fallback">
-                  <q-icon name="satellite_alt" size="14px" />
-                </q-avatar>
-
-                <span
-                  class="relay-status-dot"
-                  :class="
-                    isRelayConnected(relay)
-                      ? 'relay-status-dot--connected'
-                      : 'relay-status-dot--disconnected'
-                  "
-                />
-              </div>
-            </q-item-section>
-
-            <q-item-section>
-              <q-item-label>{{ relay }}</q-item-label>
-            </q-item-section>
-
-            <q-item-section side>
-              <q-btn
-                flat
-                round
-                dense
-                icon="delete"
-                color="negative"
-                aria-label="Delete relay"
-                @click.stop="removeRelay(index)"
-              />
-            </q-item-section>
-          </template>
-
-          <div class="relay-expansion-item__body">
-            <div v-if="isRelayInfoLoading(relay)" class="relay-nip11__state">
-              Loading NIP-11 data...
-            </div>
-
-            <div v-else-if="relayInfoError(relay)" class="relay-nip11__state relay-nip11__state--error">
-              <span>{{ relayInfoError(relay) }}</span>
-              <q-btn
-                flat
-                dense
-                no-caps
-                color="negative"
-                label="Retry"
-                @click="retryRelayInfo(relay)"
-              />
-            </div>
-
-            <div v-else-if="relayInfo(relay)">
-              <RelayInfoFields label="NIP-11" :value="relayInfo(relay)" />
-            </div>
-
-            <div v-else class="relay-nip11__state">Expand to load NIP-11 data.</div>
+          <div v-else-if="tabError('my')" class="relays-tab-state relays-tab-state--error">
+            <span>{{ tabError('my') }}</span>
+            <q-btn flat dense no-caps color="negative" label="Retry" @click="reloadTab('my')" />
           </div>
-        </q-expansion-item>
-      </q-list>
+
+          <div v-else-if="relaysForTab('my').length === 0" class="relays-tab-state">
+            {{ emptyMessageForTab('my') }}
+          </div>
+
+        </q-tab-panel>
+
+        <q-tab-panel name="app" class="relays-panel">
+          <div class="relays-toolbar">
+            <q-input
+              v-model="newRelay"
+              class="tg-input relays-toolbar__input"
+              outlined
+              dense
+              rounded
+              label="Relay URL"
+              placeholder="wss://example-relay.io"
+              :error="Boolean(relayValidationError)"
+              :error-message="relayValidationError"
+              @keydown.enter.prevent="addRelay"
+            >
+              <template #append>
+                <q-btn
+                  unelevated
+                  round
+                  dense
+                  color="primary"
+                  icon="add"
+                  size="sm"
+                  aria-label="Add relay"
+                  :disable="!canAddRelay"
+                  @click="addRelay"
+                />
+              </template>
+            </q-input>
+
+            <q-btn
+              flat
+              color="primary"
+              label="Restore Default Relays"
+              icon="restart_alt"
+              :disable="!canRestoreDefaults"
+              @click="restoreDefaults"
+            />
+          </div>
+
+          <div v-if="relaysForTab('app').length === 0" class="relays-tab-state q-mt-md">
+            {{ emptyMessageForTab('app') }}
+          </div>
+
+          <q-list v-else bordered separator class="relays-content__list q-mt-md">
+            <q-expansion-item
+              v-for="(relay, index) in relaysForTab('app')"
+              :key="`app-${relay}-${index}`"
+              expand-separator
+              class="relay-expansion-item"
+              @show="handleRelayExpand(relay)"
+            >
+              <template #header>
+                <q-item-section avatar class="relay-header-cell">
+                  <div class="relay-header-badges">
+                    <q-avatar v-if="relayIconUrl(relay)" size="22px" class="relay-icon">
+                      <img
+                        :src="relayIconUrl(relay) || ''"
+                        :alt="`${relay} icon`"
+                        @error="handleRelayIconError(relay)"
+                      />
+                    </q-avatar>
+                    <q-avatar v-else size="22px" class="relay-icon relay-icon--fallback">
+                      <q-icon name="satellite_alt" size="14px" />
+                    </q-avatar>
+
+                    <span
+                      class="relay-status-dot"
+                      :class="
+                        isRelayConnected(relay)
+                          ? 'relay-status-dot--connected'
+                          : 'relay-status-dot--disconnected'
+                      "
+                    />
+                  </div>
+                </q-item-section>
+
+                <q-item-section>
+                  <q-item-label>{{ relay }}</q-item-label>
+                </q-item-section>
+
+                <q-item-section side>
+                  <q-btn
+                    flat
+                    round
+                    dense
+                    icon="delete"
+                    color="negative"
+                    aria-label="Delete relay"
+                    @click.stop="removeRelay(index)"
+                  />
+                </q-item-section>
+              </template>
+
+              <div class="relay-expansion-item__body">
+                <div v-if="isRelayInfoLoading(relay)" class="relay-nip11__state">
+                  Loading NIP-11 data...
+                </div>
+
+                <div
+                  v-else-if="relayInfoError(relay)"
+                  class="relay-nip11__state relay-nip11__state--error"
+                >
+                  <span>{{ relayInfoError(relay) }}</span>
+                  <q-btn
+                    flat
+                    dense
+                    no-caps
+                    color="negative"
+                    label="Retry"
+                    @click="retryRelayInfo(relay)"
+                  />
+                </div>
+
+                <div v-else-if="relayInfo(relay)">
+                  <RelayInfoFields label="NIP-11" :value="relayInfo(relay)" />
+                </div>
+
+                <div v-else class="relay-nip11__state">Expand to load NIP-11 data.</div>
+              </div>
+            </q-expansion-item>
+          </q-list>
+        </q-tab-panel>
+
+        <q-tab-panel name="contacts" class="relays-panel">
+          <div v-if="isTabLoading('contacts')" class="relays-tab-state">Loading relays...</div>
+
+          <div
+            v-else-if="tabError('contacts')"
+            class="relays-tab-state relays-tab-state--error"
+          >
+            <span>{{ tabError('contacts') }}</span>
+            <q-btn
+              flat
+              dense
+              no-caps
+              color="negative"
+              label="Retry"
+              @click="reloadTab('contacts')"
+            />
+          </div>
+
+          <div v-else-if="relaysForTab('contacts').length === 0" class="relays-tab-state">
+            {{ emptyMessageForTab('contacts') }}
+          </div>
+
+        </q-tab-panel>
+      </q-tab-panels>
     </div>
   </SettingsDetailLayout>
 </template>
@@ -124,16 +187,28 @@ import { normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk'
 import RelayInfoFields from 'src/components/RelayInfoFields.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
+import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 
+type RelayTab = 'my' | 'app' | 'contacts';
+
 const relayStore = useRelayStore();
 const nostrStore = useNostrStore();
+const activeTab = ref<RelayTab>('app');
 const newRelay = ref('');
 const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
 const relayInfoErrorByUrl = ref<Record<string, string>>({});
 const relayInfoLoadingByUrl = ref<Record<string, boolean>>({});
 const relayIconErrorByUrl = ref<Record<string, boolean>>({});
+const myRelays = ref<string[]>([]);
+const contactsRelays = ref<string[]>([]);
+const isLoadingMyRelays = ref(false);
+const isLoadingContactsRelays = ref(false);
+const myRelaysError = ref('');
+const contactsRelaysError = ref('');
+const hasLoadedMyRelays = ref(false);
+const hasLoadedContactsRelays = ref(false);
 const relayValidationError = computed(() => validateRelayUrl(newRelay.value.trim()));
 const canAddRelay = computed(() => {
   const value = newRelay.value.trim();
@@ -146,23 +221,179 @@ const canRestoreDefaults = computed(() => {
 
   return relayStore.relays.some((relay, index) => relay !== DEFAULT_RELAYS[index]);
 });
+const allKnownRelays = computed(() =>
+  uniqueRelays([...relayStore.relays, ...myRelays.value, ...contactsRelays.value])
+);
 
 relayStore.init();
+
 watch(
   () => [...relayStore.relays],
   (relays) => {
+    void prepareRelayDecorations(relays);
+  },
+  { immediate: true }
+);
+
+watch(
+  allKnownRelays,
+  (relays) => {
     pruneRelayInfoCache(relays);
+  },
+  { immediate: true }
+);
 
-    void nostrStore.ensureRelayConnections(relays).catch((error) => {
-      console.warn('Failed to connect relays for status checks', error);
-    });
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === 'my') {
+      void loadMyRelays();
+      return;
+    }
 
-    for (const relay of relays) {
-      void loadRelayInfo(relay);
+    if (tab === 'contacts') {
+      void loadContactsRelays();
     }
   },
   { immediate: true }
 );
+
+function uniqueRelays(relays: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const relay of relays) {
+    const key = relayKey(relay);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(relay);
+  }
+
+  return result;
+}
+
+async function prepareRelayDecorations(relays: string[]): Promise<void> {
+  if (relays.length === 0) {
+    return;
+  }
+
+  await nostrStore.ensureRelayConnections(relays).catch((error) => {
+    console.warn('Failed to connect relays for status checks', error);
+  });
+
+  for (const relay of relays) {
+    void loadRelayInfo(relay);
+  }
+}
+
+async function loadMyRelays(force = false): Promise<void> {
+  if (isLoadingMyRelays.value || (!force && hasLoadedMyRelays.value)) {
+    return;
+  }
+
+  isLoadingMyRelays.value = true;
+  myRelaysError.value = '';
+
+  try {
+    const relays = await nostrStore.fetchMyRelayList(relayStore.relays);
+    myRelays.value = relays;
+    hasLoadedMyRelays.value = true;
+    await prepareRelayDecorations(relays);
+  } catch (error) {
+    myRelays.value = [];
+    myRelaysError.value =
+      error instanceof Error ? error.message : 'Failed to load your relay list.';
+  } finally {
+    isLoadingMyRelays.value = false;
+  }
+}
+
+async function loadContactsRelays(force = false): Promise<void> {
+  if (isLoadingContactsRelays.value || (!force && hasLoadedContactsRelays.value)) {
+    return;
+  }
+
+  isLoadingContactsRelays.value = true;
+  contactsRelaysError.value = '';
+
+  try {
+    await relaysService.init();
+    const relays = await relaysService.listAllRelays();
+    contactsRelays.value = relays;
+    hasLoadedContactsRelays.value = true;
+    await prepareRelayDecorations(relays);
+  } catch (error) {
+    contactsRelays.value = [];
+    contactsRelaysError.value =
+      error instanceof Error ? error.message : 'Failed to load contacts relays.';
+  } finally {
+    isLoadingContactsRelays.value = false;
+  }
+}
+
+function relaysForTab(tab: RelayTab): string[] {
+  if (tab === 'my') {
+    return myRelays.value;
+  }
+
+  if (tab === 'contacts') {
+    return contactsRelays.value;
+  }
+
+  return relayStore.relays;
+}
+
+function isTabLoading(tab: RelayTab): boolean {
+  if (tab === 'my') {
+    return isLoadingMyRelays.value;
+  }
+
+  if (tab === 'contacts') {
+    return isLoadingContactsRelays.value;
+  }
+
+  return false;
+}
+
+function tabError(tab: RelayTab): string {
+  if (tab === 'my') {
+    return myRelaysError.value;
+  }
+
+  if (tab === 'contacts') {
+    return contactsRelaysError.value;
+  }
+
+  return '';
+}
+
+function emptyMessageForTab(tab: RelayTab): string {
+  if (tab === 'my') {
+    return 'No relays found in your kind 10002 relay list.';
+  }
+
+  if (tab === 'contacts') {
+    return 'No contact relays found yet.';
+  }
+
+  return 'No app relays configured.';
+}
+
+function reloadTab(tab: RelayTab): void {
+  if (tab === 'my') {
+    hasLoadedMyRelays.value = false;
+    void loadMyRelays(true);
+    return;
+  }
+
+  if (tab === 'contacts') {
+    hasLoadedContactsRelays.value = false;
+    void loadContactsRelays(true);
+  }
+}
 
 function isRelayConnected(relay: string): boolean {
   void nostrStore.relayStatusVersion;
@@ -303,6 +534,10 @@ function validateRelayUrl(value: string): string {
 }
 
 function removeRelay(index: number): void {
+  if (activeTab.value !== 'app') {
+    return;
+  }
+
   relayStore.removeRelay(index);
 }
 
@@ -316,14 +551,41 @@ function restoreDefaults(): void {
   width: 100%;
 }
 
+.relays-tabs {
+  border-bottom: 1px solid var(--tg-border);
+}
+
+.relays-panels {
+  background: transparent;
+}
+
+.relays-panel {
+  padding: 0;
+}
+
 .relays-toolbar {
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  margin-top: 12px;
 }
 
 .relays-toolbar__input {
   flex: 1;
+}
+
+.relays-tab-state {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.relays-tab-state--error {
+  color: #ef4444;
 }
 
 .relays-content__list {
@@ -395,4 +657,13 @@ body.body--dark .relay-icon--fallback {
   color: #ef4444;
 }
 
+@media (max-width: 640px) {
+  .relays-toolbar {
+    flex-direction: column;
+  }
+
+  .relays-toolbar__input {
+    width: 100%;
+  }
+}
 </style>
