@@ -67,8 +67,17 @@
         </q-scroll-area>
       </aside>
 
-      <section v-if="!isMobile" class="contacts-thread-panel">
-        <ChatThread :chat="chatStore.selectedChat" :messages="currentMessages" @send="handleSend" />
+      <section v-if="!isMobile" class="contacts-detail-panel">
+        <q-scroll-area class="contacts-detail-panel__scroll">
+          <div v-if="selectedContactPubkey" class="contacts-detail-panel__content">
+            <ContactProfile
+              v-model="selectedContactProfile"
+              v-model:pubkey="selectedContactPubkey"
+              :read-only="true"
+            />
+          </div>
+          <div v-else class="contacts-empty-state">Select a contact to view profile.</div>
+        </q-scroll-area>
       </section>
     </div>
 
@@ -134,17 +143,14 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
-import ChatThread from 'src/components/ChatThread.vue';
+import ContactProfile from 'src/components/ContactProfile.vue';
 import { contactsService } from 'src/services/contactsService';
-import { useChatStore } from 'src/stores/chatStore';
-import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { ContactMetadata, ContactRecord } from 'src/types/contact';
+import type { ContactRecord } from 'src/types/contact';
+import { createEmptyContactProfileForm } from 'src/types/contactProfile';
 
 const $q = useQuasar();
 const router = useRouter();
-const chatStore = useChatStore();
-const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
@@ -156,28 +162,19 @@ const newContactIdentifier = ref('');
 const newContactGivenName = ref('');
 const newContactIdentifierError = ref('');
 const selectedContactId = ref<number | null>(null);
+const selectedContactPubkey = ref('');
+const selectedContactProfile = ref(createEmptyContactProfileForm());
 const contacts = ref<ContactRecord[]>([]);
 
 let latestSearchRequestId = 0;
 
 onMounted(() => {
-  void chatStore.init();
-  void messageStore.init();
   void initializeContacts();
 });
 
 watch(contactQuery, (query) => {
   void loadContacts(query);
 });
-
-watch(
-  () => chatStore.selectedChatId,
-  () => {
-    syncSelectedContact();
-  }
-);
-
-const currentMessages = computed(() => messageStore.getMessages(chatStore.selectedChatId));
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   if (section === 'chats') {
@@ -259,20 +256,6 @@ function contactListCaption(contact: ContactRecord): string {
   return '';
 }
 
-function syncSelectedContact(): void {
-  const selectedChatId = chatStore.selectedChatId;
-  if (!selectedChatId) {
-    selectedContactId.value = null;
-    return;
-  }
-
-  const linkedContact = contacts.value.find(
-    (contact) => contact.meta.chatId === selectedChatId
-  );
-
-  selectedContactId.value = linkedContact?.id ?? null;
-}
-
 async function initializeContacts(): Promise<void> {
   try {
     await contactsService.init();
@@ -296,7 +279,15 @@ async function loadContacts(query = ''): Promise<void> {
     }
 
     contacts.value = nextContacts;
-    syncSelectedContact();
+
+    if (
+      selectedContactId.value !== null &&
+      !nextContacts.some((contact) => contact.id === selectedContactId.value)
+    ) {
+      selectedContactId.value = null;
+      selectedContactPubkey.value = '';
+      selectedContactProfile.value = createEmptyContactProfileForm();
+    }
   } catch (error) {
     console.error('Failed to load contacts', error);
   } finally {
@@ -306,54 +297,10 @@ async function loadContacts(query = ''): Promise<void> {
   }
 }
 
-async function ensureChatForContact(contact: ContactRecord): Promise<string | null> {
-  const meta = contact.meta;
-  const chatId = meta.chatId;
-
-  if (chatId && chatStore.chats.some((chat) => chat.id === chatId)) {
-    return chatId;
-  }
-
-  const createdChat = await chatStore.addContact(
-    contactDisplayName(contact) || contact.public_key,
-    contact.public_key
-  );
-  if (!createdChat) {
-    return null;
-  }
-
-  const nextMeta: ContactMetadata = {
-    ...meta,
-    chatId: createdChat.id,
-    avatar: createdChat.avatar
-  };
-
-  const updatedContact = await contactsService.updateContact(contact.id, {
-    meta: nextMeta,
-    relays: contact.relays ?? []
-  });
-  if (updatedContact) {
-    const index = contacts.value.findIndex((entry) => entry.id === contact.id);
-    if (index >= 0) {
-      contacts.value[index] = updatedContact;
-    }
-  }
-
-  return createdChat.id;
-}
-
-async function handleSelectContact(contact: ContactRecord): Promise<void> {
-  const chatId = await ensureChatForContact(contact);
-  if (!chatId) {
-    return;
-  }
-
+function handleSelectContact(contact: ContactRecord): void {
   selectedContactId.value = contact.id;
-  chatStore.selectChat(chatId);
-
-  if (isMobile.value) {
-    void router.push({ name: 'chat', params: { chatId } });
-  }
+  selectedContactPubkey.value = contact.public_key;
+  selectedContactProfile.value = createEmptyContactProfileForm();
 }
 
 function openAddContactDialog(): void {
@@ -433,23 +380,11 @@ async function handleAddContact(): Promise<void> {
     closeAddContactDialog();
     contactQuery.value = '';
     await loadContacts();
-    await handleSelectContact(created);
+    handleSelectContact(created);
   } catch (error) {
     console.error('Failed to create contact', error);
   } finally {
     isCreatingContact.value = false;
-  }
-}
-
-async function handleSend(text: string): Promise<void> {
-  if (!chatStore.selectedChatId) {
-    return;
-  }
-
-  const created = await messageStore.sendMessage(chatStore.selectedChatId, text);
-
-  if (created) {
-    await chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
   }
 }
 </script>
@@ -473,7 +408,7 @@ async function handleSend(text: string): Promise<void> {
 
 .rail-panel,
 .contacts-sidebar,
-.contacts-thread-panel {
+.contacts-detail-panel {
   border: 1px solid var(--tg-border);
   border-radius: 16px;
   overflow: hidden;
@@ -487,6 +422,14 @@ async function handleSend(text: string): Promise<void> {
 .contacts-sidebar {
   display: flex;
   flex-direction: column;
+}
+
+.contacts-detail-panel__scroll {
+  height: 100%;
+}
+
+.contacts-detail-panel__content {
+  padding: 12px;
 }
 
 .contacts-sidebar__top {
@@ -530,6 +473,15 @@ async function handleSend(text: string): Promise<void> {
 .contacts-empty {
   padding: 14px;
   text-align: center;
+  opacity: 0.7;
+}
+
+.contacts-empty-state {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 20px;
   opacity: 0.7;
 }
 
