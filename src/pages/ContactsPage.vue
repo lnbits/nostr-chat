@@ -150,7 +150,10 @@ import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { ContactRecord } from 'src/types/contact';
-import { createEmptyContactProfileForm } from 'src/types/contactProfile';
+import {
+  createEmptyContactProfileForm,
+  type ContactProfileForm
+} from 'src/types/contactProfile';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -270,6 +273,28 @@ function contactListCaption(contact: ContactRecord): string {
   return '';
 }
 
+function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
+  return {
+    ...createEmptyContactProfileForm(),
+    name: contact.meta.name ?? contact.name ?? '',
+    about: contact.meta.about ?? '',
+    picture: contact.meta.picture ?? '',
+    nip05: contact.meta.nip05 ?? '',
+    lud06: contact.meta.lud06 ?? '',
+    lud16: contact.meta.lud16 ?? '',
+    display_name: contact.meta.display_name ?? contact.given_name ?? '',
+    website: contact.meta.website ?? '',
+    banner: contact.meta.banner ?? '',
+    bot: contact.meta.bot === true,
+    birthday: {
+      year: contact.meta.birthday?.year ?? null,
+      month: contact.meta.birthday?.month ?? null,
+      day: contact.meta.birthday?.day ?? null
+    },
+    relays: (contact.relays ?? []).map((relay) => relay.url)
+  };
+}
+
 async function initializeContacts(): Promise<void> {
   try {
     await contactsService.init();
@@ -319,7 +344,7 @@ async function loadContacts(query = ''): Promise<void> {
 function handleSelectContact(contact: ContactRecord, syncRoute = true): void {
   selectedContactId.value = contact.id;
   selectedContactPubkey.value = contact.public_key;
-  selectedContactProfile.value = createEmptyContactProfileForm();
+  selectedContactProfile.value = mapContactToProfileForm(contact);
 
   if (!syncRoute) {
     return;
