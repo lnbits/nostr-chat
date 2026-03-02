@@ -93,9 +93,9 @@
               />
             </div>
 
-            <pre v-else-if="relayInfo(relay)" class="relay-nip11__json">{{
-              formatRelayInfo(relayInfo(relay))
-            }}</pre>
+            <div v-else-if="relayInfo(relay)">
+              <RelayInfoFields label="NIP-11" :value="relayInfo(relay)" />
+            </div>
 
             <div v-else class="relay-nip11__state">Expand to load NIP-11 data.</div>
           </div>
@@ -108,6 +108,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
+import RelayInfoFields from 'src/components/RelayInfoFields.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -226,10 +227,6 @@ function retryRelayInfo(relay: string): void {
   void loadRelayInfo(relay, true);
 }
 
-function formatRelayInfo(value: NDKRelayInformation | null): string {
-  return value ? JSON.stringify(value, null, 2) : '';
-}
-
 function addRelay(): void {
   const value = newRelay.value.trim();
   if (!value || relayValidationError.value) {
@@ -324,15 +321,4 @@ function restoreDefaults(): void {
   color: #ef4444;
 }
 
-.relay-nip11__json {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--tg-border);
-  background: color-mix(in srgb, var(--tg-sidebar) 80%, transparent);
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 </style>
