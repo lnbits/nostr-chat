@@ -82,7 +82,7 @@
 
       <q-card flat bordered class="profile-card q-mt-md">
         <q-card-section class="profile-card__section">
-          <div class="profile-card__title">Extra Metadata Fields (NIP-24 Kind 0)</div>
+          <div class="profile-card__title">Extra Metadata Fields (NIP-24)</div>
 
           <q-input
             v-model="profileMetadata.display_name"

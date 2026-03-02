@@ -16,167 +16,59 @@
 
       <q-tab-panels v-model="activeTab" animated class="relays-panels">
         <q-tab-panel name="my" class="relays-panel">
-          <div v-if="isTabLoading('my')" class="relays-tab-state">Loading relays...</div>
-
-          <div v-else-if="tabError('my')" class="relays-tab-state relays-tab-state--error">
-            <span>{{ tabError('my') }}</span>
-            <q-btn flat dense no-caps color="negative" label="Retry" @click="reloadTab('my')" />
-          </div>
-
-          <div v-else-if="relaysForTab('my').length === 0" class="relays-tab-state">
-            {{ emptyMessageForTab('my') }}
-          </div>
-
+          <RelayEditorPanel
+            v-model:new-relay="myNewRelay"
+            :relays="nip65RelayStore.relays"
+            :relay-validation-error="myRelayValidationError"
+            :can-add-relay="canAddMyRelay"
+            empty-message="No NIP-65 relays configured."
+            :secondary-action-disabled="!canClearMyRelays"
+            secondary-action-label="Clear Relays"
+            secondary-action-icon="delete_sweep"
+            :relay-read-enabled="myRelayReadEnabled"
+            :relay-write-enabled="myRelayWriteEnabled"
+            :relay-icon-url="relayIconUrl"
+            :is-relay-connected="isRelayConnected"
+            :is-relay-info-loading="isRelayInfoLoading"
+            :relay-info-error="relayInfoError"
+            :relay-info="relayInfo"
+            @add-relay="addMyRelay"
+            @remove-relay="removeMyRelay"
+            @secondary-action="clearMyRelays"
+            @relay-expand="handleRelayExpand"
+            @retry-relay-info="retryRelayInfo"
+            @relay-icon-error="handleRelayIconError"
+            @update-relay-read="updateMyRelayRead"
+            @update-relay-write="updateMyRelayWrite"
+          />
         </q-tab-panel>
 
         <q-tab-panel name="app" class="relays-panel">
-          <div class="relays-toolbar">
-            <q-input
-              v-model="newRelay"
-              class="tg-input relays-toolbar__input"
-              outlined
-              dense
-              rounded
-              label="Relay URL"
-              placeholder="wss://example-relay.io"
-              :error="Boolean(relayValidationError)"
-              :error-message="relayValidationError"
-              @keydown.enter.prevent="addRelay"
-            >
-              <template #append>
-                <q-btn
-                  unelevated
-                  round
-                  dense
-                  color="primary"
-                  icon="add"
-                  size="sm"
-                  aria-label="Add relay"
-                  :disable="!canAddRelay"
-                  @click="addRelay"
-                />
-              </template>
-            </q-input>
-
-            <q-btn
-              flat
-              color="primary"
-              label="Restore Default Relays"
-              icon="restart_alt"
-              :disable="!canRestoreDefaults"
-              @click="restoreDefaults"
-            />
-          </div>
-
-          <div v-if="relaysForTab('app').length === 0" class="relays-tab-state q-mt-md">
-            {{ emptyMessageForTab('app') }}
-          </div>
-
-          <q-list v-else bordered separator class="relays-content__list q-mt-md">
-            <q-expansion-item
-              v-for="(relay, index) in relaysForTab('app')"
-              :key="`app-${relay}-${index}`"
-              expand-separator
-              switch-toggle-side
-              class="relay-expansion-item"
-              @show="handleRelayExpand(relay)"
-            >
-              <template #header>
-                <q-item-section avatar class="relay-header-cell">
-                  <div class="relay-header-badges">
-                    <q-avatar v-if="relayIconUrl(relay)" size="22px" class="relay-icon">
-                      <img
-                        :src="relayIconUrl(relay) || ''"
-                        :alt="`${relay} icon`"
-                        @error="handleRelayIconError(relay)"
-                      />
-                    </q-avatar>
-                    <q-avatar v-else size="22px" class="relay-icon relay-icon--fallback">
-                      <q-icon name="satellite_alt" size="14px" />
-                    </q-avatar>
-
-                    <span
-                      class="relay-status-dot"
-                      :class="
-                        isRelayConnected(relay)
-                          ? 'relay-status-dot--connected'
-                          : 'relay-status-dot--disconnected'
-                      "
-                    />
-                  </div>
-                </q-item-section>
-
-                <q-item-section class="relay-url-section">
-                  <q-item-label class="relay-url-label">{{ relay }}</q-item-label>
-                  <div class="relay-io-toggles" @click.stop>
-                    <div class="relay-io-toggle">
-                      <span class="relay-io-toggle__label">Read</span>
-                      <q-toggle
-                        dense
-                        size="xs"
-                        class="relay-io-switch"
-                        color="primary"
-                        :model-value="relayReadEnabled(index)"
-                        @click.stop
-                        @update:model-value="updateRelayRead(index, $event)"
-                      />
-                    </div>
-                    <div class="relay-io-toggle">
-                      <span class="relay-io-toggle__label">Write</span>
-                      <q-toggle
-                        dense
-                        size="xs"
-                        class="relay-io-switch"
-                        color="primary"
-                        :model-value="relayWriteEnabled(index)"
-                        @click.stop
-                        @update:model-value="updateRelayWrite(index, $event)"
-                      />
-                    </div>
-                  </div>
-                </q-item-section>
-
-                <q-item-section side class="relay-header-actions">
-                  <q-btn
-                    flat
-                    round
-                    dense
-                    icon="delete"
-                    color="negative"
-                    aria-label="Delete relay"
-                    @click.stop="removeRelay(index)"
-                  />
-                </q-item-section>
-              </template>
-
-              <div class="relay-expansion-item__body">
-                <div v-if="isRelayInfoLoading(relay)" class="relay-nip11__state">
-                  Loading NIP-11 data...
-                </div>
-
-                <div
-                  v-else-if="relayInfoError(relay)"
-                  class="relay-nip11__state relay-nip11__state--error"
-                >
-                  <span>{{ relayInfoError(relay) }}</span>
-                  <q-btn
-                    flat
-                    dense
-                    no-caps
-                    color="negative"
-                    label="Retry"
-                    @click="retryRelayInfo(relay)"
-                  />
-                </div>
-
-                <div v-else-if="relayInfo(relay)">
-                  <RelayInfoFields label="NIP-11" :value="relayInfo(relay)" />
-                </div>
-
-                <div v-else class="relay-nip11__state">Expand to load NIP-11 data.</div>
-              </div>
-            </q-expansion-item>
-          </q-list>
+          <RelayEditorPanel
+            v-model:new-relay="appNewRelay"
+            :relays="relayStore.relays"
+            :relay-validation-error="appRelayValidationError"
+            :can-add-relay="canAddAppRelay"
+            empty-message="No app relays configured."
+            :secondary-action-disabled="!canRestoreDefaults"
+            secondary-action-label="Restore Default Relays"
+            secondary-action-icon="restart_alt"
+            :relay-read-enabled="appRelayReadEnabled"
+            :relay-write-enabled="appRelayWriteEnabled"
+            :relay-icon-url="relayIconUrl"
+            :is-relay-connected="isRelayConnected"
+            :is-relay-info-loading="isRelayInfoLoading"
+            :relay-info-error="relayInfoError"
+            :relay-info="relayInfo"
+            @add-relay="addAppRelay"
+            @remove-relay="removeAppRelay"
+            @secondary-action="restoreDefaults"
+            @relay-expand="handleRelayExpand"
+            @retry-relay-info="retryRelayInfo"
+            @relay-icon-error="handleRelayIconError"
+            @update-relay-read="updateAppRelayRead"
+            @update-relay-write="updateAppRelayWrite"
+          />
         </q-tab-panel>
 
         <q-tab-panel name="contacts" class="relays-panel">
@@ -197,8 +89,8 @@
             />
           </div>
 
-          <div v-else-if="relaysForTab('contacts').length === 0" class="relays-tab-state">
-            {{ emptyMessageForTab('contacts') }}
+          <div v-else-if="contactsRelays.length === 0" class="relays-tab-state">
+            No contact relays found yet.
           </div>
 
         </q-tab-panel>
@@ -210,35 +102,43 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
-import RelayInfoFields from 'src/components/RelayInfoFields.vue';
+import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
 import { relaysService } from 'src/services/relaysService';
+import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 
 type RelayTab = 'my' | 'app' | 'contacts';
+interface RelayTogglePayload {
+  index: number;
+  value: boolean;
+}
 
 const relayStore = useRelayStore();
+const nip65RelayStore = useNip65RelayStore();
 const nostrStore = useNostrStore();
 const activeTab = ref<RelayTab>('app');
-const newRelay = ref('');
+const appNewRelay = ref('');
+const myNewRelay = ref('');
 const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
 const relayInfoErrorByUrl = ref<Record<string, string>>({});
 const relayInfoLoadingByUrl = ref<Record<string, boolean>>({});
 const relayIconErrorByUrl = ref<Record<string, boolean>>({});
-const myRelays = ref<string[]>([]);
 const contactsRelays = ref<string[]>([]);
-const isLoadingMyRelays = ref(false);
 const isLoadingContactsRelays = ref(false);
-const myRelaysError = ref('');
 const contactsRelaysError = ref('');
-const hasLoadedMyRelays = ref(false);
 const hasLoadedContactsRelays = ref(false);
-const relayValidationError = computed(() => validateRelayUrl(newRelay.value.trim()));
-const canAddRelay = computed(() => {
-  const value = newRelay.value.trim();
-  return value.length > 0 && relayValidationError.value.length === 0;
+const appRelayValidationError = computed(() => validateRelayUrl(appNewRelay.value.trim()));
+const myRelayValidationError = computed(() => validateRelayUrl(myNewRelay.value.trim()));
+const canAddAppRelay = computed(() => {
+  const value = appNewRelay.value.trim();
+  return value.length > 0 && appRelayValidationError.value.length === 0;
+});
+const canAddMyRelay = computed(() => {
+  const value = myNewRelay.value.trim();
+  return value.length > 0 && myRelayValidationError.value.length === 0;
 });
 const canRestoreDefaults = computed(() => {
   if (relayStore.relays.length !== DEFAULT_RELAYS.length) {
@@ -251,24 +151,19 @@ const canRestoreDefaults = computed(() => {
 
   return relayStore.relayEntries.some((entry) => entry.read !== true || entry.write !== true);
 });
+const canClearMyRelays = computed(() => nip65RelayStore.relayEntries.length > 0);
 const allKnownRelays = computed(() =>
-  uniqueRelays([...relayStore.relays, ...myRelays.value, ...contactsRelays.value])
+  uniqueRelays([...relayStore.relays, ...nip65RelayStore.relays, ...contactsRelays.value])
 );
 
 relayStore.init();
-
-watch(
-  () => [...relayStore.relays],
-  (relays) => {
-    void prepareRelayDecorations(relays);
-  },
-  { immediate: true }
-);
+nip65RelayStore.init();
 
 watch(
   allKnownRelays,
   (relays) => {
     pruneRelayInfoCache(relays);
+    void prepareRelayDecorations(relays);
   },
   { immediate: true }
 );
@@ -276,11 +171,6 @@ watch(
 watch(
   activeTab,
   (tab) => {
-    if (tab === 'my') {
-      void loadMyRelays();
-      return;
-    }
-
     if (tab === 'contacts') {
       void loadContactsRelays();
     }
@@ -319,28 +209,6 @@ async function prepareRelayDecorations(relays: string[]): Promise<void> {
   }
 }
 
-async function loadMyRelays(force = false): Promise<void> {
-  if (isLoadingMyRelays.value || (!force && hasLoadedMyRelays.value)) {
-    return;
-  }
-
-  isLoadingMyRelays.value = true;
-  myRelaysError.value = '';
-
-  try {
-    const relays = await nostrStore.fetchMyRelayList(relayStore.relays);
-    myRelays.value = relays;
-    hasLoadedMyRelays.value = true;
-    await prepareRelayDecorations(relays);
-  } catch (error) {
-    myRelays.value = [];
-    myRelaysError.value =
-      error instanceof Error ? error.message : 'Failed to load your relay list.';
-  } finally {
-    isLoadingMyRelays.value = false;
-  }
-}
-
 async function loadContactsRelays(force = false): Promise<void> {
   if (isLoadingContactsRelays.value || (!force && hasLoadedContactsRelays.value)) {
     return;
@@ -354,7 +222,6 @@ async function loadContactsRelays(force = false): Promise<void> {
     const relays = await relaysService.listAllRelays();
     contactsRelays.value = relays;
     hasLoadedContactsRelays.value = true;
-    await prepareRelayDecorations(relays);
   } catch (error) {
     contactsRelays.value = [];
     contactsRelaysError.value =
@@ -364,23 +231,7 @@ async function loadContactsRelays(force = false): Promise<void> {
   }
 }
 
-function relaysForTab(tab: RelayTab): string[] {
-  if (tab === 'my') {
-    return myRelays.value;
-  }
-
-  if (tab === 'contacts') {
-    return contactsRelays.value;
-  }
-
-  return relayStore.relays;
-}
-
 function isTabLoading(tab: RelayTab): boolean {
-  if (tab === 'my') {
-    return isLoadingMyRelays.value;
-  }
-
   if (tab === 'contacts') {
     return isLoadingContactsRelays.value;
   }
@@ -389,10 +240,6 @@ function isTabLoading(tab: RelayTab): boolean {
 }
 
 function tabError(tab: RelayTab): string {
-  if (tab === 'my') {
-    return myRelaysError.value;
-  }
-
   if (tab === 'contacts') {
     return contactsRelaysError.value;
   }
@@ -400,25 +247,7 @@ function tabError(tab: RelayTab): string {
   return '';
 }
 
-function emptyMessageForTab(tab: RelayTab): string {
-  if (tab === 'my') {
-    return 'No relays found in your kind 10002 relay list.';
-  }
-
-  if (tab === 'contacts') {
-    return 'No contact relays found yet.';
-  }
-
-  return 'No app relays configured.';
-}
-
 function reloadTab(tab: RelayTab): void {
-  if (tab === 'my') {
-    hasLoadedMyRelays.value = false;
-    void loadMyRelays(true);
-    return;
-  }
-
   if (tab === 'contacts') {
     hasLoadedContactsRelays.value = false;
     void loadContactsRelays(true);
@@ -532,14 +361,24 @@ function handleRelayIconError(relay: string): void {
   relayIconErrorByUrl.value[relayKey(relay)] = true;
 }
 
-function addRelay(): void {
-  const value = newRelay.value.trim();
-  if (!value || relayValidationError.value) {
+function addAppRelay(): void {
+  const value = appNewRelay.value.trim();
+  if (!value || appRelayValidationError.value) {
     return;
   }
 
   relayStore.addRelay(value);
-  newRelay.value = '';
+  appNewRelay.value = '';
+}
+
+function addMyRelay(): void {
+  const value = myNewRelay.value.trim();
+  if (!value || myRelayValidationError.value) {
+    return;
+  }
+
+  nip65RelayStore.addRelay(value);
+  myNewRelay.value = '';
 }
 
 function validateRelayUrl(value: string): string {
@@ -563,32 +402,52 @@ function validateRelayUrl(value: string): string {
   }
 }
 
-function removeRelay(index: number): void {
-  if (activeTab.value !== 'app') {
-    return;
-  }
-
+function removeAppRelay(index: number): void {
   relayStore.removeRelay(index);
 }
 
-function relayReadEnabled(index: number): boolean {
+function removeMyRelay(index: number): void {
+  nip65RelayStore.removeRelay(index);
+}
+
+function appRelayReadEnabled(index: number): boolean {
   return relayStore.getRelayFlags(index).read;
 }
 
-function relayWriteEnabled(index: number): boolean {
+function appRelayWriteEnabled(index: number): boolean {
   return relayStore.getRelayFlags(index).write;
 }
 
-function updateRelayRead(index: number, value: boolean): void {
-  relayStore.setRelayFlags(index, { read: Boolean(value) });
+function updateAppRelayRead({ index, value }: RelayTogglePayload): void {
+  relayStore.setRelayFlags(index, { read: value });
 }
 
-function updateRelayWrite(index: number, value: boolean): void {
-  relayStore.setRelayFlags(index, { write: Boolean(value) });
+function updateAppRelayWrite({ index, value }: RelayTogglePayload): void {
+  relayStore.setRelayFlags(index, { write: value });
+}
+
+function myRelayReadEnabled(index: number): boolean {
+  return nip65RelayStore.getRelayFlags(index).read;
+}
+
+function myRelayWriteEnabled(index: number): boolean {
+  return nip65RelayStore.getRelayFlags(index).write;
+}
+
+function updateMyRelayRead({ index, value }: RelayTogglePayload): void {
+  nip65RelayStore.setRelayFlags(index, { read: value });
+}
+
+function updateMyRelayWrite({ index, value }: RelayTogglePayload): void {
+  nip65RelayStore.setRelayFlags(index, { write: value });
 }
 
 function restoreDefaults(): void {
   relayStore.restoreDefaults();
+}
+
+function clearMyRelays(): void {
+  nip65RelayStore.restoreDefaults();
 }
 </script>
 
@@ -625,17 +484,6 @@ function restoreDefaults(): void {
   padding: 0;
 }
 
-.relays-toolbar {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.relays-toolbar__input {
-  flex: 1;
-}
-
 .relays-tab-state {
   min-height: 48px;
   display: flex;
@@ -648,167 +496,5 @@ function restoreDefaults(): void {
 
 .relays-tab-state--error {
   color: #ef4444;
-}
-
-.relays-content__list {
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, transparent);
-}
-
-.relay-expansion-item__body {
-  padding: 0 14px 14px;
-}
-
-.relay-status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  display: inline-block;
-}
-
-.relay-header-cell {
-  min-width: 56px;
-}
-
-.relay-header-badges {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.relay-url-section {
-  min-width: 0;
-}
-
-.relay-url-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.relay-header-actions {
-  display: flex;
-  align-items: center;
-  position: relative;
-  margin-left: 8px;
-  padding-left: 8px;
-}
-
-.relay-header-actions::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 1px;
-  height: 22px;
-  transform: translateY(-50%);
-  background: var(--tg-border);
-}
-
-.relay-io-toggles {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  padding: 1px 6px;
-  border: 1px solid var(--tg-border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--tg-sidebar) 84%, transparent);
-  margin-top: 4px;
-}
-
-.relay-io-toggle {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.relay-io-toggle__label {
-  font-size: 10px;
-  line-height: 1;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.relay-io-switch {
-  min-height: 16px;
-  padding: 0;
-}
-
-.relay-icon {
-  border: 1px solid var(--tg-border);
-  background: color-mix(in srgb, var(--tg-sidebar) 84%, transparent);
-}
-
-.relay-icon img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.relay-icon--fallback {
-  color: #64748b;
-}
-
-body.body--dark .relay-icon--fallback {
-  color: #9ca3af;
-}
-
-.relay-status-dot--connected {
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
-}
-
-.relay-status-dot--disconnected {
-  background: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
-}
-
-.relay-nip11__state {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 36px;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.relay-nip11__state--error {
-  color: #ef4444;
-}
-
-@media (max-width: 640px) {
-  .relays-toolbar {
-    flex-direction: column;
-  }
-
-  .relays-toolbar__input {
-    width: 100%;
-  }
-
-  .relay-header-actions {
-    margin-left: 6px;
-    padding-left: 6px;
-  }
-
-  .relay-header-actions::before {
-    height: 18px;
-  }
-
-  .relay-io-toggles {
-    gap: 5px;
-    padding: 1px 5px;
-    margin-top: 4px;
-  }
-
-  .relay-io-toggle {
-    gap: 2px;
-  }
-
-  .relay-io-toggle__label {
-    font-size: 9px;
-  }
 }
 </style>
