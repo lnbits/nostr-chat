@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
+import { contactsService } from 'src/services/contactsService';
 import type { Chat } from 'src/types/chat';
 
 function sortByLatest(chats: Chat[]): Chat[] {
@@ -37,9 +38,52 @@ function parseChatId(value: string): number | null {
   return parsed;
 }
 
-function mapChatRowToChat(row: Awaited<ReturnType<typeof chatDataService.listChats>>[number]): Chat {
+function readMetaString(meta: Record<string, unknown>, key: string): string {
+  const value = meta[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveContactPicture(meta: Record<string, unknown>, contactPicture = ''): string {
+  const metaPicture = readMetaString(meta, 'picture');
+  if (metaPicture) {
+    return metaPicture;
+  }
+
+  const metaPictureUrl = readMetaString(meta, 'picture_url');
+  if (metaPictureUrl) {
+    return metaPictureUrl;
+  }
+
+  const normalizedContactPicture = contactPicture.trim();
+  if (normalizedContactPicture) {
+    return normalizedContactPicture;
+  }
+
+  return '';
+}
+
+function resolvePictureFromContactMeta(meta: Record<string, unknown>): string {
+  const picture = meta.picture;
+  if (typeof picture === 'string' && picture.trim()) {
+    return picture.trim();
+  }
+
+  const pictureUrl = meta.picture_url;
+  if (typeof pictureUrl === 'string' && pictureUrl.trim()) {
+    return pictureUrl.trim();
+  }
+
+  return '';
+}
+
+function mapChatRowToChat(
+  row: Awaited<ReturnType<typeof chatDataService.listChats>>[number],
+  contactPicture = ''
+): Chat {
   const rowMeta = row.meta;
-  const avatarFromMeta = typeof rowMeta.avatar === 'string' ? rowMeta.avatar.trim() : '';
+  const avatarFromMeta = readMetaString(rowMeta, 'avatar');
+  const resolvedPicture = resolveContactPicture(rowMeta, contactPicture);
+  const nextMeta = resolvedPicture ? { ...rowMeta, picture: resolvedPicture } : rowMeta;
   const avatar = avatarFromMeta || buildAvatar(row.name || row.public_key);
 
   return {
@@ -50,7 +94,7 @@ function mapChatRowToChat(row: Awaited<ReturnType<typeof chatDataService.listCha
     lastMessage: row.last_message || '',
     lastMessageAt: row.last_message_at || new Date(0).toISOString(),
     unreadCount: row.unread_count,
-    meta: row.meta
+    meta: nextMeta
   };
 }
 
@@ -69,9 +113,32 @@ export const useChatStore = defineStore('chatStore', () => {
     if (!initPromise) {
       initPromise = (async () => {
         try {
-          await chatDataService.init();
-          const rows = await chatDataService.listChats();
-          chats.value = sortByLatest(rows.map((row) => mapChatRowToChat(row)));
+          await Promise.all([chatDataService.init(), contactsService.init()]);
+          const [rows, contacts] = await Promise.all([
+            chatDataService.listChats(),
+            contactsService.listContacts()
+          ]);
+          const contactPictureByPublicKey = new Map<string, string>();
+
+          for (const contact of contacts) {
+            const picture = resolvePictureFromContactMeta(
+              contact.meta as Record<string, unknown>
+            );
+            if (!picture) {
+              continue;
+            }
+
+            contactPictureByPublicKey.set(contact.public_key.toLowerCase(), picture);
+          }
+
+          chats.value = sortByLatest(
+            rows.map((row) =>
+              mapChatRowToChat(
+                row,
+                contactPictureByPublicKey.get(row.public_key.toLowerCase()) ?? ''
+              )
+            )
+          );
 
           if (selectedChatId.value && chats.value.some((chat) => chat.id === selectedChatId.value)) {
             return;
@@ -157,16 +224,42 @@ export const useChatStore = defineStore('chatStore', () => {
       return null;
     }
 
+    await contactsService.init();
+    const contact = await contactsService.getContactByPublicKey(cleanPublicKey);
+    const contactPicture = contact
+      ? resolvePictureFromContactMeta(contact.meta as Record<string, unknown>)
+      : '';
+
     const existingInStore = chats.value.find(
       (chat) => chat.publicKey.toLowerCase() === cleanPublicKey.toLowerCase()
     );
     if (existingInStore) {
-      return existingInStore;
+      if (!contactPicture || typeof existingInStore.meta.picture === 'string') {
+        return existingInStore;
+      }
+
+      let nextChat: Chat | null = null;
+      chats.value = chats.value.map((chat) => {
+        if (chat.id !== existingInStore.id) {
+          return chat;
+        }
+
+        nextChat = {
+          ...chat,
+          meta: {
+            ...chat.meta,
+            picture: contactPicture
+          }
+        };
+        return nextChat;
+      });
+
+      return nextChat ?? existingInStore;
     }
 
     const existingInDb = await chatDataService.getChatByPublicKey(cleanPublicKey);
     if (existingInDb) {
-      const mapped = mapChatRowToChat(existingInDb);
+      const mapped = mapChatRowToChat(existingInDb, contactPicture);
       if (!chats.value.some((chat) => chat.id === mapped.id)) {
         chats.value = sortByLatest([...chats.value, mapped]);
       }
@@ -181,13 +274,16 @@ export const useChatStore = defineStore('chatStore', () => {
       last_message: '',
       last_message_at: now,
       unread_count: 0,
-      meta: { avatar: buildAvatar(cleanName) }
+      meta: {
+        avatar: buildAvatar(cleanName),
+        ...(contactPicture ? { picture: contactPicture } : {})
+      }
     });
     if (!created) {
       return null;
     }
 
-    const newChat = mapChatRowToChat(created);
+    const newChat = mapChatRowToChat(created, contactPicture);
     chats.value = sortByLatest([...chats.value, newChat]);
     return newChat;
   }

@@ -7,7 +7,10 @@
     @click="$emit('select', chat.id)"
   >
     <q-item-section avatar>
-      <q-avatar color="primary" text-color="white">{{ chat.avatar }}</q-avatar>
+      <q-avatar color="primary" text-color="white">
+        <img v-if="avatarImageUrl" :src="avatarImageUrl" :alt="chat.name">
+        <span v-else>{{ chat.avatar }}</span>
+      </q-avatar>
     </q-item-section>
 
     <q-item-section>
@@ -42,6 +45,20 @@ const formattedTime = computed(() => {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(props.chat.lastMessageAt));
+});
+
+const avatarImageUrl = computed(() => {
+  const picture = props.chat.meta.picture;
+  if (typeof picture === 'string' && picture.trim()) {
+    return picture.trim();
+  }
+
+  const pictureUrl = props.chat.meta.picture_url;
+  if (typeof pictureUrl === 'string' && pictureUrl.trim()) {
+    return pictureUrl.trim();
+  }
+
+  return '';
 });
 </script>
 

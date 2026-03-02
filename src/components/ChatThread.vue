@@ -11,7 +11,10 @@
           aria-label="Back"
           @click="$emit('back')"
         />
-        <q-avatar color="primary" text-color="white">{{ chat.avatar }}</q-avatar>
+        <q-avatar color="primary" text-color="white">
+          <img v-if="avatarImageUrl" :src="avatarImageUrl" :alt="chat.name">
+          <span v-else>{{ chat.avatar }}</span>
+        </q-avatar>
         <div class="thread-header__meta">
           <div class="thread-header__name">{{ chat.name }}</div>
           <div class="thread-header__time">Last active {{ headerTime }}</div>
@@ -78,6 +81,24 @@ const headerTime = computed(() => {
     month: 'short',
     day: 'numeric'
   }).format(new Date(props.chat.lastMessageAt));
+});
+
+const avatarImageUrl = computed(() => {
+  if (!props.chat) {
+    return '';
+  }
+
+  const picture = props.chat.meta.picture;
+  if (typeof picture === 'string' && picture.trim()) {
+    return picture.trim();
+  }
+
+  const pictureUrl = props.chat.meta.picture_url;
+  if (typeof pictureUrl === 'string' && pictureUrl.trim()) {
+    return pictureUrl.trim();
+  }
+
+  return '';
 });
 
 async function scrollToBottom(): Promise<void> {

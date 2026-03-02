@@ -1,7 +1,10 @@
 <template>
   <div class="contact-profile">
     <div v-if="showHeader" class="profile-header">
-      <q-avatar color="primary" text-color="white">{{ headerAvatar }}</q-avatar>
+      <q-avatar color="primary" text-color="white">
+        <img v-if="headerPictureUrl" :src="headerPictureUrl" :alt="headerName">
+        <span v-else>{{ headerAvatar }}</span>
+      </q-avatar>
       <div class="profile-header__meta">
         <div class="profile-header__name">{{ headerName }}</div>
         <div class="profile-header__subtitle">{{ headerSubtitle }}</div>
@@ -153,7 +156,7 @@
             <div>
               <div class="text-body2">Bot</div>
               <div class="text-caption text-grey-6">
-                Mark true if content is partially or fully automated.
+                Content is partially or fully automated.
               </div>
             </div>
 
@@ -209,9 +212,6 @@
             />
           </div>
 
-          <div class="text-caption text-grey-6 q-mt-sm">
-            Each `birthday` field is optional in NIP-24.
-          </div>
         </q-card-section>
       </q-card>
 
@@ -307,6 +307,11 @@ const headerSubtitle = computed(() => {
 
 const headerAvatar = computed(() => {
   return buildAvatar(headerName.value || normalizedHeaderPubkey.value || 'NA');
+});
+
+const headerPictureUrl = computed(() => {
+  const picture = localProfile.picture.trim();
+  return picture || '';
 });
 
 watch(

@@ -43,7 +43,14 @@
               @click="handleSelectContact(contact)"
             >
               <q-item-section avatar>
-                <q-avatar color="primary" text-color="white">{{ contactAvatar(contact) }}</q-avatar>
+                <q-avatar color="primary" text-color="white">
+                  <img
+                    v-if="contactPictureUrl(contact)"
+                    :src="contactPictureUrl(contact)"
+                    :alt="contactListTitle(contact)"
+                  >
+                  <span v-else>{{ contactAvatar(contact) }}</span>
+                </q-avatar>
               </q-item-section>
 
               <q-item-section>
@@ -225,6 +232,20 @@ function contactAvatar(contact: ContactRecord): string {
   }
 
   return buildAvatar(contactDisplayName(contact) || contact.public_key);
+}
+
+function contactPictureUrl(contact: ContactRecord): string {
+  const picture = contact.meta.picture?.trim();
+  if (picture) {
+    return picture;
+  }
+
+  const pictureUrl = (contact.meta as Record<string, unknown>).picture_url;
+  if (typeof pictureUrl === 'string' && pictureUrl.trim()) {
+    return pictureUrl.trim();
+  }
+
+  return '';
 }
 
 function contactDisplayName(contact: ContactRecord): string {
