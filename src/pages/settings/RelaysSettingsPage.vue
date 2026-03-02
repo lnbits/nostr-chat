@@ -110,7 +110,30 @@
                   <q-item-label>{{ relay }}</q-item-label>
                 </q-item-section>
 
-                <q-item-section side>
+                <q-item-section side class="relay-header-actions">
+                  <div class="relay-io-toggles" @click.stop>
+                    <q-toggle
+                      dense
+                      size="sm"
+                      color="primary"
+                      label="read"
+                      class="relay-io-toggle"
+                      :model-value="relayReadEnabled(index)"
+                      @click.stop
+                      @update:model-value="updateRelayRead(index, $event)"
+                    />
+                    <q-toggle
+                      dense
+                      size="sm"
+                      color="primary"
+                      label="write"
+                      class="relay-io-toggle"
+                      :model-value="relayWriteEnabled(index)"
+                      @click.stop
+                      @update:model-value="updateRelayWrite(index, $event)"
+                    />
+                  </div>
+
                   <q-btn
                     flat
                     round
@@ -219,7 +242,11 @@ const canRestoreDefaults = computed(() => {
     return true;
   }
 
-  return relayStore.relays.some((relay, index) => relay !== DEFAULT_RELAYS[index]);
+  if (relayStore.relays.some((relay, index) => relay !== DEFAULT_RELAYS[index])) {
+    return true;
+  }
+
+  return relayStore.relayEntries.some((entry) => entry.read !== true || entry.write !== true);
 });
 const allKnownRelays = computed(() =>
   uniqueRelays([...relayStore.relays, ...myRelays.value, ...contactsRelays.value])
@@ -541,6 +568,22 @@ function removeRelay(index: number): void {
   relayStore.removeRelay(index);
 }
 
+function relayReadEnabled(index: number): boolean {
+  return relayStore.getRelayFlags(index).read;
+}
+
+function relayWriteEnabled(index: number): boolean {
+  return relayStore.getRelayFlags(index).write;
+}
+
+function updateRelayRead(index: number, value: boolean): void {
+  relayStore.setRelayFlags(index, { read: Boolean(value) });
+}
+
+function updateRelayWrite(index: number, value: boolean): void {
+  relayStore.setRelayFlags(index, { write: Boolean(value) });
+}
+
 function restoreDefaults(): void {
   relayStore.restoreDefaults();
 }
@@ -612,6 +655,22 @@ function restoreDefaults(): void {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.relay-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.relay-io-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.relay-io-toggle {
+  font-size: 12px;
 }
 
 .relay-icon {

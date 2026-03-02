@@ -1,14 +1,51 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
 
 const RELAYS_STORAGE_KEY = 'relays';
+
+export interface RelayListEntry {
+  url: string;
+  read: boolean;
+  write: boolean;
+}
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-function readStoredRelays(): string[] | null {
+function normalizeRelayEntry(entry: unknown): RelayListEntry | null {
+  if (typeof entry === 'string') {
+    const url = entry.trim();
+    if (!url) {
+      return null;
+    }
+
+    return {
+      url,
+      read: true,
+      write: true
+    };
+  }
+
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const value = entry as Partial<RelayListEntry>;
+  const url = typeof value.url === 'string' ? value.url.trim() : '';
+  if (!url) {
+    return null;
+  }
+
+  return {
+    url,
+    read: typeof value.read === 'boolean' ? value.read : true,
+    write: typeof value.write === 'boolean' ? value.write : true
+  };
+}
+
+function readStoredRelays(): RelayListEntry[] | null {
   if (!hasStorage()) {
     return null;
   }
@@ -25,8 +62,8 @@ function readStoredRelays(): string[] | null {
     }
 
     const relays = parsed
-      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-      .filter((entry) => entry.length > 0);
+      .map((entry) => normalizeRelayEntry(entry))
+      .filter((entry): entry is RelayListEntry => entry !== null);
 
     return relays;
   } catch (error) {
@@ -35,7 +72,7 @@ function readStoredRelays(): string[] | null {
   }
 }
 
-function writeStoredRelays(relays: string[]): void {
+function writeStoredRelays(relays: RelayListEntry[]): void {
   if (!hasStorage()) {
     return;
   }
@@ -48,8 +85,23 @@ function writeStoredRelays(relays: string[]): void {
 }
 
 export const useRelayStore = defineStore('relayStore', () => {
-  const relays = ref<string[]>([]);
+  const relayEntries = ref<RelayListEntry[]>([]);
+  const relays = computed(() => relayEntries.value.map((entry) => entry.url));
   const isInitialized = ref(false);
+
+  function defaultRelayEntries(): RelayListEntry[] {
+    return DEFAULT_RELAYS.map((url) => ({
+      url,
+      read: true,
+      write: true
+    }));
+  }
+
+  function ensureInitialized(): void {
+    if (!isInitialized.value) {
+      init();
+    }
+  }
 
   function init(): void {
     if (isInitialized.value) {
@@ -57,8 +109,8 @@ export const useRelayStore = defineStore('relayStore', () => {
     }
 
     const storedRelays = readStoredRelays();
-    relays.value = storedRelays ? [...storedRelays] : [...DEFAULT_RELAYS];
-    writeStoredRelays(relays.value);
+    relayEntries.value = storedRelays ? [...storedRelays] : defaultRelayEntries();
+    writeStoredRelays(relayEntries.value);
     isInitialized.value = true;
   }
 
@@ -68,37 +120,70 @@ export const useRelayStore = defineStore('relayStore', () => {
       return;
     }
 
-    if (!isInitialized.value) {
-      init();
-    }
-
-    relays.value = [...relays.value, value];
-    writeStoredRelays(relays.value);
+    ensureInitialized();
+    relayEntries.value = [
+      ...relayEntries.value,
+      {
+        url: value,
+        read: true,
+        write: true
+      }
+    ];
+    writeStoredRelays(relayEntries.value);
   }
 
   function removeRelay(index: number): void {
-    if (!isInitialized.value) {
-      init();
-    }
-
-    relays.value = relays.value.filter((_, relayIndex) => relayIndex !== index);
-    writeStoredRelays(relays.value);
+    ensureInitialized();
+    relayEntries.value = relayEntries.value.filter((_, relayIndex) => relayIndex !== index);
+    writeStoredRelays(relayEntries.value);
   }
 
   function restoreDefaults(): void {
-    if (!isInitialized.value) {
-      init();
+    ensureInitialized();
+    relayEntries.value = defaultRelayEntries();
+    writeStoredRelays(relayEntries.value);
+  }
+
+  function getRelayFlags(index: number): Pick<RelayListEntry, 'read' | 'write'> {
+    ensureInitialized();
+    const entry = relayEntries.value[index];
+    return {
+      read: entry?.read ?? true,
+      write: entry?.write ?? true
+    };
+  }
+
+  function setRelayFlags(index: number, flags: Partial<Pick<RelayListEntry, 'read' | 'write'>>): void {
+    ensureInitialized();
+
+    const current = relayEntries.value[index];
+    if (!current) {
+      return;
     }
 
-    relays.value = [...DEFAULT_RELAYS];
-    writeStoredRelays(relays.value);
+    relayEntries.value = relayEntries.value.map((entry, relayIndex) => {
+      if (relayIndex !== index) {
+        return entry;
+      }
+
+      return {
+        ...entry,
+        read: typeof flags.read === 'boolean' ? flags.read : entry.read,
+        write: typeof flags.write === 'boolean' ? flags.write : entry.write
+      };
+    });
+
+    writeStoredRelays(relayEntries.value);
   }
 
   return {
+    relayEntries,
     relays,
     init,
     addRelay,
     removeRelay,
-    restoreDefaults
+    restoreDefaults,
+    getRelayFlags,
+    setRelayFlags
   };
 });
