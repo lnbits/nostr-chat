@@ -9,7 +9,7 @@
         indicator-color="primary"
         class="relays-tabs"
       >
-        <q-tab name="my" label="My Relays" class="relays-tab" />
+        <q-tab name="my" label="My Relays (NIP-65)" class="relays-tab" />
         <q-tab name="app" label="App Relays" class="relays-tab" />
         <q-tab name="contacts" label="Contacts Relays" class="relays-tab" />
       </q-tabs>
