@@ -226,15 +226,27 @@
       <q-card flat bordered class="profile-card q-mt-md">
         <q-card-section class="profile-card__section">
           <div class="profile-card__title">Relays (NIP-65)</div>
-          <q-input
-            v-model="relayListCsv"
-            class="tg-input"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="Relay URLs"
-            placeholder="wss://relay.one, wss://relay.two"
+
+          <RelayEditorPanel
+            :new-relay="''"
+            :relays="relayList"
+            relay-validation-error=""
+            :can-add-relay="false"
+            empty-message="No relays configured."
+            :show-toolbar="false"
+            :show-secondary-action="false"
+            :relay-toggles-disabled="true"
+            :show-remove-relay-action="false"
+            :relay-read-enabled="relayReadEnabled"
+            :relay-write-enabled="relayWriteEnabled"
+            :relay-icon-url="relayIconUrl"
+            :is-relay-connected="isRelayConnected"
+            :is-relay-info-loading="isRelayInfoLoading"
+            :relay-info-error="relayInfoError"
+            :relay-info="relayInfo"
+            @relay-expand="handleRelayExpand"
+            @retry-relay-info="retryRelayInfo"
+            @relay-icon-error="handleRelayIconError"
           />
         </q-card-section>
       </q-card>
@@ -244,8 +256,9 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { isValidPubkey } from '@nostr-dev-kit/ndk';
+import { isValidPubkey, normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { ContactRecord } from 'src/types/contact';
@@ -281,17 +294,13 @@ const localProfile = reactive<ContactProfileForm>(cloneProfile(props.modelValue)
 const isLoadingContact = ref(false);
 const pubkeyError = ref('');
 const pubkeyInfo = ref('');
+const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
+const relayInfoErrorByUrl = ref<Record<string, string>>({});
+const relayInfoLoadingByUrl = ref<Record<string, boolean>>({});
+const relayIconErrorByUrl = ref<Record<string, boolean>>({});
 let lookupRequestId = 0;
 
-const relayListCsv = computed({
-  get: () => localProfile.relays.join(', '),
-  set: (value: string) => {
-    localProfile.relays = value
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
-  }
-});
+const relayList = computed(() => uniqueRelays(localProfile.relays));
 
 const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
 
@@ -356,6 +365,15 @@ watch(
   { immediate: true }
 );
 
+watch(
+  relayList,
+  (relays) => {
+    pruneRelayInfoCache(relays);
+    void prepareRelayDecorations(relays);
+  },
+  { immediate: true }
+);
+
 function cloneProfile(value: ContactProfileForm): ContactProfileForm {
   return {
     ...(value ?? createEmptyContactProfileForm()),
@@ -403,6 +421,157 @@ function buildAvatar(value: string): string {
   }
 
   return compactValue.slice(0, 2).toUpperCase();
+}
+
+function relayKey(relay: string): string {
+  try {
+    return normalizeRelayUrl(relay);
+  } catch {
+    return relay.trim().toLowerCase();
+  }
+}
+
+function uniqueRelays(relays: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const relay of relays) {
+    const normalized = relay.trim();
+    if (!normalized) {
+      continue;
+    }
+
+    const key = relayKey(normalized);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function pruneRelayInfoCache(relays: string[]): void {
+  const activeRelayKeys = new Set(relays.map((relay) => relayKey(relay)));
+
+  for (const key of Object.keys(relayInfoByUrl.value)) {
+    if (!activeRelayKeys.has(key)) {
+      delete relayInfoByUrl.value[key];
+    }
+  }
+
+  for (const key of Object.keys(relayInfoErrorByUrl.value)) {
+    if (!activeRelayKeys.has(key)) {
+      delete relayInfoErrorByUrl.value[key];
+    }
+  }
+
+  for (const key of Object.keys(relayInfoLoadingByUrl.value)) {
+    if (!activeRelayKeys.has(key)) {
+      delete relayInfoLoadingByUrl.value[key];
+    }
+  }
+
+  for (const key of Object.keys(relayIconErrorByUrl.value)) {
+    if (!activeRelayKeys.has(key)) {
+      delete relayIconErrorByUrl.value[key];
+    }
+  }
+}
+
+async function prepareRelayDecorations(relays: string[]): Promise<void> {
+  if (relays.length === 0) {
+    return;
+  }
+
+  await nostrStore.ensureRelayConnections(relays).catch((error) => {
+    console.warn('Failed to connect relays for status checks', error);
+  });
+
+  for (const relay of relays) {
+    void loadRelayInfo(relay);
+  }
+}
+
+function isRelayConnected(relay: string): boolean {
+  void nostrStore.relayStatusVersion;
+  return nostrStore.getRelayConnectionState(relay) === 'connected';
+}
+
+async function loadRelayInfo(relay: string, force = false): Promise<void> {
+  const key = relayKey(relay);
+
+  if (!force && relayInfoByUrl.value[key]) {
+    return;
+  }
+
+  if (relayInfoLoadingByUrl.value[key]) {
+    return;
+  }
+
+  relayInfoLoadingByUrl.value[key] = true;
+  relayInfoErrorByUrl.value[key] = '';
+
+  try {
+    const nextRelayInfo = await nostrStore.fetchRelayNip11Info(relay, force);
+    relayInfoByUrl.value[key] = nextRelayInfo;
+    relayIconErrorByUrl.value[key] = false;
+  } catch (error) {
+    relayInfoByUrl.value[key] = null;
+    relayInfoErrorByUrl.value[key] =
+      error instanceof Error ? error.message : 'Failed to load relay NIP-11 data.';
+  } finally {
+    relayInfoLoadingByUrl.value[key] = false;
+  }
+}
+
+function handleRelayExpand(relay: string): void {
+  void loadRelayInfo(relay);
+}
+
+function relayInfo(relay: string): NDKRelayInformation | null {
+  return relayInfoByUrl.value[relayKey(relay)] ?? null;
+}
+
+function relayInfoError(relay: string): string {
+  return relayInfoErrorByUrl.value[relayKey(relay)] ?? '';
+}
+
+function isRelayInfoLoading(relay: string): boolean {
+  return relayInfoLoadingByUrl.value[relayKey(relay)] === true;
+}
+
+function retryRelayInfo(relay: string): void {
+  void loadRelayInfo(relay, true);
+}
+
+function relayIconUrl(relay: string): string | null {
+  const key = relayKey(relay);
+  if (relayIconErrorByUrl.value[key]) {
+    return null;
+  }
+
+  const icon = relayInfo(relay)?.icon;
+  if (typeof icon !== 'string') {
+    return null;
+  }
+
+  const trimmed = icon.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function handleRelayIconError(relay: string): void {
+  relayIconErrorByUrl.value[relayKey(relay)] = true;
+}
+
+function relayReadEnabled(): boolean {
+  return true;
+}
+
+function relayWriteEnabled(): boolean {
+  return true;
 }
 
 function mapContactToProfile(contact: ContactRecord): ContactProfileForm {

@@ -1,6 +1,6 @@
 <template>
   <div class="relay-editor-panel">
-    <div class="relays-toolbar">
+    <div v-if="showToolbar" class="relays-toolbar">
       <q-input
         :model-value="newRelay"
         class="tg-input relays-toolbar__input"
@@ -40,11 +40,21 @@
       />
     </div>
 
-    <div v-if="relays.length === 0" class="relays-tab-state q-mt-md">
+    <div
+      v-if="relays.length === 0"
+      class="relays-tab-state"
+      :class="{ 'q-mt-md': showToolbar }"
+    >
       {{ emptyMessage }}
     </div>
 
-    <q-list v-else bordered separator class="relays-content__list q-mt-md">
+    <q-list
+      v-else
+      bordered
+      separator
+      class="relays-content__list"
+      :class="{ 'q-mt-md': showToolbar }"
+    >
       <q-expansion-item
         v-for="(relay, index) in relays"
         :key="`${relay}-${index}`"
@@ -80,14 +90,14 @@
 
           <q-item-section class="relay-url-section">
             <q-item-label class="relay-url-label">{{ relay }}</q-item-label>
-            <div class="relay-io-toggles" @click.stop>
+            <div v-if="showRelayIoToggles" class="relay-io-toggles" @click.stop>
               <div class="relay-io-toggle">
-                
                 <q-toggle
                   dense
                   size="xs"
                   class="relay-io-switch q-mr-sm"
                   color="primary"
+                  :disable="relayTogglesDisabled"
                   :model-value="relayReadEnabled(index)"
                   @click.stop
                   @update:model-value="(value) => emitRelayReadUpdate(index, value)"
@@ -102,6 +112,7 @@
                   size="xs"
                   class="relay-io-switch"
                   color="primary"
+                  :disable="relayTogglesDisabled"
                   :model-value="relayWriteEnabled(index)"
                   @click.stop
                   @update:model-value="(value) => emitRelayWriteUpdate(index, value)"
@@ -110,7 +121,7 @@
             </div>
           </q-item-section>
 
-          <q-item-section side class="relay-header-actions">
+          <q-item-section v-if="showRemoveRelayAction" side class="relay-header-actions">
             <q-btn
               flat
               round
@@ -169,10 +180,14 @@ interface Props {
   relayValidationError: string;
   canAddRelay: boolean;
   emptyMessage: string;
+  showToolbar?: boolean;
   showSecondaryAction?: boolean;
   secondaryActionLabel?: string;
   secondaryActionIcon?: string;
   secondaryActionDisabled?: boolean;
+  showRelayIoToggles?: boolean;
+  relayTogglesDisabled?: boolean;
+  showRemoveRelayAction?: boolean;
   relayReadEnabled: (index: number) => boolean;
   relayWriteEnabled: (index: number) => boolean;
   relayIconUrl: (relay: string) => string | null;
@@ -183,10 +198,14 @@ interface Props {
 }
 
 withDefaults(defineProps<Props>(), {
+  showToolbar: true,
   showSecondaryAction: true,
   secondaryActionLabel: '',
   secondaryActionIcon: 'restart_alt',
-  secondaryActionDisabled: false
+  secondaryActionDisabled: false,
+  showRelayIoToggles: true,
+  relayTogglesDisabled: false,
+  showRemoveRelayAction: true
 });
 
 const emit = defineEmits<{
