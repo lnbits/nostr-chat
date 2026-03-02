@@ -19,216 +19,218 @@
       />
     </div>
 
-    <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
-      <div class="profile-card__title">Contact Lookup</div>
-      <q-input
-        v-model="localPubkey"
-        class="tg-input"
-        outlined
-        dense
-        rounded
-        :readonly="readOnly"
-        label="Public Key"
-        placeholder="hex pubkey or npub"
-        :loading="isLoadingContact"
-        :error="Boolean(pubkeyError)"
-        :error-message="pubkeyError"
-      />
-      <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
-    </div>
-
-    <q-card flat bordered class="profile-card q-mt-md">
-      <q-card-section class="profile-card__section">
-        <div class="profile-card__title">User Metadata (NIP-01)</div>
-
+    <div class="profile-content" :class="{ 'profile-content--with-header': showHeader }">
+      <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
+        <div class="profile-card__title">Contact Lookup</div>
         <q-input
-          v-model="localProfile.name"
+          v-model="localPubkey"
           class="tg-input"
           outlined
           dense
           rounded
           :readonly="readOnly"
-          label="Name"
-          placeholder="Your profile name"
+          label="Public Key"
+          placeholder="hex pubkey or npub"
+          :loading="isLoadingContact"
+          :error="Boolean(pubkeyError)"
+          :error-message="pubkeyError"
         />
+        <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
+      </div>
 
-        <q-input
-          v-model="localProfile.about"
-          class="tg-input q-mt-sm"
-          outlined
-          dense
-          rounded
-          type="textarea"
-          autogrow
-          :readonly="readOnly"
-          label="About"
-          placeholder="Short bio"
-        />
+      <q-card flat bordered class="profile-card q-mt-md">
+        <q-card-section class="profile-card__section">
+          <div class="profile-card__title">User Metadata (NIP-01)</div>
 
-        <q-input
-          v-model="localProfile.picture"
-          class="tg-input q-mt-sm"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="Picture URL"
-          placeholder="https://example.com/avatar.png"
-        />
+          <q-input
+            v-model="localProfile.name"
+            class="tg-input"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="Name"
+            placeholder="Your profile name"
+          />
 
-        <q-input
-          v-model="localProfile.nip05"
-          class="tg-input q-mt-sm"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="NIP-05"
-          placeholder="name@example.com"
-        />
+          <q-input
+            v-model="localProfile.about"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            type="textarea"
+            autogrow
+            :readonly="readOnly"
+            label="About"
+            placeholder="Short bio"
+          />
 
-        <q-input
-          v-model="localProfile.lud16"
-          class="tg-input q-mt-sm"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="Lightning Address"
-          placeholder="name@domain.com"
-        />
+          <q-input
+            v-model="localProfile.picture"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="Picture URL"
+            placeholder="https://example.com/avatar.png"
+          />
 
-        <q-input
-          v-model="localProfile.lud06"
-          class="tg-input q-mt-sm"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="LNURL"
-          placeholder="lnurl1..."
-        />
-      </q-card-section>
-    </q-card>
+          <q-input
+            v-model="localProfile.nip05"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="NIP-05"
+            placeholder="name@example.com"
+          />
 
-    <q-card flat bordered class="profile-card q-mt-md">
-      <q-card-section class="profile-card__section">
-        <div class="profile-card__title">Extra Metadata Fields (NIP-24)</div>
+          <q-input
+            v-model="localProfile.lud16"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="Lightning Address"
+            placeholder="name@domain.com"
+          />
 
-        <q-input
-          v-model="localProfile.display_name"
-          class="tg-input"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="Display Name"
-          placeholder="Alternative display name"
-        />
+          <q-input
+            v-model="localProfile.lud06"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="LNURL"
+            placeholder="lnurl1..."
+          />
+        </q-card-section>
+      </q-card>
 
-        <q-input
-          v-model="localProfile.website"
-          class="tg-input q-mt-sm"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="Website"
-          placeholder="https://example.com"
-        />
+      <q-card flat bordered class="profile-card q-mt-md">
+        <q-card-section class="profile-card__section">
+          <div class="profile-card__title">Extra Metadata Fields (NIP-24)</div>
 
-        <q-input
-          v-model="localProfile.banner"
-          class="tg-input q-mt-sm"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="Banner URL"
-          placeholder="https://example.com/banner.png"
-        />
+          <q-input
+            v-model="localProfile.display_name"
+            class="tg-input"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="Display Name"
+            placeholder="Alternative display name"
+          />
 
-        <div class="profile-card__bot-row q-mt-sm">
-          <div>
-            <div class="text-body2">Bot</div>
-            <div class="text-caption text-grey-6">
-              Mark true if content is partially or fully automated.
+          <q-input
+            v-model="localProfile.website"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="Website"
+            placeholder="https://example.com"
+          />
+
+          <q-input
+            v-model="localProfile.banner"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            :readonly="readOnly"
+            label="Banner URL"
+            placeholder="https://example.com/banner.png"
+          />
+
+          <div class="profile-card__bot-row q-mt-sm">
+            <div>
+              <div class="text-body2">Bot</div>
+              <div class="text-caption text-grey-6">
+                Mark true if content is partially or fully automated.
+              </div>
             </div>
+
+            <q-toggle
+              v-model="localProfile.bot"
+              color="primary"
+              checked-icon="smart_toy"
+              unchecked-icon="person"
+              :disable="readOnly"
+            />
           </div>
 
-          <q-toggle
-            v-model="localProfile.bot"
-            color="primary"
-            checked-icon="smart_toy"
-            unchecked-icon="person"
-            :disable="readOnly"
-          />
-        </div>
+          <div class="profile-card__subtitle q-mt-md">Birthday</div>
+          <div class="profile-card__birthday-grid q-mt-sm">
+            <q-input
+              v-model.number="localProfile.birthday.year"
+              class="tg-input"
+              outlined
+              dense
+              rounded
+              type="number"
+              :readonly="readOnly"
+              label="Year"
+              placeholder="1990"
+            />
 
-        <div class="profile-card__subtitle q-mt-md">Birthday</div>
-        <div class="profile-card__birthday-grid q-mt-sm">
+            <q-input
+              v-model.number="localProfile.birthday.month"
+              class="tg-input"
+              outlined
+              dense
+              rounded
+              type="number"
+              :readonly="readOnly"
+              label="Month"
+              placeholder="1-12"
+              min="1"
+              max="12"
+            />
+
+            <q-input
+              v-model.number="localProfile.birthday.day"
+              class="tg-input"
+              outlined
+              dense
+              rounded
+              type="number"
+              :readonly="readOnly"
+              label="Day"
+              placeholder="1-31"
+              min="1"
+              max="31"
+            />
+          </div>
+
+          <div class="text-caption text-grey-6 q-mt-sm">
+            Each `birthday` field is optional in NIP-24.
+          </div>
+        </q-card-section>
+      </q-card>
+
+      <q-card flat bordered class="profile-card q-mt-md">
+        <q-card-section class="profile-card__section">
+          <div class="profile-card__title">Relays (NIP-65)</div>
           <q-input
-            v-model.number="localProfile.birthday.year"
+            v-model="relayListCsv"
             class="tg-input"
             outlined
             dense
             rounded
-            type="number"
             :readonly="readOnly"
-            label="Year"
-            placeholder="1990"
+            label="Relay URLs"
+            placeholder="wss://relay.one, wss://relay.two"
           />
-
-          <q-input
-            v-model.number="localProfile.birthday.month"
-            class="tg-input"
-            outlined
-            dense
-            rounded
-            type="number"
-            :readonly="readOnly"
-            label="Month"
-            placeholder="1-12"
-            min="1"
-            max="12"
-          />
-
-          <q-input
-            v-model.number="localProfile.birthday.day"
-            class="tg-input"
-            outlined
-            dense
-            rounded
-            type="number"
-            :readonly="readOnly"
-            label="Day"
-            placeholder="1-31"
-            min="1"
-            max="31"
-          />
-        </div>
-
-        <div class="text-caption text-grey-6 q-mt-sm">
-          Each `birthday` field is optional in NIP-24.
-        </div>
-      </q-card-section>
-    </q-card>
-
-    <q-card flat bordered class="profile-card q-mt-md">
-      <q-card-section class="profile-card__section">
-        <div class="profile-card__title">Relays (NIP-65)</div>
-        <q-input
-          v-model="relayListCsv"
-          class="tg-input"
-          outlined
-          dense
-          rounded
-          :readonly="readOnly"
-          label="Relay URLs"
-          placeholder="wss://relay.one, wss://relay.two"
-        />
-      </q-card-section>
-    </q-card>
+        </q-card-section>
+      </q-card>
+    </div>
   </div>
 </template>
 
@@ -467,7 +469,6 @@ async function loadContactFromPubkey(input: string): Promise<void> {
     }
 
     Object.assign(localProfile, mapContactToProfile(contact));
-    pubkeyInfo.value = 'Contact loaded from local database.';
   } catch (error) {
     if (requestId !== lookupRequestId) {
       return;
@@ -486,6 +487,12 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 <style scoped>
 .contact-profile {
   width: 100%;
+  min-height: 100%;
+  background: var(--tg-thread-bg);
+}
+
+.profile-content--with-header {
+  padding: 12px;
 }
 
 .profile-header {
@@ -493,8 +500,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border: 1px solid var(--tg-border);
-  border-radius: 16px;
+  border-bottom: 1px solid var(--tg-border);
   background: var(--tg-sidebar);
 }
 
@@ -523,7 +529,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 }
 
 .profile-lookup--with-header {
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .profile-card {

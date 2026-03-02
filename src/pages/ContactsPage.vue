@@ -529,7 +529,7 @@ async function handleOpenChat(): Promise<void> {
 }
 
 .contacts-detail-panel__content {
-  padding: 12px;
+  padding: 0;
 }
 
 .contacts-sidebar__top {
