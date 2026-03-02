@@ -28,7 +28,7 @@
           outlined
           dense
           rounded
-          :readonly="readOnly"
+          readonly
           label="Public Key"
           placeholder="hex pubkey or npub"
           :loading="isLoadingContact"
@@ -395,7 +395,7 @@ function buildAvatar(value: string): string {
 }
 
 function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
-  const picture = contact.meta.picture ?? contact.meta.picture_url ?? '';
+  const picture = contact.meta.picture ?? '';
 
   return {
     ...createEmptyContactProfileForm(),

@@ -77,7 +77,6 @@ function normalizeContactMeta(value: unknown): ContactMetadata {
   const name = readOptionalString(value.name);
   const about = readOptionalString(value.about);
   const picture = readOptionalString(value.picture);
-  const pictureUrl = readOptionalString(value.picture_url);
   const nip05 = readOptionalString(value.nip05);
   const npub = readOptionalString(value.npub);
   const nprofile = readOptionalString(value.nprofile);
@@ -100,10 +99,6 @@ function normalizeContactMeta(value: unknown): ContactMetadata {
 
   if (picture) {
     meta.picture = picture;
-  }
-
-  if (pictureUrl) {
-    meta.picture_url = pictureUrl;
   }
 
   if (nip05) {

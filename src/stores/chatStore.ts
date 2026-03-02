@@ -49,11 +49,6 @@ function resolveContactPicture(meta: Record<string, unknown>, contactPicture = '
     return metaPicture;
   }
 
-  const metaPictureUrl = readMetaString(meta, 'picture_url');
-  if (metaPictureUrl) {
-    return metaPictureUrl;
-  }
-
   const normalizedContactPicture = contactPicture.trim();
   if (normalizedContactPicture) {
     return normalizedContactPicture;
@@ -66,11 +61,6 @@ function resolvePictureFromContactMeta(meta: Record<string, unknown>): string {
   const picture = meta.picture;
   if (typeof picture === 'string' && picture.trim()) {
     return picture.trim();
-  }
-
-  const pictureUrl = meta.picture_url;
-  if (typeof pictureUrl === 'string' && pictureUrl.trim()) {
-    return pictureUrl.trim();
   }
 
   return '';

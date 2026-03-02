@@ -51,11 +51,6 @@ const avatarImageUrl = computed(() => {
     return picture.trim();
   }
 
-  const pictureUrl = props.chat.meta.picture_url;
-  if (typeof pictureUrl === 'string' && pictureUrl.trim()) {
-    return pictureUrl.trim();
-  }
-
   return '';
 });
 </script>

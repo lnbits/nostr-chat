@@ -238,11 +238,6 @@ function contactPictureUrl(contact: ContactRecord): string {
     return picture;
   }
 
-  const pictureUrl = contact.meta.picture_url?.trim();
-  if (pictureUrl) {
-    return pictureUrl;
-  }
-
   return '';
 }
 
@@ -293,7 +288,7 @@ function contactListCaption(contact: ContactRecord): string {
 }
 
 function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
-  const picture = contact.meta.picture ?? contact.meta.picture_url ?? '';
+  const picture = contact.meta.picture ?? '';
 
   return {
     ...createEmptyContactProfileForm(),
