@@ -22,9 +22,9 @@
             :relay-validation-error="myRelayValidationError"
             :can-add-relay="canAddMyRelay"
             empty-message="No NIP-65 relays configured."
-            :secondary-action-disabled="!canClearMyRelays"
-            secondary-action-label="Clear Relays"
-            secondary-action-icon="delete_sweep"
+            :secondary-action-disabled="!canUseDefaultMyRelays"
+            secondary-action-label="Use Default Relays"
+            secondary-action-icon="restart_alt"
             :relay-read-enabled="myRelayReadEnabled"
             :relay-write-enabled="myRelayWriteEnabled"
             :relay-icon-url="relayIconUrl"
@@ -34,7 +34,7 @@
             :relay-info="relayInfo"
             @add-relay="addMyRelay"
             @remove-relay="removeMyRelay"
-            @secondary-action="clearMyRelays"
+            @secondary-action="useDefaultMyRelays"
             @relay-expand="handleRelayExpand"
             @retry-relay-info="retryRelayInfo"
             @relay-icon-error="handleRelayIconError"
@@ -151,7 +151,17 @@ const canRestoreDefaults = computed(() => {
 
   return relayStore.relayEntries.some((entry) => entry.read !== true || entry.write !== true);
 });
-const canClearMyRelays = computed(() => nip65RelayStore.relayEntries.length > 0);
+const canUseDefaultMyRelays = computed(() => {
+  if (nip65RelayStore.relays.length !== DEFAULT_RELAYS.length) {
+    return true;
+  }
+
+  if (nip65RelayStore.relays.some((relay, index) => relay !== DEFAULT_RELAYS[index])) {
+    return true;
+  }
+
+  return nip65RelayStore.relayEntries.some((entry) => entry.read !== true || entry.write !== true);
+});
 const allKnownRelays = computed(() =>
   uniqueRelays([...relayStore.relays, ...nip65RelayStore.relays, ...contactsRelays.value])
 );
@@ -446,8 +456,11 @@ function restoreDefaults(): void {
   relayStore.restoreDefaults();
 }
 
-function clearMyRelays(): void {
+function useDefaultMyRelays(): void {
   nip65RelayStore.restoreDefaults();
+  for (const relay of DEFAULT_RELAYS) {
+    nip65RelayStore.addRelay(relay);
+  }
 }
 </script>
 
