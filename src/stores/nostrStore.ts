@@ -66,6 +66,12 @@ export interface PublishUserMetadataInput {
   };
 }
 
+export interface RelayListMetadataEntry {
+  url: string;
+  read?: boolean;
+  write?: boolean;
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 
@@ -110,6 +116,49 @@ function normalizeRelays(value: unknown): string[] {
   }
 
   return Array.from(uniqueRelays);
+}
+
+function normalizeRelayListEntries(entries: RelayListMetadataEntry[]): ContactRelay[] {
+  const uniqueRelays = new Map<string, ContactRelay>();
+
+  for (const entry of entries) {
+    if (!entry || typeof entry.url !== 'string') {
+      continue;
+    }
+
+    const rawRelayUrl = entry.url.trim();
+    if (!rawRelayUrl) {
+      continue;
+    }
+
+    let normalizedRelayUrl: string;
+    try {
+      normalizedRelayUrl = normalizeRelayUrl(rawRelayUrl);
+    } catch {
+      continue;
+    }
+
+    const read = entry.read !== false;
+    const write = entry.write !== false;
+    if (!read && !write) {
+      continue;
+    }
+
+    const existing = uniqueRelays.get(normalizedRelayUrl);
+    if (existing) {
+      existing.read = existing.read || read;
+      existing.write = existing.write || write;
+      continue;
+    }
+
+    uniqueRelays.set(normalizedRelayUrl, {
+      url: normalizedRelayUrl,
+      read,
+      write
+    });
+  }
+
+  return Array.from(uniqueRelays.values());
 }
 
 export const useNostrStore = defineStore('nostrStore', () => {
@@ -485,6 +534,72 @@ export const useNostrStore = defineStore('nostrStore', () => {
     user.ndk = ndk;
     user.profile = metadata as NDKUserProfile;
     await user.publish();
+  }
+
+  async function publishMyRelayList(
+    relayEntries: RelayListMetadataEntry[],
+    publishRelayUrls: string[] = []
+  ): Promise<void> {
+    const senderPrivateKeyHex = getPrivateKeyHex();
+    if (!senderPrivateKeyHex) {
+      throw new Error('Missing private key in localStorage. Login is required.');
+    }
+
+    const normalizedRelayEntries = normalizeRelayListEntries(relayEntries);
+    const relayUrls = normalizeRelays([
+      ...publishRelayUrls,
+      ...normalizedRelayEntries.map((relay) => relay.url)
+    ]);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish relay list without at least one publish relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+    getOrCreateSigner(senderPrivateKeyHex);
+
+    const relayListEvent = new NDKRelayList(ndk);
+    relayListEvent.content = '';
+    relayListEvent.tags = [];
+    relayListEvent.bothRelayUrls = normalizedRelayEntries
+      .filter((relay) => relay.read && relay.write)
+      .map((relay) => relay.url);
+    relayListEvent.readRelayUrls = normalizedRelayEntries
+      .filter((relay) => relay.read && !relay.write)
+      .map((relay) => relay.url);
+    relayListEvent.writeRelayUrls = normalizedRelayEntries
+      .filter((relay) => !relay.read && relay.write)
+      .map((relay) => relay.url);
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    await relayListEvent.publishReplaceable(relaySet);
+  }
+
+  async function updateLoggedInUserRelayList(
+    relayEntries: RelayListMetadataEntry[]
+  ): Promise<void> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      return;
+    }
+
+    const normalizedRelayEntries = normalizeRelayListEntries(relayEntries);
+    await contactsService.init();
+
+    const existingContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
+    if (!existingContact) {
+      await contactsService.createContact({
+        public_key: loggedInPubkeyHex,
+        name: loggedInPubkeyHex.slice(0, 16),
+        given_name: null,
+        meta: {},
+        relays: normalizedRelayEntries
+      });
+      return;
+    }
+
+    await contactsService.updateContact(existingContact.id, {
+      relays: normalizedRelayEntries
+    });
   }
 
   async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
@@ -886,11 +1001,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getPrivateKeyHex,
     getRelayConnectionState,
     publishUserMetadata,
+    publishMyRelayList,
     relayStatusVersion,
     resolveIdentifier,
     sendDirectMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
+    updateLoggedInUserRelayList,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
     validateNpub,

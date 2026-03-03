@@ -130,6 +130,8 @@ const contactsRelays = ref<string[]>([]);
 const isLoadingContactsRelays = ref(false);
 const contactsRelaysError = ref('');
 const hasLoadedContactsRelays = ref(false);
+let myRelaysSyncPromise: Promise<void> | null = null;
+let hasPendingMyRelaysSync = false;
 const appRelayValidationError = computed(() => validateRelayUrl(appNewRelay.value.trim()));
 const myRelayValidationError = computed(() => validateRelayUrl(myNewRelay.value.trim()));
 const canAddAppRelay = computed(() => {
@@ -389,6 +391,7 @@ function addMyRelay(): void {
 
   nip65RelayStore.addRelay(value);
   myNewRelay.value = '';
+  queueMyRelaysSync();
 }
 
 function validateRelayUrl(value: string): string {
@@ -418,6 +421,7 @@ function removeAppRelay(index: number): void {
 
 function removeMyRelay(index: number): void {
   nip65RelayStore.removeRelay(index);
+  queueMyRelaysSync();
 }
 
 function appRelayReadEnabled(index: number): boolean {
@@ -461,6 +465,32 @@ function useDefaultMyRelays(): void {
   for (const relay of DEFAULT_RELAYS) {
     nip65RelayStore.addRelay(relay);
   }
+
+  queueMyRelaysSync();
+}
+
+function queueMyRelaysSync(): void {
+  hasPendingMyRelaysSync = true;
+
+  if (myRelaysSyncPromise) {
+    return;
+  }
+
+  myRelaysSyncPromise = (async () => {
+    while (hasPendingMyRelaysSync) {
+      hasPendingMyRelaysSync = false;
+      const relayEntriesSnapshot = nip65RelayStore.relayEntries.map((entry) => ({ ...entry }));
+
+      try {
+        await nostrStore.publishMyRelayList(relayEntriesSnapshot, relayStore.relays);
+        await nostrStore.updateLoggedInUserRelayList(relayEntriesSnapshot);
+      } catch (error) {
+        console.error('Failed to sync My Relays updates', error);
+      }
+    }
+  })().finally(() => {
+    myRelaysSyncPromise = null;
+  });
 }
 </script>
 
