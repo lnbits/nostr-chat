@@ -225,7 +225,19 @@
 
       <q-card flat bordered class="profile-card q-mt-md">
         <q-card-section class="profile-card__section">
-          <div class="profile-card__title">Relays (NIP-65)</div>
+          <div class="profile-card__title-row">
+            <div class="profile-card__title">Relays (NIP-65)</div>
+            <q-btn
+              v-if="props.showRelaysEditAction"
+              flat
+              dense
+              round
+              icon="edit"
+              color="primary"
+              aria-label="Edit relays"
+              @click="emit('open-relays-settings')"
+            />
+          </div>
 
           <RelayEditorPanel
             :new-relay="''"
@@ -272,17 +284,20 @@ interface Props {
   pubkey: string;
   readOnly?: boolean;
   showHeader?: boolean;
+  showRelaysEditAction?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   readOnly: false,
-  showHeader: false
+  showHeader: false,
+  showRelaysEditAction: false
 });
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: ContactProfileForm): void;
   (event: 'update:pubkey', value: string): void;
   (event: 'open-chat'): void;
+  (event: 'open-relays-settings'): void;
 }>();
 
 const nostrStore = useNostrStore();
@@ -750,6 +765,16 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 4px;
+}
+
+.profile-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-card__title-row .profile-card__title {
+  margin-bottom: 0;
 }
 
 .profile-card__subtitle {

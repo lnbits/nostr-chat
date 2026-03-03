@@ -11,12 +11,19 @@
       />
     </template>
 
-    <ContactProfile v-model="profileMetadata" v-model:pubkey="profilePubkey" :read-only="false" />
+    <ContactProfile
+      v-model="profileMetadata"
+      v-model:pubkey="profilePubkey"
+      :read-only="false"
+      :show-relays-edit-action="true"
+      @open-relays-settings="handleOpenRelaysSettings"
+    />
   </SettingsDetailLayout>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import ContactProfile from 'src/components/ContactProfile.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
@@ -26,6 +33,7 @@ import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 
 const $q = useQuasar();
+const router = useRouter();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
 const isPublishing = ref(false);
@@ -96,6 +104,10 @@ function buildPublishPayload(): PublishUserMetadataInput {
   }
 
   return payload;
+}
+
+function handleOpenRelaysSettings(): void {
+  void router.push({ name: 'settings-relays' });
 }
 
 async function handlePublish(): Promise<void> {
