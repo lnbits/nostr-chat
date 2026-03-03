@@ -49,219 +49,237 @@
         <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
       </div>
 
-      <q-card flat bordered class="profile-card q-mt-md">
-        <q-card-section class="profile-card__section">
-          <div class="profile-card__title">User Metadata (NIP-01)</div>
+      <q-list bordered separator class="profile-sections q-mt-md">
+        <q-expansion-item
+          default-opened
+          expand-separator
+          switch-toggle-side
+          class="profile-section"
+        >
+          <template #header>
+            <q-item-section>
+              <q-item-label class="profile-card__title">User Metadata (NIP-01)</q-item-label>
+            </q-item-section>
+          </template>
 
-          <q-input
-            v-model="localProfile.name"
-            class="tg-input"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="Name"
-            placeholder="Your profile name"
-          />
+          <div class="profile-card__section profile-section__content">
+            <q-input
+              v-model="localProfile.name"
+              class="tg-input"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="Name"
+              placeholder="Your profile name"
+            />
 
-          <q-input
-            v-model="localProfile.about"
-            class="tg-input q-mt-sm"
-            outlined
-            dense
-            rounded
-            type="textarea"
-            autogrow
-            :readonly="readOnly"
-            label="About"
-            placeholder="Short bio"
-          />
+            <q-input
+              v-model="localProfile.about"
+              class="tg-input q-mt-sm"
+              outlined
+              dense
+              rounded
+              type="textarea"
+              autogrow
+              :readonly="readOnly"
+              label="About"
+              placeholder="Short bio"
+            />
 
-          <q-input
-            v-model="localProfile.picture"
-            class="tg-input q-mt-sm"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="Picture URL"
-            placeholder="https://example.com/avatar.png"
-          />
+            <q-input
+              v-model="localProfile.picture"
+              class="tg-input q-mt-sm"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="Picture URL"
+              placeholder="https://example.com/avatar.png"
+            />
 
-          <q-input
-            v-model="localProfile.nip05"
-            class="tg-input q-mt-sm"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="NIP-05"
-            placeholder="name@example.com"
-          />
+            <q-input
+              v-model="localProfile.nip05"
+              class="tg-input q-mt-sm"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="NIP-05"
+              placeholder="name@example.com"
+            />
 
-          <q-input
-            v-model="localProfile.lud16"
-            class="tg-input q-mt-sm"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="Lightning Address"
-            placeholder="name@domain.com"
-          />
+            <q-input
+              v-model="localProfile.lud16"
+              class="tg-input q-mt-sm"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="Lightning Address"
+              placeholder="name@domain.com"
+            />
 
-          <q-input
-            v-model="localProfile.lud06"
-            class="tg-input q-mt-sm"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="LNURL"
-            placeholder="lnurl1..."
-          />
-        </q-card-section>
-      </q-card>
+            <q-input
+              v-model="localProfile.lud06"
+              class="tg-input q-mt-sm"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="LNURL"
+              placeholder="lnurl1..."
+            />
+          </div>
+        </q-expansion-item>
 
-      <q-card flat bordered class="profile-card q-mt-md">
-        <q-card-section class="profile-card__section">
-          <div class="profile-card__title">Extra Metadata Fields (NIP-24)</div>
+        <q-expansion-item expand-separator switch-toggle-side class="profile-section">
+          <template #header>
+            <q-item-section>
+              <q-item-label class="profile-card__title">Extra Metadata Fields (NIP-24)</q-item-label>
+            </q-item-section>
+          </template>
 
-          <q-input
-            v-model="localProfile.display_name"
-            class="tg-input"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="Display Name"
-            placeholder="Alternative display name"
-          />
+          <div class="profile-card__section profile-section__content">
+            <q-input
+              v-model="localProfile.display_name"
+              class="tg-input"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="Display Name"
+              placeholder="Alternative display name"
+            />
 
-          <q-input
-            v-model="localProfile.website"
-            class="tg-input q-mt-sm"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="Website"
-            placeholder="https://example.com"
-          />
+            <q-input
+              v-model="localProfile.website"
+              class="tg-input q-mt-sm"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="Website"
+              placeholder="https://example.com"
+            />
 
-          <q-input
-            v-model="localProfile.banner"
-            class="tg-input q-mt-sm"
-            outlined
-            dense
-            rounded
-            :readonly="readOnly"
-            label="Banner URL"
-            placeholder="https://example.com/banner.png"
-          />
+            <q-input
+              v-model="localProfile.banner"
+              class="tg-input q-mt-sm"
+              outlined
+              dense
+              rounded
+              :readonly="readOnly"
+              label="Banner URL"
+              placeholder="https://example.com/banner.png"
+            />
 
-          <div class="profile-card__bot-row q-mt-sm">
-            <div>
-              <div class="text-body2">Bot</div>
-              <div class="text-caption text-grey-6">
-                Content is partially or fully automated.
+            <div class="profile-card__bot-row q-mt-sm">
+              <div>
+                <div class="text-body2">Bot</div>
+                <div class="text-caption text-grey-6">
+                  Content is partially or fully automated.
+                </div>
               </div>
+
+              <q-toggle
+                v-model="localProfile.bot"
+                color="primary"
+                checked-icon="smart_toy"
+                unchecked-icon="person"
+                :disable="readOnly"
+              />
             </div>
 
-            <q-toggle
-              v-model="localProfile.bot"
-              color="primary"
-              checked-icon="smart_toy"
-              unchecked-icon="person"
-              :disable="readOnly"
+            <div class="profile-card__subtitle q-mt-md">Birthday</div>
+            <div class="profile-card__birthday-grid q-mt-sm">
+              <q-input
+                v-model.number="localProfile.birthday.year"
+                class="tg-input"
+                outlined
+                dense
+                rounded
+                type="number"
+                :readonly="readOnly"
+                label="Year"
+                placeholder="1990"
+              />
+
+              <q-input
+                v-model.number="localProfile.birthday.month"
+                class="tg-input"
+                outlined
+                dense
+                rounded
+                type="number"
+                :readonly="readOnly"
+                label="Month"
+                placeholder="1-12"
+                min="1"
+                max="12"
+              />
+
+              <q-input
+                v-model.number="localProfile.birthday.day"
+                class="tg-input"
+                outlined
+                dense
+                rounded
+                type="number"
+                :readonly="readOnly"
+                label="Day"
+                placeholder="1-31"
+                min="1"
+                max="31"
+              />
+            </div>
+          </div>
+        </q-expansion-item>
+
+        <q-expansion-item expand-separator switch-toggle-side class="profile-section">
+          <template #header>
+            <q-item-section>
+              <div class="profile-card__title-row">
+                <div class="profile-card__title">Relays (NIP-65)</div>
+                <q-btn
+                  v-if="props.showRelaysEditAction"
+                  flat
+                  dense
+                  round
+                  icon="edit"
+                  color="primary"
+                  aria-label="Edit relays"
+                  @click.stop="emit('open-relays-settings')"
+                />
+              </div>
+            </q-item-section>
+          </template>
+
+          <div class="profile-card__section profile-section__content">
+            <RelayEditorPanel
+              :new-relay="''"
+              :relays="relayList"
+              relay-validation-error=""
+              :can-add-relay="false"
+              empty-message="No relays configured."
+              :show-toolbar="false"
+              :show-secondary-action="false"
+              :relay-toggles-disabled="true"
+              :show-remove-relay-action="false"
+              :relay-read-enabled="relayReadEnabled"
+              :relay-write-enabled="relayWriteEnabled"
+              :relay-icon-url="relayIconUrl"
+              :is-relay-connected="isRelayConnected"
+              :is-relay-info-loading="isRelayInfoLoading"
+              :relay-info-error="relayInfoError"
+              :relay-info="relayInfo"
+              @relay-expand="handleRelayExpand"
+              @retry-relay-info="retryRelayInfo"
+              @relay-icon-error="handleRelayIconError"
             />
           </div>
-
-          <div class="profile-card__subtitle q-mt-md">Birthday</div>
-          <div class="profile-card__birthday-grid q-mt-sm">
-            <q-input
-              v-model.number="localProfile.birthday.year"
-              class="tg-input"
-              outlined
-              dense
-              rounded
-              type="number"
-              :readonly="readOnly"
-              label="Year"
-              placeholder="1990"
-            />
-
-            <q-input
-              v-model.number="localProfile.birthday.month"
-              class="tg-input"
-              outlined
-              dense
-              rounded
-              type="number"
-              :readonly="readOnly"
-              label="Month"
-              placeholder="1-12"
-              min="1"
-              max="12"
-            />
-
-            <q-input
-              v-model.number="localProfile.birthday.day"
-              class="tg-input"
-              outlined
-              dense
-              rounded
-              type="number"
-              :readonly="readOnly"
-              label="Day"
-              placeholder="1-31"
-              min="1"
-              max="31"
-            />
-          </div>
-
-        </q-card-section>
-      </q-card>
-
-      <q-card flat bordered class="profile-card q-mt-md">
-        <q-card-section class="profile-card__section">
-          <div class="profile-card__title-row">
-            <div class="profile-card__title">Relays (NIP-65)</div>
-            <q-btn
-              v-if="props.showRelaysEditAction"
-              flat
-              dense
-              round
-              icon="edit"
-              color="primary"
-              aria-label="Edit relays"
-              @click="emit('open-relays-settings')"
-            />
-          </div>
-
-          <RelayEditorPanel
-            :new-relay="''"
-            :relays="relayList"
-            relay-validation-error=""
-            :can-add-relay="false"
-            empty-message="No relays configured."
-            :show-toolbar="false"
-            :show-secondary-action="false"
-            :relay-toggles-disabled="true"
-            :show-remove-relay-action="false"
-            :relay-read-enabled="relayReadEnabled"
-            :relay-write-enabled="relayWriteEnabled"
-            :relay-icon-url="relayIconUrl"
-            :is-relay-connected="isRelayConnected"
-            :is-relay-info-loading="isRelayInfoLoading"
-            :relay-info-error="relayInfoError"
-            :relay-info="relayInfo"
-            @relay-expand="handleRelayExpand"
-            @retry-relay-info="retryRelayInfo"
-            @relay-icon-error="handleRelayIconError"
-          />
-        </q-card-section>
-      </q-card>
+        </q-expansion-item>
+      </q-list>
     </div>
   </div>
 </template>
@@ -750,6 +768,19 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
 .profile-lookup--with-header {
   margin-top: 0;
+}
+
+.profile-sections {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+}
+
+.profile-sections :deep(.q-expansion-item + .q-expansion-item) {
+  border-top: 1px solid var(--tg-border);
+}
+
+.profile-section__content {
+  padding: 0 14px 14px;
 }
 
 .profile-card {
