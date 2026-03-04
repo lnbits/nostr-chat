@@ -21,7 +21,12 @@ import NDK, {
 } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import type { ContactMetadata, ContactRelay, ContactRecord } from 'src/types/contact';
+import {
+  inputSanitizerService,
+  type NpubValidationResult,
+  type NsecValidationResult
+} from 'src/services/inputSanitizerService';
+import type { ContactMetadata, ContactRecord } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -32,15 +37,8 @@ export interface NostrIdentifierResolutionResult {
   error: 'invalid' | 'nip05_unresolved' | null;
 }
 
-export interface NostrNpubValidationResult {
-  isValid: boolean;
-  normalizedPubkey: string | null;
-}
-
-export interface NostrNsecValidationResult {
-  isValid: boolean;
-  hexPrivateKey: string | null;
-}
+export type NostrNpubValidationResult = NpubValidationResult;
+export type NostrNsecValidationResult = NsecValidationResult;
 
 export interface NostrNip05DataResult {
   isValid: boolean;
@@ -81,88 +79,6 @@ function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function normalizeHexKey(value: string): string | null {
-  const normalized = value.trim().toLowerCase();
-  return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
-}
-
-function extractNip05Name(identifier: string): string | null {
-  const [namePart] = identifier.split('@');
-  const normalized = namePart?.trim();
-  return normalized || null;
-}
-
-function normalizeRelays(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  const uniqueRelays = new Set<string>();
-  for (const entry of value) {
-    if (typeof entry !== 'string') {
-      continue;
-    }
-
-    const relay = entry.trim();
-    if (!relay) {
-      continue;
-    }
-
-    uniqueRelays.add(relay);
-  }
-
-  return Array.from(uniqueRelays);
-}
-
-function normalizeRelayListEntries(entries: RelayListMetadataEntry[]): ContactRelay[] {
-  const uniqueRelays = new Map<string, ContactRelay>();
-
-  for (const entry of entries) {
-    if (!entry || typeof entry.url !== 'string') {
-      continue;
-    }
-
-    const rawRelayUrl = entry.url.trim();
-    if (!rawRelayUrl) {
-      continue;
-    }
-
-    let normalizedRelayUrl: string;
-    try {
-      normalizedRelayUrl = normalizeRelayUrl(rawRelayUrl);
-    } catch {
-      continue;
-    }
-
-    const read = entry.read !== false;
-    const write = entry.write !== false;
-    if (!read && !write) {
-      continue;
-    }
-
-    const existing = uniqueRelays.get(normalizedRelayUrl);
-    if (existing) {
-      existing.read = existing.read || read;
-      existing.write = existing.write || write;
-      continue;
-    }
-
-    uniqueRelays.set(normalizedRelayUrl, {
-      url: normalizedRelayUrl,
-      read,
-      write
-    });
-  }
-
-  return Array.from(uniqueRelays.values());
-}
-
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
   const INITIAL_CONNECT_TIMEOUT_MS = 3000;
@@ -189,7 +105,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return null;
     }
 
-    const fromHex = normalizeHexKey(stored);
+    const fromHex = inputSanitizerService.normalizeHexKey(stored);
     if (fromHex) {
       return fromHex;
     }
@@ -213,50 +129,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     } catch {
       return null;
     }
-  }
-
-  function normalizeRelayEntries(relayUrls: string[]): ContactRelay[] {
-    const uniqueRelays = new Set<string>();
-    for (const relayUrl of relayUrls) {
-      const normalizedRelay = relayUrl.trim();
-      if (!normalizedRelay) {
-        continue;
-      }
-
-      uniqueRelays.add(normalizedRelay);
-    }
-
-    return Array.from(uniqueRelays).map((url) => ({
-      url,
-      read: true,
-      write: true
-    }));
-  }
-
-  function normalizeReadableRelayUrls(relays: ContactRelay[] | undefined): string[] {
-    if (!Array.isArray(relays)) {
-      return [];
-    }
-
-    const uniqueRelays = new Set<string>();
-    for (const relay of relays) {
-      if (!relay || relay.read === false) {
-        continue;
-      }
-
-      const relayUrl = typeof relay.url === 'string' ? relay.url.trim() : '';
-      if (!relayUrl) {
-        continue;
-      }
-
-      try {
-        uniqueRelays.add(normalizeRelayUrl(relayUrl));
-      } catch {
-        continue;
-      }
-    }
-
-    return Array.from(uniqueRelays);
   }
 
   function relaySignature(relays: string[]): string {
@@ -405,7 +277,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
           continue;
         }
 
-        const resolvedPubkey = normalizeHexKey(user.pubkey);
+        const resolvedPubkey = inputSanitizerService.normalizeHexKey(user.pubkey);
         if (!resolvedPubkey || resolvedPubkey !== expectedPubkeyHex) {
           continue;
         }
@@ -423,7 +295,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     targetPubkeyHex: string,
     fallbackName = ''
   ): Promise<void> {
-    const normalizedTargetPubkey = normalizeHexKey(targetPubkeyHex);
+    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
     if (!normalizedTargetPubkey) {
       return;
     }
@@ -475,7 +347,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       existingContact?.name?.trim() ||
       fallbackContactName;
 
-    const fetchedRelays = normalizeRelayEntries(resolvedUser.relayUrls ?? []);
+    const fetchedRelays = inputSanitizerService.normalizeRelayEntriesFromUrls(resolvedUser.relayUrls ?? []);
     const nextRelays = fetchedRelays.length > 0 ? fetchedRelays : existingContact?.relays ?? [];
 
     if (existingContact) {
@@ -584,7 +456,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Missing private key in localStorage. Login is required.');
     }
 
-    const relayList = normalizeRelays(relayUrls);
+    const relayList = inputSanitizerService.normalizeStringArray(relayUrls);
     if (relayList.length === 0) {
       throw new Error('Cannot publish profile without at least one relay.');
     }
@@ -607,8 +479,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Missing private key in localStorage. Login is required.');
     }
 
-    const normalizedRelayEntries = normalizeRelayListEntries(relayEntries);
-    const relayUrls = normalizeRelays([
+    const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
+    const relayUrls = inputSanitizerService.normalizeStringArray([
       ...publishRelayUrls,
       ...normalizedRelayEntries.map((relay) => relay.url)
     ]);
@@ -644,7 +516,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    const normalizedRelayEntries = normalizeRelayListEntries(relayEntries);
+    const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
     await contactsService.init();
 
     const existingContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
@@ -710,14 +582,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    const senderPubkeyHex = normalizeHexKey(rumorEvent.pubkey ?? '');
+    const senderPubkeyHex = inputSanitizerService.normalizeHexKey(rumorEvent.pubkey ?? '');
     if (!senderPubkeyHex || senderPubkeyHex === loggedInPubkeyHex) {
       return;
     }
 
     const recipients = rumorEvent
       .getMatchingTags('p')
-      .map((tag) => normalizeHexKey(tag[1] ?? ''))
+      .map((tag) => inputSanitizerService.normalizeHexKey(tag[1] ?? ''))
       .filter((value): value is string => Boolean(value));
     if (!recipients.includes(loggedInPubkeyHex)) {
       return;
@@ -800,7 +672,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await contactsService.init();
     const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
-    const relayUrls = normalizeReadableRelayUrls(loggedInContact?.relays);
+    const relayUrls = inputSanitizerService.normalizeReadableRelayUrls(loggedInContact?.relays);
     console.log('### Subscribing to private messages using relays:', relayUrls);
     if (relayUrls.length === 0) {
       stopPrivateMessagesSubscription();
@@ -845,7 +717,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return [];
     }
 
-    const relayList = normalizeRelays(relayUrls);
+    const relayList = inputSanitizerService.normalizeStringArray(relayUrls);
     if (relayList.length === 0) {
       return [];
     }
@@ -871,7 +743,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...parsedRelayList.bothRelayUrls
     ].map((relay) => String(relay));
 
-    return normalizeRelays(combinedRelays);
+    return inputSanitizerService.normalizeStringArray(combinedRelays);
   }
 
   async function syncLoggedInContactProfile(relayUrls: string[]): Promise<void> {
@@ -885,7 +757,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         return;
       }
 
-      const activeRelays = normalizeRelays(relayUrls);
+      const activeRelays = inputSanitizerService.normalizeStringArray(relayUrls);
       if (activeRelays.length > 0) {
         try {
           await ensureRelayConnections(activeRelays);
@@ -920,7 +792,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         return;
       }
 
-      const activeRelays = normalizeRelays(relayUrls);
+      const activeRelays = inputSanitizerService.normalizeStringArray(relayUrls);
       if (activeRelays.length > 0) {
         try {
           await ensureRelayConnections(activeRelays);
@@ -939,7 +811,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       const recentPublicKeys = new Set<string>();
 
       for (const chat of recentChats) {
-        const normalizedPubkey = normalizeHexKey(chat.public_key);
+        const normalizedPubkey = inputSanitizerService.normalizeHexKey(chat.public_key);
         if (!normalizedPubkey) {
           continue;
         }
@@ -960,7 +832,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       for (const pubkeyHex of recentPublicKeys) {
         const matchingChat = recentChats.find(
-          (chat) => normalizeHexKey(chat.public_key) === pubkeyHex
+          (chat) => inputSanitizerService.normalizeHexKey(chat.public_key) === pubkeyHex
         );
         const fallbackName = matchingChat?.name?.trim() ?? '';
         await refreshContactByPublicKey(pubkeyHex, fallbackName);
@@ -982,11 +854,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return null;
     }
 
-    return normalizeHexKey(stored);
+    return inputSanitizerService.normalizeHexKey(stored);
   }
 
   function savePrivateKeyHex(hexPrivateKey: string): boolean {
-    const normalized = normalizeHexKey(hexPrivateKey);
+    const normalized = inputSanitizerService.normalizeHexKey(hexPrivateKey);
     if (!normalized || !hasStorage()) {
       return false;
     }
@@ -1010,35 +882,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   function validateNsec(input: string): NostrNsecValidationResult {
-    const value = input.trim();
-    if (!value) {
-      return { isValid: false, hexPrivateKey: null };
-    }
-
-    try {
-      const decoded = nip19.decode(value);
-      if (decoded.type !== 'nsec') {
-        return { isValid: false, hexPrivateKey: null };
-      }
-
-      const data = decoded.data as unknown;
-      if (data instanceof Uint8Array) {
-        if (data.length !== 32) {
-          return { isValid: false, hexPrivateKey: null };
-        }
-
-        return { isValid: true, hexPrivateKey: bytesToHex(data) };
-      }
-
-      if (typeof data === 'string') {
-        const normalized = normalizeHexKey(data);
-        return { isValid: Boolean(normalized), hexPrivateKey: normalized };
-      }
-
-      return { isValid: false, hexPrivateKey: null };
-    } catch {
-      return { isValid: false, hexPrivateKey: null };
-    }
+    return inputSanitizerService.validateNsec(input);
   }
 
   function savePrivateKeyFromNsec(input: string): NostrNsecValidationResult {
@@ -1052,25 +896,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   function validateNpub(input: string): NostrNpubValidationResult {
-    const value = input.trim();
-    if (!value) {
-      return { isValid: false, normalizedPubkey: null };
-    }
-
-    try {
-      const decoded = nip19.decode(value);
-      if (decoded.type !== 'npub' || typeof decoded.data !== 'string') {
-        return { isValid: false, normalizedPubkey: null };
-      }
-
-      if (!isValidPubkey(decoded.data)) {
-        return { isValid: false, normalizedPubkey: null };
-      }
-
-      return { isValid: true, normalizedPubkey: decoded.data.toLowerCase() };
-    } catch {
-      return { isValid: false, normalizedPubkey: null };
-    }
+    return inputSanitizerService.validateNpub(input);
   }
 
   async function getNip05Data(identifier: string): Promise<NostrNip05DataResult> {
@@ -1099,12 +925,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
         };
       }
 
-      const relays = normalizeRelays(user?.relayUrls ?? []);
+      const relays = inputSanitizerService.normalizeStringArray(user?.relayUrls ?? []);
 
       return {
         isValid: true,
         normalizedPubkey,
-        name: user?.profile?.name?.trim() || extractNip05Name(value),
+        name: user?.profile?.name?.trim() || inputSanitizerService.extractNip05Name(value),
         relays,
         error: null
       };
@@ -1198,7 +1024,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Recipient public key must be a valid hex pubkey or npub.');
     }
 
-    const relayUrls = normalizeRelays(relays);
+    const relayUrls = inputSanitizerService.normalizeStringArray(relays);
     if (relayUrls.length === 0) {
       throw new Error('Cannot send DM without contact relays.');
     }

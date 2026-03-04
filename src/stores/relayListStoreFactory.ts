@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue';
+import { inputSanitizerService } from 'src/services/inputSanitizerService';
 
 export interface RelayListEntry {
   url: string;
@@ -13,37 +14,6 @@ interface RelayListStoreFactoryOptions {
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-}
-
-function normalizeRelayEntry(entry: unknown): RelayListEntry | null {
-  if (typeof entry === 'string') {
-    const url = entry.trim();
-    if (!url) {
-      return null;
-    }
-
-    return {
-      url,
-      read: true,
-      write: true
-    };
-  }
-
-  if (!entry || typeof entry !== 'object') {
-    return null;
-  }
-
-  const value = entry as Partial<RelayListEntry>;
-  const url = typeof value.url === 'string' ? value.url.trim() : '';
-  if (!url) {
-    return null;
-  }
-
-  return {
-    url,
-    read: typeof value.read === 'boolean' ? value.read : true,
-    write: typeof value.write === 'boolean' ? value.write : true
-  };
 }
 
 function readStoredRelays(storageKey: string): RelayListEntry[] | null {
@@ -63,7 +33,7 @@ function readStoredRelays(storageKey: string): RelayListEntry[] | null {
     }
 
     return parsed
-      .map((entry) => normalizeRelayEntry(entry))
+      .map((entry) => inputSanitizerService.normalizeRelayListEntry(entry))
       .filter((entry): entry is RelayListEntry => entry !== null);
   } catch (error) {
     console.warn(`Failed to read relay list from localStorage key "${storageKey}"`, error);

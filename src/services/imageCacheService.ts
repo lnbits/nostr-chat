@@ -1,3 +1,5 @@
+import { inputSanitizerService } from 'src/services/inputSanitizerService';
+
 const IMAGE_CACHE_DB_NAME = 'xyz-image-cache';
 const IMAGE_CACHE_DB_VERSION = 1;
 const IMAGE_CACHE_STORE_NAME = 'images';
@@ -12,10 +14,6 @@ function canUseIndexedDb(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
 }
 
-function normalizeUrl(value: string): string {
-  return value.trim();
-}
-
 class ImageCacheService {
   private dbPromise: Promise<IDBDatabase | null> | null = null;
   private inFlightByUrl = new Map<string, Promise<string>>();
@@ -23,7 +21,7 @@ class ImageCacheService {
   private passthroughByUrl = new Set<string>();
 
   async resolveCachedImageUrl(sourceUrl: string): Promise<string> {
-    const normalizedUrl = normalizeUrl(sourceUrl);
+    const normalizedUrl = inputSanitizerService.normalizeUrl(sourceUrl);
     if (!normalizedUrl) {
       return '';
     }

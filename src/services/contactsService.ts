@@ -1,7 +1,7 @@
 import { dbService, type AppDatabase } from 'src/services/dbService';
+import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { relaysService } from 'src/services/relaysService';
 import type {
-  ContactBirthday,
   ContactMetadata,
   ContactRecord,
   CreateContactInput,
@@ -30,146 +30,12 @@ const CONTACT_SELECT_SQL = `
   FROM contacts
 `;
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function readOptionalString(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const normalized = value.trim();
-  return normalized || undefined;
-}
-
-function normalizeBirthday(value: unknown): ContactBirthday | undefined {
-  if (!isPlainObject(value)) {
-    return undefined;
-  }
-
-  const birthday: ContactBirthday = {};
-  const year = value.year;
-  const month = value.month;
-  const day = value.day;
-
-  if (typeof year === 'number' && Number.isInteger(year)) {
-    birthday.year = year;
-  }
-
-  if (typeof month === 'number' && Number.isInteger(month)) {
-    birthday.month = month;
-  }
-
-  if (typeof day === 'number' && Number.isInteger(day)) {
-    birthday.day = day;
-  }
-
-  return Object.keys(birthday).length > 0 ? birthday : undefined;
-}
-
-function normalizeContactMeta(value: unknown): ContactMetadata {
-  if (!isPlainObject(value)) {
-    return {};
-  }
-
-  const meta: ContactMetadata = {};
-  const name = readOptionalString(value.name);
-  const about = readOptionalString(value.about);
-  const picture = readOptionalString(value.picture);
-  const nip05 = readOptionalString(value.nip05);
-  const npub = readOptionalString(value.npub);
-  const nprofile = readOptionalString(value.nprofile);
-  const lud06 = readOptionalString(value.lud06);
-  const lud16 = readOptionalString(value.lud16);
-  const displayName = readOptionalString(value.display_name);
-  const website = readOptionalString(value.website);
-  const banner = readOptionalString(value.banner);
-  const chatId = readOptionalString(value.chatId);
-  const avatar = readOptionalString(value.avatar);
-  const birthday = normalizeBirthday(value.birthday);
-
-  if (name) {
-    meta.name = name;
-  }
-
-  if (about) {
-    meta.about = about;
-  }
-
-  if (picture) {
-    meta.picture = picture;
-  }
-
-  if (nip05) {
-    meta.nip05 = nip05;
-  }
-
-  if (npub) {
-    meta.npub = npub;
-  }
-
-  if (nprofile) {
-    meta.nprofile = nprofile;
-  }
-
-  if (lud06) {
-    meta.lud06 = lud06;
-  }
-
-  if (lud16) {
-    meta.lud16 = lud16;
-  }
-
-  if (displayName) {
-    meta.display_name = displayName;
-  }
-
-  if (website) {
-    meta.website = website;
-  }
-
-  if (banner) {
-    meta.banner = banner;
-  }
-
-  if (typeof value.bot === 'boolean') {
-    meta.bot = value.bot;
-  }
-
-  if (birthday) {
-    meta.birthday = birthday;
-  }
-
-  if (chatId) {
-    meta.chatId = chatId;
-  }
-
-  if (avatar) {
-    meta.avatar = avatar;
-  }
-
-  return meta;
-}
-
 function parseStoredMeta(value: unknown): ContactMetadata {
-  if (typeof value !== 'string') {
-    return normalizeContactMeta(value);
-  }
-
-  if (!value.trim()) {
-    return {};
-  }
-
-  try {
-    return normalizeContactMeta(JSON.parse(value));
-  } catch {
-    return {};
-  }
+  return inputSanitizerService.parseStoredContactMetadata(value);
 }
 
 function serializeContactMeta(meta: ContactMetadata | undefined): string {
-  return JSON.stringify(normalizeContactMeta(meta ?? {}));
+  return inputSanitizerService.serializeContactMetadata(meta);
 }
 
 function rowToContact(row: unknown[]): ContactRecord {
@@ -236,7 +102,7 @@ class ContactsService {
   }
 
   async getContactByPublicKey(publicKey: string): Promise<ContactRecord | null> {
-    const normalized = publicKey.trim();
+    const normalized = inputSanitizerService.normalizePublicKey(publicKey);
     if (!normalized) {
       return null;
     }
@@ -256,7 +122,7 @@ class ContactsService {
   }
 
   async publicKeyExists(publicKey: string): Promise<boolean> {
-    const normalized = publicKey.trim();
+    const normalized = inputSanitizerService.normalizePublicKey(publicKey);
     if (!normalized) {
       return false;
     }
@@ -275,14 +141,14 @@ class ContactsService {
   }
 
   async createContact(input: CreateContactInput): Promise<ContactRecord | null> {
-    const publicKey = input.public_key.trim();
-    const name = input.name.trim() || publicKey;
-    const givenName = input.given_name?.trim() || null;
-    const meta = normalizeContactMeta(input.meta);
-
+    const publicKey = inputSanitizerService.normalizePublicKey(input.public_key);
     if (!publicKey) {
       return null;
     }
+
+    const name = input.name.trim() || publicKey;
+    const givenName = input.given_name?.trim() || null;
+    const meta = inputSanitizerService.normalizeContactMetadata(input.meta);
 
     const db = await this.getDatabase();
     const insertStatement = db.prepare(
@@ -326,7 +192,7 @@ class ContactsService {
     }> = [];
 
     if (input.public_key !== undefined) {
-      const publicKey = input.public_key.trim();
+      const publicKey = inputSanitizerService.normalizePublicKey(input.public_key);
       if (!publicKey) {
         return null;
       }
