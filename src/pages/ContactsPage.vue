@@ -533,13 +533,13 @@ async function handleOpenChat(): Promise<void> {
 <style scoped>
 .contacts-page {
   height: calc(100vh - env(safe-area-inset-top));
-  padding: 10px;
+  padding: 12px;
 }
 
 .contacts-shell {
   display: grid;
   grid-template-columns: 76px 340px minmax(0, 1fr);
-  gap: 10px;
+  gap: 12px;
   height: 100%;
 }
 
@@ -550,19 +550,29 @@ async function handleOpenChat(): Promise<void> {
 .rail-panel,
 .contacts-sidebar,
 .contacts-detail-panel {
-  border: 1px solid var(--tg-border);
-  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border-radius: 18px;
   overflow: hidden;
   background: var(--tg-sidebar);
+  box-shadow: var(--tg-shadow-sm);
 }
 
 .rail-panel {
-  background: var(--tg-rail);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-rail) 92%, #dceaff 8%),
+      color-mix(in srgb, var(--tg-rail) 96%, #dceaff 4%)
+    );
 }
 
 .contacts-sidebar {
   display: flex;
   flex-direction: column;
+}
+
+.contacts-detail-panel {
+  background: var(--tg-thread-bg);
 }
 
 .contacts-detail-panel__scroll {
@@ -574,8 +584,15 @@ async function handleOpenChat(): Promise<void> {
 }
 
 .contacts-sidebar__top {
-  padding: 12px;
-  border-bottom: 1px solid var(--tg-border);
+  padding: 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 88%, #dbe9ff 12%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
+    );
+  backdrop-filter: blur(10px);
 }
 
 .contacts-sidebar__row {
@@ -588,6 +605,7 @@ async function handleOpenChat(): Promise<void> {
 .contacts-sidebar__title {
   font-size: 22px;
   font-weight: 700;
+  line-height: 1.1;
 }
 
 .contacts-list {
@@ -595,8 +613,21 @@ async function handleOpenChat(): Promise<void> {
 }
 
 .contact-item {
-  border-radius: 12px;
-  margin: 4px 8px;
+  border-radius: 14px;
+  margin: 6px 8px;
+  border: 1px solid transparent;
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.contact-item:hover {
+  transform: translateX(3px);
+  background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
+  border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
+  box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
 }
 
 .contact-item__name {
@@ -608,7 +639,9 @@ async function handleOpenChat(): Promise<void> {
 }
 
 .contact-item--active {
-  background: rgba(55, 119, 245, 0.12);
+  background: linear-gradient(130deg, rgba(52, 137, 255, 0.18), rgba(28, 186, 137, 0.14));
+  border-color: rgba(56, 136, 255, 0.34);
+  box-shadow: 0 10px 20px rgba(53, 110, 186, 0.14);
 }
 
 .contacts-empty {
@@ -628,17 +661,28 @@ async function handleOpenChat(): Promise<void> {
 
 .add-contact-dialog {
   width: min(92vw, 420px);
+  border-radius: 16px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--tg-sidebar) 92%, #eef6ff 8%);
+  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ea4c0 16%);
+  box-shadow: var(--tg-shadow-md);
 }
 
 .add-contact-dialog__header {
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-sidebar);
-  padding: 10px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 88%, #dbe9ff 12%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
+    );
+  padding: 11px 14px;
 }
 
 .add-contact-dialog__title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .add-contact-dialog__actions {

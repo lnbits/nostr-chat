@@ -120,36 +120,50 @@ function goToSection(section: NavigationSection): void {
 
 <style scoped>
 .mobile-nav {
-  background: var(--tg-sidebar);
-  border-top: 1px solid var(--tg-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--tg-sidebar) 78%, transparent), var(--tg-sidebar));
+  border-top: 1px solid color-mix(in srgb, var(--tg-border) 84%, #6b7d96 16%);
   padding-bottom: env(safe-area-inset-bottom);
+  backdrop-filter: blur(14px);
 }
 
 .mobile-nav__inner {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 8px 10px;
 }
 
 .mobile-nav__btn {
-  color: #64748b;
-  border-radius: 12px;
+  color: #5d718d;
+  border-radius: 14px;
   min-height: 56px;
+  border: 1px solid transparent;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.mobile-nav__btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--tg-border) 84%, #8ca3bf 16%);
+  background: color-mix(in srgb, var(--tg-sidebar) 85%, #dbe9ff 15%);
 }
 
 .mobile-nav__btn--active {
-  color: #1f7a48;
-  background: rgba(34, 197, 94, 0.14);
+  color: #0f5f43;
+  background: linear-gradient(135deg, rgba(28, 166, 121, 0.16), rgba(53, 132, 255, 0.16));
+  border-color: rgba(57, 141, 255, 0.32);
+  box-shadow: 0 8px 18px rgba(36, 110, 214, 0.16);
 }
 
 body.body--dark .mobile-nav__btn {
-  color: #9ca3af;
+  color: #9aacbf;
 }
 
 body.body--dark .mobile-nav__btn--active {
-  color: #73e2a7;
-  background: rgba(22, 163, 74, 0.22);
+  color: #79e0b2;
+  background: linear-gradient(135deg, rgba(18, 122, 91, 0.42), rgba(32, 92, 177, 0.34));
+  border-color: rgba(90, 170, 255, 0.34);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
 }
 </style>

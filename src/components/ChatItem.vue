@@ -85,18 +85,27 @@ const avatarImageUrl = computed(() => {
 
 <style scoped>
 .chat-item {
-  border-radius: 12px;
-  margin: 4px 8px;
-  transition: background-color 0.2s ease, transform 0.2s ease;
+  border-radius: 14px;
+  margin: 6px 8px;
+  border: 1px solid transparent;
+  transition:
+    background-color 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .chat-item:hover {
-  transform: translateX(2px);
-  background: rgba(55, 119, 245, 0.07);
+  transform: translateX(3px);
+  background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
+  border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
+  box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
 }
 
 .chat-item--active {
-  background: rgba(55, 119, 245, 0.12);
+  background: linear-gradient(130deg, rgba(52, 137, 255, 0.18), rgba(28, 186, 137, 0.14));
+  border-color: rgba(56, 136, 255, 0.34);
+  box-shadow: 0 10px 20px rgba(53, 110, 186, 0.14);
 }
 
 .chat-item__name {

@@ -105,13 +105,13 @@ function goToSetting(
 <style scoped>
 .settings-page {
   height: calc(100vh - env(safe-area-inset-top));
-  padding: 10px;
+  padding: 12px;
 }
 
 .settings-shell {
   display: grid;
   grid-template-columns: 76px 320px minmax(0, 1fr);
-  gap: 10px;
+  gap: 12px;
   height: 100%;
 }
 
@@ -122,14 +122,20 @@ function goToSetting(
 .rail-panel,
 .settings-sidebar,
 .settings-content-panel {
-  border: 1px solid var(--tg-border);
-  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border-radius: 18px;
   overflow: hidden;
   background: var(--tg-sidebar);
+  box-shadow: var(--tg-shadow-sm);
 }
 
 .rail-panel {
-  background: var(--tg-rail);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-rail) 92%, #dceaff 8%),
+      color-mix(in srgb, var(--tg-rail) 96%, #dceaff 4%)
+    );
 }
 
 .settings-sidebar {
@@ -138,13 +144,21 @@ function goToSetting(
 }
 
 .settings-sidebar__top {
-  padding: 12px;
-  border-bottom: 1px solid var(--tg-border);
+  padding: 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 88%, #dbe9ff 12%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
+    );
+  backdrop-filter: blur(10px);
 }
 
 .settings-sidebar__title {
   font-size: 22px;
   font-weight: 700;
+  line-height: 1.1;
 }
 
 .settings-menu {
@@ -152,12 +166,27 @@ function goToSetting(
 }
 
 .settings-menu__item {
-  border-radius: 12px;
-  margin-bottom: 6px;
+  border-radius: 14px;
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.settings-menu__item:hover {
+  transform: translateX(3px);
+  background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
+  border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
+  box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
 }
 
 .settings-menu__item--active {
-  background: rgba(55, 119, 245, 0.12);
+  background: linear-gradient(130deg, rgba(52, 137, 255, 0.18), rgba(28, 186, 137, 0.14));
+  border-color: rgba(56, 136, 255, 0.34);
+  box-shadow: 0 10px 20px rgba(53, 110, 186, 0.14);
 }
 
 .settings-content-panel {

@@ -59,14 +59,21 @@ function goBack(): void {
 .settings-detail-layout__header {
   display: flex;
   align-items: center;
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-sidebar);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 90%, #dce9ff 10%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #dce9ff 4%)
+    );
+  backdrop-filter: blur(10px);
 }
 
 .settings-detail-layout__title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .settings-detail-layout__spacer {
@@ -81,7 +88,8 @@ function goBack(): void {
 
 .settings-detail-layout__icon {
   margin-right: 10px;
-  opacity: 0.82;
+  opacity: 0.86;
+  color: color-mix(in srgb, var(--q-primary) 78%, #0f5ea9 22%);
 }
 
 .settings-detail-layout__back {
@@ -91,6 +99,6 @@ function goBack(): void {
 .settings-detail-layout__body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 18px;
 }
 </style>

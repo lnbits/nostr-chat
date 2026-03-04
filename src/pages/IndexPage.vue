@@ -116,13 +116,13 @@ function handleOpenProfile(publicKey: string): void {
 <style scoped>
 .home-page {
   height: calc(100vh - env(safe-area-inset-top));
-  padding: 10px;
+  padding: 12px;
 }
 
 .home-shell {
   display: grid;
   grid-template-columns: 76px 340px minmax(0, 1fr);
-  gap: 10px;
+  gap: 12px;
   height: 100%;
 }
 
@@ -133,14 +133,20 @@ function handleOpenProfile(publicKey: string): void {
 .rail-panel,
 .sidebar,
 .thread-panel {
-  border: 1px solid var(--tg-border);
-  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border-radius: 18px;
   overflow: hidden;
   background: var(--tg-sidebar);
+  box-shadow: var(--tg-shadow-sm);
 }
 
 .rail-panel {
-  background: var(--tg-rail);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-rail) 92%, #dceaff 8%),
+      color-mix(in srgb, var(--tg-rail) 96%, #dceaff 4%)
+    );
 }
 
 .sidebar {
@@ -154,8 +160,15 @@ function handleOpenProfile(publicKey: string): void {
 }
 
 .sidebar-top {
-  padding: 12px;
-  border-bottom: 1px solid var(--tg-border);
+  padding: 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 88%, #dbe9ff 12%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
+    );
+  backdrop-filter: blur(10px);
 }
 
 .sidebar-top__row {
@@ -168,6 +181,11 @@ function handleOpenProfile(publicKey: string): void {
 .sidebar-top__title {
   font-size: 22px;
   font-weight: 700;
+  line-height: 1.1;
+}
+
+.thread-panel {
+  background: var(--tg-thread-bg);
 }
 
 @media (max-width: 1023px) {
