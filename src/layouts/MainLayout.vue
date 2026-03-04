@@ -80,9 +80,20 @@ relayStore.init();
 void (async () => {
   try {
     await nostrStore.syncLoggedInContactProfile(relayStore.relays);
+  } catch (error) {
+    console.error('Failed to sync logged-in contact on startup', error);
+  }
+
+  try {
+    await nostrStore.subscribePrivateMessagesForLoggedInUser();
+  } catch (error) {
+    console.error('Failed to subscribe to private messages on startup', error);
+  }
+
+  try {
     await nostrStore.syncRecentChatContacts(relayStore.relays, 10);
   } catch (error) {
-    console.error('Failed to sync contacts on startup', error);
+    console.error('Failed to sync recent chat contacts on startup', error);
   }
 })();
 

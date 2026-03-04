@@ -18,6 +18,7 @@ export interface MessageRow {
   author_public_key: string;
   message: string;
   created_at: string;
+  event_id: string | null;
   meta: Record<string, unknown>;
 }
 
@@ -35,6 +36,7 @@ export interface CreateMessageInput {
   author_public_key: string;
   message: string;
   created_at?: string;
+  event_id?: string | null;
   meta?: Record<string, unknown>;
 }
 
@@ -57,6 +59,7 @@ const MESSAGES_TABLE_SQL = `
     author_public_key TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at DATETIME NOT NULL,
+    event_id TEXT NULL,
     meta TEXT NOT NULL
   );
 `;
@@ -69,6 +72,7 @@ const CHAT_INDEXES_SQL = `
 const MESSAGE_INDEXES_SQL = `
   CREATE INDEX IF NOT EXISTS idx_messages_chat_it ON messages(chat_it);
   CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_event_id_unique ON messages(event_id COLLATE NOCASE);
 `;
 
 const CHAT_SELECT_SQL = `
@@ -77,7 +81,7 @@ const CHAT_SELECT_SQL = `
 `;
 
 const MESSAGE_SELECT_SQL = `
-  SELECT id, chat_it, author_public_key, message, created_at, meta
+  SELECT id, chat_it, author_public_key, message, created_at, event_id, meta
   FROM messages
 `;
 
@@ -119,13 +123,17 @@ function rowToChat(row: unknown[]): ChatRow {
 }
 
 function rowToMessage(row: unknown[]): MessageRow {
+  const rawEventId = row[5];
+  const eventId = typeof rawEventId === 'string' ? rawEventId.trim() : '';
+
   return {
     id: Number(row[0] ?? 0),
     chat_it: Number(row[1] ?? 0),
     author_public_key: String(row[2] ?? ''),
     message: String(row[3] ?? ''),
     created_at: String(row[4] ?? ''),
-    meta: parseMeta(row[5])
+    event_id: eventId || null,
+    meta: parseMeta(row[6])
   };
 }
 
@@ -272,6 +280,7 @@ class ChatDataService {
     const authorPublicKey = input.author_public_key.trim();
     const message = input.message.trim();
     const createdAt = input.created_at?.trim() || new Date().toISOString();
+    const eventId = input.event_id?.trim() || null;
 
     if (!Number.isInteger(chatId) || chatId <= 0 || !authorPublicKey || !message || !createdAt) {
       return null;
@@ -280,14 +289,25 @@ class ChatDataService {
     const db = await this.getDatabase();
     const statement = db.prepare(
       `
-      INSERT INTO messages (chat_it, author_public_key, message, created_at, meta)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO messages (chat_it, author_public_key, message, created_at, event_id, meta)
+      VALUES (?, ?, ?, ?, ?, ?)
       `
     );
 
     try {
-      statement.run([chatId, authorPublicKey, message, createdAt, serializeMeta(input.meta)]);
+      statement.run([chatId, authorPublicKey, message, createdAt, eventId, serializeMeta(input.meta)]);
     } catch (error) {
+      if (eventId) {
+        const existing = this.querySingleRow(
+          db,
+          `${MESSAGE_SELECT_SQL} WHERE LOWER(event_id) = LOWER(?) LIMIT 1`,
+          [eventId]
+        );
+        if (existing) {
+          return rowToMessage(existing);
+        }
+      }
+
       console.error('Failed to create message row', error);
       return null;
     } finally {
@@ -305,6 +325,22 @@ class ChatDataService {
     return inserted ? rowToMessage(inserted) : null;
   }
 
+  async getMessageByEventId(eventId: string): Promise<MessageRow | null> {
+    const normalizedEventId = eventId.trim();
+    if (!normalizedEventId) {
+      return null;
+    }
+
+    const db = await this.getDatabase();
+    const row = this.querySingleRow(
+      db,
+      `${MESSAGE_SELECT_SQL} WHERE LOWER(event_id) = LOWER(?) LIMIT 1`,
+      [normalizedEventId]
+    );
+
+    return row ? rowToMessage(row) : null;
+  }
+
   private async ensureInitialized(): Promise<void> {
     if (!this.initPromise) {
       this.initPromise = this.initializeSchema();
@@ -317,8 +353,13 @@ class ChatDataService {
     const db = await dbService.getDatabase();
     db.run(CHATS_TABLE_SQL);
     db.run(MESSAGES_TABLE_SQL);
+    const didMigrateSchema = this.ensureSchema(db);
     db.run(CHAT_INDEXES_SQL);
     db.run(MESSAGE_INDEXES_SQL);
+
+    if (didMigrateSchema) {
+      await dbService.persist();
+    }
   }
 
   async getDatabase(): Promise<AppDatabase> {
@@ -352,6 +393,18 @@ class ChatDataService {
   ): unknown[] | null {
     const rows = this.queryRows(db, sql, params);
     return rows[0] ?? null;
+  }
+
+  private ensureSchema(db: AppDatabase): boolean {
+    const rows = this.queryRows(db, 'PRAGMA table_info(messages)');
+    const hasEventId = rows.some((row) => String(row[1] ?? '') === 'event_id');
+
+    if (!hasEventId) {
+      db.run('ALTER TABLE messages ADD COLUMN event_id TEXT NULL');
+      return true;
+    }
+
+    return false;
   }
 }
 

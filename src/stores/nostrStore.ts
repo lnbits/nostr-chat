@@ -5,11 +5,13 @@ import NDK, {
   NDKKind,
   NDKPrivateKeySigner,
   NDKRelayList,
+  NDKSubscriptionCacheUsage,
   type NDKUserProfile,
   type NDKRelayInformation,
   NDKRelayStatus,
   NDKRelaySet,
   NDKUser,
+  giftUnwrap,
   giftWrap,
   isValidNip05,
   isValidPubkey,
@@ -19,7 +21,7 @@ import NDK, {
 } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import type { ContactMetadata, ContactRelay } from 'src/types/contact';
+import type { ContactMetadata, ContactRelay, ContactRecord } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -173,6 +175,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let hasRelayStatusListeners = false;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
+  let privateMessagesSubscription: ReturnType<typeof ndk.subscribe> | null = null;
+  let privateMessagesSubscriptionSignature = '';
+  let privateMessagesIngestQueue = Promise.resolve();
 
   function getLoggedInPublicKeyHex(): string | null {
     if (!hasStorage()) {
@@ -226,6 +231,63 @@ export const useNostrStore = defineStore('nostrStore', () => {
       read: true,
       write: true
     }));
+  }
+
+  function normalizeReadableRelayUrls(relays: ContactRelay[] | undefined): string[] {
+    if (!Array.isArray(relays)) {
+      return [];
+    }
+
+    const uniqueRelays = new Set<string>();
+    for (const relay of relays) {
+      if (!relay || relay.read === false) {
+        continue;
+      }
+
+      const relayUrl = typeof relay.url === 'string' ? relay.url.trim() : '';
+      if (!relayUrl) {
+        continue;
+      }
+
+      try {
+        uniqueRelays.add(normalizeRelayUrl(relayUrl));
+      } catch {
+        continue;
+      }
+    }
+
+    return Array.from(uniqueRelays);
+  }
+
+  function relaySignature(relays: string[]): string {
+    return [...relays].sort((a, b) => a.localeCompare(b)).join('|');
+  }
+
+  function toIsoTimestampFromUnix(value: number | undefined): string {
+    if (!Number.isInteger(value) || Number(value) <= 0) {
+      return new Date().toISOString();
+    }
+
+    return new Date(Number(value) * 1000).toISOString();
+  }
+
+  function deriveChatName(contact: ContactRecord | null, publicKey: string): string {
+    const displayName = contact?.meta.display_name?.trim() ?? '';
+    if (displayName) {
+      return displayName;
+    }
+
+    const profileName = contact?.meta.name?.trim() ?? '';
+    if (profileName) {
+      return profileName;
+    }
+
+    const contactName = contact?.name?.trim() ?? '';
+    if (contactName) {
+      return contactName;
+    }
+
+    return publicKey.slice(0, 16);
   }
 
   function readProfileField(
@@ -594,12 +656,187 @@ export const useNostrStore = defineStore('nostrStore', () => {
         meta: {},
         relays: normalizedRelayEntries
       });
+      try {
+        await subscribePrivateMessagesForLoggedInUser(true);
+      } catch (error) {
+        console.warn('Failed to subscribe to private messages', error);
+      }
       return;
     }
 
     await contactsService.updateContact(existingContact.id, {
       relays: normalizedRelayEntries
     });
+    await subscribePrivateMessagesForLoggedInUser(true);
+  }
+
+  function stopPrivateMessagesSubscription(): void {
+    if (privateMessagesSubscription) {
+      privateMessagesSubscription.stop();
+      privateMessagesSubscription = null;
+    }
+
+    privateMessagesSubscriptionSignature = '';
+  }
+
+  function queuePrivateMessageIngestion(
+    wrappedEvent: NDKEvent,
+    loggedInPubkeyHex: string
+  ): void {
+    privateMessagesIngestQueue = privateMessagesIngestQueue
+      .then(() => processIncomingPrivateMessage(wrappedEvent, loggedInPubkeyHex))
+      .catch((error) => {
+        console.error('Failed to process incoming private message', error);
+      });
+  }
+
+  async function processIncomingPrivateMessage(
+    wrappedEvent: NDKEvent,
+    loggedInPubkeyHex: string
+  ): Promise<void> {
+    if (wrappedEvent.kind !== NDKKind.GiftWrap) {
+      return;
+    }
+
+    let rumorEvent: NDKEvent;
+    try {
+      rumorEvent = await giftUnwrap(wrappedEvent);
+    } catch (error) {
+      console.warn('Failed to unwrap incoming gift wrap event', error);
+      return;
+    }
+
+    if (rumorEvent.kind !== NDKKind.PrivateDirectMessage) {
+      return;
+    }
+
+    const senderPubkeyHex = normalizeHexKey(rumorEvent.pubkey ?? '');
+    if (!senderPubkeyHex || senderPubkeyHex === loggedInPubkeyHex) {
+      return;
+    }
+
+    const recipients = rumorEvent
+      .getMatchingTags('p')
+      .map((tag) => normalizeHexKey(tag[1] ?? ''))
+      .filter((value): value is string => Boolean(value));
+    if (!recipients.includes(loggedInPubkeyHex)) {
+      return;
+    }
+
+    const messageText = rumorEvent.content.trim();
+    if (!messageText) {
+      return;
+    }
+
+    await Promise.all([chatDataService.init(), contactsService.init()]);
+
+    const rumorEventId = rumorEvent.id?.trim() || null;
+    if (rumorEventId) {
+      const existingMessage = await chatDataService.getMessageByEventId(rumorEventId);
+      if (existingMessage) {
+        return;
+      }
+    }
+
+    const contact = await contactsService.getContactByPublicKey(senderPubkeyHex);
+    const existingChat = await chatDataService.getChatByPublicKey(senderPubkeyHex);
+    const createdChat =
+      existingChat
+        ? null
+        : await chatDataService.createChat({
+            public_key: senderPubkeyHex,
+            name: deriveChatName(contact, senderPubkeyHex),
+            last_message: '',
+            last_message_at: toIsoTimestampFromUnix(rumorEvent.created_at),
+            unread_count: 0,
+            meta: {
+              ...(contact?.meta.picture ? { picture: contact.meta.picture } : {})
+            }
+          });
+    const chat =
+      existingChat ??
+      createdChat ??
+      (await chatDataService.getChatByPublicKey(senderPubkeyHex));
+    if (!chat) {
+      return;
+    }
+
+    const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
+    const createdMessage = await chatDataService.createMessage({
+      chat_it: chat.id,
+      author_public_key: senderPubkeyHex,
+      message: messageText,
+      created_at: createdAt,
+      event_id: rumorEventId,
+      meta: {
+        source: 'nostr',
+        kind: NDKKind.PrivateDirectMessage,
+        wrapper_event_id: wrappedEvent.id ?? ''
+      }
+    });
+    if (!createdMessage) {
+      return;
+    }
+
+    await chatDataService.updateChatPreview(
+      chat.id,
+      messageText,
+      createdAt,
+      Number(chat.unread_count ?? 0) + 1
+    );
+  }
+
+  async function subscribePrivateMessagesForLoggedInUser(force = false): Promise<void> {
+    console.log('### Subscribing to private messages for logged-in user, force:', force);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    const senderPrivateKeyHex = getPrivateKeyHex();
+
+    console.log('### Logged-in pubkey:', loggedInPubkeyHex, senderPrivateKeyHex);
+
+    if (!loggedInPubkeyHex || !senderPrivateKeyHex) {
+      stopPrivateMessagesSubscription();
+      return;
+    }
+
+    await contactsService.init();
+    const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
+    const relayUrls = normalizeReadableRelayUrls(loggedInContact?.relays);
+    console.log('### Subscribing to private messages using relays:', relayUrls);
+    if (relayUrls.length === 0) {
+      stopPrivateMessagesSubscription();
+      return;
+    }
+    const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
+    if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
+      return;
+    }
+
+    await ensureRelayConnections(relayUrls);
+    getOrCreateSigner(senderPrivateKeyHex);
+    stopPrivateMessagesSubscription();
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    console.log('### Subscribing to private messages:',       {
+        kinds: [NDKKind.GiftWrap],
+        '#p': [loggedInPubkeyHex],
+        relaySet
+      });
+    privateMessagesSubscription = ndk.subscribe(
+      {
+        kinds: [NDKKind.GiftWrap],
+        '#p': [loggedInPubkeyHex]
+      },
+      {
+        relaySet,
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+        onEvent: (event) => {
+          console.log("### Received private message event:", event);
+          const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
+        }
+      }
+    );
+    privateMessagesSubscriptionSignature = signature;
   }
 
   async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
@@ -657,7 +894,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
         }
       }
 
-      await refreshContactByPublicKey(loggedInPubkeyHex);
+      try {
+        await refreshContactByPublicKey(loggedInPubkeyHex);
+      } catch (error) {
+        console.warn('Failed to refresh logged-in contact profile', error);
+      }
+
+      await subscribePrivateMessagesForLoggedInUser(true);
     })().finally(() => {
       syncLoggedInContactProfilePromise = null;
     });
@@ -763,6 +1006,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
     cachedSigner = null;
     cachedSignerPrivateKeyHex = null;
+    stopPrivateMessagesSubscription();
   }
 
   function validateNsec(input: string): NostrNsecValidationResult {
@@ -1007,6 +1251,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     sendDirectMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
+    subscribePrivateMessagesForLoggedInUser,
     updateLoggedInUserRelayList,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
