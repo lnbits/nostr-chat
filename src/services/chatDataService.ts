@@ -1,7 +1,3 @@
-import { dbService, type AppDatabase } from 'src/services/dbService';
-
-type SqlExecParams = Parameters<AppDatabase['exec']>[1];
-
 export interface ChatRow {
   id: number;
   public_key: string;
@@ -14,7 +10,7 @@ export interface ChatRow {
 
 export interface MessageRow {
   id: number;
-  chat_it: number;
+  chat_id: number;
   author_public_key: string;
   message: string;
   created_at: string;
@@ -32,7 +28,7 @@ export interface CreateChatInput {
 }
 
 export interface CreateMessageInput {
-  chat_it: number;
+  chat_id: number;
   author_public_key: string;
   message: string;
   created_at?: string;
@@ -40,104 +36,175 @@ export interface CreateMessageInput {
   meta?: Record<string, unknown>;
 }
 
-const CHATS_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS chats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    public_key TEXT NOT NULL,
-    name TEXT NOT NULL,
-    last_message TEXT,
-    last_message_at DATETIME,
-    unread_count INTEGER NOT NULL DEFAULT 0,
-    meta TEXT NOT NULL
-  );
-`;
+interface ChatRecord {
+  id: number;
+  public_key: string;
+  public_key_normalized: string;
+  name: string;
+  last_message: string;
+  last_message_at: string | null;
+  unread_count: number;
+  meta: Record<string, unknown>;
+}
 
-const MESSAGES_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_it INTEGER NOT NULL,
-    author_public_key TEXT NOT NULL,
-    message TEXT NOT NULL,
-    created_at DATETIME NOT NULL,
-    event_id TEXT NULL,
-    meta TEXT NOT NULL
-  );
-`;
+interface MessageRecord {
+  id: number;
+  chat_id: number;
+  author_public_key: string;
+  message: string;
+  created_at: string;
+  event_id: string | null;
+  event_id_normalized?: string;
+  meta: Record<string, unknown>;
+}
 
-const CHAT_INDEXES_SQL = `
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_public_key_unique ON chats(public_key COLLATE NOCASE);
-  CREATE INDEX IF NOT EXISTS idx_chats_last_message_at ON chats(last_message_at);
-`;
+const CHAT_DATA_DB_NAME = 'chat-data-indexeddb-v1';
+const CHAT_DATA_DB_VERSION = 2;
 
-const MESSAGE_INDEXES_SQL = `
-  CREATE INDEX IF NOT EXISTS idx_messages_chat_it ON messages(chat_it);
-  CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_event_id_unique ON messages(event_id COLLATE NOCASE);
-`;
+const CHATS_STORE = 'chats';
+const MESSAGES_STORE = 'messages';
 
-const CHAT_SELECT_SQL = `
-  SELECT id, public_key, name, last_message, last_message_at, unread_count, meta
-  FROM chats
-`;
+const CHATS_PUBLIC_KEY_INDEX = 'public_key_normalized';
+const CHATS_LAST_MESSAGE_AT_INDEX = 'last_message_at';
 
-const MESSAGE_SELECT_SQL = `
-  SELECT id, chat_it, author_public_key, message, created_at, event_id, meta
-  FROM messages
-`;
+const MESSAGES_CHAT_ID_INDEX = 'chat_id';
+const MESSAGES_CREATED_AT_INDEX = 'created_at';
+const MESSAGES_EVENT_ID_INDEX = 'event_id_normalized';
 
-function parseMeta(value: unknown): Record<string, unknown> {
+function canUseIndexedDb(): boolean {
+  return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeMeta(value: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!isPlainRecord(value)) {
+    return {};
+  }
+
+  return { ...value };
+}
+
+function toIsoTimestamp(value: unknown): string | null {
   if (typeof value !== 'string') {
-    return {};
+    return null;
   }
 
-  if (!value.trim()) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
+  const trimmed = value.trim();
+  return trimmed || null;
 }
 
-function serializeMeta(meta: Record<string, unknown> | undefined): string {
-  const normalized =
-    meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
-  return JSON.stringify(normalized);
+function normalizeUnreadCount(value: unknown): number {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(numeric));
 }
 
-function rowToChat(row: unknown[]): ChatRow {
+function normalizeEventId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function toComparableTimestamp(value: string | null): number {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortChatsByLatest(first: ChatRecord, second: ChatRecord): number {
+  const byTime = toComparableTimestamp(second.last_message_at) - toComparableTimestamp(first.last_message_at);
+  if (byTime !== 0) {
+    return byTime;
+  }
+
+  return second.id - first.id;
+}
+
+function sortMessagesByCreated(first: MessageRecord, second: MessageRecord): number {
+  const byTime = toComparableTimestamp(first.created_at) - toComparableTimestamp(second.created_at);
+  if (byTime !== 0) {
+    return byTime;
+  }
+
+  return first.id - second.id;
+}
+
+function toChatRow(record: ChatRecord): ChatRow {
   return {
-    id: Number(row[0] ?? 0),
-    public_key: String(row[1] ?? ''),
-    name: String(row[2] ?? ''),
-    last_message: String(row[3] ?? ''),
-    last_message_at: row[4] == null ? null : String(row[4]),
-    unread_count: Number(row[5] ?? 0),
-    meta: parseMeta(row[6])
+    id: record.id,
+    public_key: record.public_key,
+    name: record.name,
+    last_message: record.last_message,
+    last_message_at: record.last_message_at,
+    unread_count: record.unread_count,
+    meta: normalizeMeta(record.meta)
   };
 }
 
-function rowToMessage(row: unknown[]): MessageRow {
-  const rawEventId = row[5];
-  const eventId = typeof rawEventId === 'string' ? rawEventId.trim() : '';
-
+function toMessageRow(record: MessageRecord): MessageRow {
   return {
-    id: Number(row[0] ?? 0),
-    chat_it: Number(row[1] ?? 0),
-    author_public_key: String(row[2] ?? ''),
-    message: String(row[3] ?? ''),
-    created_at: String(row[4] ?? ''),
-    event_id: eventId || null,
-    meta: parseMeta(row[6])
+    id: record.id,
+    chat_id: record.chat_id,
+    author_public_key: record.author_public_key,
+    message: record.message,
+    created_at: record.created_at,
+    event_id: normalizeEventId(record.event_id),
+    meta: normalizeMeta(record.meta)
   };
+}
+
+function isConstraintError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'ConstraintError';
+  }
+
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const name = 'name' in error ? String(error.name) : '';
+  return name === 'ConstraintError';
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      reject(request.error ?? new Error('IndexedDB request failed.'));
+    };
+  });
+}
+
+function waitForTransaction(transaction: IDBTransaction): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => {
+      resolve();
+    };
+    transaction.onerror = () => {
+      reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
+    };
+    transaction.onabort = () => {
+      reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
+    };
+  });
 }
 
 class ChatDataService {
+  private dbPromise: Promise<IDBDatabase> | null = null;
   private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
@@ -145,83 +212,101 @@ class ChatDataService {
   }
 
   async persist(): Promise<void> {
-    await dbService.persist();
+    // IndexedDB commits data automatically per transaction.
   }
 
   async listChats(): Promise<ChatRow[]> {
     const db = await this.getDatabase();
-    const rows = this.queryRows(
-      db,
-      `${CHAT_SELECT_SQL} ORDER BY COALESCE(last_message_at, '') DESC, id DESC`
+    const transaction = db.transaction(CHATS_STORE, 'readonly');
+    const store = transaction.objectStore(CHATS_STORE);
+    const records = await requestToPromise<ChatRecord[]>(
+      store.getAll() as IDBRequest<ChatRecord[]>
     );
-    return rows.map((row) => rowToChat(row));
+    await waitForTransaction(transaction);
+
+    return records.sort(sortChatsByLatest).map((record) => toChatRow(record));
   }
 
   async getChatById(id: number): Promise<ChatRow | null> {
-    const db = await this.getDatabase();
-    const row = this.querySingleRow(db, `${CHAT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
-    return row ? rowToChat(row) : null;
-  }
-
-  async getChatByPublicKey(publicKey: string): Promise<ChatRow | null> {
-    const normalized = publicKey.trim();
-    if (!normalized) {
+    if (!Number.isInteger(id) || id <= 0) {
       return null;
     }
 
     const db = await this.getDatabase();
-    const row = this.querySingleRow(
-      db,
-      `${CHAT_SELECT_SQL} WHERE LOWER(public_key) = LOWER(?) LIMIT 1`,
-      [normalized]
+    const transaction = db.transaction(CHATS_STORE, 'readonly');
+    const store = transaction.objectStore(CHATS_STORE);
+    const record = await requestToPromise<ChatRecord | undefined>(
+      store.get(id) as IDBRequest<ChatRecord | undefined>
     );
-    return row ? rowToChat(row) : null;
+    await waitForTransaction(transaction);
+
+    return record ? toChatRow(record) : null;
+  }
+
+  async getChatByPublicKey(publicKey: string): Promise<ChatRow | null> {
+    const normalizedPublicKey = publicKey.trim().toLowerCase();
+    if (!normalizedPublicKey) {
+      return null;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CHATS_STORE, 'readonly');
+    const store = transaction.objectStore(CHATS_STORE);
+    const index = store.index(CHATS_PUBLIC_KEY_INDEX);
+    const record = await requestToPromise<ChatRecord | undefined>(
+      index.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
+    );
+    await waitForTransaction(transaction);
+
+    return record ? toChatRow(record) : null;
   }
 
   async createChat(input: CreateChatInput): Promise<ChatRow | null> {
     const publicKey = input.public_key.trim();
     const name = input.name.trim();
-    const lastMessage = input.last_message?.trim() ?? '';
-    const lastMessageAt = input.last_message_at ?? null;
-    const unreadCount = Number.isFinite(input.unread_count) ? Number(input.unread_count) : 0;
-
     if (!publicKey || !name) {
       return null;
     }
 
+    const normalizedPublicKey = publicKey.toLowerCase();
+    const lastMessage = input.last_message?.trim() ?? '';
+    const record: Omit<ChatRecord, 'id'> = {
+      public_key: publicKey,
+      public_key_normalized: normalizedPublicKey,
+      name,
+      last_message: lastMessage,
+      last_message_at: toIsoTimestamp(input.last_message_at),
+      unread_count: normalizeUnreadCount(input.unread_count),
+      meta: normalizeMeta(input.meta)
+    };
+
+    const existing = await this.getChatByPublicKey(publicKey);
+    if (existing) {
+      return existing;
+    }
+
     const db = await this.getDatabase();
-    const statement = db.prepare(
-      `
-      INSERT INTO chats (public_key, name, last_message, last_message_at, unread_count, meta)
-      VALUES (?, ?, ?, ?, ?, ?)
-      `
-    );
+    const transaction = db.transaction(CHATS_STORE, 'readwrite');
+    const store = transaction.objectStore(CHATS_STORE);
 
     try {
-      statement.run([
-        publicKey,
-        name,
-        lastMessage,
-        lastMessageAt,
-        unreadCount,
-        serializeMeta(input.meta)
-      ]);
+      const insertedId = await requestToPromise<IDBValidKey>(
+        store.add(record) as IDBRequest<IDBValidKey>
+      );
+      await waitForTransaction(transaction);
+
+      return toChatRow({
+        ...record,
+        id: Number(insertedId)
+      });
     } catch (error) {
-      console.error('Failed to create chat row', error);
+      if (isConstraintError(error)) {
+        return this.getChatByPublicKey(publicKey);
+      }
+
+      console.error('Failed to create chat row in IndexedDB.', error);
       return null;
-    } finally {
-      statement.free();
     }
-
-    const inserted = this.querySingleRow(
-      db,
-      `${CHAT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
-    );
-    if (inserted) {
-      await dbService.persist();
-    }
-
-    return inserted ? rowToChat(inserted) : null;
   }
 
   async updateChatPreview(
@@ -230,182 +315,274 @@ class ChatDataService {
     lastMessageAt: string,
     unreadCount: number
   ): Promise<void> {
+    if (!Number.isInteger(chatId) || chatId <= 0) {
+      return;
+    }
+
     const db = await this.getDatabase();
-    const statement = db.prepare(
-      `
-      UPDATE chats
-      SET last_message = ?, last_message_at = ?, unread_count = ?
-      WHERE id = ?
-      `
+    const transaction = db.transaction(CHATS_STORE, 'readwrite');
+    const store = transaction.objectStore(CHATS_STORE);
+    const existingRecord = await requestToPromise<ChatRecord | undefined>(
+      store.get(chatId) as IDBRequest<ChatRecord | undefined>
     );
 
-    try {
-      statement.run([lastMessage, lastMessageAt, unreadCount, chatId]);
-    } finally {
-      statement.free();
+    if (!existingRecord) {
+      await waitForTransaction(transaction);
+      return;
     }
 
-    if (db.getRowsModified() > 0) {
-      await dbService.persist();
-    }
+    const updatedRecord: ChatRecord = {
+      ...existingRecord,
+      last_message: lastMessage,
+      last_message_at: toIsoTimestamp(lastMessageAt),
+      unread_count: normalizeUnreadCount(unreadCount)
+    };
+
+    store.put(updatedRecord);
+    await waitForTransaction(transaction);
   }
 
   async markChatAsRead(chatId: number): Promise<void> {
+    if (!Number.isInteger(chatId) || chatId <= 0) {
+      return;
+    }
+
     const db = await this.getDatabase();
-    const statement = db.prepare('UPDATE chats SET unread_count = 0 WHERE id = ?');
+    const transaction = db.transaction(CHATS_STORE, 'readwrite');
+    const store = transaction.objectStore(CHATS_STORE);
+    const existingRecord = await requestToPromise<ChatRecord | undefined>(
+      store.get(chatId) as IDBRequest<ChatRecord | undefined>
+    );
 
-    try {
-      statement.run([chatId]);
-    } finally {
-      statement.free();
+    if (!existingRecord || existingRecord.unread_count === 0) {
+      await waitForTransaction(transaction);
+      return;
     }
 
-    if (db.getRowsModified() > 0) {
-      await dbService.persist();
-    }
+    store.put({
+      ...existingRecord,
+      unread_count: 0
+    });
+    await waitForTransaction(transaction);
   }
 
   async listMessages(chatId: number): Promise<MessageRow[]> {
+    if (!Number.isInteger(chatId) || chatId <= 0) {
+      return [];
+    }
+
     const db = await this.getDatabase();
-    const rows = this.queryRows(
-      db,
-      `${MESSAGE_SELECT_SQL} WHERE chat_it = ? ORDER BY created_at ASC, id ASC`,
-      [chatId]
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const index = store.index(MESSAGES_CHAT_ID_INDEX);
+    const records = await requestToPromise<MessageRecord[]>(
+      index.getAll(IDBKeyRange.only(chatId)) as IDBRequest<MessageRecord[]>
     );
-    return rows.map((row) => rowToMessage(row));
+    await waitForTransaction(transaction);
+
+    return records.sort(sortMessagesByCreated).map((record) => toMessageRow(record));
   }
 
   async createMessage(input: CreateMessageInput): Promise<MessageRow | null> {
-    const chatId = Number(input.chat_it);
-    const authorPublicKey = input.author_public_key.trim();
-    const message = input.message.trim();
-    const createdAt = input.created_at?.trim() || new Date().toISOString();
-    const eventId = input.event_id?.trim() || null;
+    const chatId = Number(input.chat_id);
+    const authorPublicKey = String(input.author_public_key ?? '').trim();
+    const message = String(input.message ?? '').trim();
+    const createdAt = String(input.created_at ?? '').trim() || new Date().toISOString();
+    const eventId = normalizeEventId(input.event_id);
 
     if (!Number.isInteger(chatId) || chatId <= 0 || !authorPublicKey || !message || !createdAt) {
       return null;
     }
 
+    if (eventId) {
+      const existingMessage = await this.getMessageByEventId(eventId);
+      if (existingMessage) {
+        return existingMessage;
+      }
+    }
+
+    const record: Omit<MessageRecord, 'id'> = {
+      chat_id: chatId,
+      author_public_key: authorPublicKey,
+      message,
+      created_at: createdAt,
+      event_id: eventId,
+      ...(eventId ? { event_id_normalized: eventId.toLowerCase() } : {}),
+      meta: normalizeMeta(input.meta)
+    };
+
     const db = await this.getDatabase();
-    const statement = db.prepare(
-      `
-      INSERT INTO messages (chat_it, author_public_key, message, created_at, event_id, meta)
-      VALUES (?, ?, ?, ?, ?, ?)
-      `
-    );
+    const transaction = db.transaction(MESSAGES_STORE, 'readwrite');
+    const store = transaction.objectStore(MESSAGES_STORE);
 
     try {
-      statement.run([chatId, authorPublicKey, message, createdAt, eventId, serializeMeta(input.meta)]);
+      const insertedId = await requestToPromise<IDBValidKey>(
+        store.add(record) as IDBRequest<IDBValidKey>
+      );
+      await waitForTransaction(transaction);
+
+      return toMessageRow({
+        ...record,
+        id: Number(insertedId)
+      });
     } catch (error) {
-      if (eventId) {
-        const existing = this.querySingleRow(
-          db,
-          `${MESSAGE_SELECT_SQL} WHERE LOWER(event_id) = LOWER(?) LIMIT 1`,
-          [eventId]
-        );
-        if (existing) {
-          return rowToMessage(existing);
-        }
+      if (eventId && isConstraintError(error)) {
+        return this.getMessageByEventId(eventId);
       }
 
-      console.error('Failed to create message row', error);
+      console.error('Failed to create message row in IndexedDB.', error);
       return null;
-    } finally {
-      statement.free();
     }
-
-    const inserted = this.querySingleRow(
-      db,
-      `${MESSAGE_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
-    );
-    if (inserted) {
-      await dbService.persist();
-    }
-
-    return inserted ? rowToMessage(inserted) : null;
   }
 
   async getMessageByEventId(eventId: string): Promise<MessageRow | null> {
-    const normalizedEventId = eventId.trim();
+    const normalizedEventId = eventId.trim().toLowerCase();
     if (!normalizedEventId) {
       return null;
     }
 
     const db = await this.getDatabase();
-    const row = this.querySingleRow(
-      db,
-      `${MESSAGE_SELECT_SQL} WHERE LOWER(event_id) = LOWER(?) LIMIT 1`,
-      [normalizedEventId]
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const index = store.index(MESSAGES_EVENT_ID_INDEX);
+    const record = await requestToPromise<MessageRecord | undefined>(
+      index.get(normalizedEventId) as IDBRequest<MessageRecord | undefined>
     );
+    await waitForTransaction(transaction);
 
-    return row ? rowToMessage(row) : null;
+    return record ? toMessageRow(record) : null;
+  }
+
+  async getDatabase(): Promise<IDBDatabase> {
+    await this.ensureInitialized();
+
+    if (!this.dbPromise) {
+      throw new Error('IndexedDB is not initialized.');
+    }
+
+    return this.dbPromise;
   }
 
   private async ensureInitialized(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.initializeSchema();
+      this.initPromise = this.initializeDatabase();
     }
 
     await this.initPromise;
   }
 
-  private async initializeSchema(): Promise<void> {
-    const db = await dbService.getDatabase();
-    db.run(CHATS_TABLE_SQL);
-    db.run(MESSAGES_TABLE_SQL);
-    const didMigrateSchema = this.ensureSchema(db);
-    db.run(CHAT_INDEXES_SQL);
-    db.run(MESSAGE_INDEXES_SQL);
+  private async initializeDatabase(): Promise<void> {
+    const db = await this.openDatabase();
+    this.dbPromise = Promise.resolve(db);
+  }
 
-    if (didMigrateSchema) {
-      await dbService.persist();
+  private openDatabase(): Promise<IDBDatabase> {
+    if (!canUseIndexedDb()) {
+      return Promise.reject(new Error('IndexedDB is not available in this environment.'));
     }
+
+    return new Promise<IDBDatabase>((resolve, reject) => {
+      const request = window.indexedDB.open(CHAT_DATA_DB_NAME, CHAT_DATA_DB_VERSION);
+
+      request.onupgradeneeded = (event) => {
+        const db = request.result;
+        const transaction = request.transaction;
+        if (!transaction) {
+          return;
+        }
+
+        const chatsStore = db.objectStoreNames.contains(CHATS_STORE)
+          ? transaction.objectStore(CHATS_STORE)
+          : db.createObjectStore(CHATS_STORE, { keyPath: 'id', autoIncrement: true });
+        if (!chatsStore.indexNames.contains(CHATS_PUBLIC_KEY_INDEX)) {
+          chatsStore.createIndex(CHATS_PUBLIC_KEY_INDEX, CHATS_PUBLIC_KEY_INDEX, { unique: true });
+        }
+        if (!chatsStore.indexNames.contains(CHATS_LAST_MESSAGE_AT_INDEX)) {
+          chatsStore.createIndex(CHATS_LAST_MESSAGE_AT_INDEX, CHATS_LAST_MESSAGE_AT_INDEX, {
+            unique: false
+          });
+        }
+
+        const messagesStore = db.objectStoreNames.contains(MESSAGES_STORE)
+          ? transaction.objectStore(MESSAGES_STORE)
+          : db.createObjectStore(MESSAGES_STORE, { keyPath: 'id', autoIncrement: true });
+        if (messagesStore.indexNames.contains('chat_it')) {
+          messagesStore.deleteIndex('chat_it');
+        }
+        if (!messagesStore.indexNames.contains(MESSAGES_CHAT_ID_INDEX)) {
+          messagesStore.createIndex(MESSAGES_CHAT_ID_INDEX, MESSAGES_CHAT_ID_INDEX, { unique: false });
+        }
+        if (!messagesStore.indexNames.contains(MESSAGES_CREATED_AT_INDEX)) {
+          messagesStore.createIndex(MESSAGES_CREATED_AT_INDEX, MESSAGES_CREATED_AT_INDEX, {
+            unique: false
+          });
+        }
+        if (!messagesStore.indexNames.contains(MESSAGES_EVENT_ID_INDEX)) {
+          messagesStore.createIndex(MESSAGES_EVENT_ID_INDEX, MESSAGES_EVENT_ID_INDEX, {
+            unique: true
+          });
+        }
+        if (event.oldVersion < 2) {
+          this.migrateLegacyMessageChatField(messagesStore);
+        }
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+        };
+        resolve(db);
+      };
+
+      request.onerror = () => {
+        reject(request.error ?? new Error('Failed to open chat IndexedDB database.'));
+      };
+
+      request.onblocked = () => {
+        console.error('IndexedDB chat database open request is blocked by another tab.');
+      };
+    });
   }
 
-  async getDatabase(): Promise<AppDatabase> {
-    await this.ensureInitialized();
-    return dbService.getDatabase();
-  }
+  private migrateLegacyMessageChatField(messagesStore: IDBObjectStore): void {
+    const cursorRequest = messagesStore.openCursor();
 
-  private queryRows(db: AppDatabase, sql: string, params?: SqlExecParams): unknown[][] {
-    const statement = db.prepare(sql);
-
-    try {
-      if (params !== undefined) {
-        statement.bind(params);
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (!cursor) {
+        return;
       }
 
-      const rows: unknown[][] = [];
-      while (statement.step()) {
-        rows.push(statement.get());
+      const currentValue = cursor.value as Record<string, unknown>;
+      const currentChatId = Number(currentValue.chat_id ?? 0);
+      const legacyChatId = Number(currentValue.chat_it ?? 0);
+      const hasCurrentChatId = Number.isInteger(currentChatId) && currentChatId > 0;
+      const hasLegacyChatId = Number.isInteger(legacyChatId) && legacyChatId > 0;
+
+      if (!hasCurrentChatId && hasLegacyChatId) {
+        const nextValue: Record<string, unknown> = {
+          ...currentValue,
+          chat_id: legacyChatId
+        };
+        delete nextValue.chat_it;
+        cursor.update(nextValue);
+      } else if ('chat_it' in currentValue) {
+        const nextValue: Record<string, unknown> = {
+          ...currentValue
+        };
+        delete nextValue.chat_it;
+        cursor.update(nextValue);
       }
 
-      return rows;
-    } finally {
-      statement.free();
-    }
+      cursor.continue();
+    };
+
+    cursorRequest.onerror = () => {
+      console.error('Failed to migrate legacy message chat field in IndexedDB.', cursorRequest.error);
+    };
   }
 
-  private querySingleRow(
-    db: AppDatabase,
-    sql: string,
-    params?: SqlExecParams
-  ): unknown[] | null {
-    const rows = this.queryRows(db, sql, params);
-    return rows[0] ?? null;
-  }
-
-  private ensureSchema(db: AppDatabase): boolean {
-    const rows = this.queryRows(db, 'PRAGMA table_info(messages)');
-    const hasEventId = rows.some((row) => String(row[1] ?? '') === 'event_id');
-
-    if (!hasEventId) {
-      db.run('ALTER TABLE messages ADD COLUMN event_id TEXT NULL');
-      return true;
-    }
-
-    return false;
-  }
 }
 
 export const chatDataService = new ChatDataService();

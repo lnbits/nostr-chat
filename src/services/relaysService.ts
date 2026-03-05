@@ -1,23 +1,80 @@
-import { dbService, type AppDatabase } from 'src/services/dbService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import type { ContactRelay } from 'src/types/contact';
 
-type SqlExecParams = Parameters<AppDatabase['exec']>[1];
+interface RelayRecord {
+  public_key: string;
+  public_key_normalized: string;
+  relay_ws: string;
+}
 
-const CONTACT_RELAYS_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS contact_relays (
-    public_key TEXT NOT NULL,
-    relay_ws TEXT NOT NULL,
-    PRIMARY KEY (public_key, relay_ws)
-  );
-`;
+const RELAYS_DB_NAME = 'contact-relays-indexeddb-v1';
+const RELAYS_DB_VERSION = 1;
 
-const CONTACT_RELAYS_INDEXES_SQL = `
-  CREATE INDEX IF NOT EXISTS idx_contact_relays_public_key ON contact_relays(public_key COLLATE NOCASE);
-  CREATE INDEX IF NOT EXISTS idx_contact_relays_relay_ws ON contact_relays(relay_ws COLLATE NOCASE);
-`;
+const RELAYS_STORE = 'contact_relays';
+const RELAYS_PUBLIC_KEY_INDEX = 'public_key_normalized';
+const RELAYS_WS_INDEX = 'relay_ws';
+
+function canUseIndexedDb(): boolean {
+  return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
+}
+
+function isConstraintError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'ConstraintError';
+  }
+
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const name = 'name' in error ? String(error.name) : '';
+  return name === 'ConstraintError';
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      reject(request.error ?? new Error('IndexedDB request failed.'));
+    };
+  });
+}
+
+function waitForTransaction(transaction: IDBTransaction): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => {
+      resolve();
+    };
+    transaction.onerror = () => {
+      reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
+    };
+    transaction.onabort = () => {
+      reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
+    };
+  });
+}
+
+function compareRelayUrls(first: string, second: string): number {
+  const byValue = first.localeCompare(second, undefined, { sensitivity: 'base' });
+  if (byValue !== 0) {
+    return byValue;
+  }
+
+  return first.localeCompare(second);
+}
+
+function toContactRelay(record: RelayRecord): ContactRelay {
+  return {
+    url: record.relay_ws,
+    read: true,
+    write: true
+  };
+}
 
 class RelaysService {
+  private dbPromise: Promise<IDBDatabase> | null = null;
   private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
@@ -30,48 +87,41 @@ class RelaysService {
       return [];
     }
 
+    const normalizedPublicKeyLower = normalizedPublicKey.toLowerCase();
     const db = await this.getDatabase();
-    const rows = this.queryRows(
-      db,
-      `
-        SELECT relay_ws
-        FROM contact_relays
-        WHERE LOWER(public_key) = LOWER(?)
-        ORDER BY relay_ws COLLATE NOCASE ASC
-      `,
-      [normalizedPublicKey]
+    const transaction = db.transaction(RELAYS_STORE, 'readonly');
+    const store = transaction.objectStore(RELAYS_STORE);
+    const index = store.index(RELAYS_PUBLIC_KEY_INDEX);
+    const records = await requestToPromise<RelayRecord[]>(
+      index.getAll(IDBKeyRange.only(normalizedPublicKeyLower)) as IDBRequest<RelayRecord[]>
     );
+    await waitForTransaction(transaction);
 
-    return rows
-      .map((row) => {
-        const url = String(row[0] ?? '').trim();
-        if (!url) {
-          return null;
-        }
-
-        const relay: ContactRelay = {
-          url,
-          read: true,
-          write: true
-        };
-
-        return relay;
-      })
-      .filter((relay): relay is ContactRelay => relay !== null);
+    return records
+      .map((record) => toContactRelay(record))
+      .sort((first, second) => compareRelayUrls(first.url, second.url));
   }
 
   async listAllRelays(): Promise<string[]> {
     const db = await this.getDatabase();
-    const rows = this.queryRows(
-      db,
-      `
-        SELECT DISTINCT relay_ws
-        FROM contact_relays
-        ORDER BY relay_ws COLLATE NOCASE ASC
-      `
+    const transaction = db.transaction(RELAYS_STORE, 'readonly');
+    const store = transaction.objectStore(RELAYS_STORE);
+    const records = await requestToPromise<RelayRecord[]>(
+      store.getAll() as IDBRequest<RelayRecord[]>
     );
+    await waitForTransaction(transaction);
 
-    return rows.map((row) => String(row[0] ?? ''));
+    const uniqueRelayUrls = new Set<string>();
+    for (const record of records) {
+      const relayWs = String(record.relay_ws ?? '').trim();
+      if (!relayWs) {
+        continue;
+      }
+
+      uniqueRelayUrls.add(relayWs);
+    }
+
+    return Array.from(uniqueRelayUrls).sort(compareRelayUrls);
   }
 
   async createRelay(publicKey: string, relay: ContactRelay): Promise<boolean> {
@@ -81,24 +131,35 @@ class RelaysService {
       return false;
     }
 
+    const normalizedPublicKeyLower = normalizedPublicKey.toLowerCase();
     const db = await this.getDatabase();
-    const statement = db.prepare('INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)');
+    const transaction = db.transaction(RELAYS_STORE, 'readwrite');
+    const store = transaction.objectStore(RELAYS_STORE);
 
     try {
-      statement.run([normalizedPublicKey, normalizedRelayUrl]);
+      const existing = await requestToPromise<RelayRecord | undefined>(
+        store.get([normalizedPublicKeyLower, normalizedRelayUrl]) as IDBRequest<RelayRecord | undefined>
+      );
+      if (existing) {
+        await waitForTransaction(transaction);
+        return false;
+      }
+
+      store.add({
+        public_key: normalizedPublicKey,
+        public_key_normalized: normalizedPublicKeyLower,
+        relay_ws: normalizedRelayUrl
+      } as RelayRecord);
+      await waitForTransaction(transaction);
+      return true;
     } catch (error) {
-      console.error('Failed to create contact relay', error);
+      if (isConstraintError(error)) {
+        return false;
+      }
+
+      console.error('Failed to create contact relay in IndexedDB.', error);
       return false;
-    } finally {
-      statement.free();
     }
-
-    const hasChanges = db.getRowsModified() > 0;
-    if (hasChanges) {
-      await dbService.persist();
-    }
-
-    return hasChanges;
   }
 
   async updateRelay(
@@ -113,30 +174,51 @@ class RelaysService {
       return false;
     }
 
+    if (normalizedPreviousRelayWs === normalizedNextRelayUrl) {
+      return false;
+    }
+
+    const normalizedPublicKeyLower = normalizedPublicKey.toLowerCase();
+    const previousKey: [string, string] = [normalizedPublicKeyLower, normalizedPreviousRelayWs];
+    const nextKey: [string, string] = [normalizedPublicKeyLower, normalizedNextRelayUrl];
     const db = await this.getDatabase();
-    const statement = db.prepare(
-      `
-        UPDATE contact_relays
-        SET relay_ws = ?
-        WHERE LOWER(public_key) = LOWER(?) AND relay_ws = ?
-      `
-    );
+    const transaction = db.transaction(RELAYS_STORE, 'readwrite');
+    const store = transaction.objectStore(RELAYS_STORE);
 
     try {
-      statement.run([normalizedNextRelayUrl, normalizedPublicKey, normalizedPreviousRelayWs]);
+      const existing = await requestToPromise<RelayRecord | undefined>(
+        store.get(previousKey) as IDBRequest<RelayRecord | undefined>
+      );
+      if (!existing) {
+        await waitForTransaction(transaction);
+        return false;
+      }
+
+      const conflict = await requestToPromise<RelayRecord | undefined>(
+        store.get(nextKey) as IDBRequest<RelayRecord | undefined>
+      );
+      if (conflict) {
+        await waitForTransaction(transaction);
+        return false;
+      }
+
+      store.delete(previousKey);
+      store.add({
+        ...existing,
+        public_key: normalizedPublicKey,
+        public_key_normalized: normalizedPublicKeyLower,
+        relay_ws: normalizedNextRelayUrl
+      } as RelayRecord);
+      await waitForTransaction(transaction);
+      return true;
     } catch (error) {
-      console.error('Failed to update contact relay', error);
+      if (isConstraintError(error)) {
+        return false;
+      }
+
+      console.error('Failed to update contact relay in IndexedDB.', error);
       return false;
-    } finally {
-      statement.free();
     }
-
-    const hasChanges = db.getRowsModified() > 0;
-    if (hasChanges) {
-      await dbService.persist();
-    }
-
-    return hasChanges;
   }
 
   async deleteRelay(publicKey: string, relayWs: string): Promise<boolean> {
@@ -146,23 +228,28 @@ class RelaysService {
       return false;
     }
 
+    const normalizedPublicKeyLower = normalizedPublicKey.toLowerCase();
+    const key: [string, string] = [normalizedPublicKeyLower, normalizedRelayWs];
     const db = await this.getDatabase();
-    const statement = db.prepare(
-      'DELETE FROM contact_relays WHERE LOWER(public_key) = LOWER(?) AND relay_ws = ?'
-    );
+    const transaction = db.transaction(RELAYS_STORE, 'readwrite');
+    const store = transaction.objectStore(RELAYS_STORE);
 
     try {
-      statement.run([normalizedPublicKey, normalizedRelayWs]);
-    } finally {
-      statement.free();
-    }
+      const existing = await requestToPromise<RelayRecord | undefined>(
+        store.get(key) as IDBRequest<RelayRecord | undefined>
+      );
+      if (!existing) {
+        await waitForTransaction(transaction);
+        return false;
+      }
 
-    const hasChanges = db.getRowsModified() > 0;
-    if (hasChanges) {
-      await dbService.persist();
+      store.delete(key);
+      await waitForTransaction(transaction);
+      return true;
+    } catch (error) {
+      console.error('Failed to delete contact relay in IndexedDB.', error);
+      return false;
     }
-
-    return hasChanges;
   }
 
   async replaceRelaysForPublicKey(publicKey: string, relays: ContactRelay[]): Promise<ContactRelay[]> {
@@ -171,36 +258,29 @@ class RelaysService {
       return [];
     }
 
+    const normalizedPublicKeyLower = normalizedPublicKey.toLowerCase();
     const normalizedRelayUrls = inputSanitizerService.normalizeContactRelayUrls(relays);
     const db = await this.getDatabase();
-    const deleteStatement = db.prepare('DELETE FROM contact_relays WHERE LOWER(public_key) = LOWER(?)');
-    const insertStatement = db.prepare('INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)');
+    const transaction = db.transaction(RELAYS_STORE, 'readwrite');
+    const store = transaction.objectStore(RELAYS_STORE);
 
     try {
-      db.run('BEGIN TRANSACTION');
-      deleteStatement.run([normalizedPublicKey]);
+      await this.deleteRecordsByPublicKey(store, normalizedPublicKeyLower);
 
       for (const relayUrl of normalizedRelayUrls) {
-        insertStatement.run([normalizedPublicKey, relayUrl]);
+        store.put({
+          public_key: normalizedPublicKey,
+          public_key_normalized: normalizedPublicKeyLower,
+          relay_ws: relayUrl
+        } as RelayRecord);
       }
 
-      db.run('COMMIT');
-    } catch (error) {
-      try {
-        db.run('ROLLBACK');
-      } catch {
-        // No-op: rollback failure should not hide the original issue.
-      }
-
-      console.error('Failed to replace contact relays', error);
+      await waitForTransaction(transaction);
       return this.listRelaysByPublicKey(normalizedPublicKey);
-    } finally {
-      deleteStatement.free();
-      insertStatement.free();
+    } catch (error) {
+      console.error('Failed to replace contact relays in IndexedDB.', error);
+      return this.listRelaysByPublicKey(normalizedPublicKey);
     }
-
-    await dbService.persist();
-    return this.listRelaysByPublicKey(normalizedPublicKey);
   }
 
   async deleteRelaysForPublicKey(publicKey: string): Promise<boolean> {
@@ -209,99 +289,117 @@ class RelaysService {
       return false;
     }
 
+    const normalizedPublicKeyLower = normalizedPublicKey.toLowerCase();
     const db = await this.getDatabase();
-    const statement = db.prepare('DELETE FROM contact_relays WHERE LOWER(public_key) = LOWER(?)');
+    const transaction = db.transaction(RELAYS_STORE, 'readwrite');
+    const store = transaction.objectStore(RELAYS_STORE);
 
     try {
-      statement.run([normalizedPublicKey]);
-    } finally {
-      statement.free();
+      const didDelete = await this.deleteRecordsByPublicKey(store, normalizedPublicKeyLower);
+      await waitForTransaction(transaction);
+      return didDelete;
+    } catch (error) {
+      console.error('Failed to delete contact relays in IndexedDB.', error);
+      return false;
     }
-
-    const hasChanges = db.getRowsModified() > 0;
-    if (hasChanges) {
-      await dbService.persist();
-    }
-
-    return hasChanges;
   }
 
   private async ensureInitialized(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.initializeSchema();
+      this.initPromise = this.initializeDatabase();
     }
 
     await this.initPromise;
   }
 
-  private async initializeSchema(): Promise<void> {
-    const db = await dbService.getDatabase();
-    const didResetSchema = this.ensureSchema(db);
-    if (didResetSchema) {
-      await dbService.persist();
-    }
+  private async initializeDatabase(): Promise<void> {
+    const db = await this.openDatabase();
+    this.dbPromise = Promise.resolve(db);
   }
 
-  private async getDatabase(): Promise<AppDatabase> {
+  private async getDatabase(): Promise<IDBDatabase> {
     await this.ensureInitialized();
-    return dbService.getDatabase();
-  }
 
-  private queryRows(db: AppDatabase, sql: string, params?: SqlExecParams): unknown[][] {
-    const statement = db.prepare(sql);
-
-    try {
-      if (params !== undefined) {
-        statement.bind(params);
-      }
-
-      const rows: unknown[][] = [];
-      while (statement.step()) {
-        rows.push(statement.get());
-      }
-
-      return rows;
-    } finally {
-      statement.free();
-    }
-  }
-
-  private ensureSchema(db: AppDatabase): boolean {
-    const hasTable = this.hasSchemaObject(db, 'table', 'contact_relays');
-    if (!hasTable) {
-      db.run(CONTACT_RELAYS_TABLE_SQL);
-      db.run(CONTACT_RELAYS_INDEXES_SQL);
-      return true;
+    if (!this.dbPromise) {
+      throw new Error('Relays IndexedDB is not initialized.');
     }
 
-    const columns = this.queryRows(db, 'PRAGMA table_info(contact_relays)');
-    const hasPublicKey = columns.some((row) => String(row[1] ?? '') === 'public_key');
-    const hasRelayWs = columns.some((row) => String(row[1] ?? '') === 'relay_ws');
-
-    if (!hasPublicKey || !hasRelayWs) {
-      db.run('DROP TABLE contact_relays');
-      db.run(CONTACT_RELAYS_TABLE_SQL);
-      db.run(CONTACT_RELAYS_INDEXES_SQL);
-      return true;
-    }
-
-    db.run(CONTACT_RELAYS_INDEXES_SQL);
-    return false;
+    return this.dbPromise;
   }
 
-  private hasSchemaObject(db: AppDatabase, objectType: 'table' | 'index', objectName: string): boolean {
-    const rows = this.queryRows(
-      db,
-      `
-        SELECT 1
-        FROM sqlite_master
-        WHERE type = ? AND name = ?
-        LIMIT 1
-      `,
-      [objectType, objectName]
-    );
+  private openDatabase(): Promise<IDBDatabase> {
+    if (!canUseIndexedDb()) {
+      return Promise.reject(new Error('IndexedDB is not available in this environment.'));
+    }
 
-    return rows.length > 0;
+    return new Promise<IDBDatabase>((resolve, reject) => {
+      const request = window.indexedDB.open(RELAYS_DB_NAME, RELAYS_DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const transaction = request.transaction;
+        if (!transaction) {
+          return;
+        }
+
+        const relaysStore = db.objectStoreNames.contains(RELAYS_STORE)
+          ? transaction.objectStore(RELAYS_STORE)
+          : db.createObjectStore(RELAYS_STORE, {
+              keyPath: [RELAYS_PUBLIC_KEY_INDEX, RELAYS_WS_INDEX]
+            });
+        if (!relaysStore.indexNames.contains(RELAYS_PUBLIC_KEY_INDEX)) {
+          relaysStore.createIndex(RELAYS_PUBLIC_KEY_INDEX, RELAYS_PUBLIC_KEY_INDEX, { unique: false });
+        }
+        if (!relaysStore.indexNames.contains(RELAYS_WS_INDEX)) {
+          relaysStore.createIndex(RELAYS_WS_INDEX, RELAYS_WS_INDEX, { unique: false });
+        }
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+        };
+        resolve(db);
+      };
+
+      request.onerror = () => {
+        reject(request.error ?? new Error('Failed to open relays IndexedDB database.'));
+      };
+
+      request.onblocked = () => {
+        console.error('Relays IndexedDB open request is blocked by another tab.');
+      };
+    });
+  }
+
+  private deleteRecordsByPublicKey(
+    store: IDBObjectStore,
+    publicKeyNormalized: string
+  ): Promise<boolean> {
+    const index = store.index(RELAYS_PUBLIC_KEY_INDEX);
+    const range = IDBKeyRange.only(publicKeyNormalized);
+
+    return new Promise<boolean>((resolve, reject) => {
+      let didDelete = false;
+      const request = index.openCursor(range);
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(didDelete);
+          return;
+        }
+
+        didDelete = true;
+        cursor.delete();
+        cursor.continue();
+      };
+
+      request.onerror = () => {
+        reject(request.error ?? new Error('Failed to delete relay records for contact.'));
+      };
+    });
   }
 }
 

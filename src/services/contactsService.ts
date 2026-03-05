@@ -1,4 +1,3 @@
-import { dbService, type AppDatabase } from 'src/services/dbService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { relaysService } from 'src/services/relaysService';
 import type {
@@ -8,51 +7,158 @@ import type {
   UpdateContactInput
 } from 'src/types/contact';
 
-type SqlExecParams = Parameters<AppDatabase['exec']>[1];
+interface RawContactStoreRecord {
+  id: number;
+  public_key: string;
+  public_key_normalized?: string;
+  name: string;
+  name_normalized?: string;
+  given_name?: string | null;
+  given_name_normalized?: string;
+  meta: unknown;
+}
 
-const CONTACTS_TABLE_SQL = `
-  CREATE TABLE IF NOT EXISTS contacts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    public_key TEXT NOT NULL,
-    name TEXT NOT NULL,
-    given_name TEXT NULL,
-    meta TEXT NOT NULL
-  );
-`;
+interface ContactStoreRecord {
+  id: number;
+  public_key: string;
+  public_key_normalized: string;
+  name: string;
+  name_normalized: string;
+  given_name: string | null;
+  given_name_normalized: string;
+  meta: ContactMetadata;
+}
 
-const CONTACTS_INDEXES_SQL = `
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_public_key_unique ON contacts(public_key COLLATE NOCASE);
-  CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name COLLATE NOCASE);
-`;
+type DebugExecResult = Array<{
+  columns: string[];
+  values: unknown[][];
+}>;
 
-const CONTACT_SELECT_SQL = `
-  SELECT id, public_key, name, given_name, meta
-  FROM contacts
-`;
+const CONTACTS_DB_NAME = 'contacts-indexeddb-v1';
+const CONTACTS_DB_VERSION = 1;
+
+const CONTACTS_STORE = 'contacts';
+const CONTACTS_PUBLIC_KEY_INDEX = 'public_key_normalized';
+const CONTACTS_NAME_INDEX = 'name_normalized';
+const CONTACTS_GIVEN_NAME_INDEX = 'given_name_normalized';
+
+function canUseIndexedDb(): boolean {
+  return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
+}
+
+function isConstraintError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'ConstraintError';
+  }
+
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const name = 'name' in error ? String(error.name) : '';
+  return name === 'ConstraintError';
+}
+
+function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      reject(request.error ?? new Error('IndexedDB request failed.'));
+    };
+  });
+}
+
+function waitForTransaction(transaction: IDBTransaction): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => {
+      resolve();
+    };
+    transaction.onerror = () => {
+      reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
+    };
+    transaction.onabort = () => {
+      reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
+    };
+  });
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function normalizeNameValue(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 function parseStoredMeta(value: unknown): ContactMetadata {
-  return inputSanitizerService.parseStoredContactMetadata(value);
+  if (typeof value === 'string') {
+    return inputSanitizerService.parseStoredContactMetadata(value);
+  }
+
+  return inputSanitizerService.normalizeContactMetadata(value);
 }
 
-function serializeContactMeta(meta: ContactMetadata | undefined): string {
-  return inputSanitizerService.serializeContactMetadata(meta);
-}
+function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null {
+  const id = Number(raw.id ?? 0);
+  const publicKey = String(raw.public_key ?? '').trim();
+  if (!Number.isInteger(id) || id <= 0 || !publicKey) {
+    return null;
+  }
 
-function rowToContact(row: unknown[]): ContactRecord {
+  const name = String(raw.name ?? '').trim() || publicKey;
+  const givenName = normalizeOptionalString(raw.given_name);
+
   return {
-    id: Number(row[0]),
-    public_key: String(row[1] ?? ''),
-    name: String(row[2] ?? ''),
-    given_name: row[3] == null ? null : String(row[3]),
-    meta: parseStoredMeta(row[4])
+    id,
+    public_key: publicKey,
+    public_key_normalized: publicKey.toLowerCase(),
+    name,
+    name_normalized: normalizeNameValue(name),
+    given_name: givenName,
+    given_name_normalized: normalizeNameValue(givenName ?? ''),
+    meta: parseStoredMeta(raw.meta)
   };
 }
 
-function mapContactRows(rows: unknown[][]): ContactRecord[] {
-  return rows.map((row) => rowToContact(row));
+function toContactRecord(record: ContactStoreRecord): ContactRecord {
+  return {
+    id: record.id,
+    public_key: record.public_key,
+    name: record.name,
+    given_name: record.given_name,
+    meta: parseStoredMeta(record.meta)
+  };
+}
+
+function compareContactsByName(first: ContactStoreRecord, second: ContactStoreRecord): number {
+  const byName = first.name.localeCompare(second.name, undefined, { sensitivity: 'base' });
+  if (byName !== 0) {
+    return byName;
+  }
+
+  const byPublicKey = first.public_key.localeCompare(second.public_key, undefined, {
+    sensitivity: 'base'
+  });
+  if (byPublicKey !== 0) {
+    return byPublicKey;
+  }
+
+  return first.id - second.id;
+}
+
+function contactMetaEquals(first: ContactMetadata, second: ContactMetadata): boolean {
+  return JSON.stringify(first) === JSON.stringify(second);
 }
 
 class ContactsService {
+  private dbPromise: Promise<IDBDatabase> | null = null;
   private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
@@ -60,84 +166,92 @@ class ContactsService {
   }
 
   async listContacts(): Promise<ContactRecord[]> {
-    const db = await this.getDatabase();
-    const rows = this.queryRows(db, `${CONTACT_SELECT_SQL} ORDER BY name COLLATE NOCASE ASC`);
-    return this.attachRelays(mapContactRows(rows));
+    const records = await this.listNormalizedStoreRecords();
+    const contacts = records.sort(compareContactsByName).map((record) => toContactRecord(record));
+    return this.attachRelays(contacts);
   }
 
   async searchContacts(searchText: string): Promise<ContactRecord[]> {
     const query = searchText.trim().toLowerCase();
-
     if (!query) {
       return this.listContacts();
     }
 
-    const likeQuery = `%${query}%`;
-    const db = await this.getDatabase();
-    const rows = this.queryRows(
-      db,
-      `
-        ${CONTACT_SELECT_SQL}
-        WHERE
-          LOWER(public_key) LIKE ?
-          OR LOWER(name) LIKE ?
-          OR LOWER(COALESCE(given_name, '')) LIKE ?
-        ORDER BY name COLLATE NOCASE ASC
-      `,
-      [likeQuery, likeQuery, likeQuery]
-    );
+    const records = await this.listNormalizedStoreRecords();
+    const filteredRecords = records.filter((record) => {
+      return (
+        record.public_key_normalized.includes(query) ||
+        record.name_normalized.includes(query) ||
+        record.given_name_normalized.includes(query)
+      );
+    });
 
-    return this.attachRelays(mapContactRows(rows));
+    const contacts = filteredRecords.sort(compareContactsByName).map((record) => toContactRecord(record));
+    return this.attachRelays(contacts);
   }
 
   async getContactById(id: number): Promise<ContactRecord | null> {
-    const db = await this.getDatabase();
-    const contact = this.querySingleRow(db, `${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
-    if (!contact) {
+    if (!Number.isInteger(id) || id <= 0) {
       return null;
     }
 
-    const [mapped] = await this.attachRelays([rowToContact(contact)]);
-    return mapped ?? null;
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CONTACTS_STORE, 'readonly');
+    const store = transaction.objectStore(CONTACTS_STORE);
+    const rawRecord = await requestToPromise<RawContactStoreRecord | undefined>(
+      store.get(id) as IDBRequest<RawContactStoreRecord | undefined>
+    );
+    await waitForTransaction(transaction);
+
+    const record = rawRecord ? normalizeRecord(rawRecord) : null;
+    if (!record) {
+      return null;
+    }
+
+    const [contact] = await this.attachRelays([toContactRecord(record)]);
+    return contact ?? null;
   }
 
   async getContactByPublicKey(publicKey: string): Promise<ContactRecord | null> {
-    const normalized = inputSanitizerService.normalizePublicKey(publicKey);
-    if (!normalized) {
+    const normalizedPublicKey = inputSanitizerService.normalizePublicKey(publicKey);
+    if (!normalizedPublicKey) {
       return null;
     }
 
     const db = await this.getDatabase();
-    const contact = this.querySingleRow(
-      db,
-      `${CONTACT_SELECT_SQL} WHERE LOWER(public_key) = LOWER(?) LIMIT 1`,
-      [normalized]
+    const transaction = db.transaction(CONTACTS_STORE, 'readonly');
+    const store = transaction.objectStore(CONTACTS_STORE);
+    const index = store.index(CONTACTS_PUBLIC_KEY_INDEX);
+    const rawRecord = await requestToPromise<RawContactStoreRecord | undefined>(
+      index.get(normalizedPublicKey.toLowerCase()) as IDBRequest<RawContactStoreRecord | undefined>
     );
-    if (!contact) {
+    await waitForTransaction(transaction);
+
+    const record = rawRecord ? normalizeRecord(rawRecord) : null;
+    if (!record) {
       return null;
     }
 
-    const [mapped] = await this.attachRelays([rowToContact(contact)]);
-    return mapped ?? null;
+    const [contact] = await this.attachRelays([toContactRecord(record)]);
+    return contact ?? null;
   }
 
   async publicKeyExists(publicKey: string): Promise<boolean> {
-    const normalized = inputSanitizerService.normalizePublicKey(publicKey);
-    if (!normalized) {
+    const normalizedPublicKey = inputSanitizerService.normalizePublicKey(publicKey);
+    if (!normalizedPublicKey) {
       return false;
     }
 
     const db = await this.getDatabase();
-    const statement = db.prepare(
-      'SELECT 1 FROM contacts WHERE LOWER(public_key) = LOWER(?) LIMIT 1'
+    const transaction = db.transaction(CONTACTS_STORE, 'readonly');
+    const store = transaction.objectStore(CONTACTS_STORE);
+    const index = store.index(CONTACTS_PUBLIC_KEY_INDEX);
+    const count = await requestToPromise<number>(
+      index.count(IDBKeyRange.only(normalizedPublicKey.toLowerCase()))
     );
+    await waitForTransaction(transaction);
 
-    try {
-      statement.bind([normalized]);
-      return statement.step();
-    } finally {
-      statement.free();
-    }
+    return count > 0;
   }
 
   async createContact(input: CreateContactInput): Promise<ContactRecord | null> {
@@ -150,108 +264,142 @@ class ContactsService {
     const givenName = input.given_name?.trim() || null;
     const meta = inputSanitizerService.normalizeContactMetadata(input.meta);
 
+    const record: Omit<ContactStoreRecord, 'id'> = {
+      public_key: publicKey,
+      public_key_normalized: publicKey.toLowerCase(),
+      name,
+      name_normalized: normalizeNameValue(name),
+      given_name: givenName,
+      given_name_normalized: normalizeNameValue(givenName ?? ''),
+      meta
+    };
+
     const db = await this.getDatabase();
-    const insertStatement = db.prepare(
-      'INSERT INTO contacts (public_key, name, given_name, meta) VALUES (?, ?, ?, ?)'
-    );
+    const transaction = db.transaction(CONTACTS_STORE, 'readwrite');
+    const store = transaction.objectStore(CONTACTS_STORE);
+
     try {
-      insertStatement.run([publicKey, name, givenName, serializeContactMeta(meta)]);
+      const insertedId = await requestToPromise<IDBValidKey>(
+        store.add(record) as IDBRequest<IDBValidKey>
+      );
+      await waitForTransaction(transaction);
+
+      const contact = toContactRecord({
+        ...record,
+        id: Number(insertedId)
+      });
+      const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, input.relays ?? []);
+      return { ...contact, relays };
     } catch (error) {
-      console.error('Failed to insert contact', error);
-      return null;
-    } finally {
-      insertStatement.free();
-    }
+      if (isConstraintError(error)) {
+        return null;
+      }
 
-    const inserted = this.querySingleRow(
-      db,
-      `${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
-    );
-    if (!inserted) {
+      console.error('Failed to create contact in IndexedDB.', error);
       return null;
     }
-
-    const contact = rowToContact(inserted);
-    const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, input.relays ?? []);
-    await dbService.persist();
-
-    return { ...contact, relays };
   }
 
   async updateContact(id: number, input: UpdateContactInput): Promise<ContactRecord | null> {
-    const db = await this.getDatabase();
-    const existingRow = this.querySingleRow(db, `${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
-    if (!existingRow) {
+    if (!Number.isInteger(id) || id <= 0) {
       return null;
     }
 
-    const previousContact = rowToContact(existingRow);
-    const updates: Array<{
-      field: 'public_key' | 'name' | 'given_name' | 'meta';
-      value: string | null;
-    }> = [];
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CONTACTS_STORE, 'readwrite');
+    const store = transaction.objectStore(CONTACTS_STORE);
+    const rawExistingRecord = await requestToPromise<RawContactStoreRecord | undefined>(
+      store.get(id) as IDBRequest<RawContactStoreRecord | undefined>
+    );
+    const existingRecord = rawExistingRecord ? normalizeRecord(rawExistingRecord) : null;
+    if (!existingRecord) {
+      await waitForTransaction(transaction);
+      return null;
+    }
+
+    const previousContact = toContactRecord(existingRecord);
+    const nextRecord: ContactStoreRecord = {
+      ...existingRecord
+    };
+    let didUpdateRecord = false;
 
     if (input.public_key !== undefined) {
       const publicKey = inputSanitizerService.normalizePublicKey(input.public_key);
       if (!publicKey) {
+        await waitForTransaction(transaction);
         return null;
       }
 
-      updates.push({ field: 'public_key', value: publicKey });
+      const normalizedPublicKey = publicKey.toLowerCase();
+      if (
+        nextRecord.public_key !== publicKey ||
+        nextRecord.public_key_normalized !== normalizedPublicKey
+      ) {
+        nextRecord.public_key = publicKey;
+        nextRecord.public_key_normalized = normalizedPublicKey;
+        didUpdateRecord = true;
+      }
     }
 
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name) {
+        await waitForTransaction(transaction);
         return null;
       }
 
-      updates.push({ field: 'name', value: name });
+      const normalizedName = normalizeNameValue(name);
+      if (nextRecord.name !== name || nextRecord.name_normalized !== normalizedName) {
+        nextRecord.name = name;
+        nextRecord.name_normalized = normalizedName;
+        didUpdateRecord = true;
+      }
     }
 
     if (input.given_name !== undefined) {
       const givenName = input.given_name?.trim() || null;
-      updates.push({ field: 'given_name', value: givenName });
+      const normalizedGivenName = normalizeNameValue(givenName ?? '');
+      if (
+        nextRecord.given_name !== givenName ||
+        nextRecord.given_name_normalized !== normalizedGivenName
+      ) {
+        nextRecord.given_name = givenName;
+        nextRecord.given_name_normalized = normalizedGivenName;
+        didUpdateRecord = true;
+      }
     }
 
     if (input.meta !== undefined) {
-      updates.push({ field: 'meta', value: serializeContactMeta(input.meta) });
+      const nextMeta = inputSanitizerService.normalizeContactMetadata(input.meta);
+      if (!contactMetaEquals(nextRecord.meta, nextMeta)) {
+        nextRecord.meta = nextMeta;
+        didUpdateRecord = true;
+      }
     }
 
-    if (updates.length === 0 && input.relays === undefined) {
-      return this.getContactById(id);
+    if (didUpdateRecord) {
+      store.put(nextRecord);
     }
 
-    if (updates.length > 0) {
-      const setClause = updates.map((update) => `${update.field} = ?`).join(', ');
-      const params: Array<number | string | null> = updates.map((update) => update.value);
-      params.push(id);
-
-      const updateStatement = db.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`);
-      try {
-        updateStatement.run(params);
-      } catch (error) {
-        console.error('Failed to update contact', error);
+    try {
+      await waitForTransaction(transaction);
+    } catch (error) {
+      if (isConstraintError(error)) {
         return null;
-      } finally {
-        updateStatement.free();
       }
 
-      if (db.getRowsModified() > 0) {
-        await dbService.persist();
-      }
-    }
-
-    const contact = await this.getContactById(id);
-    if (!contact) {
+      console.error('Failed to update contact in IndexedDB.', error);
       return null;
     }
+
+    const contact = toContactRecord(nextRecord);
 
     if (input.relays === undefined) {
       const didPublicKeyChange =
         previousContact.public_key.toLowerCase() !== contact.public_key.toLowerCase();
       if (!didPublicKeyChange) {
-        return contact;
+        const [mapped] = await this.attachRelays([contact]);
+        return mapped ?? contact;
       }
 
       const preservedRelays = await relaysService.listRelaysByPublicKey(previousContact.public_key);
@@ -269,74 +417,148 @@ class ContactsService {
   }
 
   async deleteContact(id: number): Promise<boolean> {
-    const db = await this.getDatabase();
-    const existingRow = this.querySingleRow(db, `${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
-    if (!existingRow) {
+    if (!Number.isInteger(id) || id <= 0) {
       return false;
     }
 
-    const existingPublicKey = String(existingRow[1] ?? '').trim();
-    const deleteStatement = db.prepare('DELETE FROM contacts WHERE id = ?');
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CONTACTS_STORE, 'readwrite');
+    const store = transaction.objectStore(CONTACTS_STORE);
+    const rawExistingRecord = await requestToPromise<RawContactStoreRecord | undefined>(
+      store.get(id) as IDBRequest<RawContactStoreRecord | undefined>
+    );
+    const existingRecord = rawExistingRecord ? normalizeRecord(rawExistingRecord) : null;
+    if (!existingRecord) {
+      await waitForTransaction(transaction);
+      return false;
+    }
+
+    store.delete(id);
+
     try {
-      deleteStatement.run([id]);
-    } finally {
-      deleteStatement.free();
+      await waitForTransaction(transaction);
+    } catch (error) {
+      console.error('Failed to delete contact in IndexedDB.', error);
+      return false;
     }
 
-    const hasChanges = db.getRowsModified() > 0;
-    if (hasChanges) {
-      if (existingPublicKey) {
-        await relaysService.deleteRelaysForPublicKey(existingPublicKey);
-      }
-
-      await dbService.persist();
-    }
-
-    return hasChanges;
+    await relaysService.deleteRelaysForPublicKey(existingRecord.public_key);
+    return true;
   }
 
-  async debugExec(
-    sql: string,
-    params?: SqlExecParams
-  ): Promise<ReturnType<AppDatabase['exec']>> {
+  async debugExec(sql: string, params?: unknown): Promise<DebugExecResult> {
     if (!import.meta.env.DEV) {
       throw new Error('debugExec is available only in development mode.');
     }
 
-    const db = await this.getDatabase();
-    return this.queryForDebug(db, sql, params);
+    void sql;
+    void params;
+
+    const contacts = await this.listContacts();
+    return [
+      {
+        columns: ['id', 'public_key', 'name', 'given_name', 'meta', 'relays'],
+        values: contacts.map((contact) => [
+          contact.id,
+          contact.public_key,
+          contact.name,
+          contact.given_name,
+          contact.meta,
+          contact.relays ?? []
+        ])
+      }
+    ];
   }
 
   private async ensureInitialized(): Promise<void> {
     if (!this.initPromise) {
-      this.initPromise = this.initializeSchema();
+      this.initPromise = this.initializeDatabase();
     }
 
     await this.initPromise;
   }
 
-  private async initializeSchema(): Promise<void> {
-    const db = await dbService.getDatabase();
-
-    db.run(CONTACTS_TABLE_SQL);
-    await relaysService.init();
-    const didMigrateSchema = this.ensureSchema(db);
-    const didNormalizeMeta = this.normalizeStoredMeta(db);
-    db.run(CONTACTS_INDEXES_SQL);
-    this.seedContacts(db);
-
-    if (didMigrateSchema || didNormalizeMeta) {
-      await dbService.persist();
-    }
+  private async initializeDatabase(): Promise<void> {
+    const [db] = await Promise.all([this.openDatabase(), relaysService.init()]);
+    this.dbPromise = Promise.resolve(db);
   }
 
-  private async getDatabase(): Promise<AppDatabase> {
+  private async getDatabase(): Promise<IDBDatabase> {
     await this.ensureInitialized();
-    return dbService.getDatabase();
+
+    if (!this.dbPromise) {
+      throw new Error('Contacts IndexedDB is not initialized.');
+    }
+
+    return this.dbPromise;
   }
 
-  private seedContacts(db: AppDatabase): void {
-    void db;
+  private openDatabase(): Promise<IDBDatabase> {
+    if (!canUseIndexedDb()) {
+      return Promise.reject(new Error('IndexedDB is not available in this environment.'));
+    }
+
+    return new Promise<IDBDatabase>((resolve, reject) => {
+      const request = window.indexedDB.open(CONTACTS_DB_NAME, CONTACTS_DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const transaction = request.transaction;
+        if (!transaction) {
+          return;
+        }
+
+        const contactsStore = db.objectStoreNames.contains(CONTACTS_STORE)
+          ? transaction.objectStore(CONTACTS_STORE)
+          : db.createObjectStore(CONTACTS_STORE, { keyPath: 'id', autoIncrement: true });
+
+        if (!contactsStore.indexNames.contains(CONTACTS_PUBLIC_KEY_INDEX)) {
+          contactsStore.createIndex(CONTACTS_PUBLIC_KEY_INDEX, CONTACTS_PUBLIC_KEY_INDEX, {
+            unique: true
+          });
+        }
+        if (!contactsStore.indexNames.contains(CONTACTS_NAME_INDEX)) {
+          contactsStore.createIndex(CONTACTS_NAME_INDEX, CONTACTS_NAME_INDEX, {
+            unique: false
+          });
+        }
+        if (!contactsStore.indexNames.contains(CONTACTS_GIVEN_NAME_INDEX)) {
+          contactsStore.createIndex(CONTACTS_GIVEN_NAME_INDEX, CONTACTS_GIVEN_NAME_INDEX, {
+            unique: false
+          });
+        }
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+        };
+        resolve(db);
+      };
+
+      request.onerror = () => {
+        reject(request.error ?? new Error('Failed to open contacts IndexedDB database.'));
+      };
+
+      request.onblocked = () => {
+        console.error('Contacts IndexedDB open request is blocked by another tab.');
+      };
+    });
+  }
+
+  private async listNormalizedStoreRecords(): Promise<ContactStoreRecord[]> {
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CONTACTS_STORE, 'readonly');
+    const store = transaction.objectStore(CONTACTS_STORE);
+    const rawRecords = await requestToPromise<RawContactStoreRecord[]>(
+      store.getAll() as IDBRequest<RawContactStoreRecord[]>
+    );
+    await waitForTransaction(transaction);
+
+    return rawRecords
+      .map((record) => normalizeRecord(record))
+      .filter((record): record is ContactStoreRecord => record !== null);
   }
 
   private async attachRelays(contacts: ContactRecord[]): Promise<ContactRecord[]> {
@@ -344,113 +566,12 @@ class ContactsService {
       return contacts;
     }
 
-    const withRelays = await Promise.all(
+    return Promise.all(
       contacts.map(async (contact) => ({
         ...contact,
         relays: await relaysService.listRelaysByPublicKey(contact.public_key)
       }))
     );
-
-    return withRelays;
-  }
-
-  private ensureSchema(db: AppDatabase): boolean {
-    const rows = this.queryRows(db, 'PRAGMA table_info(contacts)');
-    const hasGivenName = rows.some((row) => String(row[1] ?? '') === 'given_name');
-
-    if (!hasGivenName) {
-      db.run('ALTER TABLE contacts ADD COLUMN given_name TEXT NULL');
-      return true;
-    }
-
-    return false;
-  }
-
-  private normalizeStoredMeta(db: AppDatabase): boolean {
-    const rows = this.queryRows(db, 'SELECT id, meta FROM contacts');
-    if (rows.length === 0) {
-      return false;
-    }
-
-    let didChange = false;
-    const updateStatement = db.prepare('UPDATE contacts SET meta = ? WHERE id = ?');
-
-    try {
-      for (const row of rows) {
-        const id = Number(row[0] ?? 0);
-        if (!id) {
-          continue;
-        }
-
-        const rawMeta = typeof row[1] === 'string' ? row[1] : '';
-        const normalizedMeta = serializeContactMeta(parseStoredMeta(row[1]));
-
-        if (rawMeta !== normalizedMeta) {
-          updateStatement.run([normalizedMeta, id]);
-          didChange = true;
-        }
-      }
-    } finally {
-      updateStatement.free();
-    }
-
-    return didChange;
-  }
-
-  private queryRows(db: AppDatabase, sql: string, params?: SqlExecParams): unknown[][] {
-    const statement = db.prepare(sql);
-
-    try {
-      if (params !== undefined) {
-        statement.bind(params);
-      }
-
-      const rows: unknown[][] = [];
-      while (statement.step()) {
-        rows.push(statement.get());
-      }
-
-      return rows;
-    } finally {
-      statement.free();
-    }
-  }
-
-  private querySingleRow(
-    db: AppDatabase,
-    sql: string,
-    params?: SqlExecParams
-  ): unknown[] | null {
-    const rows = this.queryRows(db, sql, params);
-    return rows[0] ?? null;
-  }
-
-  private queryForDebug(
-    db: AppDatabase,
-    sql: string,
-    params?: SqlExecParams
-  ): ReturnType<AppDatabase['exec']> {
-    const statement = db.prepare(sql);
-
-    try {
-      if (params !== undefined) {
-        statement.bind(params);
-      }
-
-      const columns = statement.getColumnNames();
-      if (columns.length === 0) {
-        return [];
-      }
-
-      const values: unknown[][] = [];
-      while (statement.step()) {
-        values.push(statement.get());
-      }
-
-      return [{ columns, values }];
-    } finally {
-      statement.free();
-    }
   }
 }
 

@@ -635,7 +635,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
     const createdMessage = await chatDataService.createMessage({
-      chat_it: chat.id,
+      chat_id: chat.id,
       author_public_key: senderPubkeyHex,
       message: messageText,
       created_at: createdAt,

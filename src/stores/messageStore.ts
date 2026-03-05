@@ -22,7 +22,7 @@ function mapMessageRowToMessage(
 
   return {
     id: String(row.id),
-    chatId: String(row.chat_it),
+    chatId: String(row.chat_id),
     text: row.message,
     sender: isMine ? 'me' : 'them',
     sentAt: row.created_at,
@@ -106,7 +106,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const created = await chatDataService.createMessage({
-      chat_it: chatNumericId,
+      chat_id: chatNumericId,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: new Date().toISOString(),
