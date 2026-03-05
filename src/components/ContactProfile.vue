@@ -28,6 +28,18 @@
         :disable="!normalizedHeaderPubkey"
         @click="handleOpenChat"
       />
+      <q-btn
+        flat
+        dense
+        round
+        icon="refresh"
+        color="primary"
+        aria-label="Refresh Contact Profile"
+        class="profile-header__action"
+        :disable="!normalizedHeaderPubkey || isRefreshingContact"
+        :loading="isRefreshingContact"
+        @click="handleRefreshContactProfile"
+      />
     </div>
 
     <div class="profile-content" :class="{ 'profile-content--with-header': showHeader }">
@@ -325,6 +337,7 @@ const localPubkey = computed({
 });
 const localProfile = reactive<ContactProfileForm>(cloneProfile(props.modelValue));
 const isLoadingContact = ref(false);
+const isRefreshingContact = ref(false);
 const pubkeyError = ref('');
 const pubkeyInfo = ref('');
 const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
@@ -637,6 +650,28 @@ function handleOpenChat(): void {
   }
 
   emit('open-chat');
+}
+
+async function handleRefreshContactProfile(): Promise<void> {
+  const normalizedPubkey = normalizePubkeyInput(localPubkey.value);
+  if (!normalizedPubkey || isRefreshingContact.value) {
+    return;
+  }
+
+  isRefreshingContact.value = true;
+  pubkeyError.value = '';
+  pubkeyInfo.value = '';
+
+  try {
+    await nostrStore.refreshContactByPublicKey(normalizedPubkey, headerName.value);
+    await loadContactFromPubkey(normalizedPubkey);
+  } catch (error) {
+    pubkeyError.value =
+      error instanceof Error ? error.message : 'Failed to refresh contact profile.';
+    pubkeyInfo.value = '';
+  } finally {
+    isRefreshingContact.value = false;
+  }
 }
 
 function isSameProfile(a: ContactProfileForm, b: ContactProfileForm): boolean {

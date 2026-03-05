@@ -1078,6 +1078,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     publishMyRelayList,
     relayStatusVersion,
     resolveIdentifier,
+    refreshContactByPublicKey,
     sendDirectMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
