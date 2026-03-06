@@ -5,7 +5,7 @@
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
         <div
-          v-if="hasRelayStatuses"
+          v-if="isMine && hasRelayStatuses"
           class="bubble__status-hitbox"
           tabindex="0"
           role="button"
@@ -33,6 +33,7 @@
   </div>
 
   <AppDialog
+    v-if="isMine"
     v-model="isStatusDialogOpen"
     title="Relay Status"
     max-width="460px"
@@ -134,7 +135,7 @@ function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
   return relayStatus.relay_url;
 }
 
-const messageRelayStatuses = computed(() => {
+const outboundRelayStatuses = computed(() => {
   const relayStatuses = props.message.meta?.relay_statuses;
   if (!Array.isArray(relayStatuses)) {
     return [] as MessageRelayStatus[];
@@ -142,12 +143,8 @@ const messageRelayStatuses = computed(() => {
 
   return relayStatuses
     .filter(isMessageRelayStatus)
+    .filter((relayStatus) => relayStatus.direction === 'outbound')
     .sort((first, second) => {
-      const byDirection = first.direction.localeCompare(second.direction);
-      if (byDirection !== 0) {
-        return byDirection;
-      }
-
       const byRelayUrl = first.relay_url.localeCompare(second.relay_url);
       if (byRelayUrl !== 0) {
         return byRelayUrl;
@@ -157,24 +154,12 @@ const messageRelayStatuses = computed(() => {
     });
 });
 
-const outboundRelayStatuses = computed(() => {
-  return messageRelayStatuses.value.filter((relayStatus) => relayStatus.direction === 'outbound');
-});
-
-const inboundRelayStatuses = computed(() => {
-  return messageRelayStatuses.value.filter((relayStatus) => relayStatus.direction === 'inbound');
-});
-
-const visibleRelayStatuses = computed(() => {
-  return isMine.value ? outboundRelayStatuses.value : inboundRelayStatuses.value;
-});
-
 const hasPendingRelayStatuses = computed(() => {
-  return visibleRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
+  return outboundRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
 });
 
 const hasRelayStatuses = computed(() => {
-  return visibleRelayStatuses.value.length > 0;
+  return outboundRelayStatuses.value.length > 0;
 });
 
 const contactRelaysTitle = computed(() => {
@@ -185,7 +170,7 @@ const contactRelaysTitle = computed(() => {
 const isStatusDialogOpen = ref(false);
 
 const statusSegments = computed<StatusSegment[]>(() => {
-  const relayStatuses = visibleRelayStatuses.value;
+  const relayStatuses = outboundRelayStatuses.value;
   if (relayStatuses.length === 0) {
     return [
       {
@@ -200,7 +185,7 @@ const statusSegments = computed<StatusSegment[]>(() => {
     return relayStatuses.filter((relayStatus) => relayStatus.status === status).length;
   }
 
-  const published = countByStatus('published') + countByStatus('received');
+  const published = countByStatus('published');
   const pending = countByStatus('pending');
   const failed = countByStatus('failed');
 
@@ -227,15 +212,13 @@ function buildStatusListItems(
   relayStatuses: MessageRelayStatus[],
   predicate: (relayStatus: MessageRelayStatus) => boolean
 ): StatusListItem[] {
-  const statusPriority: Record<'published' | 'received' | 'failed' | 'pending', number> = {
+  const statusPriority: Record<'published' | 'failed' | 'pending', number> = {
     published: 0,
-    received: 0,
     failed: 1,
     pending: 2
   };
-  const dotClassByStatus: Record<'published' | 'received' | 'failed' | 'pending', string> = {
+  const dotClassByStatus: Record<'published' | 'failed' | 'pending', string> = {
     published: 'bubble__status-list-dot--green',
-    received: 'bubble__status-list-dot--green',
     failed: 'bubble__status-list-dot--red',
     pending: 'bubble__status-list-dot--gray'
   };
@@ -245,11 +228,10 @@ function buildStatusListItems(
       (
         relayStatus
       ): relayStatus is MessageRelayStatus & {
-        status: 'published' | 'received' | 'failed' | 'pending';
+        status: 'published' | 'failed' | 'pending';
       } =>
         predicate(relayStatus) &&
         (relayStatus.status === 'published' ||
-          relayStatus.status === 'received' ||
           relayStatus.status === 'failed' ||
           relayStatus.status === 'pending')
     )
@@ -270,36 +252,23 @@ function buildStatusListItems(
 }
 
 const contactStatusListItems = computed<StatusListItem[]>(() => {
-  if (!isMine.value) {
-    return [];
-  }
-
   return buildStatusListItems(
     outboundRelayStatuses.value,
     (relayStatus) => relayStatus.scope === 'recipient'
   );
 });
 
-const myRelaysTitle = computed(() => {
-  return isMine.value ? 'My Relays (message backup)' : 'My Relays';
-});
+const myRelaysTitle = 'My Relays (message backup)';
 
 const myStatusListItems = computed<StatusListItem[]>(() => {
-  if (isMine.value) {
-    return buildStatusListItems(
-      outboundRelayStatuses.value,
-      (relayStatus) => relayStatus.scope === 'self'
-    );
-  }
-
   return buildStatusListItems(
-    inboundRelayStatuses.value,
-    (relayStatus) => relayStatus.scope === 'subscription'
+    outboundRelayStatuses.value,
+    (relayStatus) => relayStatus.scope === 'self'
   );
 });
 
 function openStatusDialog(): void {
-  if (!hasRelayStatuses.value) {
+  if (!isMine.value || !hasRelayStatuses.value) {
     return;
   }
 
