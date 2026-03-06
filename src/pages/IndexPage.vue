@@ -56,6 +56,7 @@ import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -80,43 +81,59 @@ const searchQuery = computed({
 });
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
-  if (section === 'contacts') {
-    void router.push({ name: 'contacts' });
-    return;
-  }
+  try {
+    if (section === 'contacts') {
+      void router.push({ name: 'contacts' });
+      return;
+    }
 
-  if (section === 'settings') {
-    void router.push({ name: 'settings' });
+    if (section === 'settings') {
+      void router.push({ name: 'settings' });
+    }
+  } catch (error) {
+    reportUiError('Failed to navigate from chats rail', error);
   }
 }
 
 function handleSelectChat(chatId: string): void {
-  chatStore.selectChat(chatId);
+  try {
+    chatStore.selectChat(chatId);
 
-  if (isMobile.value) {
-    void router.push({ name: 'chat', params: { chatId } });
+    if (isMobile.value) {
+      void router.push({ name: 'chat', params: { chatId } });
+    }
+  } catch (error) {
+    reportUiError('Failed to select chat', error);
   }
 }
 
 async function handleSend(text: string): Promise<void> {
-  if (!chatStore.selectedChatId) {
-    return;
-  }
+  try {
+    if (!chatStore.selectedChatId) {
+      return;
+    }
 
-  const created = await messageStore.sendMessage(chatStore.selectedChatId, text);
+    const created = await messageStore.sendMessage(chatStore.selectedChatId, text);
 
-  if (created) {
-    await chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
+    if (created) {
+      await chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
+    }
+  } catch (error) {
+    reportUiError('Failed to send chat message', error, 'Failed to send message.');
   }
 }
 
 function handleOpenProfile(publicKey: string): void {
-  const normalized = publicKey.trim();
-  if (!normalized) {
-    return;
-  }
+  try {
+    const normalized = publicKey.trim();
+    if (!normalized) {
+      return;
+    }
 
-  void router.push({ name: 'contacts', query: { pubkey: normalized } });
+    void router.push({ name: 'contacts', query: { pubkey: normalized } });
+  } catch (error) {
+    reportUiError('Failed to open contact profile from chat', error);
+  }
 }
 
 function findChatById(chatId: string) {
@@ -124,35 +141,55 @@ function findChatById(chatId: string) {
 }
 
 function handleViewChatProfile(chatId: string): void {
-  const chat = findChatById(chatId);
-  if (!chat) {
-    return;
-  }
+  try {
+    const chat = findChatById(chatId);
+    if (!chat) {
+      return;
+    }
 
-  void router.push({ name: 'contacts', query: { pubkey: chat.publicKey } });
+    void router.push({ name: 'contacts', query: { pubkey: chat.publicKey } });
+  } catch (error) {
+    reportUiError('Failed to open profile from chat actions', error);
+  }
 }
 
 async function handleRefreshChatProfile(chatId: string): Promise<void> {
-  const chat = findChatById(chatId);
-  if (!chat) {
-    return;
-  }
+  try {
+    const chat = findChatById(chatId);
+    if (!chat) {
+      return;
+    }
 
-  await nostrStore.refreshContactByPublicKey(chat.publicKey, chat.name);
+    await nostrStore.refreshContactByPublicKey(chat.publicKey, chat.name);
+  } catch (error) {
+    reportUiError('Failed to refresh chat contact profile', error, 'Failed to refresh profile.');
+  }
 }
 
 async function handleMuteChat(chatId: string): Promise<void> {
-  await chatStore.muteChat(chatId);
+  try {
+    await chatStore.muteChat(chatId);
+  } catch (error) {
+    reportUiError('Failed to mute chat', error);
+  }
 }
 
 async function handleMarkChatAsRead(chatId: string): Promise<void> {
-  await chatStore.markAsRead(chatId);
+  try {
+    await chatStore.markAsRead(chatId);
+  } catch (error) {
+    reportUiError('Failed to mark chat as read', error);
+  }
 }
 
 async function handleDeleteChat(chatId: string): Promise<void> {
-  const deleted = await chatStore.deleteChat(chatId);
-  if (deleted) {
-    messageStore.removeChatMessages(chatId);
+  try {
+    const deleted = await chatStore.deleteChat(chatId);
+    if (deleted) {
+      messageStore.removeChatMessages(chatId);
+    }
+  } catch (error) {
+    reportUiError('Failed to delete chat', error);
   }
 }
 </script>

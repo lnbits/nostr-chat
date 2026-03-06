@@ -20,6 +20,7 @@ import { useQuasar } from 'quasar';
 import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -68,28 +69,40 @@ watch(
 );
 
 function goBack(): void {
-  void router.push({ name: 'home' });
+  try {
+    void router.push({ name: 'home' });
+  } catch (error) {
+    reportUiError('Failed to navigate back from chat page', error);
+  }
 }
 
 async function handleSend(text: string): Promise<void> {
-  if (!activeChatId.value) {
-    return;
-  }
+  try {
+    if (!activeChatId.value) {
+      return;
+    }
 
-  const created = await messageStore.sendMessage(activeChatId.value, text);
+    const created = await messageStore.sendMessage(activeChatId.value, text);
 
-  if (created) {
-    await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
+    if (created) {
+      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
+    }
+  } catch (error) {
+    reportUiError('Failed to send message from chat page', error, 'Failed to send message.');
   }
 }
 
 function handleOpenProfile(publicKey: string): void {
-  const normalized = publicKey.trim();
-  if (!normalized) {
-    return;
-  }
+  try {
+    const normalized = publicKey.trim();
+    if (!normalized) {
+      return;
+    }
 
-  void router.push({ name: 'contacts', query: { pubkey: normalized } });
+    void router.push({ name: 'contacts', query: { pubkey: normalized } });
+  } catch (error) {
+    reportUiError('Failed to open profile from chat page', error);
+  }
 }
 </script>
 
