@@ -40,6 +40,9 @@
             <q-item clickable v-close-popup @click="emitRefreshProfile">
               <q-item-section>Refresh Profile</q-item-section>
             </q-item>
+            <q-item clickable v-close-popup @click="emitRefreshChat">
+              <q-item-section>Refresh Chat</q-item-section>
+            </q-item>
             <q-item clickable v-close-popup :disable="isMuted" @click="emitMute">
               <q-item-section>Mute</q-item-section>
             </q-item>
@@ -71,6 +74,7 @@ const emit = defineEmits<{
   (event: 'select', chatId: string): void;
   (event: 'view-profile', chatId: string): void;
   (event: 'refresh-profile', chatId: string): void;
+  (event: 'refresh-chat', chatId: string): void;
   (event: 'mute', chatId: string): void;
   (event: 'mark-as-read', chatId: string): void;
   (event: 'delete-chat', chatId: string): void;
@@ -143,6 +147,14 @@ function emitRefreshProfile(): void {
     emit('refresh-profile', props.chat.id);
   } catch (error) {
     reportUiError('Failed to emit chat refresh action', error);
+  }
+}
+
+function emitRefreshChat(): void {
+  try {
+    emit('refresh-chat', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit chat reload action', error);
   }
 }
 

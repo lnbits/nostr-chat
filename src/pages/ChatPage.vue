@@ -8,6 +8,7 @@
         @send="handleSend"
         @back="goBack"
         @open-profile="handleOpenProfile"
+        @refresh-chat="handleRefreshChat"
       />
     </div>
   </q-page>
@@ -20,6 +21,7 @@ import { useQuasar } from 'quasar';
 import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
+import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -27,6 +29,7 @@ const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
+const nostrStore = useNostrStore();
 
 const activeChatId = computed(() => String(route.params.chatId ?? ''));
 
@@ -102,6 +105,20 @@ function handleOpenProfile(publicKey: string): void {
     void router.push({ name: 'contacts', query: { pubkey: normalized } });
   } catch (error) {
     reportUiError('Failed to open profile from chat page', error);
+  }
+}
+
+async function handleRefreshChat(chatId: string): Promise<void> {
+  try {
+    if (!chatId || chatId !== activeChatId.value) {
+      return;
+    }
+
+    await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
+    await chatStore.reload();
+    await messageStore.loadMessages(chatId, true);
+  } catch (error) {
+    reportUiError('Failed to refresh chat from chat page', error, 'Failed to refresh chat.');
   }
 }
 </script>

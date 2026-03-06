@@ -28,6 +28,7 @@
           @select="handleSelectChat"
           @view-profile="handleViewChatProfile"
           @refresh-profile="handleRefreshChatProfile"
+          @refresh-chat="handleRefreshChat"
           @mute="handleMuteChat"
           @mark-as-read="handleMarkChatAsRead"
           @delete-chat="handleDeleteChat"
@@ -40,6 +41,7 @@
           :messages="currentMessages"
           @send="handleSend"
           @open-profile="handleOpenProfile"
+          @refresh-chat="handleRefreshChat"
         />
       </section>
     </div>
@@ -163,6 +165,21 @@ async function handleRefreshChatProfile(chatId: string): Promise<void> {
     await nostrStore.refreshContactByPublicKey(chat.publicKey, chat.name);
   } catch (error) {
     reportUiError('Failed to refresh chat contact profile', error, 'Failed to refresh profile.');
+  }
+}
+
+async function handleRefreshChat(chatId: string): Promise<void> {
+  try {
+    const chat = findChatById(chatId);
+    if (!chat) {
+      return;
+    }
+
+    await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
+    await chatStore.reload();
+    await messageStore.loadMessages(chatId, true);
+  } catch (error) {
+    reportUiError('Failed to refresh chat', error, 'Failed to refresh chat.');
   }
 }
 
