@@ -85,6 +85,18 @@ void (async () => {
   }
 
   try {
+    await nostrStore.restoreMyRelayList(relayStore.relays);
+  } catch (error) {
+    console.error('Failed to restore My Relays on startup', error);
+  }
+
+  try {
+    await nostrStore.subscribeMyRelayListUpdates(relayStore.relays);
+  } catch (error) {
+    console.error('Failed to subscribe to My Relays updates on startup', error);
+  }
+
+  try {
     await nostrStore.restorePrivateContactList(relayStore.relays);
   } catch (error) {
     console.error('Failed to restore private contact list on startup', error);

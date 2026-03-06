@@ -492,6 +492,7 @@ function myRelayWriteEnabled(index: number): boolean {
 function updateMyRelayRead({ index, value }: RelayTogglePayload): void {
   try {
     nip65RelayStore.setRelayFlags(index, { read: value });
+    queueMyRelaysSync();
   } catch (error) {
     reportUiError('Failed to update personal relay read flag', error);
   }
@@ -500,6 +501,7 @@ function updateMyRelayRead({ index, value }: RelayTogglePayload): void {
 function updateMyRelayWrite({ index, value }: RelayTogglePayload): void {
   try {
     nip65RelayStore.setRelayFlags(index, { write: value });
+    queueMyRelaysSync();
   } catch (error) {
     reportUiError('Failed to update personal relay write flag', error);
   }

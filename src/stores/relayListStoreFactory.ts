@@ -155,12 +155,25 @@ export function createRelayListStoreSetup({
       writeStoredRelays(storageKey, relayEntries.value);
     }
 
+    function replaceRelayEntries(entries: unknown[]): void {
+      ensureInitialized();
+      relayEntries.value = inputSanitizerService.normalizeRelayListMetadataEntries(
+        entries as Array<{
+          url: string;
+          read?: boolean;
+          write?: boolean;
+        }>
+      );
+      writeStoredRelays(storageKey, relayEntries.value);
+    }
+
     return {
       relayEntries,
       relays,
       init,
       addRelay,
       removeRelay,
+      replaceRelayEntries,
       restoreDefaults,
       getRelayFlags,
       setRelayFlags

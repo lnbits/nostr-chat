@@ -28,6 +28,7 @@ import {
   type NsecValidationResult
 } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
+import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
@@ -94,9 +95,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
+  let restoreMyRelayListPromise: Promise<void> | null = null;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let restorePrivateContactListPromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
+  let myRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
+  let myRelayListSubscriptionSignature = '';
+  let myRelayListApplyQueue = Promise.resolve();
   let privateContactListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let privateContactListSubscriptionSignature = '';
   let privateContactListApplyQueue = Promise.resolve();
@@ -341,7 +346,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return Array.from(uniqueRelays);
   }
 
-  async function resolvePrivateContactListReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
+  async function resolveLoggedInReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
     const relayUrls = inputSanitizerService.normalizeStringArray(seedRelayUrls);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
@@ -357,7 +362,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ]);
   }
 
-  async function resolvePrivateContactListPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
+  async function resolveLoggedInPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
     const relayUrls = inputSanitizerService.normalizeStringArray(seedRelayUrls);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
@@ -371,6 +376,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...relayUrls,
       ...normalizeWritableRelayUrls(loggedInContact?.relays)
     ]);
+  }
+
+  async function resolvePrivateContactListReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
+    return resolveLoggedInReadRelayUrls(seedRelayUrls);
+  }
+
+  async function resolvePrivateContactListPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
+    return resolveLoggedInPublishRelayUrls(seedRelayUrls);
   }
 
   async function getLoggedInSignerUser(): Promise<NDKUser> {
@@ -750,7 +763,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
-    const relayUrls = inputSanitizerService.normalizeStringArray([
+    const relayUrls = await resolveLoggedInPublishRelayUrls([
       ...publishRelayUrls,
       ...normalizedRelayEntries.map((relay) => relay.url)
     ]);
@@ -810,6 +823,131 @@ export const useNostrStore = defineStore('nostrStore', () => {
       relays: normalizedRelayEntries
     });
     await subscribePrivateMessagesForLoggedInUser(true);
+  }
+
+  async function fetchMyRelayListEntries(seedRelayUrls: string[] = []): Promise<ContactRelay[] | null> {
+    const senderPrivateKeyHex = getPrivateKeyHex();
+    if (!senderPrivateKeyHex) {
+      return null;
+    }
+
+    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return null;
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const user = await signer.user();
+    user.ndk = ndk;
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relayListEvent = await ndk.fetchEvent(
+      {
+        kinds: [NDKKind.RelayList],
+        authors: [user.pubkey]
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+      },
+      relaySet
+    );
+    if (!relayListEvent) {
+      return null;
+    }
+
+    const parsedRelayList = NDKRelayList.from(
+      relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent)
+    );
+
+    return relayEntriesFromRelayList(parsedRelayList);
+  }
+
+  async function applyMyRelayListEntries(relayEntries: RelayListMetadataEntry[]): Promise<void> {
+    const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
+    const nip65RelayStore = useNip65RelayStore();
+    nip65RelayStore.init();
+    nip65RelayStore.replaceRelayEntries(normalizedRelayEntries);
+    await updateLoggedInUserRelayList(normalizedRelayEntries);
+  }
+
+  async function restoreMyRelayList(seedRelayUrls: string[] = []): Promise<void> {
+    if (restoreMyRelayListPromise) {
+      return restoreMyRelayListPromise;
+    }
+
+    restoreMyRelayListPromise = (async () => {
+      const relayEntries = await fetchMyRelayListEntries(seedRelayUrls);
+      if (relayEntries === null) {
+        return;
+      }
+
+      await applyMyRelayListEntries(relayEntries);
+    })().finally(() => {
+      restoreMyRelayListPromise = null;
+    });
+
+    return restoreMyRelayListPromise;
+  }
+
+  function stopMyRelayListSubscription(): void {
+    if (myRelayListSubscription) {
+      myRelayListSubscription.stop();
+      myRelayListSubscription = null;
+    }
+
+    myRelayListSubscriptionSignature = '';
+  }
+
+  async function subscribeMyRelayListUpdates(
+    seedRelayUrls: string[] = [],
+    force = false
+  ): Promise<void> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      stopMyRelayListSubscription();
+      return;
+    }
+
+    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      stopMyRelayListSubscription();
+      return;
+    }
+
+    const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
+    if (!force && myRelayListSubscription && myRelayListSubscriptionSignature === signature) {
+      return;
+    }
+
+    await ensureRelayConnections(relayUrls);
+    await getLoggedInSignerUser();
+    stopMyRelayListSubscription();
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    myRelayListSubscription = ndk.subscribe(
+      {
+        kinds: [NDKKind.RelayList],
+        authors: [loggedInPubkeyHex]
+      },
+      {
+        relaySet,
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+        onEvent: (event) => {
+          const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          myRelayListApplyQueue = myRelayListApplyQueue
+            .then(async () => {
+              const relayList = NDKRelayList.from(wrappedEvent);
+              await applyMyRelayListEntries(relayEntriesFromRelayList(relayList));
+            })
+            .catch((error) => {
+              console.error('Failed to process my relay list event', error);
+            });
+        }
+      }
+    );
+    myRelayListSubscriptionSignature = signature;
   }
 
   async function publishPrivateContactList(seedRelayUrls: string[] = []): Promise<void> {
@@ -1110,38 +1248,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
-    const senderPrivateKeyHex = getPrivateKeyHex();
-    if (!senderPrivateKeyHex) {
+    const relayEntries = await fetchMyRelayListEntries(relayUrls);
+    if (relayEntries === null) {
       return [];
     }
 
-    const relayList = inputSanitizerService.normalizeStringArray(relayUrls);
-    if (relayList.length === 0) {
-      return [];
-    }
-
-    await ensureRelayConnections(relayList);
-
-    const signer = getOrCreateSigner(senderPrivateKeyHex);
-    const user = await signer.user();
-    user.ndk = ndk;
-
-    const relayListEvent = await ndk.fetchEvent({
-      kinds: [NDKKind.RelayList],
-      authors: [user.pubkey]
-    });
-    if (!relayListEvent) {
-      return [];
-    }
-
-    const parsedRelayList = NDKRelayList.from(relayListEvent);
-    const combinedRelays = [
-      ...parsedRelayList.readRelayUrls,
-      ...parsedRelayList.writeRelayUrls,
-      ...parsedRelayList.bothRelayUrls
-    ].map((relay) => String(relay));
-
-    return inputSanitizerService.normalizeStringArray(combinedRelays);
+    return relayEntries.map((relay) => relay.url);
   }
 
   async function syncLoggedInContactProfile(relayUrls: string[]): Promise<void> {
@@ -1283,6 +1395,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     cachedSignerPrivateKeyHex = null;
     lastPrivateContactListCreatedAt = 0;
     lastPrivateContactListEventId = '';
+    stopMyRelayListSubscription();
     stopPrivateContactListSubscription();
     stopPrivateMessagesSubscription();
   }
@@ -1477,10 +1590,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStatusVersion,
     resolveIdentifier,
     refreshContactByPublicKey,
+    restoreMyRelayList,
     restorePrivateContactList,
     sendDirectMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
+    subscribeMyRelayListUpdates,
     subscribePrivateContactListUpdates,
     subscribePrivateMessagesForLoggedInUser,
     updateLoggedInUserRelayList,
