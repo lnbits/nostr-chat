@@ -37,7 +37,7 @@ withDefaults(defineProps<Props>(), {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #eef6ff;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid rgba(124, 177, 255, 0.48);
   padding: 7px 12px;
   line-height: 1.2;

@@ -4,7 +4,11 @@
       <p class="bubble__text">{{ message.text }}</p>
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
-        <div v-if="isMine" class="bubble__status">
+        <div
+          v-if="isMine"
+          class="bubble__status"
+          :class="{ 'bubble__status--pending': hasPendingRelayStatuses }"
+        >
           <span
             v-for="segment in statusSegments"
             :key="segment.key"
@@ -93,6 +97,10 @@ const outboundRelayStatuses = computed(() => {
 
       return first.scope.localeCompare(second.scope);
     });
+});
+
+const hasPendingRelayStatuses = computed(() => {
+  return outboundRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
 });
 
 const statusSegments = computed<StatusSegment[]>(() => {
@@ -217,11 +225,16 @@ const formattedTime = computed(() => {
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
+.bubble__status--pending {
+  animation: bubble-status-pulse 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
 .bubble__status-segment {
   display: block;
   height: 100%;
   min-width: 4px;
-  cursor: help;
+  cursor: pointer;
 }
 
 .bubble__status-segment--green {
@@ -271,6 +284,23 @@ const formattedTime = computed(() => {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes bubble-status-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    box-shadow:
+      inset 0 0 0 1px rgba(15, 23, 42, 0.08),
+      0 0 0 0 rgba(100, 116, 139, 0.08);
+  }
+
+  50% {
+    opacity: 1;
+    box-shadow:
+      inset 0 0 0 1px rgba(15, 23, 42, 0.08),
+      0 0 0 4px rgba(100, 116, 139, 0.18);
   }
 }
 </style>
