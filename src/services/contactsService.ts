@@ -10,11 +10,8 @@ import type {
 interface RawContactStoreRecord {
   id: number;
   public_key: string;
-  public_key_normalized?: string;
   name: string;
-  name_normalized?: string;
   given_name?: string | null;
-  given_name_normalized?: string;
   relays?: unknown;
   meta: unknown;
 }
@@ -22,11 +19,8 @@ interface RawContactStoreRecord {
 interface ContactStoreRecord {
   id: number;
   public_key: string;
-  public_key_normalized: string;
   name: string;
-  name_normalized: string;
   given_name: string | null;
-  given_name_normalized: string;
   relays: ContactRelay[];
   meta: ContactMetadata;
 }
@@ -37,12 +31,10 @@ type DebugExecResult = Array<{
 }>;
 
 const CONTACTS_DB_NAME = 'contacts-indexeddb-v1';
-const CONTACTS_DB_VERSION = 1;
+const CONTACTS_DB_VERSION = 2;
 
 const CONTACTS_STORE = 'contacts';
-const CONTACTS_PUBLIC_KEY_INDEX = 'public_key_normalized';
-const CONTACTS_NAME_INDEX = 'name_normalized';
-const CONTACTS_GIVEN_NAME_INDEX = 'given_name_normalized';
+const CONTACTS_PUBLIC_KEY_INDEX = 'public_key';
 
 function canUseIndexedDb(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
@@ -201,7 +193,7 @@ function relayListsEqual(first: ContactRelay[], second: ContactRelay[]): boolean
 
 function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null {
   const id = Number(raw.id ?? 0);
-  const publicKey = String(raw.public_key ?? '').trim();
+  const publicKey = inputSanitizerService.normalizePublicKey(String(raw.public_key ?? ''));
   if (!Number.isInteger(id) || id <= 0 || !publicKey) {
     return null;
   }
@@ -212,11 +204,8 @@ function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null 
   return {
     id,
     public_key: publicKey,
-    public_key_normalized: publicKey.toLowerCase(),
     name,
-    name_normalized: normalizeNameValue(name),
     given_name: givenName,
-    given_name_normalized: normalizeNameValue(givenName ?? ''),
     relays: normalizeRelayList(raw.relays),
     meta: parseStoredMeta(raw.meta)
   };
@@ -262,7 +251,7 @@ class ContactsService {
   }
 
   async listContacts(): Promise<ContactRecord[]> {
-    const records = await this.listNormalizedStoreRecords();
+    const records = await this.listStoreRecords();
     return records.sort(compareContactsByName).map((record) => toContactRecord(record));
   }
 
@@ -272,12 +261,12 @@ class ContactsService {
       return this.listContacts();
     }
 
-    const records = await this.listNormalizedStoreRecords();
+    const records = await this.listStoreRecords();
     const filteredRecords = records.filter((record) => {
       return (
-        record.public_key_normalized.includes(query) ||
-        record.name_normalized.includes(query) ||
-        record.given_name_normalized.includes(query)
+        record.public_key.includes(query) ||
+        normalizeNameValue(record.name).includes(query) ||
+        normalizeNameValue(record.given_name ?? '').includes(query)
       );
     });
 
@@ -312,7 +301,7 @@ class ContactsService {
     const store = transaction.objectStore(CONTACTS_STORE);
     const index = store.index(CONTACTS_PUBLIC_KEY_INDEX);
     const rawRecord = await requestToPromise<RawContactStoreRecord | undefined>(
-      index.get(normalizedPublicKey.toLowerCase()) as IDBRequest<RawContactStoreRecord | undefined>
+      index.get(normalizedPublicKey) as IDBRequest<RawContactStoreRecord | undefined>
     );
     await waitForTransaction(transaction);
 
@@ -331,7 +320,7 @@ class ContactsService {
     const store = transaction.objectStore(CONTACTS_STORE);
     const index = store.index(CONTACTS_PUBLIC_KEY_INDEX);
     const count = await requestToPromise<number>(
-      index.count(IDBKeyRange.only(normalizedPublicKey.toLowerCase()))
+      index.count(IDBKeyRange.only(normalizedPublicKey))
     );
     await waitForTransaction(transaction);
 
@@ -351,11 +340,8 @@ class ContactsService {
 
     const record: Omit<ContactStoreRecord, 'id'> = {
       public_key: publicKey,
-      public_key_normalized: publicKey.toLowerCase(),
       name,
-      name_normalized: normalizeNameValue(name),
       given_name: givenName,
-      given_name_normalized: normalizeNameValue(givenName ?? ''),
       relays,
       meta
     };
@@ -413,13 +399,8 @@ class ContactsService {
         return null;
       }
 
-      const normalizedPublicKey = publicKey.toLowerCase();
-      if (
-        nextRecord.public_key !== publicKey ||
-        nextRecord.public_key_normalized !== normalizedPublicKey
-      ) {
+      if (nextRecord.public_key !== publicKey) {
         nextRecord.public_key = publicKey;
-        nextRecord.public_key_normalized = normalizedPublicKey;
         didUpdateRecord = true;
       }
     }
@@ -431,23 +412,16 @@ class ContactsService {
         return null;
       }
 
-      const normalizedName = normalizeNameValue(name);
-      if (nextRecord.name !== name || nextRecord.name_normalized !== normalizedName) {
+      if (nextRecord.name !== name) {
         nextRecord.name = name;
-        nextRecord.name_normalized = normalizedName;
         didUpdateRecord = true;
       }
     }
 
     if (input.given_name !== undefined) {
       const givenName = input.given_name?.trim() || null;
-      const normalizedGivenName = normalizeNameValue(givenName ?? '');
-      if (
-        nextRecord.given_name !== givenName ||
-        nextRecord.given_name_normalized !== normalizedGivenName
-      ) {
+      if (nextRecord.given_name !== givenName) {
         nextRecord.given_name = givenName;
-        nextRecord.given_name_normalized = normalizedGivenName;
         didUpdateRecord = true;
       }
     }
@@ -579,20 +553,9 @@ class ContactsService {
         const contactsStore = db.objectStoreNames.contains(CONTACTS_STORE)
           ? transaction.objectStore(CONTACTS_STORE)
           : db.createObjectStore(CONTACTS_STORE, { keyPath: 'id', autoIncrement: true });
-
         if (!contactsStore.indexNames.contains(CONTACTS_PUBLIC_KEY_INDEX)) {
           contactsStore.createIndex(CONTACTS_PUBLIC_KEY_INDEX, CONTACTS_PUBLIC_KEY_INDEX, {
             unique: true
-          });
-        }
-        if (!contactsStore.indexNames.contains(CONTACTS_NAME_INDEX)) {
-          contactsStore.createIndex(CONTACTS_NAME_INDEX, CONTACTS_NAME_INDEX, {
-            unique: false
-          });
-        }
-        if (!contactsStore.indexNames.contains(CONTACTS_GIVEN_NAME_INDEX)) {
-          contactsStore.createIndex(CONTACTS_GIVEN_NAME_INDEX, CONTACTS_GIVEN_NAME_INDEX, {
-            unique: false
           });
         }
       };
@@ -615,7 +578,7 @@ class ContactsService {
     });
   }
 
-  private async listNormalizedStoreRecords(): Promise<ContactStoreRecord[]> {
+  private async listStoreRecords(): Promise<ContactStoreRecord[]> {
     const db = await this.getDatabase();
     const transaction = db.transaction(CONTACTS_STORE, 'readonly');
     const store = transaction.objectStore(CONTACTS_STORE);

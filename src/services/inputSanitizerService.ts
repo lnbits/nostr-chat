@@ -53,7 +53,7 @@ class InputSanitizerService {
   }
 
   normalizePublicKey(value: string): string | null {
-    const normalized = value.trim();
+    const normalized = value.trim().toLowerCase();
     return normalized || null;
   }
 

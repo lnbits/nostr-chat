@@ -44,7 +44,6 @@ export interface CreateMessageInput {
 interface ChatRecord {
   id: number;
   public_key: string;
-  public_key_normalized: string;
   name: string;
   last_message: string;
   last_message_at: string | null;
@@ -58,23 +57,21 @@ interface MessageRecord {
   author_public_key: string;
   message: string;
   created_at: string;
-  event_id: string | null;
-  event_id_normalized?: string;
+  event_id?: string;
   meta: Record<string, unknown>;
 }
 
 const CHAT_DATA_DB_NAME = 'chat-data-indexeddb-v1';
-const CHAT_DATA_DB_VERSION = 3;
+const CHAT_DATA_DB_VERSION = 4;
 
 const CHATS_STORE = 'chats';
 const MESSAGES_STORE = 'messages';
 
-const CHATS_PUBLIC_KEY_INDEX = 'public_key_normalized';
+const CHATS_PUBLIC_KEY_INDEX = 'public_key';
 const CHATS_LAST_MESSAGE_AT_INDEX = 'last_message_at';
 
 const MESSAGES_CHAT_ID_INDEX = 'chat_id';
-const MESSAGES_EVENT_ID_INDEX = 'event_id_normalized';
-const LEGACY_MESSAGES_CREATED_AT_INDEX = 'created_at';
+const MESSAGES_EVENT_ID_INDEX = 'event_id';
 
 function canUseIndexedDb(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
@@ -115,7 +112,16 @@ function normalizeEventId(value: unknown): string | null {
     return null;
   }
 
-  const trimmed = value.trim();
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || null;
+}
+
+function normalizePublicKeyValue(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
   return trimmed || null;
 }
 
@@ -249,7 +255,7 @@ class ChatDataService {
   }
 
   async getChatByPublicKey(publicKey: string): Promise<ChatRow | null> {
-    const normalizedPublicKey = publicKey.trim().toLowerCase();
+    const normalizedPublicKey = normalizePublicKeyValue(publicKey);
     if (!normalizedPublicKey) {
       return null;
     }
@@ -267,17 +273,15 @@ class ChatDataService {
   }
 
   async createChat(input: CreateChatInput): Promise<ChatRow | null> {
-    const publicKey = input.public_key.trim();
+    const publicKey = normalizePublicKeyValue(input.public_key);
     const name = input.name.trim();
     if (!publicKey || !name) {
       return null;
     }
 
-    const normalizedPublicKey = publicKey.toLowerCase();
     const lastMessage = input.last_message?.trim() ?? '';
     const record: Omit<ChatRecord, 'id'> = {
       public_key: publicKey,
-      public_key_normalized: normalizedPublicKey,
       name,
       last_message: lastMessage,
       last_message_at: toIsoTimestamp(input.last_message_at),
@@ -515,8 +519,7 @@ class ChatDataService {
       author_public_key: authorPublicKey,
       message,
       created_at: createdAt,
-      event_id: eventId,
-      ...(eventId ? { event_id_normalized: eventId.toLowerCase() } : {}),
+      ...(eventId ? { event_id: eventId } : {}),
       meta: normalizeMeta(input.meta)
     };
 
@@ -601,8 +604,7 @@ class ChatDataService {
 
     const nextRecord: MessageRecord = {
       ...record,
-      event_id: normalizedEventId,
-      event_id_normalized: normalizedEventId.toLowerCase()
+      event_id: normalizedEventId
     };
 
     try {
@@ -679,7 +681,9 @@ class ChatDataService {
           ? transaction.objectStore(CHATS_STORE)
           : db.createObjectStore(CHATS_STORE, { keyPath: 'id', autoIncrement: true });
         if (!chatsStore.indexNames.contains(CHATS_PUBLIC_KEY_INDEX)) {
-          chatsStore.createIndex(CHATS_PUBLIC_KEY_INDEX, CHATS_PUBLIC_KEY_INDEX, { unique: true });
+          chatsStore.createIndex(CHATS_PUBLIC_KEY_INDEX, CHATS_PUBLIC_KEY_INDEX, {
+            unique: true
+          });
         }
         if (!chatsStore.indexNames.contains(CHATS_LAST_MESSAGE_AT_INDEX)) {
           chatsStore.createIndex(CHATS_LAST_MESSAGE_AT_INDEX, CHATS_LAST_MESSAGE_AT_INDEX, {
@@ -692,9 +696,6 @@ class ChatDataService {
           : db.createObjectStore(MESSAGES_STORE, { keyPath: 'id', autoIncrement: true });
         if (!messagesStore.indexNames.contains(MESSAGES_CHAT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_CHAT_ID_INDEX, MESSAGES_CHAT_ID_INDEX, { unique: false });
-        }
-        if (messagesStore.indexNames.contains(LEGACY_MESSAGES_CREATED_AT_INDEX)) {
-          messagesStore.deleteIndex(LEGACY_MESSAGES_CREATED_AT_INDEX);
         }
         if (!messagesStore.indexNames.contains(MESSAGES_EVENT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_EVENT_ID_INDEX, MESSAGES_EVENT_ID_INDEX, {
