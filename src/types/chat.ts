@@ -15,7 +15,21 @@ export interface Chat {
 }
 
 export interface MessageMetadata {
+  relay_statuses?: MessageRelayStatus[];
   [key: string]: unknown;
+}
+
+export type MessageRelayStatusDirection = 'outbound' | 'inbound';
+export type MessageRelayStatusState = 'pending' | 'published' | 'failed' | 'received';
+export type MessageRelayStatusScope = 'recipient' | 'self' | 'subscription';
+
+export interface MessageRelayStatus {
+  relay_url: string;
+  direction: MessageRelayStatusDirection;
+  status: MessageRelayStatusState;
+  scope: MessageRelayStatusScope;
+  updated_at: string;
+  detail?: string;
 }
 
 export interface Message {

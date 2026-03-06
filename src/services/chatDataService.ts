@@ -476,6 +476,22 @@ class ChatDataService {
     return records.sort(sortMessagesByCreated).map((record) => toMessageRow(record));
   }
 
+  async getMessageById(messageId: number): Promise<MessageRow | null> {
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      return null;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const record = await requestToPromise<MessageRecord | undefined>(
+      store.get(messageId) as IDBRequest<MessageRecord | undefined>
+    );
+    await waitForTransaction(transaction);
+
+    return record ? toMessageRow(record) : null;
+  }
+
   async createMessage(input: CreateMessageInput): Promise<MessageRow | null> {
     const chatId = Number(input.chat_id);
     const authorPublicKey = String(input.author_public_key ?? '').trim();
@@ -524,6 +540,38 @@ class ChatDataService {
       }
 
       console.error('Failed to create message row in IndexedDB.', error);
+      return null;
+    }
+  }
+
+  async updateMessageMeta(messageId: number, meta: Record<string, unknown>): Promise<MessageRow | null> {
+    const normalizedMessageId = Number(messageId);
+    if (!Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0) {
+      return null;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readwrite');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const record = await requestToPromise<MessageRecord | undefined>(
+      store.get(normalizedMessageId) as IDBRequest<MessageRecord | undefined>
+    );
+    if (!record) {
+      await waitForTransaction(transaction);
+      return null;
+    }
+
+    const nextRecord: MessageRecord = {
+      ...record,
+      meta: normalizeMeta(meta)
+    };
+
+    try {
+      await requestToPromise<IDBValidKey>(store.put(nextRecord) as IDBRequest<IDBValidKey>);
+      await waitForTransaction(transaction);
+      return toMessageRow(nextRecord);
+    } catch (error) {
+      console.error('Failed to update message metadata in IndexedDB.', error);
       return null;
     }
   }

@@ -4,10 +4,30 @@
       <p class="bubble__text">{{ message.text }}</p>
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
-        <div v-if="isMine" class="bubble__status" aria-hidden="true">
-          <span class="bubble__status-segment bubble__status-segment--green"></span>
-          <span class="bubble__status-segment bubble__status-segment--gray"></span>
-          <span class="bubble__status-segment bubble__status-segment--red"></span>
+        <div v-if="isMine" class="bubble__status">
+          <span
+            v-for="segment in statusSegments"
+            :key="segment.key"
+            class="bubble__status-segment"
+            :class="segment.className"
+            :style="{ flex: `${segment.weight} 1 0` }"
+          >
+            <AppTooltip max-width="360px">
+              <div class="bubble__status-tooltip">
+                <div class="bubble__status-tooltip-title">{{ segment.title }}</div>
+                <div v-if="segment.items.length === 0" class="bubble__status-tooltip-empty">
+                  {{ segment.emptyText }}
+                </div>
+                <div
+                  v-for="item in segment.items"
+                  :key="`${segment.key}-${item}`"
+                  class="bubble__status-tooltip-item"
+                >
+                  {{ item }}
+                </div>
+              </div>
+            </AppTooltip>
+          </span>
         </div>
       </div>
     </div>
@@ -16,13 +36,117 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { Message } from 'src/types/chat';
+import AppTooltip from 'src/components/AppTooltip.vue';
+import type { Message, MessageRelayStatus } from 'src/types/chat';
 
 const props = defineProps<{
   message: Message;
 }>();
 
 const isMine = computed(() => props.message.sender === 'me');
+
+interface StatusSegment {
+  key: 'published' | 'pending' | 'failed';
+  title: string;
+  className: string;
+  weight: number;
+  items: string[];
+  emptyText: string;
+}
+
+function isMessageRelayStatus(value: unknown): value is MessageRelayStatus {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const status = value as Partial<MessageRelayStatus>;
+  return (
+    typeof status.relay_url === 'string' &&
+    (status.direction === 'outbound' || status.direction === 'inbound') &&
+    (status.status === 'pending' ||
+      status.status === 'published' ||
+      status.status === 'failed' ||
+      status.status === 'received') &&
+    (status.scope === 'recipient' || status.scope === 'self' || status.scope === 'subscription')
+  );
+}
+
+function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
+  const scopeLabel = relayStatus.scope === 'self' ? 'Self' : 'Recipient';
+  return `${scopeLabel}: ${relayStatus.relay_url}`;
+}
+
+const outboundRelayStatuses = computed(() => {
+  const relayStatuses = props.message.meta?.relay_statuses;
+  if (!Array.isArray(relayStatuses)) {
+    return [] as MessageRelayStatus[];
+  }
+
+  return relayStatuses
+    .filter(isMessageRelayStatus)
+    .filter((relayStatus) => relayStatus.direction === 'outbound')
+    .sort((first, second) => {
+      const byRelayUrl = first.relay_url.localeCompare(second.relay_url);
+      if (byRelayUrl !== 0) {
+        return byRelayUrl;
+      }
+
+      return first.scope.localeCompare(second.scope);
+    });
+});
+
+const statusSegments = computed<StatusSegment[]>(() => {
+  const relayStatuses = outboundRelayStatuses.value;
+  if (relayStatuses.length === 0) {
+    return [
+      {
+        key: 'pending',
+        title: 'In Work',
+        className: 'bubble__status-segment--gray',
+        weight: 1,
+        items: [],
+        emptyText: 'No relay status recorded yet.'
+      }
+    ];
+  }
+
+  const published = relayStatuses
+    .filter((relayStatus) => relayStatus.status === 'published')
+    .map((relayStatus) => formatRelayStatusItem(relayStatus));
+  const pending = relayStatuses
+    .filter((relayStatus) => relayStatus.status === 'pending')
+    .map((relayStatus) => formatRelayStatusItem(relayStatus));
+  const failed = relayStatuses
+    .filter((relayStatus) => relayStatus.status === 'failed')
+    .map((relayStatus) => formatRelayStatusItem(relayStatus));
+
+  return [
+    {
+      key: 'published',
+      title: 'OK',
+      className: 'bubble__status-segment--green',
+      weight: published.length,
+      items: published,
+      emptyText: 'No relays confirmed.'
+    },
+    {
+      key: 'pending',
+      title: 'In Work',
+      className: 'bubble__status-segment--gray',
+      weight: pending.length,
+      items: pending,
+      emptyText: 'No relays pending.'
+    },
+    {
+      key: 'failed',
+      title: 'Failed',
+      className: 'bubble__status-segment--red',
+      weight: failed.length,
+      items: failed,
+      emptyText: 'No relays failed.'
+    }
+  ].filter((segment) => segment.weight > 0);
+});
 
 const formattedTime = computed(() => {
   return new Intl.DateTimeFormat('en-US', {
@@ -96,6 +220,8 @@ const formattedTime = computed(() => {
 .bubble__status-segment {
   display: block;
   height: 100%;
+  min-width: 4px;
+  cursor: help;
 }
 
 .bubble__status-segment--green {
@@ -111,6 +237,29 @@ const formattedTime = computed(() => {
 .bubble__status-segment--red {
   flex: 1 1 0;
   background: #dc2626;
+}
+
+.bubble__status-tooltip {
+  text-transform: none;
+  letter-spacing: 0;
+  min-width: 180px;
+}
+
+.bubble__status-tooltip-title {
+  font-size: 10px;
+  font-weight: 800;
+  margin-bottom: 6px;
+  opacity: 0.92;
+}
+
+.bubble__status-tooltip-empty,
+.bubble__status-tooltip-item {
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.bubble__status-tooltip-item + .bubble__status-tooltip-item {
+  margin-top: 3px;
 }
 
 @keyframes bubble-in {

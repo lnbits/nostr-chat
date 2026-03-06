@@ -3,7 +3,7 @@ import { ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { Message } from 'src/types/chat';
+import type { Message, MessageRelayStatus } from 'src/types/chat';
 
 function parseChatId(value: string): number | null {
   const parsed = Number.parseInt(value, 10);
@@ -31,6 +31,22 @@ function mapMessageRowToMessage(
   };
 }
 
+function buildPendingRelayStatuses(
+  relayUrls: string[],
+  scope: 'recipient' | 'self'
+): MessageRelayStatus[] {
+  const updatedAt = new Date().toISOString();
+  const uniqueRelayUrls = Array.from(new Set(relayUrls.map((relay) => relay.trim()).filter(Boolean)));
+
+  return uniqueRelayUrls.map((relayUrl) => ({
+    relay_url: relayUrl,
+    direction: 'outbound',
+    status: 'pending',
+    scope,
+    updated_at: updatedAt
+  }));
+}
+
 export const useMessageStore = defineStore('messageStore', () => {
   const nostrStore = useNostrStore();
   const messagesByChat = ref<Record<string, Message[]>>({});
@@ -51,6 +67,12 @@ export const useMessageStore = defineStore('messageStore', () => {
 
   async function init(): Promise<void> {
     await chatDataService.init();
+  }
+
+  function replaceMessageInState(chatId: string, message: Message): void {
+    const existingMessages = messagesByChat.value[chatId] ?? [];
+    const nextMessages = existingMessages.map((entry) => (entry.id === message.id ? message : entry));
+    messagesByChat.value[chatId] = nextMessages;
   }
 
   async function loadMessages(chatId: string, force = false): Promise<void> {
@@ -105,12 +127,28 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
+    const contactRelays = await relaysService.listRelaysByPublicKey(chat.public_key);
+    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
+    const fallbackRelays = contactRelays.map((relay) => relay.url);
+    const recipientRelayUrls = preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
+    const loggedInPubkey = window.localStorage.getItem('npub')?.trim() ?? '';
+    const selfRelayUrls = loggedInPubkey
+      ? (await relaysService.listRelaysByPublicKey(loggedInPubkey))
+          .filter((relay) => relay.write)
+          .map((relay) => relay.url)
+      : [];
+
     const created = await chatDataService.createMessage({
       chat_id: chatNumericId,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: new Date().toISOString(),
-      meta: {}
+      meta: {
+        relay_statuses: [
+          ...buildPendingRelayStatuses(recipientRelayUrls, 'recipient'),
+          ...buildPendingRelayStatuses(selfRelayUrls, 'self')
+        ]
+      }
     });
     if (!created) {
       return null;
@@ -124,19 +162,31 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     loadedChatIds.add(chatId);
     messagesByChat.value[chatId] = [...messagesByChat.value[chatId], newMessage];
-    const contactRelays = await relaysService.listRelaysByPublicKey(chat.public_key);
-    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
-    const fallbackRelays = contactRelays.map((relay) => relay.url);
-    await nostrStore.sendDirectMessage(
-      chat.public_key,
-      newMessage.text,
-      preferredRelays.length > 0 ? preferredRelays : fallbackRelays,
-      {
-        localMessageId: created.id,
-        createdAt: created.created_at
-      }
-    );
-    return newMessage;
+    let sendError: unknown = null;
+
+    try {
+      await nostrStore.sendDirectMessage(
+        chat.public_key,
+        newMessage.text,
+        recipientRelayUrls,
+        {
+          localMessageId: created.id,
+          createdAt: created.created_at
+        }
+      );
+    } catch (error) {
+      sendError = error;
+    }
+
+    const updatedMessageRow = await chatDataService.getMessageById(created.id);
+    const finalMessage = updatedMessageRow ? mapMessageRowToMessage(updatedMessageRow) : newMessage;
+    replaceMessageInState(chatId, finalMessage);
+
+    if (sendError) {
+      throw sendError;
+    }
+
+    return finalMessage;
   }
 
   function removeChatMessages(chatId: string): void {
