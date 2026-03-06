@@ -187,6 +187,7 @@ import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -227,13 +228,17 @@ watch(
 );
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
-  if (section === 'chats') {
-    void router.push({ name: 'home' });
-    return;
-  }
+  try {
+    if (section === 'chats') {
+      void router.push({ name: 'home' });
+      return;
+    }
 
-  if (section === 'settings') {
-    void router.push({ name: 'settings' });
+    if (section === 'settings') {
+      void router.push({ name: 'settings' });
+    }
+  } catch (error) {
+    reportUiError('Failed to navigate from contacts rail', error);
   }
 }
 
@@ -386,43 +391,59 @@ async function loadContacts(query = ''): Promise<void> {
 }
 
 function handleSelectContact(contact: ContactRecord, syncRoute = true): void {
-  selectedContactId.value = contact.id;
-  selectedContactPubkey.value = contact.public_key;
-  selectedContactProfile.value = mapContactToProfileForm(contact);
+  try {
+    selectedContactId.value = contact.id;
+    selectedContactPubkey.value = contact.public_key;
+    selectedContactProfile.value = mapContactToProfileForm(contact);
 
-  if (!syncRoute) {
-    return;
-  }
-
-  const routePubkey = parsePubkeyQuery(route.query.pubkey).toLowerCase();
-  const selectedPubkey = contact.public_key.toLowerCase();
-  if (routePubkey === selectedPubkey) {
-    return;
-  }
-
-  void router.replace({
-    name: 'contacts',
-    query: {
-      ...route.query,
-      pubkey: contact.public_key
+    if (!syncRoute) {
+      return;
     }
-  });
+
+    const routePubkey = parsePubkeyQuery(route.query.pubkey).toLowerCase();
+    const selectedPubkey = contact.public_key.toLowerCase();
+    if (routePubkey === selectedPubkey) {
+      return;
+    }
+
+    void router.replace({
+      name: 'contacts',
+      query: {
+        ...route.query,
+        pubkey: contact.public_key
+      }
+    });
+  } catch (error) {
+    reportUiError('Failed to select contact', error);
+  }
 }
 
 function openAddContactDialog(): void {
-  isAddContactDialogOpen.value = true;
+  try {
+    isAddContactDialogOpen.value = true;
+  } catch (error) {
+    reportUiError('Failed to open add contact dialog', error);
+  }
 }
 
 function closeAddContactDialog(): void {
-  isAddContactDialogOpen.value = false;
-  newContactIdentifier.value = '';
-  newContactGivenName.value = '';
-  newContactIdentifierError.value = '';
+  try {
+    isAddContactDialogOpen.value = false;
+    newContactIdentifier.value = '';
+    newContactGivenName.value = '';
+    newContactIdentifierError.value = '';
+  } catch (error) {
+    reportUiError('Failed to close add contact dialog', error);
+  }
 }
 
 function clearPublicKeyError(): void {
-  if (newContactIdentifierError.value) {
-    newContactIdentifierError.value = '';
+  try {
+    if (newContactIdentifierError.value) {
+      newContactIdentifierError.value = '';
+    }
+  } catch (error) {
+    reportUiError('Failed to clear contact identifier error', error);
   }
 }
 
@@ -488,7 +509,7 @@ async function handleAddContact(): Promise<void> {
     await loadContacts();
     handleSelectContact(created, true);
   } catch (error) {
-    console.error('Failed to create contact', error);
+    reportUiError('Failed to create contact', error, 'Failed to add contact.');
   } finally {
     isCreatingContact.value = false;
   }
@@ -553,19 +574,23 @@ async function openChatForContact(contact: ContactRecord): Promise<void> {
 }
 
 async function handleOpenChat(): Promise<void> {
-  const contactPubkey = selectedContactPubkey.value.trim().toLowerCase();
-  if (!contactPubkey) {
-    return;
-  }
+  try {
+    const contactPubkey = selectedContactPubkey.value.trim().toLowerCase();
+    if (!contactPubkey) {
+      return;
+    }
 
-  const selectedContact = contacts.value.find(
-    (contact) => contact.public_key.trim().toLowerCase() === contactPubkey
-  );
-  if (!selectedContact) {
-    return;
-  }
+    const selectedContact = contacts.value.find(
+      (contact) => contact.public_key.trim().toLowerCase() === contactPubkey
+    );
+    if (!selectedContact) {
+      return;
+    }
 
-  await openChatForContact(selectedContact);
+    await openChatForContact(selectedContact);
+  } catch (error) {
+    reportUiError('Failed to open chat for contact', error);
+  }
 }
 
 function removeRoutePubkeyQueryIfMatches(publicKey: string): void {
@@ -586,34 +611,46 @@ function removeRoutePubkeyQueryIfMatches(publicKey: string): void {
 }
 
 async function handleContactMenuChat(contact: ContactRecord): Promise<void> {
-  handleSelectContact(contact, true);
-  await openChatForContact(contact);
+  try {
+    handleSelectContact(contact, true);
+    await openChatForContact(contact);
+  } catch (error) {
+    reportUiError('Failed to open contact chat from menu', error);
+  }
 }
 
 async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<void> {
-  await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact));
-  await loadContacts(contactQuery.value);
+  try {
+    await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact));
+    await loadContacts(contactQuery.value);
 
-  const refreshedContact = await contactsService.getContactByPublicKey(contact.public_key);
-  if (refreshedContact && refreshedContact.id === selectedContactId.value) {
-    selectedContactProfile.value = mapContactToProfileForm(refreshedContact);
+    const refreshedContact = await contactsService.getContactByPublicKey(contact.public_key);
+    if (refreshedContact && refreshedContact.id === selectedContactId.value) {
+      selectedContactProfile.value = mapContactToProfileForm(refreshedContact);
+    }
+  } catch (error) {
+    reportUiError('Failed to refresh contact profile from menu', error, 'Failed to refresh profile.');
   }
 }
 
 async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
-  const deleted = await contactsService.deleteContact(contact.id);
-  if (!deleted) {
-    return;
-  }
+  try {
+    const deleted = await contactsService.deleteContact(contact.id);
+    if (!deleted) {
+      return;
+    }
 
-  if (selectedContactId.value === contact.id) {
-    selectedContactId.value = null;
-    selectedContactPubkey.value = '';
-    selectedContactProfile.value = createEmptyContactProfileForm();
-  }
+    if (selectedContactId.value === contact.id) {
+      selectedContactId.value = null;
+      selectedContactPubkey.value = '';
+      selectedContactProfile.value = createEmptyContactProfileForm();
+    }
 
-  removeRoutePubkeyQueryIfMatches(contact.public_key);
-  await loadContacts(contactQuery.value);
+    removeRoutePubkeyQueryIfMatches(contact.public_key);
+    await loadContacts(contactQuery.value);
+  } catch (error) {
+    reportUiError('Failed to delete contact from menu', error);
+  }
 }
 </script>
 

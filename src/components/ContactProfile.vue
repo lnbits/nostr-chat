@@ -311,6 +311,7 @@ import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 interface Props {
   modelValue: ContactProfileForm;
@@ -577,7 +578,11 @@ async function loadRelayInfo(relay: string, force = false): Promise<void> {
 }
 
 function handleRelayExpand(relay: string): void {
-  void loadRelayInfo(relay);
+  try {
+    void loadRelayInfo(relay);
+  } catch (error) {
+    reportUiError('Failed to expand relay details in contact profile', error);
+  }
 }
 
 function relayInfo(relay: string): NDKRelayInformation | null {
@@ -593,7 +598,11 @@ function isRelayInfoLoading(relay: string): boolean {
 }
 
 function retryRelayInfo(relay: string): void {
-  void loadRelayInfo(relay, true);
+  try {
+    void loadRelayInfo(relay, true);
+  } catch (error) {
+    reportUiError('Failed to retry relay info in contact profile', error);
+  }
 }
 
 function relayIconUrl(relay: string): string | null {
@@ -612,7 +621,11 @@ function relayIconUrl(relay: string): string | null {
 }
 
 function handleRelayIconError(relay: string): void {
-  relayIconErrorByUrl.value[relayKey(relay)] = true;
+  try {
+    relayIconErrorByUrl.value[relayKey(relay)] = true;
+  } catch (error) {
+    reportUiError('Failed to handle relay icon error in contact profile', error);
+  }
 }
 
 function relayReadEnabled(): boolean {
@@ -648,27 +661,32 @@ function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
 }
 
 function handleOpenChat(): void {
-  if (!normalizedHeaderPubkey.value) {
-    return;
-  }
+  try {
+    if (!normalizedHeaderPubkey.value) {
+      return;
+    }
 
-  emit('open-chat');
+    emit('open-chat');
+  } catch (error) {
+    reportUiError('Failed to open chat from contact profile', error);
+  }
 }
 
 async function handleRefreshContactProfile(): Promise<void> {
-  const normalizedPubkey = normalizePubkeyInput(localPubkey.value);
-  if (!normalizedPubkey || isRefreshingContact.value) {
-    return;
-  }
-
-  isRefreshingContact.value = true;
-  pubkeyError.value = '';
-  pubkeyInfo.value = '';
-
   try {
+    const normalizedPubkey = normalizePubkeyInput(localPubkey.value);
+    if (!normalizedPubkey || isRefreshingContact.value) {
+      return;
+    }
+
+    isRefreshingContact.value = true;
+    pubkeyError.value = '';
+    pubkeyInfo.value = '';
+
     await nostrStore.refreshContactByPublicKey(normalizedPubkey, headerName.value);
     await loadContactFromPubkey(normalizedPubkey);
   } catch (error) {
+    reportUiError('Failed to refresh contact profile from header action', error, 'Failed to refresh profile.');
     pubkeyError.value =
       error instanceof Error ? error.message : 'Failed to refresh contact profile.';
     pubkeyInfo.value = '';

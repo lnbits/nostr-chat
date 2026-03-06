@@ -109,6 +109,7 @@ import { relaysService } from 'src/services/relaysService';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 type RelayTab = 'my' | 'app' | 'contacts';
 interface RelayTogglePayload {
@@ -260,9 +261,13 @@ function tabError(tab: RelayTab): string {
 }
 
 function reloadTab(tab: RelayTab): void {
-  if (tab === 'contacts') {
-    hasLoadedContactsRelays.value = false;
-    void loadContactsRelays(true);
+  try {
+    if (tab === 'contacts') {
+      hasLoadedContactsRelays.value = false;
+      void loadContactsRelays(true);
+    }
+  } catch (error) {
+    reportUiError('Failed to reload relay tab', error);
   }
 }
 
@@ -335,7 +340,11 @@ async function loadRelayInfo(relay: string, force = false): Promise<void> {
 }
 
 function handleRelayExpand(relay: string): void {
-  void loadRelayInfo(relay);
+  try {
+    void loadRelayInfo(relay);
+  } catch (error) {
+    reportUiError('Failed to expand relay details', error);
+  }
 }
 
 function relayInfo(relay: string): NDKRelayInformation | null {
@@ -351,7 +360,11 @@ function isRelayInfoLoading(relay: string): boolean {
 }
 
 function retryRelayInfo(relay: string): void {
-  void loadRelayInfo(relay, true);
+  try {
+    void loadRelayInfo(relay, true);
+  } catch (error) {
+    reportUiError('Failed to retry relay info load', error);
+  }
 }
 
 function relayIconUrl(relay: string): string | null {
@@ -370,28 +383,40 @@ function relayIconUrl(relay: string): string | null {
 }
 
 function handleRelayIconError(relay: string): void {
-  relayIconErrorByUrl.value[relayKey(relay)] = true;
+  try {
+    relayIconErrorByUrl.value[relayKey(relay)] = true;
+  } catch (error) {
+    reportUiError('Failed to handle relay icon error', error);
+  }
 }
 
 function addAppRelay(): void {
-  const value = appNewRelay.value.trim();
-  if (!value || appRelayValidationError.value) {
-    return;
-  }
+  try {
+    const value = appNewRelay.value.trim();
+    if (!value || appRelayValidationError.value) {
+      return;
+    }
 
-  relayStore.addRelay(value);
-  appNewRelay.value = '';
+    relayStore.addRelay(value);
+    appNewRelay.value = '';
+  } catch (error) {
+    reportUiError('Failed to add app relay', error);
+  }
 }
 
 function addMyRelay(): void {
-  const value = myNewRelay.value.trim();
-  if (!value || myRelayValidationError.value) {
-    return;
-  }
+  try {
+    const value = myNewRelay.value.trim();
+    if (!value || myRelayValidationError.value) {
+      return;
+    }
 
-  nip65RelayStore.addRelay(value);
-  myNewRelay.value = '';
-  queueMyRelaysSync();
+    nip65RelayStore.addRelay(value);
+    myNewRelay.value = '';
+    queueMyRelaysSync();
+  } catch (error) {
+    reportUiError('Failed to add personal relay', error);
+  }
 }
 
 function validateRelayUrl(value: string): string {
@@ -416,12 +441,20 @@ function validateRelayUrl(value: string): string {
 }
 
 function removeAppRelay(index: number): void {
-  relayStore.removeRelay(index);
+  try {
+    relayStore.removeRelay(index);
+  } catch (error) {
+    reportUiError('Failed to remove app relay', error);
+  }
 }
 
 function removeMyRelay(index: number): void {
-  nip65RelayStore.removeRelay(index);
-  queueMyRelaysSync();
+  try {
+    nip65RelayStore.removeRelay(index);
+    queueMyRelaysSync();
+  } catch (error) {
+    reportUiError('Failed to remove personal relay', error);
+  }
 }
 
 function appRelayReadEnabled(index: number): boolean {
@@ -433,11 +466,19 @@ function appRelayWriteEnabled(index: number): boolean {
 }
 
 function updateAppRelayRead({ index, value }: RelayTogglePayload): void {
-  relayStore.setRelayFlags(index, { read: value });
+  try {
+    relayStore.setRelayFlags(index, { read: value });
+  } catch (error) {
+    reportUiError('Failed to update app relay read flag', error);
+  }
 }
 
 function updateAppRelayWrite({ index, value }: RelayTogglePayload): void {
-  relayStore.setRelayFlags(index, { write: value });
+  try {
+    relayStore.setRelayFlags(index, { write: value });
+  } catch (error) {
+    reportUiError('Failed to update app relay write flag', error);
+  }
 }
 
 function myRelayReadEnabled(index: number): boolean {
@@ -449,24 +490,40 @@ function myRelayWriteEnabled(index: number): boolean {
 }
 
 function updateMyRelayRead({ index, value }: RelayTogglePayload): void {
-  nip65RelayStore.setRelayFlags(index, { read: value });
+  try {
+    nip65RelayStore.setRelayFlags(index, { read: value });
+  } catch (error) {
+    reportUiError('Failed to update personal relay read flag', error);
+  }
 }
 
 function updateMyRelayWrite({ index, value }: RelayTogglePayload): void {
-  nip65RelayStore.setRelayFlags(index, { write: value });
+  try {
+    nip65RelayStore.setRelayFlags(index, { write: value });
+  } catch (error) {
+    reportUiError('Failed to update personal relay write flag', error);
+  }
 }
 
 function restoreDefaults(): void {
-  relayStore.restoreDefaults();
+  try {
+    relayStore.restoreDefaults();
+  } catch (error) {
+    reportUiError('Failed to restore default app relays', error);
+  }
 }
 
 function useDefaultMyRelays(): void {
-  nip65RelayStore.restoreDefaults();
-  for (const relay of DEFAULT_RELAYS) {
-    nip65RelayStore.addRelay(relay);
-  }
+  try {
+    nip65RelayStore.restoreDefaults();
+    for (const relay of DEFAULT_RELAYS) {
+      nip65RelayStore.addRelay(relay);
+    }
 
-  queueMyRelaysSync();
+    queueMyRelaysSync();
+  } catch (error) {
+    reportUiError('Failed to reset personal relays', error);
+  }
 }
 
 function queueMyRelaysSync(): void {
@@ -485,7 +542,7 @@ function queueMyRelaysSync(): void {
         await nostrStore.publishMyRelayList(relayEntriesSnapshot, relayStore.relays);
         await nostrStore.updateLoggedInUserRelayList(relayEntriesSnapshot);
       } catch (error) {
-        console.error('Failed to sync My Relays updates', error);
+        reportUiError('Failed to sync My Relays updates', error);
       }
     }
   })().finally(() => {

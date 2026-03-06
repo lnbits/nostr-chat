@@ -31,6 +31,7 @@ import { createEmptyContactProfileForm } from 'src/types/contactProfile';
 import type { PublishUserMetadataInput } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -107,7 +108,11 @@ function buildPublishPayload(): PublishUserMetadataInput {
 }
 
 function handleOpenRelaysSettings(): void {
-  void router.push({ name: 'settings-relays' });
+  try {
+    void router.push({ name: 'settings-relays' });
+  } catch (error) {
+    reportUiError('Failed to open relays settings', error);
+  }
 }
 
 async function handlePublish(): Promise<void> {
@@ -120,13 +125,11 @@ async function handlePublish(): Promise<void> {
     await nostrStore.publishUserMetadata(buildPublishPayload(), relayStore.relays);
     $q.notify({
       type: 'positive',
-      message: 'Profile metadata published.'
+      message: 'Profile metadata published.',
+      position: 'top-right'
     });
   } catch (error) {
-    $q.notify({
-      type: 'negative',
-      message: error instanceof Error ? error.message : 'Failed to publish profile metadata.'
-    });
+    reportUiError('Failed to publish profile metadata', error, 'Failed to publish profile metadata.');
   } finally {
     isPublishing.value = false;
   }

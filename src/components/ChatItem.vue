@@ -4,7 +4,7 @@
     class="chat-item"
     :active="active"
     active-class="chat-item--active"
-    @click="emit('select', chat.id)"
+    @click="handleSelectChat"
   >
     <q-item-section avatar>
       <CachedAvatar :src="avatarImageUrl" :alt="chatTitle" :fallback="chat.avatar" />
@@ -60,6 +60,7 @@
 import { computed } from 'vue';
 import type { Chat } from 'src/types/chat';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = defineProps<{
   chat: Chat;
@@ -121,24 +122,52 @@ const avatarImageUrl = computed(() => {
 
 const isMuted = computed(() => props.chat.meta.muted === true);
 
+function handleSelectChat(): void {
+  try {
+    emit('select', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to select chat item', error);
+  }
+}
+
 function emitViewProfile(): void {
-  emit('view-profile', props.chat.id);
+  try {
+    emit('view-profile', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit chat profile action', error);
+  }
 }
 
 function emitRefreshProfile(): void {
-  emit('refresh-profile', props.chat.id);
+  try {
+    emit('refresh-profile', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit chat refresh action', error);
+  }
 }
 
 function emitMute(): void {
-  emit('mute', props.chat.id);
+  try {
+    emit('mute', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit chat mute action', error);
+  }
 }
 
 function emitMarkAsRead(): void {
-  emit('mark-as-read', props.chat.id);
+  try {
+    emit('mark-as-read', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit mark-as-read action', error);
+  }
 }
 
 function emitDeleteChat(): void {
-  emit('delete-chat', props.chat.id);
+  try {
+    emit('delete-chat', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit chat delete action', error);
+  }
 }
 </script>
 

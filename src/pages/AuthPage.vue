@@ -76,6 +76,7 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const router = useRouter();
 const nostrStore = useNostrStore();
@@ -90,21 +91,33 @@ const privateKeyError = computed(() =>
 const canLogin = computed(() => privateKeyValidation.value.isValid);
 
 function openLoginCard(): void {
-  isLoginMode.value = true;
+  try {
+    isLoginMode.value = true;
+  } catch (error) {
+    reportUiError('Failed to open login card', error);
+  }
 }
 
 function handleLogin(): void {
-  if (!canLogin.value) {
-    return;
+  try {
+    if (!canLogin.value) {
+      return;
+    }
+
+    nostrStore.savePrivateKeyFromNsec(privateKey.value);
+
+    goToHome();
+  } catch (error) {
+    reportUiError('Failed to log in', error, 'Failed to log in.');
   }
-
-  nostrStore.savePrivateKeyFromNsec(privateKey.value);
-
-  goToHome();
 }
 
 function goToHome(): void {
-  void router.push({ name: 'home' });
+  try {
+    void router.push({ name: 'home' });
+  } catch (error) {
+    reportUiError('Failed to navigate after login', error);
+  }
 }
 </script>
 

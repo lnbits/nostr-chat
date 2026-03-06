@@ -29,6 +29,7 @@
 import { computed } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRoute, useRouter } from 'vue-router';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 defineProps<{
   title: string;
@@ -44,7 +45,11 @@ const showMobileBackButton = computed(() => {
 });
 
 function goBack(): void {
-  void router.push({ name: 'settings' });
+  try {
+    void router.push({ name: 'settings' });
+  } catch (error) {
+    reportUiError('Failed to navigate back to settings list', error);
+  }
 }
 </script>
 

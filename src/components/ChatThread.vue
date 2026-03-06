@@ -9,7 +9,7 @@
           round
           icon="arrow_back"
           aria-label="Back"
-          @click="$emit('back')"
+          @click="handleBack"
         />
         <div class="thread-header__identity" @click="handleOpenProfile">
           <CachedAvatar
@@ -39,7 +39,7 @@
         <MessageBubble v-for="message in messages" :key="message.id" :message="message" />
       </div>
 
-      <MessageComposer @send="$emit('send', $event)" />
+      <MessageComposer @send="handleSend" />
     </template>
 
     <div v-else class="thread-empty">
@@ -55,6 +55,7 @@ import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import type { Chat, Message } from 'src/types/chat';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = withDefaults(
   defineProps<{
@@ -109,12 +110,32 @@ async function scrollToBottom(): Promise<void> {
   }
 }
 
-function handleOpenProfile(): void {
-  if (!props.chat?.publicKey) {
-    return;
+function handleBack(): void {
+  try {
+    emit('back');
+  } catch (error) {
+    reportUiError('Failed to go back from chat thread', error);
   }
+}
 
-  emit('open-profile', props.chat.publicKey);
+function handleSend(text: string): void {
+  try {
+    emit('send', text);
+  } catch (error) {
+    reportUiError('Failed to emit chat thread send event', error);
+  }
+}
+
+function handleOpenProfile(): void {
+  try {
+    if (!props.chat?.publicKey) {
+      return;
+    }
+
+    emit('open-profile', props.chat.publicKey);
+  } catch (error) {
+    reportUiError('Failed to open profile from chat thread', error);
+  }
 }
 
 watch(

@@ -273,6 +273,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     for (const identifier of identifiers) {
       try {
         const user = await ndk.fetchUser(identifier, true);
+        console.log('### Resolved user for identifier:', identifier, user);
         if (!user) {
           continue;
         }
@@ -347,10 +348,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
       existingContact?.name?.trim() ||
       fallbackContactName;
 
+    console.log('### Resolved contact profile for pubkey:', normalizedTargetPubkey, resolvedUser);
     const fetchedRelays = inputSanitizerService.normalizeRelayEntriesFromUrls(resolvedUser.relayUrls ?? []);
+    
     const nextRelays = fetchedRelays.length > 0 ? fetchedRelays : existingContact?.relays ?? [];
 
-    console.log('### Syncing contact profile, relays:', nextRelays);
+    console.log('### Syncing contact profile, relays:', targetPubkeyHex, nextRelays);
     if (existingContact) {
       await contactsService.updateContact(existingContact.id, {
         name: nextName,

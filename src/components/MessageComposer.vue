@@ -73,6 +73,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import { TOP_500_EMOJIS } from 'src/data/topEmojis';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const draft = ref('');
 const inputRef = ref<{ $el: HTMLElement } | null>(null);
@@ -99,50 +100,62 @@ function getInputElement(): HTMLInputElement | HTMLTextAreaElement | null {
 }
 
 function rememberSelection(): void {
-  const inputElement = getInputElement();
-
-  if (!inputElement) {
-    return;
-  }
-
-  selectionStart.value = inputElement.selectionStart ?? draft.value.length;
-  selectionEnd.value = inputElement.selectionEnd ?? draft.value.length;
-}
-
-function insertEmoji(emoji: string): void {
-  const start = selectionStart.value ?? draft.value.length;
-  const end = selectionEnd.value ?? draft.value.length;
-
-  draft.value = `${draft.value.slice(0, start)}${emoji}${draft.value.slice(end)}`;
-
-  const nextCursor = start + emoji.length;
-  selectionStart.value = nextCursor;
-  selectionEnd.value = nextCursor;
-
-  void nextTick(() => {
+  try {
     const inputElement = getInputElement();
 
     if (!inputElement) {
       return;
     }
 
-    inputElement.focus();
-    inputElement.setSelectionRange(nextCursor, nextCursor);
-  });
+    selectionStart.value = inputElement.selectionStart ?? draft.value.length;
+    selectionEnd.value = inputElement.selectionEnd ?? draft.value.length;
+  } catch (error) {
+    reportUiError('Failed to track message input cursor', error);
+  }
+}
+
+function insertEmoji(emoji: string): void {
+  try {
+    const start = selectionStart.value ?? draft.value.length;
+    const end = selectionEnd.value ?? draft.value.length;
+
+    draft.value = `${draft.value.slice(0, start)}${emoji}${draft.value.slice(end)}`;
+
+    const nextCursor = start + emoji.length;
+    selectionStart.value = nextCursor;
+    selectionEnd.value = nextCursor;
+
+    void nextTick(() => {
+      const inputElement = getInputElement();
+
+      if (!inputElement) {
+        return;
+      }
+
+      inputElement.focus();
+      inputElement.setSelectionRange(nextCursor, nextCursor);
+    });
+  } catch (error) {
+    reportUiError('Failed to insert emoji', error);
+  }
 }
 
 function handleSend(): void {
-  const cleanText = draft.value.trim();
+  try {
+    const cleanText = draft.value.trim();
 
-  if (!cleanText) {
-    return;
+    if (!cleanText) {
+      return;
+    }
+
+    emit('send', cleanText);
+    draft.value = '';
+    emojiSearch.value = '';
+    selectionStart.value = 0;
+    selectionEnd.value = 0;
+  } catch (error) {
+    reportUiError('Failed to submit message input', error);
   }
-
-  emit('send', cleanText);
-  draft.value = '';
-  emojiSearch.value = '';
-  selectionStart.value = 0;
-  selectionEnd.value = 0;
 }
 </script>
 

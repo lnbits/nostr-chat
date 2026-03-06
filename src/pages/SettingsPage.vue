@@ -43,6 +43,7 @@ import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -80,13 +81,17 @@ watch(
 );
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
-  if (section === 'chats') {
-    void router.push({ name: 'home' });
-    return;
-  }
+  try {
+    if (section === 'chats') {
+      void router.push({ name: 'home' });
+      return;
+    }
 
-  if (section === 'contacts') {
-    void router.push({ name: 'contacts' });
+    if (section === 'contacts') {
+      void router.push({ name: 'contacts' });
+    }
+  } catch (error) {
+    reportUiError('Failed to navigate from settings rail', error);
   }
 }
 
@@ -98,7 +103,11 @@ function goToSetting(
     | 'settings-language'
     | 'settings-notifications'
 ): void {
-  void router.push({ name: routeName });
+  try {
+    void router.push({ name: routeName });
+  } catch (error) {
+    reportUiError('Failed to open settings section', error);
+  }
 }
 </script>
 
