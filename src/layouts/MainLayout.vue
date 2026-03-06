@@ -131,7 +131,9 @@ function goToSection(section: NavigationSection): void {
   }
 
   if (section === 'contacts') {
-    if (route.name !== 'contacts') {
+    const hasActiveContactParam =
+      typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0;
+    if (route.name !== 'contacts' || hasActiveContactParam) {
       void router.push({ name: 'contacts' });
     }
     return;

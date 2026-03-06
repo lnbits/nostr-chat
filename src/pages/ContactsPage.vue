@@ -5,7 +5,7 @@
         <AppNavRail active="contacts" @select="handleRailSelect" />
       </aside>
 
-      <aside class="contacts-sidebar">
+      <aside v-if="!isMobile || !isMobileProfileOpen" class="contacts-sidebar">
         <div class="contacts-sidebar__top">
           <div class="contacts-sidebar__row">
             <div class="contacts-sidebar__title">Contacts</div>
@@ -98,9 +98,25 @@
         </q-scroll-area>
       </aside>
 
-      <section v-if="!isMobile" class="contacts-detail-panel">
+      <section
+        v-if="!isMobile || isMobileProfileOpen"
+        class="contacts-detail-panel"
+        :class="{ 'contacts-detail-panel--mobile': isMobile }"
+      >
         <q-scroll-area class="contacts-detail-panel__scroll">
           <div v-if="selectedContactPubkey" class="contacts-detail-panel__content">
+            <div v-if="isMobile" class="contacts-detail-mobile-header">
+              <q-btn
+                flat
+                dense
+                round
+                icon="arrow_back"
+                aria-label="Back to contacts"
+                @click="handleBackToContactsList"
+              />
+              <div class="contacts-detail-mobile-header__title">{{ selectedContactHeaderTitle }}</div>
+              <div class="contacts-detail-mobile-header__spacer" aria-hidden="true" />
+            </div>
             <ContactProfile
               v-model="selectedContactProfile"
               v-model:pubkey="selectedContactPubkey"
@@ -198,6 +214,7 @@ const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const isMobileProfileOpen = computed(() => isMobile.value && Boolean(selectedContactPubkey.value.trim()));
 const contactQuery = ref('');
 const isAddContactDialogOpen = ref(false);
 const isLoadingContacts = ref(false);
@@ -209,6 +226,19 @@ const selectedContactId = ref<number | null>(null);
 const selectedContactPubkey = ref('');
 const selectedContactProfile = ref(createEmptyContactProfileForm());
 const contacts = ref<ContactRecord[]>([]);
+const selectedContactHeaderTitle = computed(() => {
+  const displayName = selectedContactProfile.value.display_name.trim();
+  if (displayName) {
+    return displayName;
+  }
+
+  const name = selectedContactProfile.value.name.trim();
+  if (name) {
+    return name;
+  }
+
+  return selectedContactPubkey.value.trim().slice(0, 32) || 'Contact';
+});
 
 let latestSearchRequestId = 0;
 
@@ -409,6 +439,16 @@ function handleSelectContact(contact: ContactRecord, syncRoute = true): void {
     const routePubkey = parsePubkeyRouteParam(route.params.pubkey).toLowerCase();
     const selectedPubkey = contact.public_key.toLowerCase();
     if (routePubkey === selectedPubkey) {
+      return;
+    }
+
+    if (isMobile.value) {
+      void router.push({
+        name: 'contacts',
+        params: {
+          pubkey: contact.public_key
+        }
+      });
       return;
     }
 
@@ -648,6 +688,14 @@ function removeRoutePubkeyIfMatches(publicKey: string): void {
   });
 }
 
+function handleBackToContactsList(): void {
+  try {
+    void router.replace({ name: 'contacts' });
+  } catch (error) {
+    reportUiError('Failed to navigate back to contacts list', error);
+  }
+}
+
 async function handleContactMenuChat(contact: ContactRecord): Promise<void> {
   try {
     handleSelectContact(contact, true);
@@ -753,6 +801,38 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contacts-detail-panel__content {
   padding: 0;
+}
+
+.contacts-detail-mobile-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 88%, #dbe9ff 12%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
+    );
+  backdrop-filter: blur(10px);
+}
+
+.contacts-detail-mobile-header__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contacts-detail-mobile-header__spacer {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
 }
 
 .contacts-sidebar__top {
@@ -904,6 +984,14 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
     border-radius: 0;
     border-left: 0;
     border-right: 0;
+    border-top: 0;
+  }
+
+  .contacts-detail-panel--mobile {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
     border-top: 0;
   }
 }
