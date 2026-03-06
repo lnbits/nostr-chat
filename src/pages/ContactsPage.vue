@@ -222,9 +222,9 @@ watch(contactQuery, (query) => {
 });
 
 watch(
-  () => parsePubkeyQuery(route.query.pubkey),
+  () => parsePubkeyRouteParam(route.params.pubkey),
   (pubkey) => {
-    selectContactByPublicKey(pubkey);
+    syncSelectedContactFromRoute(pubkey);
   },
   { immediate: true }
 );
@@ -239,7 +239,7 @@ watch(
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   try {
     if (section === 'chats') {
-      void router.push({ name: 'home' });
+      void router.push({ name: 'chats' });
       return;
     }
 
@@ -386,10 +386,7 @@ async function loadContacts(query = ''): Promise<void> {
       selectedContactProfile.value = createEmptyContactProfileForm();
     }
 
-    const queryPubkey = parsePubkeyQuery(route.query.pubkey);
-    if (queryPubkey) {
-      selectContactByPublicKey(queryPubkey);
-    }
+    syncSelectedContactFromRoute(parsePubkeyRouteParam(route.params.pubkey));
   } catch (error) {
     console.error('Failed to load contacts', error);
   } finally {
@@ -409,7 +406,7 @@ function handleSelectContact(contact: ContactRecord, syncRoute = true): void {
       return;
     }
 
-    const routePubkey = parsePubkeyQuery(route.query.pubkey).toLowerCase();
+    const routePubkey = parsePubkeyRouteParam(route.params.pubkey).toLowerCase();
     const selectedPubkey = contact.public_key.toLowerCase();
     if (routePubkey === selectedPubkey) {
       return;
@@ -417,8 +414,7 @@ function handleSelectContact(contact: ContactRecord, syncRoute = true): void {
 
     void router.replace({
       name: 'contacts',
-      query: {
-        ...route.query,
+      params: {
         pubkey: contact.public_key
       }
     });
@@ -551,9 +547,9 @@ async function handleAddContact(): Promise<void> {
   }
 }
 
-function parsePubkeyQuery(value: unknown): string {
+function parsePubkeyRouteParam(value: unknown): string {
   if (Array.isArray(value)) {
-    return parsePubkeyQuery(value[0]);
+    return parsePubkeyRouteParam(value[0]);
   }
 
   if (typeof value !== 'string') {
@@ -563,9 +559,26 @@ function parsePubkeyQuery(value: unknown): string {
   return value.trim();
 }
 
+function clearSelectedContact(): void {
+  selectedContactId.value = null;
+  selectedContactPubkey.value = '';
+  selectedContactProfile.value = createEmptyContactProfileForm();
+}
+
+function syncSelectedContactFromRoute(pubkey: string): void {
+  const normalizedPubkey = pubkey.trim().toLowerCase();
+  if (!normalizedPubkey) {
+    clearSelectedContact();
+    return;
+  }
+
+  selectContactByPublicKey(normalizedPubkey);
+}
+
 function selectContactByPublicKey(pubkey: string): void {
   const normalizedPubkey = pubkey.trim().toLowerCase();
   if (!normalizedPubkey) {
+    clearSelectedContact();
     return;
   }
 
@@ -601,12 +614,7 @@ async function openChatForContact(contact: ContactRecord): Promise<void> {
 
   chatStore.selectChat(chat.id);
 
-  if (isMobile.value) {
-    void router.push({ name: 'chat', params: { chatId: chat.id } });
-    return;
-  }
-
-  void router.push({ name: 'home' });
+  void router.push({ name: 'chats', params: { chatId: chat.id } });
 }
 
 async function handleOpenChat(): Promise<void> {
@@ -629,20 +637,14 @@ async function handleOpenChat(): Promise<void> {
   }
 }
 
-function removeRoutePubkeyQueryIfMatches(publicKey: string): void {
-  const routePubkey = parsePubkeyQuery(route.query.pubkey).trim().toLowerCase();
+function removeRoutePubkeyIfMatches(publicKey: string): void {
+  const routePubkey = parsePubkeyRouteParam(route.params.pubkey).trim().toLowerCase();
   if (!routePubkey || routePubkey !== publicKey.trim().toLowerCase()) {
     return;
   }
 
-  const nextQuery = {
-    ...route.query
-  };
-  delete nextQuery.pubkey;
-
   void router.replace({
-    name: 'contacts',
-    query: nextQuery
+    name: 'contacts'
   });
 }
 
@@ -682,7 +684,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
       selectedContactProfile.value = createEmptyContactProfileForm();
     }
 
-    removeRoutePubkeyQueryIfMatches(contact.public_key);
+    removeRoutePubkeyIfMatches(contact.public_key);
     try {
       await nostrStore.publishPrivateContactList(relayStore.relays);
     } catch (error) {

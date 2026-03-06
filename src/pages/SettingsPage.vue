@@ -83,7 +83,7 @@ watch(
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   try {
     if (section === 'chats') {
-      void router.push({ name: 'home' });
+      void router.push({ name: 'chats' });
       return;
     }
 

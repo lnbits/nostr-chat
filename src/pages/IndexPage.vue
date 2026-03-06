@@ -5,7 +5,7 @@
         <AppNavRail active="chats" @select="handleRailSelect" />
       </aside>
 
-      <aside class="sidebar">
+      <aside v-if="!isMobile || !isMobileThreadOpen" class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-top__row">
             <div class="sidebar-top__title">Chats</div>
@@ -24,7 +24,7 @@
         <ChatList
           class="sidebar-list"
           :chats="chatStore.chats"
-          :selected-chat-id="chatStore.selectedChatId"
+          :selected-chat-id="selectedChatId"
           @select="handleSelectChat"
           @view-profile="handleViewChatProfile"
           @refresh-profile="handleRefreshChatProfile"
@@ -35,11 +35,17 @@
         />
       </aside>
 
-      <section v-if="!isMobile" class="thread-panel">
+      <section
+        v-if="!isMobile || isMobileThreadOpen"
+        class="thread-panel"
+        :class="{ 'thread-panel--mobile': isMobile }"
+      >
         <ChatThread
-          :chat="chatStore.selectedChat"
+          :chat="activeChat"
           :messages="currentMessages"
+          :show-back-button="isMobile"
           @send="handleSend"
+          @back="handleBackToChatList"
           @open-profile="handleOpenProfile"
           @refresh-chat="handleRefreshChat"
         />
@@ -49,8 +55,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatList from 'src/components/ChatList.vue';
@@ -61,20 +67,30 @@ import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
+const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const activeChatId = computed(() => {
+  const rawChatId = route.params.chatId;
+  if (Array.isArray(rawChatId)) {
+    return rawChatId[0]?.trim() ?? '';
+  }
 
-onMounted(() => {
-  void chatStore.init();
-  void messageStore.init();
+  return typeof rawChatId === 'string' ? rawChatId.trim() : '';
 });
+const activeChat = computed(() => {
+  return chatStore.chats.find((chat) => chat.id === activeChatId.value) ?? null;
+});
+const selectedChatId = computed(() => activeChatId.value || null);
+const isMobileThreadOpen = computed(() => isMobile.value && Boolean(activeChatId.value));
+const chatIdSignature = computed(() => chatStore.chats.map((chat) => chat.id).join('|'));
 
 const currentMessages = computed(() => {
-  return messageStore.getMessages(chatStore.selectedChatId);
+  return messageStore.getMessages(activeChatId.value || null);
 });
 
 const searchQuery = computed({
@@ -99,11 +115,7 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
 
 function handleSelectChat(chatId: string): void {
   try {
-    chatStore.selectChat(chatId);
-
-    if (isMobile.value) {
-      void router.push({ name: 'chat', params: { chatId } });
-    }
+    void router.push({ name: 'chats', params: { chatId } });
   } catch (error) {
     reportUiError('Failed to select chat', error);
   }
@@ -111,14 +123,14 @@ function handleSelectChat(chatId: string): void {
 
 async function handleSend(text: string): Promise<void> {
   try {
-    if (!chatStore.selectedChatId) {
+    if (!activeChatId.value) {
       return;
     }
 
-    const created = await messageStore.sendMessage(chatStore.selectedChatId, text);
+    const created = await messageStore.sendMessage(activeChatId.value, text);
 
     if (created) {
-      await chatStore.updateChatPreview(chatStore.selectedChatId, created.text, created.sentAt);
+      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
     }
   } catch (error) {
     reportUiError('Failed to send chat message', error, 'Failed to send message.');
@@ -132,7 +144,7 @@ function handleOpenProfile(publicKey: string): void {
       return;
     }
 
-    void router.push({ name: 'contacts', query: { pubkey: normalized } });
+    void router.push({ name: 'contacts', params: { pubkey: normalized } });
   } catch (error) {
     reportUiError('Failed to open contact profile from chat', error);
   }
@@ -149,7 +161,7 @@ function handleViewChatProfile(chatId: string): void {
       return;
     }
 
-    void router.push({ name: 'contacts', query: { pubkey: chat.publicKey } });
+    void router.push({ name: 'contacts', params: { pubkey: chat.publicKey } });
   } catch (error) {
     reportUiError('Failed to open profile from chat actions', error);
   }
@@ -201,14 +213,76 @@ async function handleMarkChatAsRead(chatId: string): Promise<void> {
 
 async function handleDeleteChat(chatId: string): Promise<void> {
   try {
+    const isActiveChat = activeChatId.value === chatId;
     const deleted = await chatStore.deleteChat(chatId);
     if (deleted) {
       messageStore.removeChatMessages(chatId);
+
+      if (isActiveChat) {
+        const nextChatId = !isMobile.value ? chatStore.selectedChatId : null;
+        if (nextChatId) {
+          void router.replace({ name: 'chats', params: { chatId: nextChatId } });
+        } else {
+          void router.replace({ name: 'chats' });
+        }
+      }
     }
   } catch (error) {
     reportUiError('Failed to delete chat', error);
   }
 }
+
+function handleBackToChatList(): void {
+  try {
+    void router.push({ name: 'chats' });
+  } catch (error) {
+    reportUiError('Failed to navigate back to chat list', error);
+  }
+}
+
+async function syncChatRoute(): Promise<void> {
+  try {
+    await Promise.all([chatStore.init(), messageStore.init()]);
+
+    const chatId = activeChatId.value;
+    if (!chatId) {
+      if (isMobile.value) {
+        return;
+      }
+
+      const fallbackChatId = chatStore.chats[0]?.id ?? '';
+      if (fallbackChatId) {
+        await router.replace({ name: 'chats', params: { chatId: fallbackChatId } });
+      }
+      return;
+    }
+
+    const matchingChat = chatStore.chats.find((chat) => chat.id === chatId) ?? null;
+    if (!matchingChat) {
+      const fallbackChatId = !isMobile.value ? chatStore.chats[0]?.id ?? '' : '';
+      if (fallbackChatId) {
+        await router.replace({ name: 'chats', params: { chatId: fallbackChatId } });
+      } else {
+        await router.replace({ name: 'chats' });
+      }
+      return;
+    }
+
+    if (chatStore.selectedChatId !== chatId) {
+      chatStore.selectChat(chatId);
+    } else {
+      await chatStore.markAsRead(chatId);
+    }
+
+    await messageStore.loadMessages(chatId);
+  } catch (error) {
+    reportUiError('Failed to synchronize chat route', error);
+  }
+}
+
+watch([activeChatId, isMobile, chatIdSignature], () => {
+  void syncChatRoute();
+}, { immediate: true });
 </script>
 
 <style scoped>
@@ -295,6 +369,13 @@ async function handleDeleteChat(chatId: string): Promise<void> {
     border-radius: 0;
     border-left: 0;
     border-right: 0;
+  }
+
+  .thread-panel--mobile {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
   }
 }
 </style>

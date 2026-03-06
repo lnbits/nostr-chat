@@ -45,13 +45,13 @@ watch(
     await chatStore.init();
 
     if (!chatId) {
-      void router.replace({ name: 'home' });
+      void router.replace({ name: 'chats' });
       return;
     }
 
     const exists = chatStore.chats.some((chat) => chat.id === chatId);
     if (!exists) {
-      void router.replace({ name: 'home' });
+      void router.replace({ name: 'chats' });
       return;
     }
 
@@ -65,7 +65,7 @@ watch(
   () => $q.screen.lt.md,
   (isMobile) => {
     if (!isMobile && activeChatId.value) {
-      void router.replace({ name: 'home' });
+      void router.replace({ name: 'chats', params: { chatId: activeChatId.value } });
     }
   },
   { immediate: true }
@@ -73,7 +73,7 @@ watch(
 
 function goBack(): void {
   try {
-    void router.push({ name: 'home' });
+    void router.push({ name: 'chats' });
   } catch (error) {
     reportUiError('Failed to navigate back from chat page', error);
   }
@@ -102,7 +102,7 @@ function handleOpenProfile(publicKey: string): void {
       return;
     }
 
-    void router.push({ name: 'contacts', query: { pubkey: normalized } });
+    void router.push({ name: 'contacts', params: { pubkey: normalized } });
   } catch (error) {
     reportUiError('Failed to open profile from chat page', error);
   }

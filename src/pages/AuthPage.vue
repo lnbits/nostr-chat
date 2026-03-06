@@ -114,7 +114,7 @@ function handleLogin(): void {
 
 function goToHome(): void {
   try {
-    void router.push({ name: 'home' });
+    void router.push({ name: 'chats' });
   } catch (error) {
     reportUiError('Failed to navigate after login', error);
   }

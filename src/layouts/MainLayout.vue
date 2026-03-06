@@ -123,8 +123,9 @@ void (async () => {
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {
-    if (route.name !== 'home') {
-      void router.push({ name: 'home' });
+    const hasActiveChatParam = typeof route.params.chatId === 'string' && route.params.chatId.trim().length > 0;
+    if (route.name !== 'chats' || hasActiveChatParam) {
+      void router.push({ name: 'chats' });
     }
     return;
   }

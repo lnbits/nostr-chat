@@ -13,11 +13,15 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
-        name: 'home',
+        redirect: { name: 'chats' }
+      },
+      {
+        path: 'chats/:chatId?',
+        name: 'chats',
         component: () => import('pages/IndexPage.vue')
       },
       {
-        path: 'contacts',
+        path: 'contacts/:pubkey?',
         name: 'contacts',
         component: () => import('pages/ContactsPage.vue')
       },
@@ -53,11 +57,6 @@ const routes: RouteRecordRaw[] = [
           }
         ]
       },
-      {
-        path: 'chat/:chatId',
-        name: 'chat',
-        component: () => import('pages/ChatPage.vue')
-      }
     ]
   },
   {
