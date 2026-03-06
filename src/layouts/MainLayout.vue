@@ -4,7 +4,7 @@
       <router-view />
     </q-page-container>
 
-    <q-footer v-if="isMobile" bordered class="mobile-nav">
+    <q-footer v-if="showMobileNav" bordered class="mobile-nav">
       <div class="mobile-nav__inner">
         <q-btn
           flat
@@ -71,6 +71,26 @@ const activeSection = computed<NavigationSection>(() => {
   }
 
   return 'chats';
+});
+
+const showMobileNav = computed(() => {
+  if (!isMobile.value) {
+    return false;
+  }
+
+  if (route.name === 'chats') {
+    return !(typeof route.params.chatId === 'string' && route.params.chatId.trim().length > 0);
+  }
+
+  if (route.name === 'contacts') {
+    return !(typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0);
+  }
+
+  if (route.name === 'settings') {
+    return true;
+  }
+
+  return false;
 });
 
 if (savedDarkMode !== null) {
