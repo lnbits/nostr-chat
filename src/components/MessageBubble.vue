@@ -5,7 +5,7 @@
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
         <div
-          v-if="isMine"
+          v-if="isMine && hasRelayStatuses"
           class="bubble__status-hitbox"
           tabindex="0"
           role="button"
@@ -157,6 +157,10 @@ const hasPendingRelayStatuses = computed(() => {
   return outboundRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
 });
 
+const hasRelayStatuses = computed(() => {
+  return outboundRelayStatuses.value.length > 0;
+});
+
 const contactRelaysTitle = computed(() => {
   const label = props.contactName?.trim();
   return `${label || 'Contact'} Relays`;
@@ -244,6 +248,10 @@ const contactStatusListItems = computed<StatusListItem[]>(() => buildStatusListI
 const myStatusListItems = computed<StatusListItem[]>(() => buildStatusListItems('self'));
 
 function openStatusDialog(): void {
+  if (!hasRelayStatuses.value) {
+    return;
+  }
+
   isStatusDialogOpen.value = true;
 }
 
