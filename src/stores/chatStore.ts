@@ -167,45 +167,69 @@ export const useChatStore = defineStore('chatStore', () => {
     () => chats.value.find((chat) => chat.id === selectedChatId.value) ?? null
   );
 
+  async function loadChatsIntoState(): Promise<void> {
+    await Promise.all([chatDataService.init(), contactsService.init()]);
+    const [rows, contacts] = await Promise.all([
+      chatDataService.listChats(),
+      contactsService.listContacts()
+    ]);
+    const contactContextByPublicKey = new Map<string, ChatContactContext>();
+
+    for (const contact of contacts) {
+      contactContextByPublicKey.set(contact.public_key.toLowerCase(), toContactContext(contact));
+    }
+
+    chats.value = sortByLatest(
+      rows.map((row) =>
+        mapChatRowToChat(
+          row,
+          contactContextByPublicKey.get(row.public_key.toLowerCase())
+        )
+      )
+    );
+
+    if (selectedChatId.value && chats.value.some((chat) => chat.id === selectedChatId.value)) {
+      return;
+    }
+
+    selectedChatId.value = chats.value[0]?.id ?? null;
+  }
+
   async function init(): Promise<void> {
     if (!initPromise) {
       initPromise = (async () => {
         try {
-          await Promise.all([chatDataService.init(), contactsService.init()]);
-          const [rows, contacts] = await Promise.all([
-            chatDataService.listChats(),
-            contactsService.listContacts()
-          ]);
-          const contactContextByPublicKey = new Map<string, ChatContactContext>();
-
-          for (const contact of contacts) {
-            contactContextByPublicKey.set(contact.public_key.toLowerCase(), toContactContext(contact));
-          }
-
-          chats.value = sortByLatest(
-            rows.map((row) =>
-              mapChatRowToChat(
-                row,
-                contactContextByPublicKey.get(row.public_key.toLowerCase())
-              )
-            )
-          );
-
-          if (selectedChatId.value && chats.value.some((chat) => chat.id === selectedChatId.value)) {
-            return;
-          }
-
-          selectedChatId.value = chats.value[0]?.id ?? null;
+          await loadChatsIntoState();
         } catch (error) {
           console.error('Failed to initialize chats', error);
           chats.value = [];
           selectedChatId.value = null;
+        } finally {
+          isLoaded.value = true;
         }
       })();
     }
 
-    await initPromise;
-    isLoaded.value = true;
+    try {
+      await initPromise;
+    } finally {
+      initPromise = null;
+    }
+  }
+
+  async function reload(): Promise<void> {
+    if (initPromise) {
+      await initPromise;
+    }
+
+    try {
+      await loadChatsIntoState();
+    } catch (error) {
+      console.error('Failed to reload chats', error);
+      throw error;
+    } finally {
+      isLoaded.value = true;
+    }
   }
 
   function selectChat(chatId: string): void {
@@ -449,7 +473,8 @@ export const useChatStore = defineStore('chatStore', () => {
       });
     }
 
-    if (!existingChatInStore) {
+    if (!isLoaded.value || !existingChatInStore) {
+      await reload();
       return;
     }
 
@@ -481,6 +506,7 @@ export const useChatStore = defineStore('chatStore', () => {
     muteChat,
     deleteChat,
     init,
+    reload,
     selectChat,
     setSearchQuery,
     updateChatPreview,
