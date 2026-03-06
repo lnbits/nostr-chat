@@ -26,6 +26,11 @@
           :chats="chatStore.chats"
           :selected-chat-id="chatStore.selectedChatId"
           @select="handleSelectChat"
+          @view-profile="handleViewChatProfile"
+          @refresh-profile="handleRefreshChatProfile"
+          @mute="handleMuteChat"
+          @mark-as-read="handleMarkChatAsRead"
+          @delete-chat="handleDeleteChat"
         />
       </aside>
 
@@ -50,11 +55,13 @@ import ChatList from 'src/components/ChatList.vue';
 import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
+import { useNostrStore } from 'src/stores/nostrStore';
 
 const $q = useQuasar();
 const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
+const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 
@@ -110,6 +117,43 @@ function handleOpenProfile(publicKey: string): void {
   }
 
   void router.push({ name: 'contacts', query: { pubkey: normalized } });
+}
+
+function findChatById(chatId: string) {
+  return chatStore.chats.find((chat) => chat.id === chatId) ?? null;
+}
+
+function handleViewChatProfile(chatId: string): void {
+  const chat = findChatById(chatId);
+  if (!chat) {
+    return;
+  }
+
+  void router.push({ name: 'contacts', query: { pubkey: chat.publicKey } });
+}
+
+async function handleRefreshChatProfile(chatId: string): Promise<void> {
+  const chat = findChatById(chatId);
+  if (!chat) {
+    return;
+  }
+
+  await nostrStore.refreshContactByPublicKey(chat.publicKey, chat.name);
+}
+
+async function handleMuteChat(chatId: string): Promise<void> {
+  await chatStore.muteChat(chatId);
+}
+
+async function handleMarkChatAsRead(chatId: string): Promise<void> {
+  await chatStore.markAsRead(chatId);
+}
+
+async function handleDeleteChat(chatId: string): Promise<void> {
+  const deleted = await chatStore.deleteChat(chatId);
+  if (deleted) {
+    messageStore.removeChatMessages(chatId);
+  }
 }
 </script>
 

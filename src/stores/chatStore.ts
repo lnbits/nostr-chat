@@ -213,6 +213,69 @@ export const useChatStore = defineStore('chatStore', () => {
     }
   }
 
+  async function muteChat(chatId: string): Promise<void> {
+    const targetChat = chats.value.find((chat) => chat.id === chatId);
+    if (!targetChat) {
+      return;
+    }
+
+    const isAlreadyMuted = targetChat.meta.muted === true;
+    if (isAlreadyMuted) {
+      return;
+    }
+
+    const nextMeta = {
+      ...(targetChat.meta as Record<string, unknown>),
+      muted: true
+    };
+
+    chats.value = chats.value.map((chat) =>
+      chat.id === chatId
+        ? {
+            ...chat,
+            meta: nextMeta
+          }
+        : chat
+    );
+
+    const parsedId = parseChatId(chatId);
+    if (!parsedId) {
+      return;
+    }
+
+    try {
+      await chatDataService.updateChatMeta(parsedId, nextMeta);
+    } catch (error) {
+      console.error('Failed to mute chat', error);
+    }
+  }
+
+  async function deleteChat(chatId: string): Promise<boolean> {
+    const parsedId = parseChatId(chatId);
+    if (!parsedId) {
+      return false;
+    }
+
+    try {
+      const deleted = await chatDataService.deleteChat(parsedId);
+      if (!deleted) {
+        return false;
+      }
+
+      const nextChats = chats.value.filter((chat) => chat.id !== chatId);
+      chats.value = nextChats;
+
+      if (selectedChatId.value === chatId) {
+        selectedChatId.value = nextChats[0]?.id ?? null;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Failed to delete chat', error);
+      return false;
+    }
+  }
+
   function setSearchQuery(query: string): void {
     searchQuery.value = query;
   }
@@ -330,6 +393,9 @@ export const useChatStore = defineStore('chatStore', () => {
     searchQuery,
     selectedChat,
     selectedChatId,
+    markAsRead,
+    muteChat,
+    deleteChat,
     init,
     selectChat,
     setSearchQuery,

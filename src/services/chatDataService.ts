@@ -366,6 +366,68 @@ class ChatDataService {
     await waitForTransaction(transaction);
   }
 
+  async updateChatMeta(chatId: number, meta: Record<string, unknown>): Promise<void> {
+    if (!Number.isInteger(chatId) || chatId <= 0) {
+      return;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CHATS_STORE, 'readwrite');
+    const store = transaction.objectStore(CHATS_STORE);
+    const existingRecord = await requestToPromise<ChatRecord | undefined>(
+      store.get(chatId) as IDBRequest<ChatRecord | undefined>
+    );
+
+    if (!existingRecord) {
+      await waitForTransaction(transaction);
+      return;
+    }
+
+    store.put({
+      ...existingRecord,
+      meta: normalizeMeta(meta)
+    });
+    await waitForTransaction(transaction);
+  }
+
+  async deleteChat(chatId: number): Promise<boolean> {
+    if (!Number.isInteger(chatId) || chatId <= 0) {
+      return false;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction([CHATS_STORE, MESSAGES_STORE], 'readwrite');
+    const chatsStore = transaction.objectStore(CHATS_STORE);
+    const messagesStore = transaction.objectStore(MESSAGES_STORE);
+    const existingRecord = await requestToPromise<ChatRecord | undefined>(
+      chatsStore.get(chatId) as IDBRequest<ChatRecord | undefined>
+    );
+
+    if (!existingRecord) {
+      await waitForTransaction(transaction);
+      return false;
+    }
+
+    chatsStore.delete(chatId);
+
+    const messagesByChatIndex = messagesStore.index(MESSAGES_CHAT_ID_INDEX);
+    const messageIds = await requestToPromise<IDBValidKey[]>(
+      messagesByChatIndex.getAllKeys(IDBKeyRange.only(chatId)) as IDBRequest<IDBValidKey[]>
+    );
+
+    for (const messageId of messageIds) {
+      messagesStore.delete(messageId);
+    }
+
+    try {
+      await waitForTransaction(transaction);
+      return true;
+    } catch (error) {
+      console.error('Failed to delete chat from IndexedDB.', error);
+      return false;
+    }
+  }
+
   async listMessages(chatId: number): Promise<MessageRow[]> {
     if (!Number.isInteger(chatId) || chatId <= 0) {
       return [];

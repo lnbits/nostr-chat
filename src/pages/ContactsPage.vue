@@ -60,6 +60,33 @@
                   {{ contactListCaption(contact) }}
                 </q-item-label>
               </q-item-section>
+
+              <q-item-section side>
+                <q-btn
+                  flat
+                  dense
+                  round
+                  icon="more_vert"
+                  color="primary"
+                  class="contact-item__more"
+                  aria-label="Contact actions"
+                  @click.stop
+                >
+                  <q-menu anchor="bottom right" self="top right">
+                    <q-list dense separator class="contact-item__menu">
+                      <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
+                        <q-item-section>Chat</q-item-section>
+                      </q-item>
+                      <q-item clickable v-close-popup @click="handleContactMenuRefreshProfile(contact)">
+                        <q-item-section>Refresh Profile</q-item-section>
+                      </q-item>
+                      <q-item clickable v-close-popup @click="handleContactMenuDelete(contact)">
+                        <q-item-section class="text-negative">Delete Contact</q-item-section>
+                      </q-item>
+                    </q-list>
+                  </q-menu>
+                </q-btn>
+              </q-item-section>
             </q-item>
 
             <div v-if="isLoadingContacts" class="contacts-empty">Loading contacts...</div>
@@ -499,21 +526,16 @@ function selectContactByPublicKey(pubkey: string): void {
   selectedContactProfile.value = createEmptyContactProfileForm();
 }
 
-async function handleOpenChat(): Promise<void> {
-  const contactPubkey = selectedContactPubkey.value.trim();
+async function openChatForContact(contact: ContactRecord): Promise<void> {
+  const contactPubkey = contact.public_key.trim();
   if (!contactPubkey) {
     return;
   }
 
   await chatStore.init();
 
-  const selectedContact = contacts.value.find(
-    (contact) => contact.public_key.trim().toLowerCase() === contactPubkey.toLowerCase()
-  );
   const fallbackName = contactPubkey.slice(0, 32);
-  const chatName = selectedContact
-    ? contactDisplayName(selectedContact) || selectedContact.public_key
-    : fallbackName;
+  const chatName = contactDisplayName(contact) || contact.public_key || fallbackName;
 
   const chat = await chatStore.addContact(chatName, contactPubkey);
   if (!chat) {
@@ -528,6 +550,70 @@ async function handleOpenChat(): Promise<void> {
   }
 
   void router.push({ name: 'home' });
+}
+
+async function handleOpenChat(): Promise<void> {
+  const contactPubkey = selectedContactPubkey.value.trim().toLowerCase();
+  if (!contactPubkey) {
+    return;
+  }
+
+  const selectedContact = contacts.value.find(
+    (contact) => contact.public_key.trim().toLowerCase() === contactPubkey
+  );
+  if (!selectedContact) {
+    return;
+  }
+
+  await openChatForContact(selectedContact);
+}
+
+function removeRoutePubkeyQueryIfMatches(publicKey: string): void {
+  const routePubkey = parsePubkeyQuery(route.query.pubkey).trim().toLowerCase();
+  if (!routePubkey || routePubkey !== publicKey.trim().toLowerCase()) {
+    return;
+  }
+
+  const nextQuery = {
+    ...route.query
+  };
+  delete nextQuery.pubkey;
+
+  void router.replace({
+    name: 'contacts',
+    query: nextQuery
+  });
+}
+
+async function handleContactMenuChat(contact: ContactRecord): Promise<void> {
+  handleSelectContact(contact, true);
+  await openChatForContact(contact);
+}
+
+async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<void> {
+  await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact));
+  await loadContacts(contactQuery.value);
+
+  const refreshedContact = await contactsService.getContactByPublicKey(contact.public_key);
+  if (refreshedContact && refreshedContact.id === selectedContactId.value) {
+    selectedContactProfile.value = mapContactToProfileForm(refreshedContact);
+  }
+}
+
+async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
+  const deleted = await contactsService.deleteContact(contact.id);
+  if (!deleted) {
+    return;
+  }
+
+  if (selectedContactId.value === contact.id) {
+    selectedContactId.value = null;
+    selectedContactPubkey.value = '';
+    selectedContactProfile.value = createEmptyContactProfileForm();
+  }
+
+  removeRoutePubkeyQueryIfMatches(contact.public_key);
+  await loadContacts(contactQuery.value);
 }
 </script>
 
@@ -622,6 +708,14 @@ async function handleOpenChat(): Promise<void> {
     background-color 0.2s ease,
     border-color 0.2s ease,
     box-shadow 0.2s ease;
+}
+
+.contact-item__more {
+  color: #64748b;
+}
+
+.contact-item__menu {
+  min-width: 176px;
 }
 
 .contact-item:hover {

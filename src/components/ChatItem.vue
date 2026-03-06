@@ -4,7 +4,7 @@
     class="chat-item"
     :active="active"
     active-class="chat-item--active"
-    @click="$emit('select', chat.id)"
+    @click="emit('select', chat.id)"
   >
     <q-item-section avatar>
       <CachedAvatar :src="avatarImageUrl" :alt="chatTitle" :fallback="chat.avatar" />
@@ -21,6 +21,39 @@
         {{ chat.unreadCount }}
       </q-badge>
     </q-item-section>
+
+    <q-item-section side>
+      <q-btn
+        flat
+        dense
+        round
+        icon="more_vert"
+        color="primary"
+        class="chat-item__more"
+        aria-label="Chat actions"
+        @click.stop
+      >
+        <q-menu anchor="bottom right" self="top right">
+          <q-list dense separator class="chat-item__menu">
+            <q-item clickable v-close-popup @click="emitViewProfile">
+              <q-item-section>View Profile</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="emitRefreshProfile">
+              <q-item-section>Refresh Profile</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup :disable="isMuted" @click="emitMute">
+              <q-item-section>Mute</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="emitMarkAsRead">
+              <q-item-section>Mark as Read</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="emitDeleteChat">
+              <q-item-section class="text-negative">Delete Chat</q-item-section>
+            </q-item>
+          </q-list>
+        </q-menu>
+      </q-btn>
+    </q-item-section>
   </q-item>
 </template>
 
@@ -34,8 +67,13 @@ const props = defineProps<{
   active: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'select', chatId: string): void;
+  (event: 'view-profile', chatId: string): void;
+  (event: 'refresh-profile', chatId: string): void;
+  (event: 'mute', chatId: string): void;
+  (event: 'mark-as-read', chatId: string): void;
+  (event: 'delete-chat', chatId: string): void;
 }>();
 
 function readMetaString(key: string): string {
@@ -81,6 +119,28 @@ const avatarImageUrl = computed(() => {
 
   return '';
 });
+
+const isMuted = computed(() => props.chat.meta.muted === true);
+
+function emitViewProfile(): void {
+  emit('view-profile', props.chat.id);
+}
+
+function emitRefreshProfile(): void {
+  emit('refresh-profile', props.chat.id);
+}
+
+function emitMute(): void {
+  emit('mute', props.chat.id);
+}
+
+function emitMarkAsRead(): void {
+  emit('mark-as-read', props.chat.id);
+}
+
+function emitDeleteChat(): void {
+  emit('delete-chat', props.chat.id);
+}
 </script>
 
 <style scoped>
@@ -110,5 +170,13 @@ const avatarImageUrl = computed(() => {
 
 .chat-item__name {
   font-weight: 600;
+}
+
+.chat-item__more {
+  color: #64748b;
+}
+
+.chat-item__menu {
+  min-width: 176px;
 }
 </style>

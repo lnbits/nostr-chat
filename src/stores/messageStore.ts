@@ -135,6 +135,16 @@ export const useMessageStore = defineStore('messageStore', () => {
     return newMessage;
   }
 
+  function removeChatMessages(chatId: string): void {
+    if (!chatId) {
+      return;
+    }
+
+    delete messagesByChat.value[chatId];
+    loadedChatIds.delete(chatId);
+    loadingChatPromises.delete(chatId);
+  }
+
   void init().catch((error) => {
     console.error('Failed to preload message store', error);
   });
@@ -144,6 +154,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     init,
     loadMessages,
     getMessages,
-    sendMessage
+    sendMessage,
+    removeChatMessages
   };
 });
