@@ -182,6 +182,7 @@ import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { useRelayStore } from 'src/stores/relayStore';
 import type { ContactRecord } from 'src/types/contact';
 import {
   createEmptyContactProfileForm,
@@ -194,6 +195,7 @@ const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const nostrStore = useNostrStore();
+const relayStore = useRelayStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const contactQuery = ref('');
@@ -225,6 +227,13 @@ watch(
     selectContactByPublicKey(pubkey);
   },
   { immediate: true }
+);
+
+watch(
+  () => nostrStore.contactListVersion,
+  () => {
+    void loadContacts(contactQuery.value);
+  }
 );
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
@@ -521,6 +530,16 @@ async function handleAddContact(): Promise<void> {
       );
     }
 
+    try {
+      await nostrStore.publishPrivateContactList(relayStore.relays);
+    } catch (error) {
+      reportUiError(
+        'Failed to publish private contact list after adding contact',
+        error,
+        'Contact added, but contact list sync failed.'
+      );
+    }
+
     closeAddContactDialog();
     contactQuery.value = '';
     await loadContacts();
@@ -664,6 +683,16 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
     }
 
     removeRoutePubkeyQueryIfMatches(contact.public_key);
+    try {
+      await nostrStore.publishPrivateContactList(relayStore.relays);
+    } catch (error) {
+      reportUiError(
+        'Failed to publish private contact list after deleting contact',
+        error,
+        'Contact deleted, but contact list sync failed.'
+      );
+    }
+
     await loadContacts(contactQuery.value);
   } catch (error) {
     reportUiError('Failed to delete contact from menu', error);
