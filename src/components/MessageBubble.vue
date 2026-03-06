@@ -5,7 +5,7 @@
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
         <div
-          v-if="isMine && hasRelayStatuses"
+          v-if="hasRelayStatuses"
           class="bubble__status-hitbox"
           tabindex="0"
           role="button"
@@ -67,7 +67,7 @@
       <div class="bubble__status-section-separator" />
 
       <div class="bubble__status-section">
-        <div class="bubble__status-section-title">My Relays (message backup)</div>
+        <div class="bubble__status-section-title">{{ myRelaysTitle }}</div>
         <ul class="bubble__status-list bubble__status-list--dialog">
           <li
             v-for="item in myStatusListItems"
@@ -134,7 +134,7 @@ function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
   return relayStatus.relay_url;
 }
 
-const outboundRelayStatuses = computed(() => {
+const messageRelayStatuses = computed(() => {
   const relayStatuses = props.message.meta?.relay_statuses;
   if (!Array.isArray(relayStatuses)) {
     return [] as MessageRelayStatus[];
@@ -142,8 +142,12 @@ const outboundRelayStatuses = computed(() => {
 
   return relayStatuses
     .filter(isMessageRelayStatus)
-    .filter((relayStatus) => relayStatus.direction === 'outbound')
     .sort((first, second) => {
+      const byDirection = first.direction.localeCompare(second.direction);
+      if (byDirection !== 0) {
+        return byDirection;
+      }
+
       const byRelayUrl = first.relay_url.localeCompare(second.relay_url);
       if (byRelayUrl !== 0) {
         return byRelayUrl;
@@ -153,12 +157,24 @@ const outboundRelayStatuses = computed(() => {
     });
 });
 
+const outboundRelayStatuses = computed(() => {
+  return messageRelayStatuses.value.filter((relayStatus) => relayStatus.direction === 'outbound');
+});
+
+const inboundRelayStatuses = computed(() => {
+  return messageRelayStatuses.value.filter((relayStatus) => relayStatus.direction === 'inbound');
+});
+
+const visibleRelayStatuses = computed(() => {
+  return isMine.value ? outboundRelayStatuses.value : inboundRelayStatuses.value;
+});
+
 const hasPendingRelayStatuses = computed(() => {
-  return outboundRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
+  return visibleRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
 });
 
 const hasRelayStatuses = computed(() => {
-  return outboundRelayStatuses.value.length > 0;
+  return visibleRelayStatuses.value.length > 0;
 });
 
 const contactRelaysTitle = computed(() => {
@@ -169,7 +185,7 @@ const contactRelaysTitle = computed(() => {
 const isStatusDialogOpen = ref(false);
 
 const statusSegments = computed<StatusSegment[]>(() => {
-  const relayStatuses = outboundRelayStatuses.value;
+  const relayStatuses = visibleRelayStatuses.value;
   if (relayStatuses.length === 0) {
     return [
       {
@@ -184,7 +200,7 @@ const statusSegments = computed<StatusSegment[]>(() => {
     return relayStatuses.filter((relayStatus) => relayStatus.status === status).length;
   }
 
-  const published = countByStatus('published');
+  const published = countByStatus('published') + countByStatus('received');
   const pending = countByStatus('pending');
   const failed = countByStatus('failed');
 
@@ -207,23 +223,33 @@ const statusSegments = computed<StatusSegment[]>(() => {
   ].filter((segment) => segment.weight > 0);
 });
 
-function buildStatusListItems(scope: 'recipient' | 'self'): StatusListItem[] {
-  const statusPriority: Record<'published' | 'failed' | 'pending', number> = {
+function buildStatusListItems(
+  relayStatuses: MessageRelayStatus[],
+  predicate: (relayStatus: MessageRelayStatus) => boolean
+): StatusListItem[] {
+  const statusPriority: Record<'published' | 'received' | 'failed' | 'pending', number> = {
     published: 0,
+    received: 0,
     failed: 1,
     pending: 2
   };
-  const dotClassByStatus: Record<'published' | 'failed' | 'pending', string> = {
+  const dotClassByStatus: Record<'published' | 'received' | 'failed' | 'pending', string> = {
     published: 'bubble__status-list-dot--green',
+    received: 'bubble__status-list-dot--green',
     failed: 'bubble__status-list-dot--red',
     pending: 'bubble__status-list-dot--gray'
   };
 
-  return outboundRelayStatuses.value
+  return relayStatuses
     .filter(
-      (relayStatus): relayStatus is MessageRelayStatus & { status: 'published' | 'failed' | 'pending' } =>
-        relayStatus.scope === scope &&
+      (
+        relayStatus
+      ): relayStatus is MessageRelayStatus & {
+        status: 'published' | 'received' | 'failed' | 'pending';
+      } =>
+        predicate(relayStatus) &&
         (relayStatus.status === 'published' ||
+          relayStatus.status === 'received' ||
           relayStatus.status === 'failed' ||
           relayStatus.status === 'pending')
     )
@@ -243,9 +269,34 @@ function buildStatusListItems(scope: 'recipient' | 'self'): StatusListItem[] {
     }));
 }
 
-const contactStatusListItems = computed<StatusListItem[]>(() => buildStatusListItems('recipient'));
+const contactStatusListItems = computed<StatusListItem[]>(() => {
+  if (!isMine.value) {
+    return [];
+  }
 
-const myStatusListItems = computed<StatusListItem[]>(() => buildStatusListItems('self'));
+  return buildStatusListItems(
+    outboundRelayStatuses.value,
+    (relayStatus) => relayStatus.scope === 'recipient'
+  );
+});
+
+const myRelaysTitle = computed(() => {
+  return isMine.value ? 'My Relays (message backup)' : 'My Relays';
+});
+
+const myStatusListItems = computed<StatusListItem[]>(() => {
+  if (isMine.value) {
+    return buildStatusListItems(
+      outboundRelayStatuses.value,
+      (relayStatus) => relayStatus.scope === 'self'
+    );
+  }
+
+  return buildStatusListItems(
+    inboundRelayStatuses.value,
+    (relayStatus) => relayStatus.scope === 'subscription'
+  );
+});
 
 function openStatusDialog(): void {
   if (!hasRelayStatuses.value) {
