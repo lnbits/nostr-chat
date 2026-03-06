@@ -27,6 +27,7 @@ import {
   type NpubValidationResult,
   type NsecValidationResult
 } from 'src/services/inputSanitizerService';
+import { useChatStore } from 'src/stores/chatStore';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
@@ -397,12 +398,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
           : existingContact?.relays ?? [];
 
     console.log('### Syncing contact profile, relays:', targetPubkeyHex, nextRelays);
+    const chatStore = useChatStore();
     if (existingContact) {
       await contactsService.updateContact(existingContact.id, {
         name: nextName,
         meta: nextMeta,
         relays: nextRelays
       });
+      await chatStore.syncContactProfile(normalizedTargetPubkey);
       return;
     }
 
@@ -413,6 +416,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       meta: nextMeta,
       relays: nextRelays
     });
+    await chatStore.syncContactProfile(normalizedTargetPubkey);
   }
 
   function bumpRelayStatusVersion(): void {

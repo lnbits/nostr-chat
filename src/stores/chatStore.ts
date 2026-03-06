@@ -50,18 +50,29 @@ function readMetaString(meta: Record<string, unknown>, key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function resolveContactPicture(meta: Record<string, unknown>, contactPicture = ''): string {
-  const metaPicture = readMetaString(meta, 'picture');
-  if (metaPicture) {
-    return metaPicture;
+function syncMetaString(
+  meta: Record<string, unknown>,
+  key: string,
+  value: string
+): boolean {
+  const normalizedValue = value.trim();
+  const currentValue = readMetaString(meta, key);
+
+  if (!normalizedValue) {
+    if (!currentValue) {
+      return false;
+    }
+
+    delete meta[key];
+    return true;
   }
 
-  const normalizedContactPicture = contactPicture.trim();
-  if (normalizedContactPicture) {
-    return normalizedContactPicture;
+  if (currentValue === normalizedValue) {
+    return false;
   }
 
-  return '';
+  meta[key] = normalizedValue;
+  return true;
 }
 
 function resolvePictureFromContactMeta(meta: Record<string, unknown>): string {
@@ -81,38 +92,40 @@ function toContactContext(contact: ContactRecord): ChatContactContext {
   };
 }
 
-function enrichChatMeta(
+function syncChatMeta(
   meta: Record<string, unknown>,
-  contactContext?: ChatContactContext
+  contactContext: ChatContactContext | undefined,
+  avatarSeed: string
 ): Record<string, unknown> {
-  if (!contactContext) {
-    return meta;
-  }
-
   let nextMeta = meta;
-  const resolvedPicture = resolveContactPicture(meta, contactContext.picture);
-  const hasPicture = readMetaString(meta, 'picture');
 
-  if (resolvedPicture && resolvedPicture !== hasPicture) {
-    nextMeta = { ...nextMeta, picture: resolvedPicture };
-  }
-
-  const hasGivenName = readMetaString(nextMeta, 'given_name');
-  if (!hasGivenName && contactContext.givenName) {
+  const ensureWritableMeta = (): Record<string, unknown> => {
     if (nextMeta === meta) {
-      nextMeta = { ...nextMeta };
+      nextMeta = { ...meta };
     }
 
-    nextMeta.given_name = contactContext.givenName;
+    return nextMeta;
+  };
+
+  if (contactContext) {
+    const writableMeta = ensureWritableMeta();
+    const didChangePicture = syncMetaString(writableMeta, 'picture', contactContext.picture);
+    const didChangeGivenName = syncMetaString(writableMeta, 'given_name', contactContext.givenName);
+    const didChangeContactName = syncMetaString(
+      writableMeta,
+      'contact_name',
+      contactContext.contactName
+    );
+
+    if (!didChangePicture && !didChangeGivenName && !didChangeContactName && nextMeta !== meta) {
+      nextMeta = meta;
+    }
   }
 
-  const hasContactName = readMetaString(nextMeta, 'contact_name');
-  if (!hasContactName && contactContext.contactName) {
-    if (nextMeta === meta) {
-      nextMeta = { ...nextMeta };
-    }
-
-    nextMeta.contact_name = contactContext.contactName;
+  const nextAvatar = buildAvatar(avatarSeed);
+  const currentAvatar = readMetaString(nextMeta, 'avatar');
+  if (currentAvatar !== nextAvatar) {
+    ensureWritableMeta().avatar = nextAvatar;
   }
 
   return nextMeta;
@@ -122,15 +135,19 @@ function mapChatRowToChat(
   row: Awaited<ReturnType<typeof chatDataService.listChats>>[number],
   contactContext?: ChatContactContext
 ): Chat {
-  const rowMeta = row.meta;
-  const avatarFromMeta = readMetaString(rowMeta, 'avatar');
-  const nextMeta = enrichChatMeta(rowMeta, contactContext);
-  const avatar = avatarFromMeta || buildAvatar(row.name || row.public_key);
+  const nextName = contactContext?.contactName || row.name;
+  const nextMeta = syncChatMeta(
+    row.meta,
+    contactContext,
+    contactContext?.givenName || nextName || row.public_key
+  );
+  const avatarFromMeta = readMetaString(nextMeta, 'avatar');
+  const avatar = avatarFromMeta || buildAvatar(nextName || row.public_key);
 
   return {
     id: String(row.id),
     publicKey: row.public_key,
-    name: row.name,
+    name: nextName,
     avatar,
     lastMessage: row.last_message || '',
     lastMessageAt: row.last_message_at || new Date(0).toISOString(),
@@ -329,8 +346,13 @@ export const useChatStore = defineStore('chatStore', () => {
       (chat) => chat.publicKey.toLowerCase() === cleanPublicKey.toLowerCase()
     );
     if (existingInStore) {
-      const nextMeta = enrichChatMeta(existingInStore.meta as Record<string, unknown>, contactContext);
-      if (nextMeta === existingInStore.meta) {
+      const nextName = contactContext?.contactName || existingInStore.name;
+      const nextMeta = syncChatMeta(
+        existingInStore.meta as Record<string, unknown>,
+        contactContext,
+        contactContext?.givenName || nextName || cleanPublicKey
+      );
+      if (nextMeta === existingInStore.meta && nextName === existingInStore.name) {
         return existingInStore;
       }
 
@@ -342,6 +364,8 @@ export const useChatStore = defineStore('chatStore', () => {
 
         nextChat = {
           ...chat,
+          name: nextName,
+          avatar: readMetaString(nextMeta, 'avatar') || chat.avatar,
           meta: nextMeta
         };
         return nextChat;
@@ -368,7 +392,7 @@ export const useChatStore = defineStore('chatStore', () => {
       last_message_at: now,
       unread_count: 0,
       meta: {
-        avatar: buildAvatar(cleanName),
+        avatar: buildAvatar(contactContext?.givenName || contactContext?.contactName || cleanName),
         ...(contactContext?.picture ? { picture: contactContext.picture } : {}),
         ...(contactContext?.givenName ? { given_name: contactContext.givenName } : {}),
         ...(contactContext?.contactName ? { contact_name: contactContext.contactName } : {})
@@ -381,6 +405,66 @@ export const useChatStore = defineStore('chatStore', () => {
     const newChat = mapChatRowToChat(created, contactContext);
     chats.value = sortByLatest([...chats.value, newChat]);
     return newChat;
+  }
+
+  async function syncContactProfile(publicKey: string): Promise<void> {
+    const normalizedPublicKey = publicKey.trim().toLowerCase();
+    if (!normalizedPublicKey) {
+      return;
+    }
+
+    await Promise.all([chatDataService.init(), contactsService.init()]);
+
+    const existingChatRow = await chatDataService.getChatByPublicKey(normalizedPublicKey);
+    const existingChatInStore = chats.value.find(
+      (chat) => chat.publicKey.trim().toLowerCase() === normalizedPublicKey
+    );
+    if (!existingChatRow && !existingChatInStore) {
+      return;
+    }
+
+    const contact = await contactsService.getContactByPublicKey(normalizedPublicKey);
+    if (!contact) {
+      return;
+    }
+
+    const contactContext = toContactContext(contact);
+    const currentName = existingChatRow?.name || existingChatInStore?.name || normalizedPublicKey;
+    const nextName = contactContext.contactName || currentName;
+    const currentMeta =
+      (existingChatRow?.meta as Record<string, unknown> | undefined) ??
+      (existingChatInStore?.meta as Record<string, unknown> | undefined) ??
+      {};
+    const nextMeta = syncChatMeta(
+      currentMeta,
+      contactContext,
+      contactContext.givenName || nextName || normalizedPublicKey
+    );
+    const nextAvatar = readMetaString(nextMeta, 'avatar') || buildAvatar(nextName || normalizedPublicKey);
+
+    if (existingChatRow) {
+      await chatDataService.updateChat(existingChatRow.id, {
+        name: nextName,
+        meta: nextMeta
+      });
+    }
+
+    if (!existingChatInStore) {
+      return;
+    }
+
+    chats.value = sortByLatest(
+      chats.value.map((chat) =>
+        chat.publicKey.trim().toLowerCase() === normalizedPublicKey
+          ? {
+              ...chat,
+              name: nextName,
+              avatar: nextAvatar,
+              meta: nextMeta
+            }
+          : chat
+      )
+    );
   }
 
   void init().catch((error) => {
@@ -400,6 +484,7 @@ export const useChatStore = defineStore('chatStore', () => {
     selectChat,
     setSearchQuery,
     updateChatPreview,
-    addContact
+    addContact,
+    syncContactProfile
   };
 });

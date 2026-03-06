@@ -27,6 +27,11 @@ export interface CreateChatInput {
   meta?: Record<string, unknown>;
 }
 
+export interface UpdateChatInput {
+  name?: string;
+  meta?: Record<string, unknown>;
+}
+
 export interface CreateMessageInput {
   chat_id: number;
   author_public_key: string;
@@ -386,6 +391,32 @@ class ChatDataService {
     store.put({
       ...existingRecord,
       meta: normalizeMeta(meta)
+    });
+    await waitForTransaction(transaction);
+  }
+
+  async updateChat(chatId: number, input: UpdateChatInput): Promise<void> {
+    if (!Number.isInteger(chatId) || chatId <= 0) {
+      return;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CHATS_STORE, 'readwrite');
+    const store = transaction.objectStore(CHATS_STORE);
+    const existingRecord = await requestToPromise<ChatRecord | undefined>(
+      store.get(chatId) as IDBRequest<ChatRecord | undefined>
+    );
+
+    if (!existingRecord) {
+      await waitForTransaction(transaction);
+      return;
+    }
+
+    const nextName = input.name?.trim();
+    store.put({
+      ...existingRecord,
+      ...(nextName ? { name: nextName } : {}),
+      ...(input.meta !== undefined ? { meta: normalizeMeta(input.meta) } : {})
     });
     await waitForTransaction(transaction);
   }
