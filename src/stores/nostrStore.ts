@@ -529,11 +529,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     identifiers: string[],
     expectedPubkeyHex: string
   ): Promise<NDKUser | undefined> {
-    console.log('### Resolving user for identifiers:', identifiers, 'expected pubkey:', expectedPubkeyHex);
     for (const identifier of identifiers) {
       try {
         const user = await ndk.fetchUser(identifier, true);
-        console.log('### Resolved user for identifier:', identifier, user);
         if (!user) {
           continue;
         }
@@ -608,7 +606,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       existingContact?.name?.trim() ||
       fallbackContactName;
 
-    console.log('### Resolved contact profile for pubkey:', normalizedTargetPubkey, resolvedUser);
     const explicitRelayEntries = await fetchContactRelayEntries(normalizedTargetPubkey);
     const fallbackRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
       resolvedUser.relayUrls ?? []
@@ -620,7 +617,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
           ? fallbackRelayEntries
           : existingContact?.relays ?? [];
 
-    console.log('### Syncing contact profile, relays:', targetPubkeyHex, nextRelays);
     const chatStore = useChatStore();
     if (existingContact) {
       await contactsService.updateContact(existingContact.id, {
@@ -1069,11 +1065,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function subscribePrivateMessagesForLoggedInUser(force = false): Promise<void> {
-    console.log('### Subscribing to private messages for logged-in user, force:', force);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     const senderPrivateKeyHex = getPrivateKeyHex();
-
-    console.log('### Logged-in pubkey:', loggedInPubkeyHex, senderPrivateKeyHex);
 
     if (!loggedInPubkeyHex || !senderPrivateKeyHex) {
       stopPrivateMessagesSubscription();
@@ -1082,9 +1075,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await contactsService.init();
     const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
-    console.log("### loggedInContact", loggedInContact)
     const relayUrls = inputSanitizerService.normalizeReadableRelayUrls(loggedInContact?.relays);
-    console.log('### Subscribing to private messages using relays:', relayUrls);
     if (relayUrls.length === 0) {
       stopPrivateMessagesSubscription();
       return;
@@ -1099,11 +1090,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     stopPrivateMessagesSubscription();
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    console.log('### Subscribing to private messages:',       {
-        kinds: [NDKKind.GiftWrap],
-        '#p': [loggedInPubkeyHex],
-        relaySet
-      });
     privateMessagesSubscription = ndk.subscribe(
       {
         kinds: [NDKKind.GiftWrap],
@@ -1113,7 +1099,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
-          console.log("### Received private message event:", event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
           queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
         }
@@ -1158,7 +1143,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function syncLoggedInContactProfile(relayUrls: string[]): Promise<void> {
-    console.log('### Syncing logged-in contact profile, relays:', relayUrls);
     if (syncLoggedInContactProfilePromise) {
       return syncLoggedInContactProfilePromise;
     }
@@ -1193,7 +1177,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function syncRecentChatContacts(relayUrls: string[], limit = 10): Promise<void> {
-    console.log("### Syncing recent chat contacts, relays:", relayUrls, "limit:", limit);
     if (syncRecentChatContactsPromise) {
       return syncRecentChatContactsPromise;
     }
@@ -1418,7 +1401,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     textMessage: string,
     relays: string[]
   ): Promise<NostrEvent> {
-    console.log('### sendDirectMessage( to', recipientPublicKey, 'with message:', textMessage, 'relays:', relays);
     const message = textMessage.trim();
     if (!message) {
       throw new Error('Message cannot be empty.');
@@ -1463,16 +1445,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
       tags: [['p', normalizedRecipientPubkey]]
     });
 
-    console.log('### Created NIP-17 event:', nip17Event);
-    console.log('### Gift-wrapping event for recipient:', recipient);
-    console.log('### Signer:', signer);
     const nip59Event = await giftWrap(nip17Event, recipient, signer, {
       rumorKind: NDKKind.PrivateDirectMessage
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    console.log('### relayUrls', relaySet);
-    console.log('### relaySet', relaySet);
     await nip59Event.publish(relaySet);
 
     const dmEvent = await nip59Event.toNostrEvent();
