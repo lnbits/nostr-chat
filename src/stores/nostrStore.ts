@@ -23,6 +23,7 @@ import NDK, {
 } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   inputSanitizerService,
   type NpubValidationResult,
@@ -30,7 +31,7 @@ import {
 } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
-import type { MessageMetadata, MessageRelayStatus } from 'src/types/chat';
+import type { MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
@@ -221,20 +222,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
-  async function resolveEventId(event: NDKEvent): Promise<string | null> {
-    const existingEventId = event.id?.trim();
-    if (existingEventId) {
-      return existingEventId;
-    }
-
-    try {
-      const nostrEvent = await event.toNostrEvent();
-      return nostrEvent.id?.trim() || null;
-    } catch {
-      return null;
-    }
-  }
-
   function normalizeRelayStatusUrl(value: string): string | null {
     const normalized = value.trim();
     if (!normalized) {
@@ -260,142 +247,101 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return Array.from(uniqueRelayUrls);
   }
 
-  function normalizeMessageRelayStatus(value: unknown): MessageRelayStatus | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  function normalizeEventId(value: unknown): string | null {
+    if (typeof value !== 'string') {
       return null;
     }
 
-    const entry = value as Partial<MessageRelayStatus>;
-    const relayUrl = typeof entry.relay_url === 'string' ? normalizeRelayStatusUrl(entry.relay_url) : null;
-    if (!relayUrl) {
-      return null;
-    }
-
-    if (
-      entry.direction !== 'outbound' &&
-      entry.direction !== 'inbound'
-    ) {
-      return null;
-    }
-
-    if (
-      entry.status !== 'pending' &&
-      entry.status !== 'published' &&
-      entry.status !== 'failed' &&
-      entry.status !== 'received'
-    ) {
-      return null;
-    }
-
-    if (
-      entry.scope !== 'recipient' &&
-      entry.scope !== 'self' &&
-      entry.scope !== 'subscription'
-    ) {
-      return null;
-    }
-
-    const updatedAt =
-      typeof entry.updated_at === 'string' && entry.updated_at.trim()
-        ? entry.updated_at.trim()
-        : new Date().toISOString();
-    const detail = typeof entry.detail === 'string' && entry.detail.trim() ? entry.detail.trim() : undefined;
-
-    return {
-      relay_url: relayUrl,
-      direction: entry.direction,
-      status: entry.status,
-      scope: entry.scope,
-      updated_at: updatedAt,
-      ...(detail ? { detail } : {})
-    };
+    const trimmed = value.trim().toLowerCase();
+    return trimmed || null;
   }
 
-  function readMessageRelayStatuses(meta: Record<string, unknown> | undefined): MessageRelayStatus[] {
-    const rawRelayStatuses = meta?.relay_statuses;
-    if (!Array.isArray(rawRelayStatuses)) {
-      return [];
-    }
-
-    return rawRelayStatuses
-      .map((entry) => normalizeMessageRelayStatus(entry))
-      .filter((entry): entry is MessageRelayStatus => Boolean(entry));
-  }
-
-  function mergeMessageRelayStatuses(
-    existingRelayStatuses: MessageRelayStatus[],
-    nextRelayStatuses: MessageRelayStatus[]
-  ): MessageRelayStatus[] {
-    const mergedRelayStatuses = new Map<string, MessageRelayStatus>();
-
-    for (const relayStatus of [...existingRelayStatuses, ...nextRelayStatuses]) {
-      const normalizedRelayStatus = normalizeMessageRelayStatus(relayStatus);
-      if (!normalizedRelayStatus) {
-        continue;
+  async function toStoredNostrEvent(event: NDKEvent): Promise<NostrEvent | null> {
+    try {
+      const nostrEvent = await event.toNostrEvent();
+      const eventId = normalizeEventId(nostrEvent.id ?? event.id);
+      if (!eventId) {
+        return null;
       }
 
-      const key = [
-        normalizedRelayStatus.relay_url,
-        normalizedRelayStatus.direction,
-        normalizedRelayStatus.scope
-      ].join('|');
-      mergedRelayStatuses.set(key, normalizedRelayStatus);
-    }
-
-    return Array.from(mergedRelayStatuses.values()).sort((first, second) => {
-      const byRelayUrl = first.relay_url.localeCompare(second.relay_url);
-      if (byRelayUrl !== 0) {
-        return byRelayUrl;
-      }
-
-      const byDirection = first.direction.localeCompare(second.direction);
-      if (byDirection !== 0) {
-        return byDirection;
-      }
-
-      return first.scope.localeCompare(second.scope);
-    });
-  }
-
-  function buildMessageMetaWithRelayStatuses(
-    existingMeta: Record<string, unknown> | undefined,
-    relayStatuses: MessageRelayStatus[]
-  ): MessageMetadata {
-    if (relayStatuses.length === 0) {
       return {
-        ...(existingMeta ?? {})
+        ...nostrEvent,
+        id: eventId
+      };
+    } catch {
+      const eventId = normalizeEventId(event.id);
+      const pubkey = typeof event.pubkey === 'string' ? event.pubkey.trim() : '';
+      if (!eventId || !pubkey) {
+        return null;
+      }
+
+      const tags = Array.isArray(event.tags)
+        ? event.tags
+            .filter((tag): tag is string[] => Array.isArray(tag))
+            .map((tag) => tag.map((entry) => String(entry)))
+        : [];
+
+      return {
+        created_at: Number.isInteger(event.created_at)
+          ? event.created_at
+          : Math.floor(Date.now() / 1000),
+        content: typeof event.content === 'string' ? event.content : '',
+        tags,
+        pubkey,
+        id: eventId,
+        ...(typeof event.kind === 'number' ? { kind: event.kind } : {})
       };
     }
-
-    return {
-      ...(existingMeta ?? {}),
-      relay_statuses: mergeMessageRelayStatuses(readMessageRelayStatuses(existingMeta), relayStatuses)
-    };
   }
 
-  async function appendRelayStatusesToMessage(
+  async function refreshMessageInLiveState(messageId: number): Promise<void> {
+    try {
+      const { useMessageStore } = await import('src/stores/messageStore');
+      await useMessageStore().refreshPersistedMessage(messageId);
+    } catch (error) {
+      console.error('Failed to sync persisted message into live state', error);
+    }
+  }
+
+  async function appendRelayStatusesToMessageEvent(
     messageId: number,
     relayStatuses: MessageRelayStatus[],
-    existingMeta?: Record<string, unknown>
+    options: {
+      event?: NostrEvent;
+      direction?: NostrEventDirection;
+      eventId?: string;
+    } = {}
   ): Promise<void> {
     if (!Number.isInteger(messageId) || messageId <= 0 || relayStatuses.length === 0) {
       return;
     }
 
-    const currentMessage = existingMeta
-      ? {
-          id: messageId,
-          meta: existingMeta
-        }
-      : await chatDataService.getMessageById(messageId);
+    const currentMessage = await chatDataService.getMessageById(messageId);
     if (!currentMessage) {
       return;
     }
 
-    await chatDataService.updateMessageMeta(
-      currentMessage.id,
-      buildMessageMetaWithRelayStatuses(currentMessage.meta, relayStatuses)
+    const normalizedEventId = normalizeEventId(
+      options.eventId ?? options.event?.id ?? currentMessage.event_id
     );
+    if (!normalizedEventId) {
+      return;
+    }
+
+    if (currentMessage.event_id !== normalizedEventId) {
+      await chatDataService.updateMessageEventId(currentMessage.id, normalizedEventId);
+    }
+
+    await nostrEventDataService.appendRelayStatuses(normalizedEventId, relayStatuses, {
+      event: options.event
+        ? {
+            ...options.event,
+            id: normalizedEventId
+          }
+        : undefined,
+      direction: options.direction
+    });
+    await refreshMessageInLiveState(currentMessage.id);
   }
 
   function buildInboundRelayStatuses(relayUrls: string[]): MessageRelayStatus[] {
@@ -1501,24 +1447,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    await Promise.all([chatDataService.init(), contactsService.init()]);
+    await Promise.all([chatDataService.init(), contactsService.init(), nostrEventDataService.init()]);
 
+    const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
     const receivedRelayStatuses = buildInboundRelayStatuses(extractRelayUrlsFromEvent(wrappedEvent));
-    const rumorEventId = rumorEvent.id?.trim() || null;
+    const rumorEventId = normalizeEventId(rumorNostrEvent?.id ?? rumorEvent.id);
     if (rumorEventId) {
       const existingMessage = await chatDataService.getMessageByEventId(rumorEventId);
       if (existingMessage) {
-        await appendRelayStatusesToMessage(
+        await appendRelayStatusesToMessageEvent(
           existingMessage.id,
           receivedRelayStatuses,
-          existingMessage.meta
+          {
+            event: rumorNostrEvent ?? undefined,
+            direction: isSelfSentMessage ? 'out' : 'in',
+            eventId: rumorEventId
+          }
         );
-        try {
-          const { useMessageStore } = await import('src/stores/messageStore');
-          await useMessageStore().refreshPersistedMessage(existingMessage.id);
-        } catch (error) {
-          console.error('Failed to sync existing incoming message into live state', error);
-        }
         return;
       }
     }
@@ -1556,12 +1501,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
       meta: {
         source: 'nostr',
         kind: NDKKind.PrivateDirectMessage,
-        wrapper_event_id: wrappedEvent.id ?? '',
-        relay_statuses: receivedRelayStatuses
+        wrapper_event_id: wrappedEvent.id ?? ''
       }
     });
     if (!createdMessage) {
       return;
+    }
+
+    if (rumorNostrEvent) {
+      await nostrEventDataService.upsertEvent({
+        event: rumorNostrEvent,
+        direction: isSelfSentMessage ? 'out' : 'in',
+        relay_statuses: receivedRelayStatuses
+      });
     }
 
     const nextUnreadCount = isSelfSentMessage
@@ -1592,7 +1544,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
 
       const { useMessageStore } = await import('src/stores/messageStore');
-      useMessageStore().upsertPersistedMessage(createdMessage);
+      await useMessageStore().upsertPersistedMessage(createdMessage);
     } catch (error) {
       console.error('Failed to sync incoming private message into live state', error);
     }
@@ -1954,21 +1906,26 @@ export const useNostrStore = defineStore('nostrStore', () => {
       message,
       createdAt
     );
-    const rumorEventId = await resolveEventId(recipientRumorEvent);
+    const recipientRumorNostrEvent = await toStoredNostrEvent(recipientRumorEvent);
+    const rumorEventId = normalizeEventId(recipientRumorNostrEvent?.id ?? recipientRumorEvent.id);
+    const selfRelayUrls = await resolveLoggedInPublishRelayUrls();
     if (options.localMessageId && rumorEventId) {
       try {
-        await chatDataService.updateMessageEventId(options.localMessageId, rumorEventId);
+        await appendRelayStatusesToMessageEvent(
+          options.localMessageId,
+          [
+            ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
+            ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
+          ],
+          {
+            event: recipientRumorNostrEvent ?? undefined,
+            direction: 'out',
+            eventId: rumorEventId
+          }
+        );
       } catch (error) {
-        console.warn('Failed to persist direct message event id before publish', error);
+        console.warn('Failed to persist direct message event details before publish', error);
       }
-    }
-
-    const selfRelayUrls = await resolveLoggedInPublishRelayUrls();
-    if (options.localMessageId) {
-      await appendRelayStatusesToMessage(options.localMessageId, [
-        ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
-        ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
-      ]);
     }
 
     const nip59Event = await giftWrap(recipientRumorEvent, recipient, signer, {
@@ -1981,7 +1938,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
       'recipient'
     );
     if (options.localMessageId) {
-      await appendRelayStatusesToMessage(options.localMessageId, recipientPublishResult.relayStatuses);
+      await appendRelayStatusesToMessageEvent(options.localMessageId, recipientPublishResult.relayStatuses, {
+        event: recipientRumorNostrEvent ?? undefined,
+        direction: 'out',
+        eventId: rumorEventId ?? undefined
+      });
     }
     if (recipientPublishResult.error) {
       throw recipientPublishResult.error;
@@ -2005,7 +1966,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
         'self'
       );
       if (options.localMessageId) {
-        await appendRelayStatusesToMessage(options.localMessageId, selfPublishResult.relayStatuses);
+        await appendRelayStatusesToMessageEvent(options.localMessageId, selfPublishResult.relayStatuses, {
+          event: recipientRumorNostrEvent ?? undefined,
+          direction: 'out',
+          eventId: rumorEventId ?? undefined
+        });
       }
       if (selfPublishResult.error) {
         console.warn('Failed to publish direct message self-copy', selfPublishResult.error);

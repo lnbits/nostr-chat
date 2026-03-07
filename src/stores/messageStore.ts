@@ -1,9 +1,12 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { Message, MessageRelayStatus } from 'src/types/chat';
+import type { Message, NostrEventEntry } from 'src/types/chat';
+
+type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 
 function parseChatId(value: string): number | null {
   const parsed = Number.parseInt(value, 10);
@@ -15,7 +18,8 @@ function parseChatId(value: string): number | null {
 }
 
 function mapMessageRowToMessage(
-  row: Awaited<ReturnType<typeof chatDataService.listMessages>>[number]
+  row: MessageRow,
+  nostrEvent: NostrEventEntry | null = null
 ): Message {
   const authorKey = row.author_public_key.trim();
   const isMine = authorKey.toLowerCase() === window.localStorage.getItem('npub')?.toLowerCase();
@@ -27,24 +31,10 @@ function mapMessageRowToMessage(
     sender: isMine ? 'me' : 'them',
     sentAt: row.created_at,
     authorPublicKey: authorKey,
+    eventId: row.event_id,
+    nostrEvent,
     meta: row.meta
   };
-}
-
-function buildPendingRelayStatuses(
-  relayUrls: string[],
-  scope: 'recipient' | 'self'
-): MessageRelayStatus[] {
-  const updatedAt = new Date().toISOString();
-  const uniqueRelayUrls = Array.from(new Set(relayUrls.map((relay) => relay.trim()).filter(Boolean)));
-
-  return uniqueRelayUrls.map((relayUrl) => ({
-    relay_url: relayUrl,
-    direction: 'outbound',
-    status: 'pending',
-    scope,
-    updated_at: updatedAt
-  }));
 }
 
 export const useMessageStore = defineStore('messageStore', () => {
@@ -83,7 +73,23 @@ export const useMessageStore = defineStore('messageStore', () => {
   }
 
   async function init(): Promise<void> {
-    await chatDataService.init();
+    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
+  }
+
+  async function hydrateMessageRows(rows: MessageRow[]): Promise<Message[]> {
+    const eventIds = rows
+      .map((row) => row.event_id)
+      .filter((eventId): eventId is string => typeof eventId === 'string' && eventId.trim().length > 0);
+    const eventsById = await nostrEventDataService.getEventsByIds(eventIds);
+
+    return rows.map((row) =>
+      mapMessageRowToMessage(row, row.event_id ? eventsById.get(row.event_id) ?? null : null)
+    );
+  }
+
+  async function hydrateMessageRow(row: MessageRow): Promise<Message> {
+    const nostrEvent = row.event_id ? await nostrEventDataService.getEventById(row.event_id) : null;
+    return mapMessageRowToMessage(row, nostrEvent);
   }
 
   function replaceMessageInState(chatId: string, message: Message): void {
@@ -118,14 +124,16 @@ export const useMessageStore = defineStore('messageStore', () => {
   }
 
   function upsertPersistedMessage(
-    row: Awaited<ReturnType<typeof chatDataService.listMessages>>[number]
-  ): void {
+    row: MessageRow
+  ): Promise<void> {
     const chatId = String(row.chat_id);
     if (!loadedChatIds.has(chatId) && !messagesByChat.value[chatId]) {
-      return;
+      return Promise.resolve();
     }
 
-    upsertMessageInState(chatId, mapMessageRowToMessage(row));
+    return hydrateMessageRow(row).then((message) => {
+      upsertMessageInState(chatId, message);
+    });
   }
 
   async function refreshPersistedMessage(messageId: number): Promise<void> {
@@ -139,7 +147,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return;
     }
 
-    upsertPersistedMessage(row);
+    await upsertPersistedMessage(row);
   }
 
   async function loadMessages(chatId: string, force = false): Promise<void> {
@@ -161,7 +169,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     const loadPromise = (async () => {
       try {
         const rows = await chatDataService.listMessages(chatNumericId);
-        messagesByChat.value[chatId] = rows.map((row) => mapMessageRowToMessage(row));
+        messagesByChat.value[chatId] = await hydrateMessageRows(rows);
         loadedChatIds.add(chatId);
       } catch (error) {
         console.error('Failed to load messages for chat', chatId, error);
@@ -198,24 +206,12 @@ export const useMessageStore = defineStore('messageStore', () => {
     const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
     const fallbackRelays = contactRelays.map((relay) => relay.url);
     const recipientRelayUrls = preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
-    const loggedInPubkey = window.localStorage.getItem('npub')?.trim() ?? '';
-    const selfRelayUrls = loggedInPubkey
-      ? (await relaysService.listRelaysByPublicKey(loggedInPubkey))
-          .filter((relay) => relay.write)
-          .map((relay) => relay.url)
-      : [];
 
     const created = await chatDataService.createMessage({
       chat_id: chatNumericId,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
-      created_at: new Date().toISOString(),
-      meta: {
-        relay_statuses: [
-          ...buildPendingRelayStatuses(recipientRelayUrls, 'recipient'),
-          ...buildPendingRelayStatuses(selfRelayUrls, 'self')
-        ]
-      }
+      created_at: new Date().toISOString()
     });
     if (!created) {
       return null;
@@ -246,7 +242,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const updatedMessageRow = await chatDataService.getMessageById(created.id);
-    const finalMessage = updatedMessageRow ? mapMessageRowToMessage(updatedMessageRow) : newMessage;
+    const finalMessage = updatedMessageRow ? await hydrateMessageRow(updatedMessageRow) : newMessage;
     replaceMessageInState(chatId, finalMessage);
 
     if (sendError) {

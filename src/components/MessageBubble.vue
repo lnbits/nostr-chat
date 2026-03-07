@@ -94,6 +94,7 @@
 import { computed, ref } from 'vue';
 import AppDialog from 'src/components/AppDialog.vue';
 import type { Message, MessageRelayStatus } from 'src/types/chat';
+import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
 
 const props = defineProps<{
   message: Message;
@@ -114,29 +115,12 @@ interface StatusListItem {
   dotClass: string;
 }
 
-function isMessageRelayStatus(value: unknown): value is MessageRelayStatus {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-
-  const status = value as Partial<MessageRelayStatus>;
-  return (
-    typeof status.relay_url === 'string' &&
-    (status.direction === 'outbound' || status.direction === 'inbound') &&
-    (status.status === 'pending' ||
-      status.status === 'published' ||
-      status.status === 'failed' ||
-      status.status === 'received') &&
-    (status.scope === 'recipient' || status.scope === 'self' || status.scope === 'subscription')
-  );
-}
-
 function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
   return relayStatus.relay_url;
 }
 
 const outboundRelayStatuses = computed(() => {
-  const relayStatuses = props.message.meta?.relay_statuses;
+  const relayStatuses = props.message.nostrEvent?.relay_statuses;
   if (!Array.isArray(relayStatuses)) {
     return [] as MessageRelayStatus[];
   }

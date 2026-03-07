@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import type { Chat } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 
@@ -318,9 +319,20 @@ export const useChatStore = defineStore('chatStore', () => {
     }
 
     try {
+      const existingMessages = await chatDataService.listMessages(parsedId);
       const deleted = await chatDataService.deleteChat(parsedId);
       if (!deleted) {
         return false;
+      }
+
+      try {
+        await nostrEventDataService.deleteEventsByIds(
+          existingMessages
+            .map((message) => message.event_id)
+            .filter((eventId): eventId is string => typeof eventId === 'string' && eventId.trim().length > 0)
+        );
+      } catch (error) {
+        console.error('Failed to delete nostr events for chat', error);
       }
 
       const nextChats = chats.value.filter((chat) => chat.id !== chatId);

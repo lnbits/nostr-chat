@@ -1,3 +1,5 @@
+import type { NostrEvent } from '@nostr-dev-kit/ndk';
+
 export interface ChatMetadata {
   avatar?: string;
   [key: string]: unknown;
@@ -15,13 +17,13 @@ export interface Chat {
 }
 
 export interface MessageMetadata {
-  relay_statuses?: MessageRelayStatus[];
   [key: string]: unknown;
 }
 
 export type MessageRelayStatusDirection = 'outbound' | 'inbound';
 export type MessageRelayStatusState = 'pending' | 'published' | 'failed' | 'received';
 export type MessageRelayStatusScope = 'recipient' | 'self' | 'subscription';
+export type NostrEventDirection = 'in' | 'out';
 
 export interface MessageRelayStatus {
   relay_url: string;
@@ -32,6 +34,12 @@ export interface MessageRelayStatus {
   detail?: string;
 }
 
+export interface NostrEventEntry {
+  event: NostrEvent;
+  relay_statuses: MessageRelayStatus[];
+  direction: NostrEventDirection;
+}
+
 export interface Message {
   id: string;
   chatId: string;
@@ -39,5 +47,7 @@ export interface Message {
   sender: 'me' | 'them';
   sentAt: string;
   authorPublicKey: string;
+  eventId: string | null;
+  nostrEvent: NostrEventEntry | null;
   meta: MessageMetadata;
 }
