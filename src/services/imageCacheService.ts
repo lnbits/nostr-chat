@@ -1,4 +1,5 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 
 const IMAGE_CACHE_DB_NAME = 'xyz-image-cache';
 const IMAGE_CACHE_DB_VERSION = 1;
@@ -19,6 +20,19 @@ class ImageCacheService {
   private inFlightByUrl = new Map<string, Promise<string>>();
   private objectUrlBySource = new Map<string, string>();
   private passthroughByUrl = new Set<string>();
+
+  async clearAllData(): Promise<void> {
+    for (const objectUrl of this.objectUrlBySource.values()) {
+      URL.revokeObjectURL(objectUrl);
+    }
+
+    this.objectUrlBySource.clear();
+    this.inFlightByUrl.clear();
+    this.passthroughByUrl.clear();
+    await closeIndexedDbConnection(this.dbPromise);
+    this.dbPromise = null;
+    await deleteIndexedDbDatabase(IMAGE_CACHE_DB_NAME);
+  }
 
   async resolveCachedImageUrl(sourceUrl: string): Promise<string> {
     const normalizedUrl = inputSanitizerService.normalizeUrl(sourceUrl);

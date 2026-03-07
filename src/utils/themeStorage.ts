@@ -36,3 +36,15 @@ export function saveDarkModePreference(isDark: boolean): void {
     console.error('Failed to persist theme mode.', error);
   }
 }
+
+export function clearDarkModePreference(): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(THEME_MODE_STORAGE_KEY);
+  } catch (error) {
+    console.error('Failed to clear saved theme mode.', error);
+  }
+}

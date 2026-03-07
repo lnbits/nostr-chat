@@ -1,4 +1,5 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 import type {
   ContactMetadata,
   ContactRecord,
@@ -248,6 +249,13 @@ class ContactsService {
 
   async init(): Promise<void> {
     await this.ensureInitialized();
+  }
+
+  async clearAllData(): Promise<void> {
+    await closeIndexedDbConnection(this.dbPromise);
+    this.dbPromise = null;
+    this.initPromise = null;
+    await deleteIndexedDbDatabase(CONTACTS_DB_NAME);
   }
 
   async listContacts(): Promise<ContactRecord[]> {

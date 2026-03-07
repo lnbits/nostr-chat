@@ -23,6 +23,7 @@ import NDK, {
 } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
+import { imageCacheService } from 'src/services/imageCacheService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   inputSanitizerService,
@@ -33,6 +34,7 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import type { MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
+import { clearDarkModePreference } from 'src/utils/themeStorage';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -100,6 +102,7 @@ interface QueuePrivateMessageUiRefreshOptions {
 
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
+const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
 const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
@@ -1980,6 +1983,38 @@ export const useNostrStore = defineStore('nostrStore', () => {
     stopPrivateMessagesSubscription();
   }
 
+  async function logout(): Promise<void> {
+    clearPrivateKey();
+    isRestoringStartupState.value = false;
+    restoreStartupStatePromise = null;
+    restoreMyRelayListPromise = null;
+    syncLoggedInContactProfilePromise = null;
+    restorePrivateContactListPromise = null;
+    syncRecentChatContactsPromise = null;
+    myRelayListApplyQueue = Promise.resolve();
+    privateContactListApplyQueue = Promise.resolve();
+    privateMessagesIngestQueue = Promise.resolve();
+    privateMessagesUiRefreshQueue = Promise.resolve();
+    configuredRelayUrls.clear();
+    contactListVersion.value = 0;
+    relayStatusVersion.value += 1;
+
+    if (hasStorage()) {
+      for (const storageKey of RELAY_STORAGE_KEYS) {
+        window.localStorage.removeItem(storageKey);
+      }
+    }
+
+    clearDarkModePreference();
+
+    await Promise.all([
+      chatDataService.clearAllData(),
+      contactsService.clearAllData(),
+      nostrEventDataService.clearAllData(),
+      imageCacheService.clearAllData()
+    ]);
+  }
+
   function validateNsec(input: string): NostrNsecValidationResult {
     return inputSanitizerService.validateNsec(input);
   }
@@ -2312,6 +2347,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getPrivateKeyHex,
     getRelayConnectionState,
     isRestoringStartupState,
+    logout,
     publishPrivateContactList,
     publishUserMetadata,
     publishMyRelayList,

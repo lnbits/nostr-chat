@@ -16,9 +16,10 @@
             :key="item.key"
             clickable
             class="settings-menu__item"
-            :active="activeSettingKey === item.key"
+            :class="{ 'settings-menu__item--danger': item.action === 'logout' }"
+            :active="item.routeName ? activeSettingKey === item.key : false"
             active-class="settings-menu__item--active"
-            @click="goToSetting(item.routeName)"
+            @click="handleSettingsItemClick(item)"
           >
             <q-item-section avatar>
               <q-icon :name="item.icon" />
@@ -35,24 +36,75 @@
         <router-view />
       </section>
     </div>
+
+    <AppDialog
+      v-model="isLogoutDialogOpen"
+      title="Log Out"
+      subtitle="This will remove your saved key, chats, contacts, relays, caches, and other local app data from this device."
+      :persistent="isLoggingOut"
+      :show-close="!isLoggingOut"
+      max-width="460px"
+    >
+      <div class="settings-logout-dialog__body">
+        You will be redirected to the login page.
+      </div>
+
+      <template #actions>
+        <q-btn
+          flat
+          no-caps
+          label="Cancel"
+          :disable="isLoggingOut"
+          @click="isLogoutDialogOpen = false"
+        />
+        <q-btn
+          unelevated
+          no-caps
+          color="negative"
+          label="Log Out"
+          :loading="isLoggingOut"
+          @click="handleConfirmLogout"
+        />
+      </template>
+    </AppDialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
+import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
+import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
+const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const isSettingsListView = computed(() => route.name === 'settings');
+const isLogoutDialogOpen = ref(false);
+const isLoggingOut = ref(false);
 
-const settingsItems = [
+type SettingsRouteName =
+  | 'settings-profile'
+  | 'settings-theme'
+  | 'settings-relays'
+  | 'settings-language'
+  | 'settings-notifications';
+
+interface SettingsItem {
+  key: string;
+  label: string;
+  icon: string;
+  routeName?: SettingsRouteName;
+  action?: 'logout';
+}
+
+const settingsItems: SettingsItem[] = [
   { key: 'profile', label: 'Profile', icon: 'face', routeName: 'settings-profile' },
   { key: 'relays', label: 'Relays', icon: 'satellite_alt', routeName: 'settings-relays' },
   { key: 'theme', label: 'Theme', icon: 'wallpaper', routeName: 'settings-theme' },
@@ -62,8 +114,9 @@ const settingsItems = [
     label: 'Notifications',
     icon: 'notifications',
     routeName: 'settings-notifications'
-  }
-] as const;
+  },
+  { key: 'logout', label: 'Log Out', icon: 'logout', action: 'logout' }
+];
 
 const activeSettingKey = computed(() => {
   const match = settingsItems.find((item) => item.routeName === route.name);
@@ -95,18 +148,39 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   }
 }
 
-function goToSetting(
-  routeName:
-    | 'settings-profile'
-    | 'settings-theme'
-    | 'settings-relays'
-    | 'settings-language'
-    | 'settings-notifications'
-): void {
+function goToSetting(routeName: SettingsRouteName): void {
   try {
     void router.push({ name: routeName });
   } catch (error) {
     reportUiError('Failed to open settings section', error);
+  }
+}
+
+function handleSettingsItemClick(item: SettingsItem): void {
+  if (item.action === 'logout') {
+    isLogoutDialogOpen.value = true;
+    return;
+  }
+
+  if (item.routeName) {
+    goToSetting(item.routeName);
+  }
+}
+
+async function handleConfirmLogout(): Promise<void> {
+  if (isLoggingOut.value) {
+    return;
+  }
+
+  isLoggingOut.value = true;
+
+  try {
+    await nostrStore.logout();
+    await router.replace({ name: 'auth' });
+    window.location.reload();
+  } catch (error) {
+    isLoggingOut.value = false;
+    reportUiError('Failed to log out', error, 'Failed to log out.');
   }
 }
 </script>
@@ -198,8 +272,29 @@ function goToSetting(
   box-shadow: 0 10px 20px rgba(53, 110, 186, 0.14);
 }
 
+.settings-menu__item--danger {
+  margin-top: 10px;
+  color: #b42318;
+}
+
+.settings-menu__item--danger:hover {
+  background: linear-gradient(130deg, rgba(239, 68, 68, 0.12), rgba(249, 115, 22, 0.1));
+  border-color: rgba(220, 38, 38, 0.2);
+  box-shadow: 0 8px 16px rgba(185, 28, 28, 0.1);
+}
+
+.settings-logout-dialog__body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: color-mix(in srgb, currentColor 78%, #64748b 22%);
+}
+
 .settings-content-panel {
   background: var(--tg-thread-bg);
+}
+
+body.body--dark .settings-menu__item--danger {
+  color: #ff9e8f;
 }
 
 @media (max-width: 1023px) {

@@ -1,3 +1,5 @@
+import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
+
 export interface ChatRow {
   id: number;
   public_key: string;
@@ -220,6 +222,13 @@ class ChatDataService {
 
   async init(): Promise<void> {
     await this.ensureInitialized();
+  }
+
+  async clearAllData(): Promise<void> {
+    await closeIndexedDbConnection(this.dbPromise);
+    this.dbPromise = null;
+    this.initPromise = null;
+    await deleteIndexedDbDatabase(CHAT_DATA_DB_NAME);
   }
 
   async persist(): Promise<void> {

@@ -1,5 +1,6 @@
 import type { NostrEvent } from '@nostr-dev-kit/ndk';
 import type { MessageRelayStatus, NostrEventDirection, NostrEventEntry } from 'src/types/chat';
+import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 import {
   mergeMessageRelayStatuses,
   normalizeMessageRelayStatuses
@@ -125,6 +126,13 @@ class NostrEventDataService {
 
   async init(): Promise<void> {
     await this.ensureInitialized();
+  }
+
+  async clearAllData(): Promise<void> {
+    await closeIndexedDbConnection(this.dbPromise);
+    this.dbPromise = null;
+    this.initPromise = null;
+    await deleteIndexedDbDatabase(NOSTR_EVENTS_DB_NAME);
   }
 
   async getEventById(eventId: string): Promise<NostrEventEntry | null> {
