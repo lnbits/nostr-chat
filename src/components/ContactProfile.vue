@@ -48,17 +48,27 @@
       <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
         <div class="profile-card__title">Contact Lookup</div>
         <q-input
-          v-model="localPubkey"
+          :model-value="displayHexPubkey"
           class="tg-input"
           outlined
           dense
           rounded
           readonly
-          label="Public Key"
+          label="Hex Public Key"
           placeholder="hex pubkey or npub"
           :loading="isLoadingContact"
           :error="Boolean(pubkeyError)"
           :error-message="pubkeyError"
+        />
+        <q-input
+          :model-value="displayNpub"
+          class="tg-input q-mt-xs"
+          outlined
+          dense
+          rounded
+          readonly
+          label="npub"
+          placeholder="npub1..."
         />
         <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
       </div>
@@ -351,6 +361,14 @@ const relayIconErrorByUrl = ref<Record<string, boolean>>({});
 let lookupRequestId = 0;
 
 const relayList = computed(() => uniqueRelays(localProfile.relays));
+const normalizedDisplayPubkey = computed(() => normalizePubkeyInput(localPubkey.value));
+const displayHexPubkey = computed(() => {
+  return normalizedDisplayPubkey.value ?? localPubkey.value.trim();
+});
+const displayNpub = computed(() => {
+  const pubkey = normalizedDisplayPubkey.value;
+  return pubkey ? nostrStore.encodeNpub(pubkey) ?? '' : '';
+});
 
 const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
 

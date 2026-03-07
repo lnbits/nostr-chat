@@ -2303,6 +2303,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   return {
     clearPrivateKey,
     contactListVersion,
+    encodeNpub,
     ensureRelayConnections,
     fetchRelayNip11Info,
     fetchMyRelayList,
