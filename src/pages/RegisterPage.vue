@@ -4,33 +4,58 @@
       <q-card flat bordered class="register-card">
         <q-card-section class="register-card__header">
           <div class="register-card__title">Create Account</div>
-          <div class="register-card__subtitle">
+          <div class="register-card__subtitle" v-if="isCreatingAccount">
+            Creating Account
+          </div>
+          <div class="register-card__subtitle" v-else>
             A new Nostr keypair has been generated for this account. Download the secret before continuing.
           </div>
         </q-card-section>
 
         <q-card-section class="register-card__actions">
-          <q-btn
-            outline
+          <q-linear-progress
+            v-if="isCreatingAccount"
+            size="10px"
+            rounded
             color="primary"
-            no-caps
-            icon="download"
-            label="Download Account Secret"
-            class="register-card__button"
-            :disable="!generatedAccount"
-            @click="handleDownloadSecret"
+            track-color="grey-3"
+            instant-feedback
+            :value="creationProgress"
           />
 
+          <template v-else>
+            <q-btn
+              outline
+              color="primary"
+              no-caps
+              icon="download"
+              label="Download Account Secret"
+              class="register-card__button"
+              :disable="!generatedAccount"
+              @click="handleDownloadSecret"
+            />
+
+            <q-btn
+              unelevated
+              color="primary"
+              no-caps
+              icon="login"
+              label="Login Now"
+              class="register-card__button"
+              :disable="!generatedAccount"
+              :loading="isLoggingIn"
+              @click="handleLoginNow"
+            />
+          </template>
+
           <q-btn
-            unelevated
+            flat
             color="primary"
             no-caps
-            icon="login"
-            label="Login Now"
+            label="Back"
             class="register-card__button"
-            :disable="!generatedAccount"
-            :loading="isLoggingIn"
-            @click="handleLoginNow"
+            :disable="isLoggingIn"
+            @click="goBackToAuth"
           />
         </q-card-section>
       </q-card>
@@ -39,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -55,11 +80,67 @@ interface GeneratedAccount {
 const router = useRouter();
 const nostrStore = useNostrStore();
 const generatedAccount = ref<GeneratedAccount | null>(null);
+const isCreatingAccount = ref(true);
+const creationProgress = ref(0);
 const isLoggingIn = ref(false);
+const ACCOUNT_CREATION_DURATION_MS = 2000;
+let creationAnimationFrameId: number | null = null;
+let creationCompletionFrameId: number | null = null;
+let creationStartedAtMs: number | null = null;
 
-initializeRegisterPage();
+onMounted(() => {
+  initializeRegisterPage();
+});
+
+onBeforeUnmount(() => {
+  clearCreationTimers();
+});
 
 function initializeRegisterPage(): void {
+  clearCreationTimers();
+  isCreatingAccount.value = true;
+  creationProgress.value = 0;
+  creationStartedAtMs = null;
+  creationAnimationFrameId = window.requestAnimationFrame(updateCreationProgress);
+}
+
+function clearCreationTimers(): void {
+  if (creationAnimationFrameId !== null) {
+    window.cancelAnimationFrame(creationAnimationFrameId);
+    creationAnimationFrameId = null;
+  }
+
+  if (creationCompletionFrameId !== null) {
+    window.cancelAnimationFrame(creationCompletionFrameId);
+    creationCompletionFrameId = null;
+  }
+
+  creationStartedAtMs = null;
+}
+
+function updateCreationProgress(timestampMs: number): void {
+  if (creationStartedAtMs === null) {
+    creationStartedAtMs = timestampMs;
+  }
+
+  const elapsedMs = timestampMs - creationStartedAtMs;
+  const normalizedProgress = Math.min(elapsedMs / ACCOUNT_CREATION_DURATION_MS, 1);
+  creationProgress.value = normalizedProgress;
+
+  if (normalizedProgress < 1) {
+    creationAnimationFrameId = window.requestAnimationFrame(updateCreationProgress);
+    return;
+  }
+
+  creationAnimationFrameId = null;
+  creationCompletionFrameId = window.requestAnimationFrame(() => {
+    creationCompletionFrameId = null;
+    generateAccountKeys();
+    isCreatingAccount.value = false;
+  });
+}
+
+function generateAccountKeys(): void {
   try {
     const signer = NDKPrivateKeySigner.generate();
     generatedAccount.value = {
@@ -93,6 +174,14 @@ function handleDownloadSecret(): void {
     URL.revokeObjectURL(objectUrl);
   } catch (error) {
     reportUiError('Failed to download account secret', error, 'Failed to download account secret.');
+  }
+}
+
+async function goBackToAuth(): Promise<void> {
+  try {
+    await router.push({ name: 'auth' });
+  } catch (error) {
+    reportUiError('Failed to navigate back to login', error);
   }
 }
 
