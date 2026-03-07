@@ -1757,7 +1757,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
     const createdMessage = await chatDataService.createMessage({
-      chat_id: chat.id,
+      chat_public_key: chat.public_key,
       author_public_key: senderPubkeyHex,
       message: messageText,
       created_at: createdAt,
@@ -1782,12 +1782,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const nextUnreadCount = isSelfSentMessage
       ? Number(chat.unread_count ?? 0)
-      : chatStore.visibleChatId === String(chat.id)
+      : chatStore.visibleChatId === chat.public_key
         ? 0
         : Number(chat.unread_count ?? 0) + 1;
 
     await chatDataService.updateChatPreview(
-      chat.id,
+      chat.public_key,
       messageText,
       createdAt,
       nextUnreadCount
@@ -1804,7 +1804,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     try {
       chatStore.applyIncomingMessage({
-        chatId: String(chat.id),
         publicKey: chat.public_key,
         fallbackName: deriveChatName(contact, chatPubkey),
         messageText,

@@ -8,17 +8,18 @@ import type { Message, NostrEventEntry } from 'src/types/chat';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 
-function parseChatId(value: string): number | null {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+function normalizeChatIdentifier(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
     return null;
   }
 
-  return parsed;
+  const normalizedValue = value.trim().toLowerCase();
+  return normalizedValue || null;
 }
 
 function mapMessageRowToMessage(
   row: MessageRow,
+  chatId: string,
   nostrEvent: NostrEventEntry | null = null
 ): Message {
   const authorKey = row.author_public_key.trim();
@@ -26,7 +27,7 @@ function mapMessageRowToMessage(
 
   return {
     id: String(row.id),
-    chatId: String(row.chat_id),
+    chatId,
     text: row.message,
     sender: isMine ? 'me' : 'them',
     sentAt: row.created_at,
@@ -61,39 +62,56 @@ export const useMessageStore = defineStore('messageStore', () => {
   }
 
   function getMessages(chatId: string | null): Message[] {
-    if (!chatId) {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
       return [];
     }
 
-    if (!loadedChatIds.has(chatId) && !loadingChatPromises.has(chatId)) {
-      void loadMessages(chatId);
+    if (!loadedChatIds.has(normalizedChatId) && !loadingChatPromises.has(normalizedChatId)) {
+      void loadMessages(normalizedChatId);
     }
 
-    return messagesByChat.value[chatId] ?? [];
+    return messagesByChat.value[normalizedChatId] ?? [];
   }
 
   async function init(): Promise<void> {
     await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
   }
 
-  async function hydrateMessageRows(rows: MessageRow[]): Promise<Message[]> {
+  async function hydrateMessageRows(rows: MessageRow[], chatId: string): Promise<Message[]> {
     const eventIds = rows
       .map((row) => row.event_id)
       .filter((eventId): eventId is string => typeof eventId === 'string' && eventId.trim().length > 0);
     const eventsById = await nostrEventDataService.getEventsByIds(eventIds);
 
     return rows.map((row) =>
-      mapMessageRowToMessage(row, row.event_id ? eventsById.get(row.event_id) ?? null : null)
+      mapMessageRowToMessage(
+        row,
+        chatId,
+        row.event_id ? eventsById.get(row.event_id) ?? null : null
+      )
     );
   }
 
-  async function hydrateMessageRow(row: MessageRow): Promise<Message> {
+  async function hydrateMessageRow(row: MessageRow, chatId?: string): Promise<Message> {
+    const resolvedChatId =
+      normalizeChatIdentifier(chatId) ??
+      normalizeChatIdentifier(row.chat_public_key);
+    if (!resolvedChatId) {
+      throw new Error('Failed to resolve message chat public key.');
+    }
+
     const nostrEvent = row.event_id ? await nostrEventDataService.getEventById(row.event_id) : null;
-    return mapMessageRowToMessage(row, nostrEvent);
+    return mapMessageRowToMessage(row, resolvedChatId, nostrEvent);
   }
 
   function replaceMessageInState(chatId: string, message: Message): void {
-    const existingMessages = messagesByChat.value[chatId] ?? [];
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    const existingMessages = messagesByChat.value[normalizedChatId] ?? [];
     const existingIndex = existingMessages.findIndex((entry) => entry.id === message.id);
     if (existingIndex === -1) {
       return;
@@ -101,37 +119,42 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const nextMessages = [...existingMessages];
     nextMessages[existingIndex] = message;
-    messagesByChat.value[chatId] = nextMessages;
+    messagesByChat.value[normalizedChatId] = nextMessages;
   }
 
   function upsertMessageInState(chatId: string, message: Message): void {
-    const existingMessages = messagesByChat.value[chatId] ?? [];
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    const existingMessages = messagesByChat.value[normalizedChatId] ?? [];
     const existingIndex = existingMessages.findIndex((entry) => entry.id === message.id);
     if (existingIndex >= 0) {
       const nextMessages = [...existingMessages];
       nextMessages[existingIndex] = message;
-      messagesByChat.value[chatId] = nextMessages;
+      messagesByChat.value[normalizedChatId] = nextMessages;
       return;
     }
 
     const lastMessage = existingMessages[existingMessages.length - 1] ?? null;
     if (!lastMessage || compareMessages(lastMessage, message) <= 0) {
-      messagesByChat.value[chatId] = [...existingMessages, message];
+      messagesByChat.value[normalizedChatId] = [...existingMessages, message];
       return;
     }
 
-    messagesByChat.value[chatId] = [...existingMessages, message].sort(compareMessages);
+    messagesByChat.value[normalizedChatId] = [...existingMessages, message].sort(compareMessages);
   }
 
   function upsertPersistedMessage(
     row: MessageRow
   ): Promise<void> {
-    const chatId = String(row.chat_id);
-    if (!loadedChatIds.has(chatId) && !messagesByChat.value[chatId]) {
+    const chatId = normalizeChatIdentifier(row.chat_public_key);
+    if (!chatId || (!loadedChatIds.has(chatId) && !messagesByChat.value[chatId])) {
       return Promise.resolve();
     }
 
-    return hydrateMessageRow(row).then((message) => {
+    return hydrateMessageRow(row, chatId).then((message) => {
       upsertMessageInState(chatId, message);
     });
   }
@@ -151,16 +174,16 @@ export const useMessageStore = defineStore('messageStore', () => {
   }
 
   async function loadMessages(chatId: string, force = false): Promise<void> {
-    const chatNumericId = parseChatId(chatId);
-    if (!chatNumericId) {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
       return;
     }
 
-    if (!force && loadedChatIds.has(chatId)) {
+    if (!force && loadedChatIds.has(normalizedChatId)) {
       return;
     }
 
-    const existingLoad = loadingChatPromises.get(chatId);
+    const existingLoad = loadingChatPromises.get(normalizedChatId);
     if (existingLoad) {
       await existingLoad;
       return;
@@ -168,19 +191,19 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const loadPromise = (async () => {
       try {
-        const rows = await chatDataService.listMessages(chatNumericId);
-        messagesByChat.value[chatId] = await hydrateMessageRows(rows);
-        loadedChatIds.add(chatId);
+        const rows = await chatDataService.listMessages(normalizedChatId);
+        messagesByChat.value[normalizedChatId] = await hydrateMessageRows(rows, normalizedChatId);
+        loadedChatIds.add(normalizedChatId);
       } catch (error) {
-        console.error('Failed to load messages for chat', chatId, error);
+        console.error('Failed to load messages for chat', normalizedChatId, error);
       }
     })();
 
-    loadingChatPromises.set(chatId, loadPromise);
+    loadingChatPromises.set(normalizedChatId, loadPromise);
     try {
       await loadPromise;
     } finally {
-      loadingChatPromises.delete(chatId);
+      loadingChatPromises.delete(normalizedChatId);
     }
   }
 
@@ -200,13 +223,13 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const chatNumericId = parseChatId(chatId);
-    if (!chatNumericId) {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
       return null;
     }
 
     await chatDataService.init();
-    const chat = await chatDataService.getChatById(chatNumericId);
+    const chat = await chatDataService.getChatByPublicKey(normalizedChatId);
     if (!chat) {
       return null;
     }
@@ -217,7 +240,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     const recipientRelayUrls = preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
 
     const created = await chatDataService.createMessage({
-      chat_id: chatNumericId,
+      chat_public_key: chat.public_key,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: new Date().toISOString()
@@ -226,14 +249,14 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const newMessage = mapMessageRowToMessage(created);
+    const newMessage = mapMessageRowToMessage(created, normalizedChatId);
 
-    if (!messagesByChat.value[chatId]) {
-      messagesByChat.value[chatId] = [];
+    if (!messagesByChat.value[normalizedChatId]) {
+      messagesByChat.value[normalizedChatId] = [];
     }
 
-    loadedChatIds.add(chatId);
-    messagesByChat.value[chatId] = [...messagesByChat.value[chatId], newMessage];
+    loadedChatIds.add(normalizedChatId);
+    messagesByChat.value[normalizedChatId] = [...messagesByChat.value[normalizedChatId], newMessage];
     let sendError: unknown = null;
 
     try {
@@ -251,8 +274,10 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const updatedMessageRow = await chatDataService.getMessageById(created.id);
-    const finalMessage = updatedMessageRow ? await hydrateMessageRow(updatedMessageRow) : newMessage;
-    replaceMessageInState(chatId, finalMessage);
+    const finalMessage = updatedMessageRow
+      ? await hydrateMessageRow(updatedMessageRow, normalizedChatId)
+      : newMessage;
+    replaceMessageInState(normalizedChatId, finalMessage);
 
     if (sendError) {
       throw sendError;
@@ -262,13 +287,14 @@ export const useMessageStore = defineStore('messageStore', () => {
   }
 
   function removeChatMessages(chatId: string): void {
-    if (!chatId) {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
       return;
     }
 
-    delete messagesByChat.value[chatId];
-    loadedChatIds.delete(chatId);
-    loadingChatPromises.delete(chatId);
+    delete messagesByChat.value[normalizedChatId];
+    loadedChatIds.delete(normalizedChatId);
+    loadingChatPromises.delete(normalizedChatId);
   }
 
   void init().catch((error) => {

@@ -76,12 +76,12 @@ const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const activeChatId = computed(() => {
-  const rawChatId = route.params.chatId;
+  const rawChatId = route.params.pubkey;
   if (Array.isArray(rawChatId)) {
-    return rawChatId[0]?.trim() ?? '';
+    return rawChatId[0]?.trim().toLowerCase() ?? '';
   }
 
-  return typeof rawChatId === 'string' ? rawChatId.trim() : '';
+  return typeof rawChatId === 'string' ? rawChatId.trim().toLowerCase() : '';
 });
 const activeChat = computed(() => {
   return chatStore.chats.find((chat) => chat.id === activeChatId.value) ?? null;
@@ -119,7 +119,7 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
 
 function handleSelectChat(chatId: string): void {
   try {
-    void router.push({ name: 'chats', params: { chatId } });
+    void router.push({ name: 'chats', params: { pubkey: chatId } });
   } catch (error) {
     reportUiError('Failed to select chat', error);
   }
@@ -225,7 +225,7 @@ async function handleDeleteChat(chatId: string): Promise<void> {
       if (isActiveChat) {
         const nextChatId = !isMobile.value ? chatStore.selectedChatId : null;
         if (nextChatId) {
-          void router.replace({ name: 'chats', params: { chatId: nextChatId } });
+          void router.replace({ name: 'chats', params: { pubkey: nextChatId } });
         } else {
           void router.replace({ name: 'chats' });
         }
@@ -256,7 +256,7 @@ async function syncChatRoute(): Promise<void> {
 
       const fallbackChatId = chatStore.chats[0]?.id ?? '';
       if (fallbackChatId) {
-        await router.replace({ name: 'chats', params: { chatId: fallbackChatId } });
+        await router.replace({ name: 'chats', params: { pubkey: fallbackChatId } });
       }
       return;
     }
@@ -265,7 +265,7 @@ async function syncChatRoute(): Promise<void> {
     if (!matchingChat) {
       const fallbackChatId = !isMobile.value ? chatStore.chats[0]?.id ?? '' : '';
       if (fallbackChatId) {
-        await router.replace({ name: 'chats', params: { chatId: fallbackChatId } });
+        await router.replace({ name: 'chats', params: { pubkey: fallbackChatId } });
       } else {
         await router.replace({ name: 'chats' });
       }

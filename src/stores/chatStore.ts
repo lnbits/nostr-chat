@@ -13,7 +13,6 @@ interface ChatContactContext {
 }
 
 interface LiveChatPreviewInput {
-  chatId: string;
   publicKey: string;
   fallbackName: string;
   messageText: string;
@@ -47,13 +46,13 @@ function buildAvatar(identifier: string): string {
   return compact.slice(0, 2) || 'NA';
 }
 
-function parseChatId(value: string): number | null {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+function normalizeChatIdentifier(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
     return null;
   }
 
-  return parsed;
+  const normalizedValue = value.trim().toLowerCase();
+  return normalizedValue || null;
 }
 
 function readMetaString(meta: Record<string, unknown>, key: string): string {
@@ -156,7 +155,7 @@ function mapChatRowToChat(
   const avatar = avatarFromMeta || buildAvatar(nextName || row.public_key);
 
   return {
-    id: String(row.id),
+    id: row.public_key,
     publicKey: row.public_key,
     name: nextName,
     avatar,
@@ -245,12 +244,17 @@ export const useChatStore = defineStore('chatStore', () => {
   }
 
   function selectChat(chatId: string): void {
-    selectedChatId.value = chatId;
-    void markAsRead(chatId);
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    selectedChatId.value = normalizedChatId;
+    void markAsRead(normalizedChatId);
   }
 
   function setVisibleChatId(chatId: string | null): void {
-    const nextChatId = chatId?.trim() || null;
+    const nextChatId = normalizeChatIdentifier(chatId);
     visibleChatId.value = nextChatId;
 
     if (nextChatId) {
@@ -259,24 +263,29 @@ export const useChatStore = defineStore('chatStore', () => {
   }
 
   async function markAsRead(chatId: string): Promise<void> {
-    chats.value = chats.value.map((chat) =>
-      chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
-    );
-
-    const parsedId = parseChatId(chatId);
-    if (!parsedId) {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
       return;
     }
 
+    chats.value = chats.value.map((chat) =>
+      chat.id === normalizedChatId ? { ...chat, unreadCount: 0 } : chat
+    );
+
     try {
-      await chatDataService.markChatAsRead(parsedId);
+      await chatDataService.markChatAsRead(normalizedChatId);
     } catch (error) {
       console.error('Failed to mark chat as read', error);
     }
   }
 
   async function muteChat(chatId: string): Promise<void> {
-    const targetChat = chats.value.find((chat) => chat.id === chatId);
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    const targetChat = chats.value.find((chat) => chat.id === normalizedChatId);
     if (!targetChat) {
       return;
     }
@@ -292,7 +301,7 @@ export const useChatStore = defineStore('chatStore', () => {
     };
 
     chats.value = chats.value.map((chat) =>
-      chat.id === chatId
+      chat.id === normalizedChatId
         ? {
             ...chat,
             meta: nextMeta
@@ -300,27 +309,22 @@ export const useChatStore = defineStore('chatStore', () => {
         : chat
     );
 
-    const parsedId = parseChatId(chatId);
-    if (!parsedId) {
-      return;
-    }
-
     try {
-      await chatDataService.updateChatMeta(parsedId, nextMeta);
+      await chatDataService.updateChatMeta(normalizedChatId, nextMeta);
     } catch (error) {
       console.error('Failed to mute chat', error);
     }
   }
 
   async function deleteChat(chatId: string): Promise<boolean> {
-    const parsedId = parseChatId(chatId);
-    if (!parsedId) {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
       return false;
     }
 
     try {
-      const existingMessages = await chatDataService.listMessages(parsedId);
-      const deleted = await chatDataService.deleteChat(parsedId);
+      const existingMessages = await chatDataService.listMessages(normalizedChatId);
+      const deleted = await chatDataService.deleteChat(normalizedChatId);
       if (!deleted) {
         return false;
       }
@@ -335,10 +339,10 @@ export const useChatStore = defineStore('chatStore', () => {
         console.error('Failed to delete nostr events for chat', error);
       }
 
-      const nextChats = chats.value.filter((chat) => chat.id !== chatId);
+      const nextChats = chats.value.filter((chat) => chat.id !== normalizedChatId);
       chats.value = nextChats;
 
-      if (selectedChatId.value === chatId) {
+      if (selectedChatId.value === normalizedChatId) {
         selectedChatId.value = nextChats[0]?.id ?? null;
       }
 
@@ -354,14 +358,19 @@ export const useChatStore = defineStore('chatStore', () => {
   }
 
   async function updateChatPreview(chatId: string, text: string, at: string): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
     let nextUnreadCount = 0;
     chats.value = sortByLatest(
       chats.value.map((chat) => {
-        if (chat.id !== chatId) {
+        if (chat.id !== normalizedChatId) {
           return chat;
         }
 
-        nextUnreadCount = visibleChatId.value === chatId ? 0 : chat.unreadCount;
+        nextUnreadCount = visibleChatId.value === normalizedChatId ? 0 : chat.unreadCount;
         return {
           ...chat,
           lastMessage: text,
@@ -371,27 +380,27 @@ export const useChatStore = defineStore('chatStore', () => {
       })
     );
 
-    const parsedId = parseChatId(chatId);
-    if (!parsedId) {
-      return;
-    }
-
     try {
-      await chatDataService.updateChatPreview(parsedId, text, at, nextUnreadCount);
+      await chatDataService.updateChatPreview(
+        normalizedChatId,
+        text,
+        at,
+        nextUnreadCount
+      );
     } catch (error) {
       console.error('Failed to update chat preview', error);
     }
   }
 
   function applyIncomingMessage(input: LiveChatPreviewInput): void {
-    const nextChatId = input.chatId.trim();
-    const nextPublicKey = input.publicKey.trim();
-    const fallbackName = input.fallbackName.trim() || nextPublicKey;
+    const nextPublicKey = normalizeChatIdentifier(input.publicKey);
 
-    if (!nextChatId || !nextPublicKey) {
+    if (!nextPublicKey) {
       return;
     }
 
+    const fallbackName = input.fallbackName.trim() || nextPublicKey;
+    const nextChatId = nextPublicKey;
     const existingChat = chats.value.find((chat) => chat.id === nextChatId) ?? null;
     const currentMeta =
       (existingChat?.meta as Record<string, unknown> | undefined) ??
@@ -432,7 +441,7 @@ export const useChatStore = defineStore('chatStore', () => {
     publicKey = nameOrIdentifier
   ): Promise<Chat | null> {
     const cleanName = nameOrIdentifier.trim();
-    const cleanPublicKey = publicKey.trim() || cleanName;
+    const cleanPublicKey = normalizeChatIdentifier(publicKey) ?? normalizeChatIdentifier(cleanName) ?? '';
 
     if (!cleanName || !cleanPublicKey) {
       return null;

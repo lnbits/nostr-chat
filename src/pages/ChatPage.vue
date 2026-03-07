@@ -32,7 +32,14 @@ const chatStore = useChatStore();
 const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
 
-const activeChatId = computed(() => String(route.params.chatId ?? ''));
+const activeChatId = computed(() => {
+  const rawChatId = route.params.pubkey;
+  if (Array.isArray(rawChatId)) {
+    return rawChatId[0]?.trim().toLowerCase() ?? '';
+  }
+
+  return typeof rawChatId === 'string' ? rawChatId.trim().toLowerCase() : '';
+});
 
 const activeChat = computed(() => {
   return chatStore.chats.find((chat) => chat.id === activeChatId.value) ?? null;
@@ -69,7 +76,7 @@ watch(
   () => $q.screen.lt.md,
   (isMobile) => {
     if (!isMobile && activeChatId.value) {
-      void router.replace({ name: 'chats', params: { chatId: activeChatId.value } });
+      void router.replace({ name: 'chats', params: { pubkey: activeChatId.value } });
     }
   },
   { immediate: true }

@@ -1,7 +1,7 @@
 import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 
 export interface ChatRow {
-  id: number;
+  id: string;
   public_key: string;
   name: string;
   last_message: string;
@@ -12,7 +12,7 @@ export interface ChatRow {
 
 export interface MessageRow {
   id: number;
-  chat_id: number;
+  chat_public_key: string;
   author_public_key: string;
   message: string;
   created_at: string;
@@ -35,7 +35,7 @@ export interface UpdateChatInput {
 }
 
 export interface CreateMessageInput {
-  chat_id: number;
+  chat_public_key: string;
   author_public_key: string;
   message: string;
   created_at?: string;
@@ -44,7 +44,6 @@ export interface CreateMessageInput {
 }
 
 interface ChatRecord {
-  id: number;
   public_key: string;
   name: string;
   last_message: string;
@@ -55,7 +54,7 @@ interface ChatRecord {
 
 interface MessageRecord {
   id: number;
-  chat_id: number;
+  chat_public_key: string;
   author_public_key: string;
   message: string;
   created_at: string;
@@ -63,16 +62,16 @@ interface MessageRecord {
   meta: Record<string, unknown>;
 }
 
-const CHAT_DATA_DB_NAME = 'chat-data-indexeddb-v1';
-const CHAT_DATA_DB_VERSION = 4;
+const CHAT_DATA_DB_NAME = 'chat-data-indexeddb-v2';
+const CHAT_DATA_DB_VERSION = 1;
 
 const CHATS_STORE = 'chats';
 const MESSAGES_STORE = 'messages';
 
-const CHATS_PUBLIC_KEY_INDEX = 'public_key';
+const CHATS_PUBLIC_KEY_KEY = 'public_key';
 const CHATS_LAST_MESSAGE_AT_INDEX = 'last_message_at';
 
-const MESSAGES_CHAT_ID_INDEX = 'chat_id';
+const MESSAGES_CHAT_PUBLIC_KEY_INDEX = 'chat_public_key';
 const MESSAGES_EVENT_ID_INDEX = 'event_id';
 
 function canUseIndexedDb(): boolean {
@@ -142,7 +141,7 @@ function sortChatsByLatest(first: ChatRecord, second: ChatRecord): number {
     return byTime;
   }
 
-  return second.id - first.id;
+  return second.public_key.localeCompare(first.public_key);
 }
 
 function sortMessagesByCreated(first: MessageRecord, second: MessageRecord): number {
@@ -156,7 +155,7 @@ function sortMessagesByCreated(first: MessageRecord, second: MessageRecord): num
 
 function toChatRow(record: ChatRecord): ChatRow {
   return {
-    id: record.id,
+    id: record.public_key,
     public_key: record.public_key,
     name: record.name,
     last_message: record.last_message,
@@ -169,7 +168,7 @@ function toChatRow(record: ChatRecord): ChatRow {
 function toMessageRow(record: MessageRecord): MessageRow {
   return {
     id: record.id,
-    chat_id: record.chat_id,
+    chat_public_key: record.chat_public_key,
     author_public_key: record.author_public_key,
     message: record.message,
     created_at: record.created_at,
@@ -247,22 +246,6 @@ class ChatDataService {
     return records.sort(sortChatsByLatest).map((record) => toChatRow(record));
   }
 
-  async getChatById(id: number): Promise<ChatRow | null> {
-    if (!Number.isInteger(id) || id <= 0) {
-      return null;
-    }
-
-    const db = await this.getDatabase();
-    const transaction = db.transaction(CHATS_STORE, 'readonly');
-    const store = transaction.objectStore(CHATS_STORE);
-    const record = await requestToPromise<ChatRecord | undefined>(
-      store.get(id) as IDBRequest<ChatRecord | undefined>
-    );
-    await waitForTransaction(transaction);
-
-    return record ? toChatRow(record) : null;
-  }
-
   async getChatByPublicKey(publicKey: string): Promise<ChatRow | null> {
     const normalizedPublicKey = normalizePublicKeyValue(publicKey);
     if (!normalizedPublicKey) {
@@ -272,9 +255,8 @@ class ChatDataService {
     const db = await this.getDatabase();
     const transaction = db.transaction(CHATS_STORE, 'readonly');
     const store = transaction.objectStore(CHATS_STORE);
-    const index = store.index(CHATS_PUBLIC_KEY_INDEX);
     const record = await requestToPromise<ChatRecord | undefined>(
-      index.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
+      store.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
     );
     await waitForTransaction(transaction);
 
@@ -288,11 +270,10 @@ class ChatDataService {
       return null;
     }
 
-    const lastMessage = input.last_message?.trim() ?? '';
-    const record: Omit<ChatRecord, 'id'> = {
+    const record: ChatRecord = {
       public_key: publicKey,
       name,
-      last_message: lastMessage,
+      last_message: input.last_message?.trim() ?? '',
       last_message_at: toIsoTimestamp(input.last_message_at),
       unread_count: normalizeUnreadCount(input.unread_count),
       meta: normalizeMeta(input.meta)
@@ -308,15 +289,9 @@ class ChatDataService {
     const store = transaction.objectStore(CHATS_STORE);
 
     try {
-      const insertedId = await requestToPromise<IDBValidKey>(
-        store.add(record) as IDBRequest<IDBValidKey>
-      );
+      await requestToPromise<IDBValidKey>(store.add(record) as IDBRequest<IDBValidKey>);
       await waitForTransaction(transaction);
-
-      return toChatRow({
-        ...record,
-        id: Number(insertedId)
-      });
+      return toChatRow(record);
     } catch (error) {
       if (isConstraintError(error)) {
         return this.getChatByPublicKey(publicKey);
@@ -328,12 +303,13 @@ class ChatDataService {
   }
 
   async updateChatPreview(
-    chatId: number,
+    chatPublicKey: string,
     lastMessage: string,
     lastMessageAt: string,
     unreadCount: number
   ): Promise<void> {
-    if (!Number.isInteger(chatId) || chatId <= 0) {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
       return;
     }
 
@@ -341,7 +317,7 @@ class ChatDataService {
     const transaction = db.transaction(CHATS_STORE, 'readwrite');
     const store = transaction.objectStore(CHATS_STORE);
     const existingRecord = await requestToPromise<ChatRecord | undefined>(
-      store.get(chatId) as IDBRequest<ChatRecord | undefined>
+      store.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
     );
 
     if (!existingRecord) {
@@ -349,19 +325,18 @@ class ChatDataService {
       return;
     }
 
-    const updatedRecord: ChatRecord = {
+    store.put({
       ...existingRecord,
       last_message: lastMessage,
       last_message_at: toIsoTimestamp(lastMessageAt),
       unread_count: normalizeUnreadCount(unreadCount)
-    };
-
-    store.put(updatedRecord);
+    });
     await waitForTransaction(transaction);
   }
 
-  async markChatAsRead(chatId: number): Promise<void> {
-    if (!Number.isInteger(chatId) || chatId <= 0) {
+  async markChatAsRead(chatPublicKey: string): Promise<void> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
       return;
     }
 
@@ -369,7 +344,7 @@ class ChatDataService {
     const transaction = db.transaction(CHATS_STORE, 'readwrite');
     const store = transaction.objectStore(CHATS_STORE);
     const existingRecord = await requestToPromise<ChatRecord | undefined>(
-      store.get(chatId) as IDBRequest<ChatRecord | undefined>
+      store.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
     );
 
     if (!existingRecord || existingRecord.unread_count === 0) {
@@ -384,8 +359,9 @@ class ChatDataService {
     await waitForTransaction(transaction);
   }
 
-  async updateChatMeta(chatId: number, meta: Record<string, unknown>): Promise<void> {
-    if (!Number.isInteger(chatId) || chatId <= 0) {
+  async updateChatMeta(chatPublicKey: string, meta: Record<string, unknown>): Promise<void> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
       return;
     }
 
@@ -393,7 +369,7 @@ class ChatDataService {
     const transaction = db.transaction(CHATS_STORE, 'readwrite');
     const store = transaction.objectStore(CHATS_STORE);
     const existingRecord = await requestToPromise<ChatRecord | undefined>(
-      store.get(chatId) as IDBRequest<ChatRecord | undefined>
+      store.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
     );
 
     if (!existingRecord) {
@@ -408,8 +384,9 @@ class ChatDataService {
     await waitForTransaction(transaction);
   }
 
-  async updateChat(chatId: number, input: UpdateChatInput): Promise<void> {
-    if (!Number.isInteger(chatId) || chatId <= 0) {
+  async updateChat(chatPublicKey: string, input: UpdateChatInput): Promise<void> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
       return;
     }
 
@@ -417,7 +394,7 @@ class ChatDataService {
     const transaction = db.transaction(CHATS_STORE, 'readwrite');
     const store = transaction.objectStore(CHATS_STORE);
     const existingRecord = await requestToPromise<ChatRecord | undefined>(
-      store.get(chatId) as IDBRequest<ChatRecord | undefined>
+      store.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
     );
 
     if (!existingRecord) {
@@ -434,8 +411,9 @@ class ChatDataService {
     await waitForTransaction(transaction);
   }
 
-  async deleteChat(chatId: number): Promise<boolean> {
-    if (!Number.isInteger(chatId) || chatId <= 0) {
+  async deleteChat(chatPublicKey: string): Promise<boolean> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
       return false;
     }
 
@@ -444,7 +422,7 @@ class ChatDataService {
     const chatsStore = transaction.objectStore(CHATS_STORE);
     const messagesStore = transaction.objectStore(MESSAGES_STORE);
     const existingRecord = await requestToPromise<ChatRecord | undefined>(
-      chatsStore.get(chatId) as IDBRequest<ChatRecord | undefined>
+      chatsStore.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
     );
 
     if (!existingRecord) {
@@ -452,11 +430,11 @@ class ChatDataService {
       return false;
     }
 
-    chatsStore.delete(chatId);
+    chatsStore.delete(normalizedPublicKey);
 
-    const messagesByChatIndex = messagesStore.index(MESSAGES_CHAT_ID_INDEX);
+    const messagesByChatIndex = messagesStore.index(MESSAGES_CHAT_PUBLIC_KEY_INDEX);
     const messageIds = await requestToPromise<IDBValidKey[]>(
-      messagesByChatIndex.getAllKeys(IDBKeyRange.only(chatId)) as IDBRequest<IDBValidKey[]>
+      messagesByChatIndex.getAllKeys(IDBKeyRange.only(normalizedPublicKey)) as IDBRequest<IDBValidKey[]>
     );
 
     for (const messageId of messageIds) {
@@ -472,17 +450,18 @@ class ChatDataService {
     }
   }
 
-  async listMessages(chatId: number): Promise<MessageRow[]> {
-    if (!Number.isInteger(chatId) || chatId <= 0) {
+  async listMessages(chatPublicKey: string): Promise<MessageRow[]> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
       return [];
     }
 
     const db = await this.getDatabase();
     const transaction = db.transaction(MESSAGES_STORE, 'readonly');
     const store = transaction.objectStore(MESSAGES_STORE);
-    const index = store.index(MESSAGES_CHAT_ID_INDEX);
+    const index = store.index(MESSAGES_CHAT_PUBLIC_KEY_INDEX);
     const records = await requestToPromise<MessageRecord[]>(
-      index.getAll(IDBKeyRange.only(chatId)) as IDBRequest<MessageRecord[]>
+      index.getAll(IDBKeyRange.only(normalizedPublicKey)) as IDBRequest<MessageRecord[]>
     );
     await waitForTransaction(transaction);
 
@@ -506,13 +485,18 @@ class ChatDataService {
   }
 
   async createMessage(input: CreateMessageInput): Promise<MessageRow | null> {
-    const chatId = Number(input.chat_id);
+    const chatPublicKey = normalizePublicKeyValue(input.chat_public_key);
     const authorPublicKey = String(input.author_public_key ?? '').trim();
     const message = String(input.message ?? '').trim();
     const createdAt = String(input.created_at ?? '').trim() || new Date().toISOString();
     const eventId = normalizeEventId(input.event_id);
 
-    if (!Number.isInteger(chatId) || chatId <= 0 || !authorPublicKey || !message || !createdAt) {
+    if (!chatPublicKey || !authorPublicKey || !message || !createdAt) {
+      return null;
+    }
+
+    const chat = await this.getChatByPublicKey(chatPublicKey);
+    if (!chat) {
       return null;
     }
 
@@ -524,7 +508,7 @@ class ChatDataService {
     }
 
     const record: Omit<MessageRecord, 'id'> = {
-      chat_id: chatId,
+      chat_public_key: chat.public_key,
       author_public_key: authorPublicKey,
       message,
       created_at: createdAt,
@@ -631,7 +615,7 @@ class ChatDataService {
   }
 
   async getMessageByEventId(eventId: string): Promise<MessageRow | null> {
-    const normalizedEventId = eventId.trim().toLowerCase();
+    const normalizedEventId = normalizeEventId(eventId);
     if (!normalizedEventId) {
       return null;
     }
@@ -688,12 +672,7 @@ class ChatDataService {
 
         const chatsStore = db.objectStoreNames.contains(CHATS_STORE)
           ? transaction.objectStore(CHATS_STORE)
-          : db.createObjectStore(CHATS_STORE, { keyPath: 'id', autoIncrement: true });
-        if (!chatsStore.indexNames.contains(CHATS_PUBLIC_KEY_INDEX)) {
-          chatsStore.createIndex(CHATS_PUBLIC_KEY_INDEX, CHATS_PUBLIC_KEY_INDEX, {
-            unique: true
-          });
-        }
+          : db.createObjectStore(CHATS_STORE, { keyPath: CHATS_PUBLIC_KEY_KEY });
         if (!chatsStore.indexNames.contains(CHATS_LAST_MESSAGE_AT_INDEX)) {
           chatsStore.createIndex(CHATS_LAST_MESSAGE_AT_INDEX, CHATS_LAST_MESSAGE_AT_INDEX, {
             unique: false
@@ -703,8 +682,10 @@ class ChatDataService {
         const messagesStore = db.objectStoreNames.contains(MESSAGES_STORE)
           ? transaction.objectStore(MESSAGES_STORE)
           : db.createObjectStore(MESSAGES_STORE, { keyPath: 'id', autoIncrement: true });
-        if (!messagesStore.indexNames.contains(MESSAGES_CHAT_ID_INDEX)) {
-          messagesStore.createIndex(MESSAGES_CHAT_ID_INDEX, MESSAGES_CHAT_ID_INDEX, { unique: false });
+        if (!messagesStore.indexNames.contains(MESSAGES_CHAT_PUBLIC_KEY_INDEX)) {
+          messagesStore.createIndex(MESSAGES_CHAT_PUBLIC_KEY_INDEX, MESSAGES_CHAT_PUBLIC_KEY_INDEX, {
+            unique: false
+          });
         }
         if (!messagesStore.indexNames.contains(MESSAGES_EVENT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_EVENT_ID_INDEX, MESSAGES_EVENT_ID_INDEX, {
@@ -730,7 +711,6 @@ class ChatDataService {
       };
     });
   }
-
 }
 
 export const chatDataService = new ChatDataService();

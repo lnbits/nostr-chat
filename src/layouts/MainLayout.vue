@@ -81,7 +81,7 @@ const showMobileNav = computed(() => {
   }
 
   if (route.name === 'chats') {
-    return !(typeof route.params.chatId === 'string' && route.params.chatId.trim().length > 0);
+    return !(typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0);
   }
 
   if (route.name === 'contacts') {
@@ -100,11 +100,11 @@ const visibleChatId = computed(() => {
     return null;
   }
 
-  if (typeof route.params.chatId !== 'string') {
+  if (typeof route.params.pubkey !== 'string') {
     return null;
   }
 
-  const chatId = route.params.chatId.trim();
+  const chatId = route.params.pubkey.trim().toLowerCase();
   return chatId || null;
 });
 
@@ -126,7 +126,7 @@ void nostrStore.restoreStartupState(relayStore.relays).catch((error) => {
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {
-    const hasActiveChatParam = typeof route.params.chatId === 'string' && route.params.chatId.trim().length > 0;
+    const hasActiveChatParam = typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0;
     if (route.name !== 'chats' || hasActiveChatParam) {
       void router.push({ name: 'chats' });
     }

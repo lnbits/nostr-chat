@@ -654,7 +654,7 @@ async function openChatForContact(contact: ContactRecord): Promise<void> {
 
   chatStore.selectChat(chat.id);
 
-  void router.push({ name: 'chats', params: { chatId: chat.id } });
+  void router.push({ name: 'chats', params: { pubkey: chat.publicKey } });
 }
 
 async function handleOpenChat(): Promise<void> {

@@ -21,7 +21,7 @@ const routes: RouteRecordRaw[] = [
         redirect: { name: 'chats' }
       },
       {
-        path: 'chats/:chatId?',
+        path: 'chats/:pubkey?',
         name: 'chats',
         component: () => import('pages/IndexPage.vue')
       },
