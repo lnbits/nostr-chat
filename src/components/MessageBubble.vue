@@ -582,6 +582,7 @@ const formattedInfoTime = computed(() => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  cursor: pointer;
 }
 
 .bubble__meta {
