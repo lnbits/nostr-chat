@@ -331,7 +331,20 @@ function contactPubkeySnippet(contact: ContactRecord): string {
   return contact.public_key.trim().slice(0, 32);
 }
 
+function isLoggedInContact(contact: ContactRecord): boolean {
+  const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex();
+  if (!loggedInPubkey) {
+    return false;
+  }
+
+  return contact.public_key.trim().toLowerCase() === loggedInPubkey;
+}
+
 function contactListTitle(contact: ContactRecord): string {
+  if (isLoggedInContact(contact)) {
+    return 'My Self';
+  }
+
   const givenName = contact.given_name?.trim();
   if (givenName) {
     return givenName;

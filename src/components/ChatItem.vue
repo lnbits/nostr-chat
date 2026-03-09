@@ -63,6 +63,7 @@
 import { computed } from 'vue';
 import type { Chat } from 'src/types/chat';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = defineProps<{
@@ -79,6 +80,8 @@ const emit = defineEmits<{
   (event: 'mark-as-read', chatId: string): void;
   (event: 'delete-chat', chatId: string): void;
 }>();
+
+const nostrStore = useNostrStore();
 
 function readMetaString(key: string): string {
   const value = props.chat.meta[key];
@@ -97,6 +100,11 @@ const formattedTime = computed(() => {
 });
 
 const chatTitle = computed(() => {
+  const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex();
+  if (loggedInPubkey && props.chat.publicKey.trim().toLowerCase() === loggedInPubkey) {
+    return 'My Self';
+  }
+
   const givenName = readMetaString('given_name');
   if (givenName) {
     return givenName;
