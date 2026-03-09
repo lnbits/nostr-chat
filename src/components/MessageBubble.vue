@@ -10,7 +10,7 @@
         dense
         round
         size="sm"
-        icon="arrow_drop_down"
+        icon="more_horiz"
         aria-label="Open message actions"
         class="bubble__menu-trigger"
         @click.stop="openActionMenu"
@@ -21,45 +21,108 @@
         anchor="bottom right"
         self="top right"
         class="tg-pop-menu"
+        @before-hide="handleActionMenuHide"
       >
-        <q-list dense separator class="tg-pop-menu__list">
-          <q-item clickable v-close-popup @click="handleReply">
-            <q-item-section avatar>
-              <q-icon name="reply" />
-            </q-item-section>
-            <q-item-section>Reply</q-item-section>
-          </q-item>
-          <q-item clickable v-close-popup @click="handleForward">
-            <q-item-section avatar>
-              <q-icon name="forward" />
-            </q-item-section>
-            <q-item-section>Forward</q-item-section>
-          </q-item>
-          <q-item clickable v-close-popup @click="handleCopy">
-            <q-item-section avatar>
-              <q-icon name="content_copy" />
-            </q-item-section>
-            <q-item-section>Copy</q-item-section>
-          </q-item>
-          <q-item clickable v-close-popup @click="handlePin">
-            <q-item-section avatar>
-              <q-icon name="push_pin" />
-            </q-item-section>
-            <q-item-section>Pin</q-item-section>
-          </q-item>
-          <q-item clickable v-close-popup @click="handleInfo">
-            <q-item-section avatar>
-              <q-icon name="info" />
-            </q-item-section>
-            <q-item-section>Info</q-item-section>
-          </q-item>
-          <q-item clickable v-close-popup @click="handleDelete">
-            <q-item-section avatar>
-              <q-icon name="delete" class="text-negative" />
-            </q-item-section>
-            <q-item-section class="text-negative">Delete</q-item-section>
-          </q-item>
-        </q-list>
+        <div v-if="isEmojiPickerOpen" class="bubble__emoji-picker">
+          <div class="bubble__emoji-picker-search">
+            <q-input
+              v-model="emojiSearch"
+              class="tg-input"
+              dense
+              outlined
+              rounded
+              clearable
+              placeholder="Search emoji"
+            >
+              <template #prepend>
+                <q-icon name="search" />
+              </template>
+            </q-input>
+          </div>
+
+          <div class="bubble__emoji-picker-scroll">
+            <div class="bubble__emoji-grid">
+              <button
+                v-for="entry in filteredEmojiEntries"
+                :key="entry.emoji"
+                type="button"
+                class="bubble__emoji-grid-item"
+                @click="handleEmojiReaction(entry.emoji)"
+                :title="entry.label"
+                :aria-label="entry.label"
+              >
+                <span class="bubble__emoji-grid-char">{{ entry.emoji }}</span>
+              </button>
+            </div>
+            <div v-if="filteredEmojiEntries.length === 0" class="bubble__emoji-picker-empty">
+              No emoji found.
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="bubble__menu-stack">
+          <q-list dense separator class="tg-pop-menu__list bubble__actions-list">
+            <q-item clickable v-close-popup @click="handleReply">
+              <q-item-section avatar>
+                <q-icon name="reply" />
+              </q-item-section>
+              <q-item-section>Reply</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="handleForward">
+              <q-item-section avatar>
+                <q-icon name="forward" />
+              </q-item-section>
+              <q-item-section>Forward</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="handleCopy">
+              <q-item-section avatar>
+                <q-icon name="content_copy" />
+              </q-item-section>
+              <q-item-section>Copy</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="handlePin">
+              <q-item-section avatar>
+                <q-icon name="push_pin" />
+              </q-item-section>
+              <q-item-section>Pin</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="handleInfo">
+              <q-item-section avatar>
+                <q-icon name="info" />
+              </q-item-section>
+              <q-item-section>Info</q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="handleDelete">
+              <q-item-section avatar>
+                <q-icon name="delete" class="text-negative" />
+              </q-item-section>
+              <q-item-section class="text-negative">Delete</q-item-section>
+            </q-item>
+          </q-list>
+
+          <div class="bubble__quick-reactions" role="menu" aria-label="Quick emoji reactions">
+            <button
+              v-for="entry in quickReactionEntries"
+              :key="entry.emoji"
+              type="button"
+              class="bubble__quick-reaction"
+              @click="handleEmojiReaction(entry.emoji)"
+              :title="entry.label"
+              :aria-label="`React with ${entry.label}`"
+            >
+              {{ entry.emoji }}
+            </button>
+
+            <button
+              type="button"
+              class="bubble__quick-reaction bubble__quick-reaction--more"
+              aria-label="Open more emoji"
+              @click="openEmojiPicker"
+            >
+              <q-icon name="more_horiz" size="18px" />
+            </button>
+          </div>
+        </div>
       </q-menu>
 
       <button
@@ -230,6 +293,7 @@
 import { computed, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
+import { TOP_500_EMOJIS } from 'src/data/topEmojis';
 import type { Message, MessageRelayStatus, MessageReplyPreview } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
@@ -250,6 +314,8 @@ const nostrStore = useNostrStore();
 const isMine = computed(() => props.message.sender === 'me');
 const isActionMenuOpen = ref(false);
 const isInfoDialogOpen = ref(false);
+const isEmojiPickerOpen = ref(false);
+const emojiSearch = ref('');
 
 interface StatusSegment {
   key: 'published' | 'pending' | 'failed';
@@ -324,6 +390,16 @@ const retryingRelayKeys = ref<string[]>([]);
 const replyPreview = computed(() => {
   const candidate = props.message.meta.reply;
   return isMessageReplyPreview(candidate) ? candidate : null;
+});
+const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
+const filteredEmojiEntries = computed(() => {
+  const query = emojiSearch.value.trim().toLowerCase();
+
+  if (!query) {
+    return TOP_500_EMOJIS;
+  }
+
+  return TOP_500_EMOJIS.filter((entry) => entry.label.toLowerCase().includes(query));
 });
 
 const statusSegments = computed<StatusSegment[]>(() => {
@@ -444,7 +520,19 @@ function canUseTapToOpenMenu(): boolean {
 }
 
 function openActionMenu(): void {
+  isEmojiPickerOpen.value = false;
+  emojiSearch.value = '';
   isActionMenuOpen.value = true;
+}
+
+function openEmojiPicker(): void {
+  isEmojiPickerOpen.value = true;
+  emojiSearch.value = '';
+}
+
+function handleActionMenuHide(): void {
+  isEmojiPickerOpen.value = false;
+  emojiSearch.value = '';
 }
 
 function handleBubbleTap(): void {
@@ -500,6 +588,19 @@ function handleOpenReplyTarget(): void {
   }
 
   emit('open-reply-target', replyPreview.value.messageId);
+}
+
+function handleEmojiReaction(emoji: string): void {
+  isActionMenuOpen.value = false;
+  isEmojiPickerOpen.value = false;
+  emojiSearch.value = '';
+
+  $q.notify({
+    type: 'info',
+    message: `Reaction ${emoji} is not implemented yet.`,
+    position: 'top',
+    timeout: 1800
+  });
 }
 
 function handleForward(): void {
@@ -646,6 +747,112 @@ const formattedInfoTime = computed(() => {
   text-align: left;
   background: color-mix(in srgb, currentColor 7%, transparent);
   cursor: pointer;
+}
+
+.bubble__menu-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+}
+
+.bubble__actions-list {
+  padding: 0;
+  min-width: 204px;
+}
+
+.bubble__quick-reactions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tg-sidebar) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, transparent);
+}
+
+.bubble__quick-reaction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ffffff 42%, transparent);
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.bubble__quick-reaction:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--q-primary) 18%, #ffffff 82%);
+}
+
+.bubble__quick-reaction--more {
+  color: color-mix(in srgb, currentColor 76%, #5b6f86 24%);
+  font-size: 0;
+}
+
+.bubble__emoji-picker {
+  width: 264px;
+  padding: 10px;
+}
+
+.bubble__emoji-picker-search {
+  margin-bottom: 10px;
+}
+
+.bubble__emoji-picker-scroll {
+  max-height: 232px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.bubble__emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 6px;
+}
+
+.bubble__emoji-grid-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, #ffffff 38%, transparent);
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.bubble__emoji-grid-item:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--q-primary) 16%, #ffffff 84%);
+}
+
+.bubble__emoji-grid-char {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.bubble__emoji-picker-empty {
+  padding: 14px 6px 6px;
+  font-size: 13px;
+  text-align: center;
+  opacity: 0.7;
 }
 
 .bubble__reply-preview-accent {
