@@ -139,7 +139,9 @@
         </div>
       </button>
 
-      <p class="bubble__text">{{ message.text }}</p>
+      <p class="bubble__text" :class="{ 'bubble__text--emoji': isSingleEmojiMessage }">
+        {{ message.text }}
+      </p>
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
         <div
@@ -392,6 +394,8 @@ const replyPreview = computed(() => {
   return isMessageReplyPreview(candidate) ? candidate : null;
 });
 const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
+const SINGLE_EMOJI_PATTERN =
+  /^(?:\p{Regional_Indicator}{2}|(?:[#*0-9]\uFE0F?\u20E3)|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)$/u;
 const filteredEmojiEntries = computed(() => {
   const query = emojiSearch.value.trim().toLowerCase();
 
@@ -400,6 +404,10 @@ const filteredEmojiEntries = computed(() => {
   }
 
   return TOP_500_EMOJIS.filter((entry) => entry.label.toLowerCase().includes(query));
+});
+const isSingleEmojiMessage = computed(() => {
+  const trimmedText = props.message.text.trim();
+  return trimmedText.length > 0 && SINGLE_EMOJI_PATTERN.test(trimmedText);
 });
 
 const statusSegments = computed<StatusSegment[]>(() => {
@@ -732,6 +740,11 @@ const formattedInfoTime = computed(() => {
   white-space: pre-wrap;
   word-break: break-word;
   cursor: pointer;
+}
+
+.bubble__text--emoji {
+  font-size: clamp(2.4rem, 5vw, 3.8rem);
+  line-height: 1.1;
 }
 
 .bubble__reply-preview {
