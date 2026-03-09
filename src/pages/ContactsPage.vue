@@ -331,6 +331,14 @@ function contactPubkeySnippet(contact: ContactRecord): string {
   return contact.public_key.trim().slice(0, 32);
 }
 
+function contactListCandidates(contact: ContactRecord): string[] {
+  const npub = contact.meta.npub?.trim() || nostrStore.encodeNpub(contact.public_key) || '';
+
+  return [contact.meta.name?.trim() ?? '', contact.meta.about?.trim() ?? '', contact.meta.nip05?.trim() ?? '', npub].filter(
+    (value) => value.length > 0
+  );
+}
+
 function isLoggedInContact(contact: ContactRecord): boolean {
   const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex();
   if (!loggedInPubkey) {
@@ -345,31 +353,16 @@ function contactListTitle(contact: ContactRecord): string {
     return 'My Self';
   }
 
-  const givenName = contact.given_name?.trim();
-  if (givenName) {
-    return givenName;
-  }
-
-  const name = contact.name.trim();
-  if (name) {
-    return name;
-  }
-
-  return contactPubkeySnippet(contact);
+  return contactListCandidates(contact)[0] ?? contactPubkeySnippet(contact);
 }
 
 function contactListCaption(contact: ContactRecord): string {
-  const givenName = contact.given_name?.trim();
-  if (givenName) {
-    return contact.name.trim();
+  const candidates = contactListCandidates(contact);
+  if (isLoggedInContact(contact)) {
+    return candidates[0] ?? '';
   }
 
-  const name = contact.name.trim();
-  if (name) {
-    return contactPubkeySnippet(contact);
-  }
-
-  return '';
+  return candidates[1] ?? '';
 }
 
 function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
