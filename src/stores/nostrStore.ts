@@ -6,6 +6,8 @@ import NDK, {
   NDKNip07Signer,
   NDKPublishError,
   NDKPrivateKeySigner,
+  type NDKRelay,
+  type NDKRelayConnectionStats,
   NDKRelayList,
   NDKSubscriptionCacheUsage,
   type NDKSigner,
@@ -2237,16 +2239,82 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStatusVersion.value += 1;
   }
 
+  function getRelayStatusName(status: number): string {
+    return NDKRelayStatus[status] ?? 'UNKNOWN';
+  }
+
+  function buildRelayConnectionStatsSnapshot(stats: NDKRelayConnectionStats | undefined): Record<string, unknown> {
+    if (!stats) {
+      return {};
+    }
+
+    return {
+      attempts: stats.attempts,
+      success: stats.success,
+      connectedAt: stats.connectedAt ?? null,
+      nextReconnectAt: stats.nextReconnectAt ?? null,
+      validationRatio: stats.validationRatio ?? null,
+      lastDurationMs:
+        stats.durations.length > 0 ? stats.durations[stats.durations.length - 1] : null
+    };
+  }
+
+  function buildRelaySnapshot(relay: NDKRelay | null | undefined): Record<string, unknown> {
+    if (!relay) {
+      return {
+        present: false
+      };
+    }
+
+    return {
+      present: true,
+      url: relay.url,
+      connected: relay.connected,
+      status: relay.status,
+      statusName: getRelayStatusName(relay.status),
+      ...buildRelayConnectionStatsSnapshot(relay.connectionStats)
+    };
+  }
+
+  function getRelaySnapshots(relayUrls: string[]): Record<string, unknown>[] {
+    return relayUrls.map((relayUrl) => {
+      const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+      return buildRelaySnapshot(ndk.pool.getRelay(normalizedRelayUrl, false));
+    });
+  }
+
+  function logRelayLifecycle(eventName: string, relay: NDKRelay): void {
+    console.info(`[nostr][relay:${eventName}]`, {
+      ...buildRelaySnapshot(relay),
+      pool: ndk.pool.stats()
+    });
+  }
+
   function ensureRelayStatusListeners(): void {
     if (hasRelayStatusListeners) {
       return;
     }
 
-    ndk.pool.on('relay:connecting', () => bumpRelayStatusVersion());
-    ndk.pool.on('relay:connect', () => bumpRelayStatusVersion());
-    ndk.pool.on('relay:ready', () => bumpRelayStatusVersion());
-    ndk.pool.on('relay:disconnect', () => bumpRelayStatusVersion());
-    ndk.pool.on('flapping', () => bumpRelayStatusVersion());
+    ndk.pool.on('relay:connecting', (relay) => {
+      bumpRelayStatusVersion();
+      logRelayLifecycle('connecting', relay);
+    });
+    ndk.pool.on('relay:connect', (relay) => {
+      bumpRelayStatusVersion();
+      logRelayLifecycle('connect', relay);
+    });
+    ndk.pool.on('relay:ready', (relay) => {
+      bumpRelayStatusVersion();
+      logRelayLifecycle('ready', relay);
+    });
+    ndk.pool.on('relay:disconnect', (relay) => {
+      bumpRelayStatusVersion();
+      logRelayLifecycle('disconnect', relay);
+    });
+    ndk.pool.on('flapping', (relay) => {
+      bumpRelayStatusVersion();
+      logRelayLifecycle('flapping', relay);
+    });
     hasRelayStatusListeners = true;
   }
 
@@ -2306,10 +2374,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       if (configuredRelayUrls.has(normalizedRelayUrl)) {
         const existingRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
         if (existingRelay && !existingRelay.connected) {
+          console.info('[nostr][relay-connect] reconnecting configured relay', {
+            reason: 'ensureRelayConnections',
+            ...buildRelaySnapshot(existingRelay)
+          });
           relaysToReconnect.set(
             normalizedRelayUrl,
             existingRelay.connect(INITIAL_CONNECT_TIMEOUT_MS).catch((error) => {
-              console.warn('Failed to reconnect relay', normalizedRelayUrl, error);
+              console.warn('Failed to reconnect relay', normalizedRelayUrl, {
+                error,
+                relay: buildRelaySnapshot(existingRelay)
+              });
             })
           );
         }
@@ -2320,10 +2395,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       configuredRelayUrls.add(normalizedRelayUrl);
       const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
       if (addedRelay && !addedRelay.connected) {
+        console.info('[nostr][relay-connect] connecting new explicit relay', {
+          reason: 'ensureRelayConnections',
+          ...buildRelaySnapshot(addedRelay)
+        });
         relaysToReconnect.set(
           normalizedRelayUrl,
           addedRelay.connect(INITIAL_CONNECT_TIMEOUT_MS).catch((error) => {
-            console.warn('Failed to connect relay', normalizedRelayUrl, error);
+            console.warn('Failed to connect relay', normalizedRelayUrl, {
+              error,
+              relay: buildRelaySnapshot(addedRelay)
+            });
           })
         );
       }
@@ -2557,9 +2639,25 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
+    console.info('[nostr][relay-list-subscription] preparing', {
+      force,
+      loggedInPubkeyHex,
+      relayUrls,
+      since: getFilterSince(),
+      relaySnapshots: getRelaySnapshots(relayUrls)
+    });
+
     await ensureRelayConnections(relayUrls);
     await getLoggedInSignerUser();
     stopMyRelayListSubscription();
+
+    console.info('[nostr][relay-list-subscription] starting', {
+      force,
+      loggedInPubkeyHex,
+      relayUrls,
+      since: getFilterSince(),
+      relaySnapshots: getRelaySnapshots(relayUrls)
+    });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     myRelayListSubscription = ndk.subscribe(
@@ -2586,6 +2684,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
     );
     myRelayListSubscriptionSignature = signature;
+
+    console.info('[nostr][relay-list-subscription] active', {
+      signature,
+      relayUrls,
+      relaySnapshots: getRelaySnapshots(relayUrls)
+    });
   }
 
   async function publishPrivateContactList(seedRelayUrls: string[] = []): Promise<void> {
