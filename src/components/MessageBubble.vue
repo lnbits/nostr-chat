@@ -889,7 +889,9 @@ const formattedInfoTime = computed(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: -8px;
+  position: relative;
+  z-index: 1;
 }
 
 .bubble__reaction-chip {
