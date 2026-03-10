@@ -20,84 +20,9 @@
         anchor="bottom right"
         self="top right"
         class="tg-pop-menu"
-        @before-hide="handleActionMenuHide"
+        @hide="handleActionMenuHide"
       >
-        <div v-if="isEmojiPickerOpen" class="bubble__emoji-picker">
-          <div class="bubble__emoji-picker-search">
-            <q-input
-              v-model="emojiSearch"
-              class="tg-input"
-              dense
-              outlined
-              rounded
-              clearable
-              placeholder="Search emoji"
-            >
-              <template #prepend>
-                <q-icon name="search" />
-              </template>
-            </q-input>
-          </div>
-
-          <div
-            ref="emojiPickerScrollRef"
-            class="bubble__emoji-picker-scroll"
-            @scroll="handleEmojiPickerScroll"
-          >
-            <div
-              v-for="group in groupedEmojiEntries"
-              :key="group.key"
-              class="bubble__emoji-group"
-              :data-emoji-category="group.key"
-            >
-              <div class="bubble__emoji-group-title">{{ group.label }}</div>
-              <div class="bubble__emoji-grid">
-                <button
-                  v-for="entry in group.emojis"
-                  :key="entry.emoji"
-                  type="button"
-                  class="bubble__emoji-grid-item"
-                  @click="handleEmojiReaction(entry.emoji)"
-                  :aria-label="entry.label"
-                >
-                  <span class="bubble__emoji-grid-char">{{ entry.emoji }}</span>
-                  <AppTooltip>{{ entry.label }}</AppTooltip>
-                </button>
-              </div>
-            </div>
-            <div v-if="groupedEmojiEntries.length === 0" class="bubble__emoji-picker-empty">
-              No emoji found.
-            </div>
-          </div>
-
-          <div
-            v-if="groupedEmojiEntries.length > 0"
-            class="bubble__emoji-tabs"
-            role="tablist"
-            aria-label="Emoji categories"
-          >
-            <button
-              v-for="group in groupedEmojiEntries"
-              :key="group.key"
-              type="button"
-              class="bubble__emoji-tab"
-              :class="{
-                'bubble__emoji-tab--active': activeEmojiCategoryKey === group.key
-              }"
-              role="tab"
-              :aria-selected="activeEmojiCategoryKey === group.key ? 'true' : 'false'"
-              :aria-label="group.label"
-              @click="scrollToEmojiCategory(group.key)"
-            >
-              <q-icon :name="group.icon" size="18px" />
-              <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
-                {{ group.label }}
-              </AppTooltip>
-            </button>
-          </div>
-        </div>
-
-        <div v-else class="bubble__menu-stack">
+        <div class="bubble__menu-stack">
           <q-list dense separator class="tg-pop-menu__list bubble__actions-list">
             <q-item clickable v-close-popup @click="handleReply">
               <q-item-section avatar>
@@ -154,12 +79,30 @@
               type="button"
               class="bubble__quick-reaction bubble__quick-reaction--more"
               aria-label="Open more emoji"
-              @click="openEmojiPicker"
+              @click="openEmojiPickerMenu"
             >
               <q-icon name="more_horiz" size="18px" />
             </button>
           </div>
         </div>
+      </q-menu>
+
+      <q-menu
+        v-model="isEmojiPickerMenuOpen"
+        anchor="bottom right"
+        self="top right"
+        class="tg-pop-menu"
+        @show="handleEmojiPickerMenuShow"
+      >
+        <EmojiPickerPanel
+          ref="emojiPickerRef"
+          width="264px"
+          max-height="232px"
+          :columns="5"
+          item-min-height="46px"
+          item-padding="8px 4px"
+          @select="handleEmojiReaction"
+        />
       </q-menu>
 
       <div class="bubble__content" @click.stop="handleBubbleTap">
@@ -332,12 +275,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
-import AppTooltip from 'src/components/AppTooltip.vue';
-import { TOP_500_EMOJIS, filterEmojiEntries, groupEmojiEntries } from 'src/data/topEmojis';
-import type { EmojiCategoryKey } from 'src/data/topEmojis';
+import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
+import { TOP_500_EMOJIS } from 'src/data/topEmojis';
 import type { Message, MessageRelayStatus, MessageReplyPreview } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
@@ -357,11 +299,10 @@ const $q = useQuasar();
 const nostrStore = useNostrStore();
 const isMine = computed(() => props.message.sender === 'me');
 const isActionMenuOpen = ref(false);
+const isEmojiPickerMenuOpen = ref(false);
 const isInfoDialogOpen = ref(false);
-const isEmojiPickerOpen = ref(false);
-const emojiSearch = ref('');
-const emojiPickerScrollRef = ref<HTMLElement | null>(null);
-const activeEmojiCategoryKey = ref<EmojiCategoryKey | null>(null);
+const shouldOpenEmojiPickerAfterActionMenu = ref(false);
+const emojiPickerRef = ref<{ reset: () => void } | null>(null);
 
 interface StatusSegment {
   key: 'published' | 'pending' | 'failed';
@@ -440,28 +381,10 @@ const replyPreview = computed(() => {
 const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
 const SINGLE_EMOJI_PATTERN =
   /^(?:\p{Regional_Indicator}{2}|(?:[#*0-9]\uFE0F?\u20E3)|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)$/u;
-const filteredEmojiEntries = computed(() => filterEmojiEntries(emojiSearch.value));
-const groupedEmojiEntries = computed(() => groupEmojiEntries(filteredEmojiEntries.value));
 const isSingleEmojiMessage = computed(() => {
   const trimmedText = props.message.text.trim();
   return trimmedText.length > 0 && SINGLE_EMOJI_PATTERN.test(trimmedText);
 });
-
-watch(
-  [groupedEmojiEntries, isEmojiPickerOpen],
-  ([groups, isPickerOpen]) => {
-    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
-
-    if (!isPickerOpen) {
-      return;
-    }
-
-    void nextTick(() => {
-      syncActiveEmojiCategory();
-    });
-  },
-  { immediate: true }
-);
 
 const statusSegments = computed<StatusSegment[]>(() => {
   const relayStatuses = outboundRelayStatuses.value;
@@ -581,23 +504,29 @@ function canUseTapToOpenMenu(): boolean {
 }
 
 function openActionMenu(): void {
-  isEmojiPickerOpen.value = false;
-  emojiSearch.value = '';
+  shouldOpenEmojiPickerAfterActionMenu.value = false;
+  isEmojiPickerMenuOpen.value = false;
   isActionMenuOpen.value = true;
 }
 
-function openEmojiPicker(): void {
-  isEmojiPickerOpen.value = true;
-  emojiSearch.value = '';
-
-  void nextTick(() => {
-    syncActiveEmojiCategory();
-  });
+function openEmojiPickerMenu(): void {
+  shouldOpenEmojiPickerAfterActionMenu.value = true;
+  isActionMenuOpen.value = false;
 }
 
 function handleActionMenuHide(): void {
-  isEmojiPickerOpen.value = false;
-  emojiSearch.value = '';
+  if (!shouldOpenEmojiPickerAfterActionMenu.value) {
+    return;
+  }
+
+  shouldOpenEmojiPickerAfterActionMenu.value = false;
+  isEmojiPickerMenuOpen.value = true;
+}
+
+function handleEmojiPickerMenuShow(): void {
+  void nextTick(() => {
+    emojiPickerRef.value?.reset();
+  });
 }
 
 function handleBubbleTap(): void {
@@ -606,79 +535,6 @@ function handleBubbleTap(): void {
   }
 
   openActionMenu();
-}
-
-function getGroupScrollTop(container: HTMLElement, groupElement: HTMLElement): number {
-  const containerTop = container.getBoundingClientRect().top;
-  const groupTop = groupElement.getBoundingClientRect().top;
-  return groupTop - containerTop + container.scrollTop;
-}
-
-function syncActiveEmojiCategory(): void {
-  const container = emojiPickerScrollRef.value;
-  const groups = groupedEmojiEntries.value;
-
-  if (groups.length === 0) {
-    activeEmojiCategoryKey.value = null;
-    return;
-  }
-
-  if (!container) {
-    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
-    return;
-  }
-
-  const groupElements = Array.from(
-    container.querySelectorAll<HTMLElement>('[data-emoji-category]')
-  );
-
-  if (groupElements.length === 0) {
-    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
-    return;
-  }
-
-  const scrollThreshold = container.scrollTop + 18;
-  let nextActiveCategory = groupElements[0]?.dataset.emojiCategory as EmojiCategoryKey | undefined;
-
-  for (const groupElement of groupElements) {
-    const groupTop = getGroupScrollTop(container, groupElement);
-    if (groupTop <= scrollThreshold) {
-      nextActiveCategory = groupElement.dataset.emojiCategory as EmojiCategoryKey | undefined;
-      continue;
-    }
-
-    break;
-  }
-
-  activeEmojiCategoryKey.value = nextActiveCategory ?? groups[0]?.key ?? null;
-}
-
-function handleEmojiPickerScroll(): void {
-  syncActiveEmojiCategory();
-}
-
-function scrollToEmojiCategory(categoryKey: EmojiCategoryKey): void {
-  const container = emojiPickerScrollRef.value;
-
-  if (!container) {
-    activeEmojiCategoryKey.value = categoryKey;
-    return;
-  }
-
-  const groupElement = container.querySelector<HTMLElement>(
-    `[data-emoji-category="${categoryKey}"]`
-  );
-
-  if (!groupElement) {
-    return;
-  }
-
-  const groupTop = getGroupScrollTop(container, groupElement);
-  activeEmojiCategoryKey.value = categoryKey;
-  container.scrollTo({
-    top: Math.max(groupTop - 4, 0),
-    behavior: 'smooth'
-  });
 }
 
 function notifyUnimplemented(label: string): void {
@@ -730,8 +586,7 @@ function handleOpenReplyTarget(): void {
 
 function handleEmojiReaction(emoji: string): void {
   isActionMenuOpen.value = false;
-  isEmojiPickerOpen.value = false;
-  emojiSearch.value = '';
+  isEmojiPickerMenuOpen.value = false;
 
   $q.notify({
     type: 'info',
@@ -952,118 +807,6 @@ const formattedInfoTime = computed(() => {
 .bubble__quick-reaction--more {
   color: color-mix(in srgb, currentColor 76%, #5b6f86 24%);
   font-size: 0;
-}
-
-.bubble__emoji-picker {
-  width: 264px;
-  display: flex;
-  flex-direction: column;
-  padding: 10px;
-}
-
-.bubble__emoji-picker-search {
-  margin-bottom: 10px;
-}
-
-.bubble__emoji-picker-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 232px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.bubble__emoji-group + .bubble__emoji-group {
-  margin-top: 10px;
-}
-
-.bubble__emoji-group-title {
-  margin-bottom: 8px;
-  padding: 0 2px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--q-primary) 58%, currentColor 42%);
-}
-
-.bubble__emoji-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.bubble__emoji-grid-item {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 46px;
-  padding: 8px 4px;
-  border: 0;
-  border-radius: 12px;
-  background: color-mix(in srgb, #ffffff 38%, transparent);
-  cursor: pointer;
-  transition:
-    transform 0.18s ease,
-    background-color 0.18s ease;
-}
-
-.bubble__emoji-grid-item:hover {
-  transform: translateY(-1px);
-  background: color-mix(in srgb, var(--q-primary) 16%, #ffffff 84%);
-}
-
-.bubble__emoji-grid-char {
-  font-size: 22px;
-  line-height: 1;
-}
-
-.bubble__emoji-tabs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-  gap: 4px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--tg-border) 88%, transparent);
-}
-
-.bubble__emoji-tab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: color-mix(in srgb, currentColor 72%, #60758f 28%);
-  cursor: pointer;
-  transition:
-    color 0.18s ease,
-    background-color 0.18s ease,
-    transform 0.18s ease;
-}
-
-.bubble__emoji-tab:hover {
-  background: color-mix(in srgb, var(--q-primary) 12%, #ffffff 88%);
-  color: inherit;
-}
-
-.bubble__emoji-tab--active {
-  background: color-mix(in srgb, var(--q-primary) 16%, #ffffff 84%);
-  color: var(--q-primary);
-}
-
-.bubble__emoji-tab:active {
-  transform: translateY(1px);
-}
-
-.bubble__emoji-picker-empty {
-  padding: 14px 6px 6px;
-  font-size: 13px;
-  text-align: center;
-  opacity: 0.7;
 }
 
 .bubble__reply-preview-accent {
