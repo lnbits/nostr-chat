@@ -1,13 +1,13 @@
 export const EMOJI_CATEGORIES = [
-  { key: 'smileys-emotion', label: 'Smileys & Emotion' },
-  { key: 'people-body', label: 'People & Body' },
-  { key: 'animals-nature', label: 'Animals & Nature' },
-  { key: 'food-drink', label: 'Food & Drink' },
-  { key: 'travel-places', label: 'Travel & Places' },
-  { key: 'activities', label: 'Activities' },
-  { key: 'objects', label: 'Objects' },
-  { key: 'symbols', label: 'Symbols' },
-  { key: 'flags', label: 'Flags' },
+  { key: 'smileys-emotion', label: 'Smileys & Emotion', icon: 'sentiment_satisfied_alt' },
+  { key: 'people-body', label: 'People & Body', icon: 'front_hand' },
+  { key: 'animals-nature', label: 'Animals & Nature', icon: 'pets' },
+  { key: 'food-drink', label: 'Food & Drink', icon: 'restaurant' },
+  { key: 'travel-places', label: 'Travel & Places', icon: 'flight' },
+  { key: 'activities', label: 'Activities', icon: 'sports_esports' },
+  { key: 'objects', label: 'Objects', icon: 'lightbulb' },
+  { key: 'symbols', label: 'Symbols', icon: 'tag' },
+  { key: 'flags', label: 'Flags', icon: 'flag' },
 ] as const;
 
 export type EmojiCategoryKey = (typeof EMOJI_CATEGORIES)[number]['key'];
@@ -22,6 +22,7 @@ export interface EmojiOption {
 export interface EmojiGroup {
   key: EmojiCategoryKey;
   label: string;
+  icon: string;
   emojis: EmojiOption[];
 }
 
@@ -560,6 +561,7 @@ export function groupEmojiEntries(entries: readonly EmojiOption[]): EmojiGroup[]
   return EMOJI_CATEGORIES.map((category) => ({
     key: category.key,
     label: category.label,
+    icon: category.icon,
     emojis: entries.filter((entry) => entry.categoryKey === category.key)
   })).filter((group) => group.emojis.length > 0);
 }

@@ -42,7 +42,12 @@
             aria-label="Add emoji"
             @click="rememberSelection"
           >
-            <q-menu anchor="top right" self="bottom right" class="emoji-menu">
+            <q-menu
+              anchor="top right"
+              self="bottom right"
+              class="emoji-menu"
+              @show="handleEmojiMenuShow"
+            >
               <div class="emoji-menu__search">
                 <q-input
                   v-model="emojiSearch"
@@ -59,8 +64,17 @@
                 </q-input>
               </div>
 
-              <div class="emoji-menu__scroll">
-                <div v-for="group in groupedEmojis" :key="group.key" class="emoji-group">
+              <div
+                ref="emojiScrollRef"
+                class="emoji-menu__scroll"
+                @scroll="handleEmojiScroll"
+              >
+                <div
+                  v-for="group in groupedEmojis"
+                  :key="group.key"
+                  class="emoji-group"
+                  :data-emoji-category="group.key"
+                >
                   <div class="emoji-group__title">{{ group.label }}</div>
                   <div class="emoji-grid">
                     <button
@@ -71,17 +85,42 @@
                       v-close-popup
                       @mousedown.prevent
                       @click="insertEmoji(entry.emoji)"
-                      :title="entry.label"
                       :aria-label="entry.label"
                     >
                       <span class="emoji-grid__char">{{ entry.emoji }}</span>
-                      <span class="emoji-grid__label">{{ entry.label }}</span>
+                      <AppTooltip>{{ entry.label }}</AppTooltip>
                     </button>
                   </div>
                 </div>
                 <div v-if="groupedEmojis.length === 0" class="emoji-menu__empty">
                   No emoji found.
                 </div>
+              </div>
+
+              <div
+                v-if="groupedEmojis.length > 0"
+                class="emoji-tabs"
+                role="tablist"
+                aria-label="Emoji categories"
+              >
+                <button
+                  v-for="group in groupedEmojis"
+                  :key="group.key"
+                  type="button"
+                  class="emoji-tabs__button"
+                  :class="{
+                    'emoji-tabs__button--active': activeEmojiCategoryKey === group.key
+                  }"
+                  role="tab"
+                  :aria-selected="activeEmojiCategoryKey === group.key ? 'true' : 'false'"
+                  :aria-label="group.label"
+                  @click="scrollToEmojiCategory(group.key)"
+                >
+                  <q-icon :name="group.icon" size="18px" />
+                  <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
+                    {{ group.label }}
+                  </AppTooltip>
+                </button>
               </div>
             </q-menu>
           </q-btn>
@@ -94,8 +133,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import AppTooltip from 'src/components/AppTooltip.vue';
 import { filterEmojiEntries, groupEmojiEntries } from 'src/data/topEmojis';
+import type { EmojiCategoryKey } from 'src/data/topEmojis';
 import type { MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -108,6 +149,8 @@ const inputRef = ref<{ $el: HTMLElement } | null>(null);
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
 const emojiSearch = ref('');
+const emojiScrollRef = ref<HTMLElement | null>(null);
+const activeEmojiCategoryKey = ref<EmojiCategoryKey | null>(null);
 
 const emit = defineEmits<{
   (event: 'send', payload: { text: string }): void;
@@ -116,6 +159,18 @@ const emit = defineEmits<{
 
 const filteredEmojis = computed(() => filterEmojiEntries(emojiSearch.value));
 const groupedEmojis = computed(() => groupEmojiEntries(filteredEmojis.value));
+
+watch(
+  groupedEmojis,
+  (groups) => {
+    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
+
+    void nextTick(() => {
+      syncActiveEmojiCategory();
+    });
+  },
+  { immediate: true }
+);
 
 function getInputElement(): HTMLInputElement | HTMLTextAreaElement | null {
   return inputRef.value?.$el.querySelector('textarea, input') ?? null;
@@ -160,6 +215,85 @@ function insertEmoji(emoji: string): void {
   } catch (error) {
     reportUiError('Failed to insert emoji', error);
   }
+}
+
+function getGroupScrollTop(container: HTMLElement, groupElement: HTMLElement): number {
+  const containerTop = container.getBoundingClientRect().top;
+  const groupTop = groupElement.getBoundingClientRect().top;
+  return groupTop - containerTop + container.scrollTop;
+}
+
+function syncActiveEmojiCategory(): void {
+  const container = emojiScrollRef.value;
+  const groups = groupedEmojis.value;
+
+  if (groups.length === 0) {
+    activeEmojiCategoryKey.value = null;
+    return;
+  }
+
+  if (!container) {
+    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
+    return;
+  }
+
+  const groupElements = Array.from(
+    container.querySelectorAll<HTMLElement>('[data-emoji-category]')
+  );
+
+  if (groupElements.length === 0) {
+    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
+    return;
+  }
+
+  const scrollThreshold = container.scrollTop + 18;
+  let nextActiveCategory = groupElements[0]?.dataset.emojiCategory as EmojiCategoryKey | undefined;
+
+  for (const groupElement of groupElements) {
+    const groupTop = getGroupScrollTop(container, groupElement);
+    if (groupTop <= scrollThreshold) {
+      nextActiveCategory = groupElement.dataset.emojiCategory as EmojiCategoryKey | undefined;
+      continue;
+    }
+
+    break;
+  }
+
+  activeEmojiCategoryKey.value = nextActiveCategory ?? groups[0]?.key ?? null;
+}
+
+function handleEmojiMenuShow(): void {
+  void nextTick(() => {
+    syncActiveEmojiCategory();
+  });
+}
+
+function handleEmojiScroll(): void {
+  syncActiveEmojiCategory();
+}
+
+function scrollToEmojiCategory(categoryKey: EmojiCategoryKey): void {
+  const container = emojiScrollRef.value;
+
+  if (!container) {
+    activeEmojiCategoryKey.value = categoryKey;
+    return;
+  }
+
+  const groupElement = container.querySelector<HTMLElement>(
+    `[data-emoji-category="${categoryKey}"]`
+  );
+
+  if (!groupElement) {
+    return;
+  }
+
+  const groupTop = getGroupScrollTop(container, groupElement);
+  activeEmojiCategoryKey.value = categoryKey;
+  container.scrollTo({
+    top: Math.max(groupTop - 4, 0),
+    behavior: 'smooth'
+  });
 }
 
 function handleSend(): void {
@@ -253,6 +387,9 @@ function handleSend(): void {
 
 .emoji-menu {
   width: 360px;
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
 }
 
 .emoji-menu__search {
@@ -262,6 +399,8 @@ function handleSend(): void {
 }
 
 .emoji-menu__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 300px;
   overflow-y: auto;
   width: 100%;
@@ -286,7 +425,7 @@ function handleSend(): void {
 
 .emoji-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -295,12 +434,11 @@ function handleSend(): void {
   border-radius: 8px;
   background: transparent;
   line-height: 1;
-  padding: 8px 6px;
+  padding: 10px 6px;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
 }
 
 .emoji-grid__item:hover {
@@ -311,15 +449,44 @@ function handleSend(): void {
   font-size: 21px;
 }
 
-.emoji-grid__label {
-  font-size: 10px;
-  line-height: 1.15;
-  max-width: 100%;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0.72;
+.emoji-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--tg-border);
+  background: color-mix(in srgb, var(--tg-sidebar) 90%, transparent);
+}
+
+.emoji-tabs__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: color-mix(in srgb, currentColor 68%, #60758f 32%);
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    background-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.emoji-tabs__button:hover {
+  background: rgba(55, 119, 245, 0.12);
+  color: inherit;
+}
+
+.emoji-tabs__button--active {
+  background: rgba(55, 119, 245, 0.16);
+  color: var(--q-primary);
+}
+
+.emoji-tabs__button:active {
+  transform: translateY(1px);
 }
 
 .emoji-menu__empty {
