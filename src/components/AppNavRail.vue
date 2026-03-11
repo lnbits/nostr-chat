@@ -94,8 +94,9 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   color: #5d718d;
-  background: color-mix(in srgb, var(--tg-sidebar) 70%, transparent);
+  background: transparent;
   border: 1px solid transparent;
+  box-shadow: none;
   transition:
     transform 0.2s ease,
     background-color 0.2s ease,
@@ -105,8 +106,9 @@ defineEmits<{
 
 .nav-rail__btn:hover {
   transform: translateY(-1px);
-  background: color-mix(in srgb, var(--tg-sidebar) 86%, #deecff 14%);
-  border-color: color-mix(in srgb, var(--tg-border) 86%, #8ca2bf 14%);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .nav-rail__btn--active {
@@ -118,7 +120,7 @@ defineEmits<{
 
 body.body--dark .nav-rail__btn {
   color: #9cacbf;
-  background: color-mix(in srgb, var(--tg-sidebar) 72%, transparent);
+  background: transparent;
 }
 
 body.body--dark .nav-rail__btn--active {

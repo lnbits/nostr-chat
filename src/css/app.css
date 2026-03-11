@@ -205,14 +205,14 @@ body.body--dark {
 .q-btn.q-btn--flat.q-btn--round,
 .q-btn.q-btn--outline.q-btn--round,
 .q-btn.q-btn--unelevated.q-btn--round {
-  background: var(--tg-btn-round-bg);
-  box-shadow: var(--tg-btn-soft-shadow);
+  background: transparent;
+  box-shadow: none;
 }
 
 .q-btn.q-btn--flat.q-btn--round::before,
 .q-btn.q-btn--outline.q-btn--round::before,
 .q-btn.q-btn--unelevated.q-btn--round::before {
-  border-color: var(--tg-btn-round-border);
+  border-color: transparent;
 }
 
 .q-btn:not(.q-btn--disabled):hover {
@@ -222,6 +222,11 @@ body.body--dark {
 .q-btn.q-btn--flat:not(.q-btn--disabled):hover,
 .q-btn.q-btn--outline:not(.q-btn--disabled):hover {
   background: var(--tg-btn-soft-hover-bg);
+}
+
+.q-btn.q-btn--round:not(.q-btn--disabled):hover {
+  background: transparent;
+  box-shadow: none;
 }
 
 .q-btn.q-btn--disabled,
