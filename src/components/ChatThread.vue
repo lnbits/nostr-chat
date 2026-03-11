@@ -83,12 +83,27 @@
         </template>
       </div>
 
-      <MessageComposer
-        ref="composerRef"
-        :reply-to="activeReply"
-        @send="handleSend"
-        @cancel-reply="handleCancelReply"
-      />
+      <div class="thread-composer-anchor">
+        <transition name="thread-scroll-jump">
+          <q-btn
+            v-if="showScrollJumpButton"
+            flat
+            dense
+            round
+            icon="keyboard_double_arrow_down"
+            aria-label="Jump to the latest messages"
+            class="thread-scroll-jump"
+            @click="handleScrollJump"
+          />
+        </transition>
+
+        <MessageComposer
+          ref="composerRef"
+          :reply-to="activeReply"
+          @send="handleSend"
+          @cancel-reply="handleCancelReply"
+        />
+      </div>
     </template>
 
     <div v-else class="thread-empty" :class="{ 'thread-empty--loading': isInitializing }">
@@ -148,6 +163,9 @@ const composerRef = ref<{ focusInputAtEnd: () => void } | null>(null);
 const stickyDayLabel = ref('');
 const activeReply = ref<MessageReplyPreview | null>(null);
 const highlightedMessageId = ref<string | null>(null);
+const isThreadScrolledUp = ref(false);
+const lastReadMessageId = ref<string | null>(null);
+const hasJumpedToLastReadMessage = ref(false);
 let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
 
@@ -189,6 +207,14 @@ const avatarImageUrl = computed(() => {
   }
 
   return '';
+});
+
+const latestMessageId = computed(() => {
+  return props.messages[props.messages.length - 1]?.id ?? null;
+});
+
+const showScrollJumpButton = computed(() => {
+  return Boolean(props.chat && props.messages.length > 0 && isThreadScrolledUp.value);
 });
 
 function getDayKey(value: string): string {
@@ -252,7 +278,43 @@ async function scrollToBottom(): Promise<void> {
     threadBodyRef.value.scrollTop = threadBodyRef.value.scrollHeight;
   }
 
+  isThreadScrolledUp.value = false;
+  lastReadMessageId.value = latestMessageId.value;
+  hasJumpedToLastReadMessage.value = false;
   updateStickyDayLabel();
+}
+
+function isThreadNearBottom(): boolean {
+  const threadBody = threadBodyRef.value;
+  if (!threadBody) {
+    return true;
+  }
+
+  return threadBody.scrollHeight - (threadBody.scrollTop + threadBody.clientHeight) <= 72;
+}
+
+function updateScrollJumpState(): void {
+  const latestMessage = latestMessageId.value;
+  if (!latestMessage) {
+    isThreadScrolledUp.value = false;
+    lastReadMessageId.value = null;
+    hasJumpedToLastReadMessage.value = false;
+    return;
+  }
+
+  if (isThreadNearBottom()) {
+    isThreadScrolledUp.value = false;
+    lastReadMessageId.value = latestMessage;
+    hasJumpedToLastReadMessage.value = false;
+    return;
+  }
+
+  if (!isThreadScrolledUp.value) {
+    lastReadMessageId.value = latestMessage;
+    hasJumpedToLastReadMessage.value = false;
+  }
+
+  isThreadScrolledUp.value = true;
 }
 
 function updateStickyDayLabel(): void {
@@ -285,6 +347,7 @@ function handleThreadScroll(): void {
   scrollFrameId = window.requestAnimationFrame(() => {
     scrollFrameId = null;
     updateStickyDayLabel();
+    updateScrollJumpState();
   });
 }
 
@@ -372,21 +435,64 @@ function clearReplyTargetHighlight(): void {
   }
 }
 
-async function handleOpenReplyTarget(messageId: string): Promise<void> {
+function findThreadMessageEntry(targetId: string): HTMLElement | null {
+  const threadBody = threadBodyRef.value;
+  if (!threadBody) {
+    return null;
+  }
+
+  return Array.from(threadBody.querySelectorAll<HTMLElement>('.thread-message-entry'))
+    .find((entry) => {
+      return (
+        entry.dataset.messageId === targetId ||
+        entry.dataset.messageEventId === targetId
+      );
+    }) ?? null;
+}
+
+async function scrollToMessageEntry(
+  targetId: string,
+  block: ScrollLogicalPosition
+): Promise<boolean> {
+  await nextTick();
+
+  const targetEntry = findThreadMessageEntry(targetId);
+  if (!targetEntry) {
+    return false;
+  }
+
+  targetEntry.scrollIntoView({
+    behavior: 'smooth',
+    block
+  });
+
+  return true;
+}
+
+async function handleScrollJump(): Promise<void> {
   try {
-    const threadBody = threadBodyRef.value;
-    if (!threadBody) {
+    if (!props.messages.length) {
       return;
     }
 
-    const targetEntry = Array.from(threadBody.querySelectorAll<HTMLElement>('.thread-message-entry'))
-      .find((entry) => {
-        return (
-          entry.dataset.messageId === messageId ||
-          entry.dataset.messageEventId === messageId
-        );
-      });
+    if (!hasJumpedToLastReadMessage.value && lastReadMessageId.value) {
+      const didScrollToLastReadMessage = await scrollToMessageEntry(lastReadMessageId.value, 'start');
+      if (didScrollToLastReadMessage) {
+        hasJumpedToLastReadMessage.value = true;
+        return;
+      }
+    }
 
+    hasJumpedToLastReadMessage.value = false;
+    await scrollToBottom();
+  } catch (error) {
+    reportUiError('Failed to jump to the latest messages', error);
+  }
+}
+
+async function handleOpenReplyTarget(messageId: string): Promise<void> {
+  try {
+    const targetEntry = findThreadMessageEntry(messageId);
     if (!targetEntry) {
       return;
     }
@@ -434,18 +540,36 @@ function handleRefreshChat(): void {
 }
 
 watch(
-  () => [props.chat?.id, props.messages.length],
+  () => props.chat?.id ?? null,
   () => {
+    activeReply.value = null;
+    clearReplyTargetHighlight();
+    lastReadMessageId.value = latestMessageId.value;
+    hasJumpedToLastReadMessage.value = false;
+    isThreadScrolledUp.value = false;
     void scrollToBottom();
   },
   { immediate: true }
 );
 
 watch(
-  () => props.chat?.id ?? null,
-  () => {
-    activeReply.value = null;
-    clearReplyTargetHighlight();
+  () => props.messages.length,
+  (nextLength, previousLength) => {
+    if (nextLength === previousLength) {
+      return;
+    }
+
+    const shouldStickToBottom = isThreadNearBottom();
+
+    if (shouldStickToBottom) {
+      void scrollToBottom();
+      return;
+    }
+
+    void nextTick(() => {
+      updateStickyDayLabel();
+      updateScrollJumpState();
+    });
   }
 );
 
@@ -507,6 +631,59 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   padding: 14px;
   position: relative;
+}
+
+.thread-composer-anchor {
+  position: relative;
+}
+
+.q-btn.thread-scroll-jump {
+  position: absolute;
+  right: 18px;
+  bottom: 72px;
+  z-index: 4;
+  background: color-mix(in srgb, var(--tg-sidebar) 92%, #eef6ff 8%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 10px 24px rgba(15, 56, 104, 0.16) !important;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ea5c1 16%);
+  color: color-mix(in srgb, var(--q-primary) 80%, #0f5ea9 20%);
+}
+
+.q-btn.thread-scroll-jump::before {
+  border-color: transparent !important;
+}
+
+.q-btn.thread-scroll-jump:hover {
+  background: color-mix(in srgb, var(--tg-sidebar) 86%, #dcecff 14%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    0 12px 28px rgba(15, 56, 104, 0.18) !important;
+  transform: translateY(-1px);
+}
+
+.thread-scroll-jump-enter-active,
+.thread-scroll-jump-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.thread-scroll-jump-enter-from,
+.thread-scroll-jump-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+body.body--dark .q-btn.thread-scroll-jump {
+  background: color-mix(in srgb, var(--tg-sidebar) 90%, #22344c 10%) !important;
+  border-color: color-mix(in srgb, var(--tg-border) 84%, #6f88a8 16%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 28px rgba(0, 0, 0, 0.28) !important;
+  color: #9ed0ff;
+}
+
+body.body--dark .q-btn.thread-scroll-jump:hover {
+  background: color-mix(in srgb, var(--tg-sidebar) 82%, #27446a 18%) !important;
 }
 
 .thread-day-sticky {
