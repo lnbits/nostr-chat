@@ -1,5 +1,5 @@
 <template>
-  <q-page class="home-page">
+  <q-page class="home-page" :style-fn="homePageStyleFn">
     <div class="home-shell" :class="{ 'home-shell--mobile': isMobile }">
       <aside v-if="!isMobile" class="rail-panel">
         <AppNavRail active="chats" @select="handleRailSelect" />
@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
@@ -87,6 +87,7 @@ const relayStore = useRelayStore();
 relayStore.init();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const visibleViewportHeight = ref<number | null>(null);
 const activeChatId = computed(() => {
   const rawChatId = route.params.pubkey;
   if (Array.isArray(rawChatId)) {
@@ -113,6 +114,27 @@ const searchQuery = computed({
   get: () => chatStore.searchQuery,
   set: (value: string) => chatStore.setSearchQuery(value)
 });
+
+function getVisibleViewportHeight(fallbackHeight: number): number {
+  if (typeof window === 'undefined') {
+    return fallbackHeight;
+  }
+
+  return Math.round(window.visualViewport?.height ?? window.innerHeight ?? fallbackHeight);
+}
+
+function updateVisibleViewportHeight(): void {
+  visibleViewportHeight.value = getVisibleViewportHeight($q.screen.height);
+}
+
+function homePageStyleFn(offset: number, height: number): Record<string, string> {
+  const pageHeight = Math.max((visibleViewportHeight.value ?? height) - offset, 0);
+
+  return {
+    height: `${pageHeight}px`,
+    minHeight: `${pageHeight}px`
+  };
+}
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   try {
@@ -353,12 +375,36 @@ async function syncChatRoute(): Promise<void> {
 watch([activeChatId, isMobile, chatIdSignature], () => {
   void syncChatRoute();
 }, { immediate: true });
+
+onMounted(() => {
+  updateVisibleViewportHeight();
+
+  const visualViewport = window.visualViewport;
+  window.addEventListener('resize', updateVisibleViewportHeight);
+  window.addEventListener('orientationchange', updateVisibleViewportHeight);
+  visualViewport?.addEventListener('resize', updateVisibleViewportHeight);
+  visualViewport?.addEventListener('scroll', updateVisibleViewportHeight);
+});
+
+onBeforeUnmount(() => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const visualViewport = window.visualViewport;
+  window.removeEventListener('resize', updateVisibleViewportHeight);
+  window.removeEventListener('orientationchange', updateVisibleViewportHeight);
+  visualViewport?.removeEventListener('resize', updateVisibleViewportHeight);
+  visualViewport?.removeEventListener('scroll', updateVisibleViewportHeight);
+});
 </script>
 
 <style scoped>
 .home-page {
-  height: calc(100vh - env(safe-area-inset-top));
   padding: 12px;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
 }
 
 .home-shell {
@@ -366,6 +412,9 @@ watch([activeChatId, isMobile, chatIdSignature], () => {
   grid-template-columns: 76px 340px minmax(0, 1fr);
   gap: 12px;
   height: 100%;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .home-shell--mobile {
@@ -417,6 +466,10 @@ watch([activeChatId, isMobile, chatIdSignature], () => {
 }
 
 .thread-panel {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
   background: var(--tg-panel-thread-bg);
 }
 

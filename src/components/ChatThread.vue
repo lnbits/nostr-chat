@@ -999,16 +999,24 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
   background: transparent;
 }
 
 .thread-header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
+  backdrop-filter: blur(10px);
 }
 
 .thread-header__identity {
@@ -1041,13 +1049,19 @@ onBeforeUnmount(() => {
 
 .thread-body {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 14px;
   position: relative;
 }
 
 .thread-composer-anchor {
-  position: relative;
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  flex: 0 0 auto;
 }
 
 .thread-jump-buttons {
