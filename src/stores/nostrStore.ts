@@ -50,6 +50,10 @@ import {
   buildMetaWithReactions,
   normalizeMessageReactions
 } from 'src/utils/messageReactions';
+import {
+  areBrowserNotificationsEnabled,
+  clearBrowserNotificationsPreference
+} from 'src/utils/browserNotificationPreference';
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 
 export interface NostrIdentifierResolutionResult {
@@ -550,6 +554,83 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return publicKey.slice(0, 16);
+  }
+
+  function buildBrowserNotificationMessagePreview(messageText: string): string {
+    const normalizedText = messageText.replace(/\s+/g, ' ').trim();
+    if (!normalizedText) {
+      return 'New message';
+    }
+
+    if (normalizedText.length <= 140) {
+      return normalizedText;
+    }
+
+    return `${normalizedText.slice(0, 137)}...`;
+  }
+
+  function buildChatNotificationHref(chatPubkey: string): string | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    const normalizedBase = (() => {
+      const base = process.env.VUE_ROUTER_BASE?.trim() || '/';
+      return base.endsWith('/') ? base : `${base}/`;
+    })();
+    const encodedChatPubkey = encodeURIComponent(chatPubkey);
+
+    if (process.env.VUE_ROUTER_MODE === 'hash') {
+      return `${window.location.origin}${normalizedBase}#/chats/${encodedChatPubkey}`;
+    }
+
+    return `${window.location.origin}${normalizedBase}chats/${encodedChatPubkey}`;
+  }
+
+  function shouldSuppressIncomingMessageBrowserNotification(chatPubkey: string): boolean {
+    if (isRestoringStartupState.value || !areBrowserNotificationsEnabled()) {
+      return true;
+    }
+
+    if (typeof document === 'undefined') {
+      return false;
+    }
+
+    return (
+      document.visibilityState === 'visible' &&
+      document.hasFocus() &&
+      chatStore.visibleChatId === chatPubkey
+    );
+  }
+
+  function showIncomingMessageBrowserNotification(options: {
+    chatPubkey: string;
+    title: string;
+    messageText: string;
+    iconUrl?: string;
+  }): void {
+    if (typeof window === 'undefined' || shouldSuppressIncomingMessageBrowserNotification(options.chatPubkey)) {
+      return;
+    }
+
+    try {
+      const notification = new window.Notification(options.title, {
+        body: buildBrowserNotificationMessagePreview(options.messageText),
+        ...(options.iconUrl ? { icon: options.iconUrl } : {})
+      });
+
+      notification.onclick = () => {
+        notification.close();
+        window.focus();
+
+        const href = buildChatNotificationHref(options.chatPubkey);
+        if (href) {
+          window.location.assign(href);
+        }
+      };
+    } catch (error) {
+      console.warn('Failed to show browser notification for incoming message', error);
+    }
   }
 
   function createDirectMessageRumorEvent(
@@ -3224,6 +3305,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
       nextUnreadCount
     );
 
+    if (!isSelfSentMessage) {
+      showIncomingMessageBrowserNotification({
+        chatPubkey: chat.public_key,
+        title: deriveChatName(contact, chatPubkey),
+        messageText,
+        iconUrl: contact?.meta.picture?.trim() || undefined
+      });
+    }
+
     if (uiThrottleMs > 0) {
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
@@ -3573,6 +3663,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     clearDarkModePreference();
     clearPanelOpacityPreference();
+    clearBrowserNotificationsPreference();
 
     await Promise.all([
       chatDataService.clearAllData(),
