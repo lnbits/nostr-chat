@@ -151,6 +151,8 @@ interface PendingIncomingDeletion {
   targetKind: number | null;
 }
 
+type SubscriptionLogName = 'my-relay-list' | 'private-contact-list' | 'private-messages';
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
@@ -162,7 +164,6 @@ const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 24 * 60 * 60;
 const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
-let temp_counter = 0;
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -470,6 +471,43 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function relaySignature(relays: string[]): string {
     return [...relays].sort((a, b) => a.localeCompare(b)).join('|');
+  }
+
+  function formatSubscriptionLogValue(value: string | null | undefined): string | null {
+    const normalizedValue = value?.trim() ?? '';
+    if (!normalizedValue) {
+      return null;
+    }
+
+    if (normalizedValue.length <= 18) {
+      return normalizedValue;
+    }
+
+    return `${normalizedValue.slice(0, 8)}...${normalizedValue.slice(-8)}`;
+  }
+
+  function buildSubscriptionRelayDetails(relayUrls: string[]): Record<string, unknown> {
+    return {
+      relayCount: relayUrls.length,
+      relayUrls
+    };
+  }
+
+  function buildSubscriptionEventDetails(event: Pick<NDKEvent, 'id' | 'kind' | 'created_at' | 'pubkey'>): Record<string, unknown> {
+    return {
+      eventId: formatSubscriptionLogValue(event.id),
+      kind: event.kind ?? null,
+      createdAt: event.created_at ?? null,
+      author: formatSubscriptionLogValue(event.pubkey)
+    };
+  }
+
+  function logSubscription(
+    name: SubscriptionLogName,
+    phase: string,
+    details: Record<string, unknown> = {}
+  ): void {
+    console.info(`[nostr][subscription:${name}] ${phase}`, details);
   }
 
   function bumpContactListVersion(): void {
@@ -2667,8 +2705,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return restoreMyRelayListPromise;
   }
 
-  function stopMyRelayListSubscription(): void {
+  function stopMyRelayListSubscription(reason = 'replace'): void {
     if (myRelayListSubscription) {
+      logSubscription('my-relay-list', 'stop', {
+        reason,
+        signature: myRelayListSubscriptionSignature || null
+      });
       myRelayListSubscription.stop();
       myRelayListSubscription = null;
     }
@@ -2682,26 +2724,33 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
-      stopMyRelayListSubscription();
+      stopMyRelayListSubscription('missing-login');
       return;
     }
 
     const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
     if (relayUrls.length === 0) {
-      stopMyRelayListSubscription();
+      stopMyRelayListSubscription('no-relays');
       return;
     }
 
     const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
     if (!force && myRelayListSubscription && myRelayListSubscriptionSignature === signature) {
+      logSubscription('my-relay-list', 'skip', {
+        reason: 'already-active',
+        signature,
+        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        ...buildSubscriptionRelayDetails(relayUrls)
+      });
       return;
     }
 
-    console.info('[nostr][relay-list-subscription] preparing', {
+    logSubscription('my-relay-list', 'prepare', {
       force,
-      loggedInPubkeyHex,
-      relayUrls,
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
       since: getFilterSince(),
+      ...buildSubscriptionRelayDetails(relayUrls),
       relaySnapshots: getRelaySnapshots(relayUrls)
     });
 
@@ -2709,11 +2758,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await getLoggedInSignerUser();
     stopMyRelayListSubscription();
 
-    console.info('[nostr][relay-list-subscription] starting', {
+    logSubscription('my-relay-list', 'start', {
       force,
-      loggedInPubkeyHex,
-      relayUrls,
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
       since: getFilterSince(),
+      ...buildSubscriptionRelayDetails(relayUrls),
       relaySnapshots: getRelaySnapshots(relayUrls)
     });
 
@@ -2729,6 +2779,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          logSubscription('my-relay-list', 'event', {
+            signature,
+            ...buildSubscriptionEventDetails(wrappedEvent),
+            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+          });
           updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           myRelayListApplyQueue = myRelayListApplyQueue
             .then(async () => {
@@ -2738,14 +2793,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
             .catch((error) => {
               console.error('Failed to process my relay list event', error);
             });
+        },
+        onEose: () => {
+          logSubscription('my-relay-list', 'eose', {
+            signature
+          });
         }
       }
     );
     myRelayListSubscriptionSignature = signature;
 
-    console.info('[nostr][relay-list-subscription] active', {
+    logSubscription('my-relay-list', 'active', {
       signature,
-      relayUrls,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      ...buildSubscriptionRelayDetails(relayUrls),
       relaySnapshots: getRelaySnapshots(relayUrls)
     });
   }
@@ -2837,8 +2898,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return restorePrivateContactListPromise;
   }
 
-  function stopPrivateContactListSubscription(): void {
+  function stopPrivateContactListSubscription(reason = 'replace'): void {
     if (privateContactListSubscription) {
+      logSubscription('private-contact-list', 'stop', {
+        reason,
+        signature: privateContactListSubscriptionSignature || null
+      });
       privateContactListSubscription.stop();
       privateContactListSubscription = null;
     }
@@ -2852,24 +2917,46 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
-      stopPrivateContactListSubscription();
+      stopPrivateContactListSubscription('missing-login');
       return;
     }
 
     const relayUrls = await resolvePrivateContactListReadRelayUrls(seedRelayUrls);
     if (relayUrls.length === 0) {
-      stopPrivateContactListSubscription();
+      stopPrivateContactListSubscription('no-relays');
       return;
     }
 
     const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
     if (!force && privateContactListSubscription && privateContactListSubscriptionSignature === signature) {
+      logSubscription('private-contact-list', 'skip', {
+        reason: 'already-active',
+        signature,
+        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        ...buildSubscriptionRelayDetails(relayUrls)
+      });
       return;
     }
+
+    logSubscription('private-contact-list', 'prepare', {
+      force,
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      since: getFilterSince(),
+      ...buildSubscriptionRelayDetails(relayUrls)
+    });
 
     await ensureRelayConnections(relayUrls);
     await getLoggedInSignerUser();
     stopPrivateContactListSubscription();
+
+    logSubscription('private-contact-list', 'start', {
+      force,
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      since: getFilterSince(),
+      ...buildSubscriptionRelayDetails(relayUrls)
+    });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     privateContactListSubscription = ndk.subscribe(
@@ -2883,18 +2970,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
-          console.log('Received private contact list event', event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          logSubscription('private-contact-list', 'event', {
+            signature,
+            ...buildSubscriptionEventDetails(wrappedEvent),
+            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+          });
           updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queuePrivateContactListEventApplication(wrappedEvent);
+        },
+        onEose: () => {
+          logSubscription('private-contact-list', 'eose', {
+            signature
+          });
         }
       }
     );
     privateContactListSubscriptionSignature = signature;
+
+    logSubscription('private-contact-list', 'active', {
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      ...buildSubscriptionRelayDetails(relayUrls)
+    });
   }
 
-  function stopPrivateMessagesSubscription(): void {
+  function stopPrivateMessagesSubscription(reason = 'replace'): void {
     if (privateMessagesSubscription) {
+      logSubscription('private-messages', 'stop', {
+        reason,
+        signature: privateMessagesSubscriptionSignature || null
+      });
       privateMessagesSubscription.stop();
       privateMessagesSubscription = null;
     }
@@ -2974,7 +3080,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const direction: NostrEventDirection = isSelfSentMessage ? 'out' : 'in';
     const replyTargetEventId = readReplyTargetEventId(rumorEvent);
 
-    console.log('### rumorEvent', await rumorEvent.toNostrEvent());
+    logSubscription('private-messages', 'rumor', {
+      wrappedEventId: formatSubscriptionLogValue(wrappedEvent.id),
+      chatPubkey: formatSubscriptionLogValue(chatPubkey),
+      direction,
+      recipientCount: recipients.length,
+      ...buildSubscriptionEventDetails(rumorEvent)
+    });
+
     if (rumorEvent.kind === NDKKind.EventDeletion) {
       await processIncomingDeletionRumorEvent(rumorEvent, senderPubkeyHex, {
         uiThrottleMs
@@ -3147,25 +3260,49 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
 
     if (!loggedInPubkeyHex || !getStoredAuthMethod()) {
-      stopPrivateMessagesSubscription();
+      stopPrivateMessagesSubscription('missing-login');
       return;
     }
 
     await contactsService.init();
     const relayUrls = await resolveLoggedInReadRelayUrls();
     if (relayUrls.length === 0) {
-      stopPrivateMessagesSubscription();
+      stopPrivateMessagesSubscription('no-relays');
       return;
     }
     const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
     if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
+      logSubscription('private-messages', 'skip', {
+        reason: 'already-active',
+        signature,
+        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        ...buildSubscriptionRelayDetails(relayUrls)
+      });
       return;
     }
+
+    logSubscription('private-messages', 'prepare', {
+      force,
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      since: getFilterSince(),
+      restoreThrottleMs: normalizeThrottleMs(options.restoreThrottleMs),
+      ...buildSubscriptionRelayDetails(relayUrls)
+    });
 
     await ensureRelayConnections(relayUrls);
     await getOrCreateSigner();
     stopPrivateMessagesSubscription();
     privateMessagesRestoreThrottleMs = normalizeThrottleMs(options.restoreThrottleMs);
+
+    logSubscription('private-messages', 'start', {
+      force,
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      since: getFilterSince(),
+      restoreThrottleMs: privateMessagesRestoreThrottleMs,
+      ...buildSubscriptionRelayDetails(relayUrls)
+    });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     privateMessagesSubscription = ndk.subscribe(
@@ -3178,18 +3315,33 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
-          console.log('Received private message gift wrap event', temp_counter++, getFilterSince(), event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          logSubscription('private-messages', 'event', {
+            signature,
+            ...buildSubscriptionEventDetails(wrappedEvent),
+            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+          });
           updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
         },
         onEose: () => {
+          logSubscription('private-messages', 'eose', {
+            signature,
+            restoreThrottleMs: privateMessagesRestoreThrottleMs
+          });
           privateMessagesRestoreThrottleMs = 0;
           flushPrivateMessagesUiRefreshNow();
         }
       }
     );
     privateMessagesSubscriptionSignature = signature;
+
+    logSubscription('private-messages', 'active', {
+      signature,
+      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      restoreThrottleMs: privateMessagesRestoreThrottleMs,
+      ...buildSubscriptionRelayDetails(relayUrls)
+    });
   }
 
   async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
