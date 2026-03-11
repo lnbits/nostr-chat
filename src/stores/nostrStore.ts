@@ -37,6 +37,7 @@ import {
 } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
+import { useRelayStore } from 'src/stores/relayStore';
 import type {
   DeletedMessageMetadata,
   MessageReplyPreview,
@@ -1935,8 +1936,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return Array.from(uniqueRelays);
   }
 
+  function getAppRelayUrls(): string[] {
+    const relayStore = useRelayStore();
+    relayStore.init();
+    return normalizeRelayStatusUrls(relayStore.relays);
+  }
+
   async function resolveLoggedInReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    const relayUrls = inputSanitizerService.normalizeStringArray(seedRelayUrls);
+    const appRelayUrls = getAppRelayUrls();
+    const relayUrls =
+      appRelayUrls.length > 0 ? appRelayUrls : normalizeRelayStatusUrls(seedRelayUrls);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
       return relayUrls;
@@ -1945,7 +1954,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await contactsService.init();
     const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
 
-    return inputSanitizerService.normalizeStringArray([
+    return normalizeRelayStatusUrls([
       ...relayUrls,
       ...inputSanitizerService.normalizeReadableRelayUrls(loggedInContact?.relays)
     ]);
@@ -3094,8 +3103,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await contactsService.init();
-    const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
-    const relayUrls = inputSanitizerService.normalizeReadableRelayUrls(loggedInContact?.relays);
+    const relayUrls = await resolveLoggedInReadRelayUrls();
     if (relayUrls.length === 0) {
       stopPrivateMessagesSubscription();
       return;
