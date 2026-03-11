@@ -21,6 +21,8 @@ export interface ContactMetadata {
   // App-local linkage used to map contacts to existing chat threads.
   chatId?: string;
   avatar?: string;
+  last_seen_incoming_activity_at?: string;
+  last_seen_incoming_activity_event_id?: string;
 }
 
 export interface ContactRelay {

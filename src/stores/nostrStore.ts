@@ -47,7 +47,9 @@ import type {
 } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 import {
+  areMessageReactionsEqual,
   buildMetaWithReactions,
+  countUnseenReactionsForAuthor,
   normalizeMessageReactions
 } from 'src/utils/messageReactions';
 import {
@@ -157,13 +159,36 @@ interface PendingIncomingDeletion {
 
 type SubscriptionLogName = 'my-relay-list' | 'private-contact-list' | 'private-messages';
 
+interface PrivatePreferences {
+  contactSecret: string;
+  [key: string]: unknown;
+}
+
+interface ContactCursorContent {
+  version: string;
+  last_seen_incoming_activity_at: string;
+  last_seen_incoming_activity_event_id: string | null;
+}
+
+interface ContactCursorState {
+  at: string;
+  eventId: string | null;
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
 const EVENT_SINCE_STORAGE_KEY = 'nostr-event-since';
+const PRIVATE_PREFERENCES_STORAGE_KEY = 'privatePreferences';
 const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
 const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
+const PRIVATE_PREFERENCES_KIND = 30078;
+const PRIVATE_PREFERENCES_D_TAG = '1';
+const CONTACT_CURSOR_VERSION = '0.1';
+const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
+const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
+const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 24 * 60 * 60;
@@ -171,6 +196,10 @@ const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
@@ -193,9 +222,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let restoreMyRelayListPromise: Promise<void> | null = null;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let restorePrivateContactListPromise: Promise<void> | null = null;
+  let restorePrivatePreferencesPromise: Promise<void> | null = null;
+  let restoreContactCursorStatePromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
   const pendingIncomingReactions = new Map<string, PendingIncomingReaction[]>();
   const pendingIncomingDeletions = new Map<string, PendingIncomingDeletion[]>();
+  const pendingContactCursorPublishTimers = new Map<string, ReturnType<typeof globalThis.setTimeout>>();
+  const pendingContactCursorPublishStates = new Map<string, ContactCursorState>();
   let myRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let myRelayListSubscriptionSignature = '';
   let myRelayListApplyQueue = Promise.resolve();
@@ -296,6 +329,209 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
+  function toComparableTimestamp(value: string | null | undefined): number {
+    if (typeof value !== 'string' || !value.trim()) {
+      return 0;
+    }
+
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function normalizeTimestamp(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const normalized = value.trim();
+    return normalized || null;
+  }
+
+  function normalizePrivatePreferences(value: unknown): PrivatePreferences | null {
+    if (!isPlainRecord(value)) {
+      return null;
+    }
+
+    const normalizedContactSecret = inputSanitizerService.normalizeHexKey(value.contactSecret);
+    if (!normalizedContactSecret) {
+      return null;
+    }
+
+    return {
+      ...value,
+      contactSecret: normalizedContactSecret
+    };
+  }
+
+  function readPrivatePreferencesFromStorage(): PrivatePreferences | null {
+    if (!hasStorage()) {
+      return null;
+    }
+
+    const stored = window.localStorage.getItem(PRIVATE_PREFERENCES_STORAGE_KEY)?.trim();
+    if (!stored) {
+      return null;
+    }
+
+    try {
+      return normalizePrivatePreferences(JSON.parse(stored));
+    } catch {
+      return null;
+    }
+  }
+
+  function writePrivatePreferencesToStorage(preferences: PrivatePreferences): void {
+    if (!hasStorage()) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      PRIVATE_PREFERENCES_STORAGE_KEY,
+      JSON.stringify(preferences)
+    );
+  }
+
+  function clearPrivatePreferencesStorage(): void {
+    if (!hasStorage()) {
+      return;
+    }
+
+    window.localStorage.removeItem(PRIVATE_PREFERENCES_STORAGE_KEY);
+  }
+
+  async function sha256Hex(value: string): Promise<string> {
+    const digest = await globalThis.crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(value)
+    );
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  function buildFreshPrivatePreferences(existing: Record<string, unknown> = {}): PrivatePreferences {
+    return {
+      ...existing,
+      contactSecret: NDKPrivateKeySigner.generate().privateKey
+    };
+  }
+
+  function normalizeContactCursorContent(value: unknown): ContactCursorContent | null {
+    if (!isPlainRecord(value)) {
+      return null;
+    }
+
+    const version = typeof value.version === 'string' ? value.version.trim() : '';
+    const lastSeenIncomingActivityAt = normalizeTimestamp(value.last_seen_incoming_activity_at);
+    const lastSeenIncomingActivityEventId = normalizeEventId(
+      value.last_seen_incoming_activity_event_id
+    );
+
+    if (!version || !lastSeenIncomingActivityAt) {
+      return null;
+    }
+
+    return {
+      version,
+      last_seen_incoming_activity_at: lastSeenIncomingActivityAt,
+      last_seen_incoming_activity_event_id: lastSeenIncomingActivityEventId
+    };
+  }
+
+  async function encryptPrivatePreferencesContent(preferences: PrivatePreferences): Promise<string> {
+    const user = await getLoggedInSignerUser();
+    ndk.assertSigner();
+    return ndk.signer.encrypt(user, JSON.stringify(preferences), 'nip44');
+  }
+
+  async function decryptPrivatePreferencesContent(content: string): Promise<PrivatePreferences | null> {
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      return null;
+    }
+
+    const user = await getLoggedInSignerUser();
+    ndk.assertSigner();
+    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
+
+    try {
+      return normalizePrivatePreferences(JSON.parse(decryptedContent));
+    } catch {
+      return null;
+    }
+  }
+
+  async function encryptContactCursorContent(cursor: ContactCursorState): Promise<string> {
+    const user = await getLoggedInSignerUser();
+    ndk.assertSigner();
+    return ndk.signer.encrypt(
+      user,
+      JSON.stringify({
+        version: CONTACT_CURSOR_VERSION,
+        last_seen_incoming_activity_at: cursor.at,
+        last_seen_incoming_activity_event_id: cursor.eventId
+      }),
+      'nip44'
+    );
+  }
+
+  async function decryptContactCursorContent(content: string): Promise<ContactCursorContent | null> {
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      return null;
+    }
+
+    const user = await getLoggedInSignerUser();
+    ndk.assertSigner();
+    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
+
+    try {
+      return normalizeContactCursorContent(JSON.parse(decryptedContent));
+    } catch {
+      return null;
+    }
+  }
+
+  async function ensurePrivatePreferences(
+    options: { publishIfCreated?: boolean } = {}
+  ): Promise<PrivatePreferences> {
+    const existing = readPrivatePreferencesFromStorage();
+    if (existing) {
+      return existing;
+    }
+
+    const nextPreferences = buildFreshPrivatePreferences();
+    writePrivatePreferencesToStorage(nextPreferences);
+
+    if (options.publishIfCreated) {
+      await publishPrivatePreferences(nextPreferences);
+    }
+
+    return nextPreferences;
+  }
+
+  async function deriveContactCursorDTag(contactPublicKey: string): Promise<string | null> {
+    const preferences = readPrivatePreferencesFromStorage();
+    const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(contactPublicKey);
+    if (!preferences?.contactSecret || !normalizedContactPublicKey) {
+      return null;
+    }
+
+    return sha256Hex(`${preferences.contactSecret}${normalizedContactPublicKey}`);
+  }
+
+  function chunkValues<T>(values: T[], chunkSize: number): T[][] {
+    if (chunkSize <= 0) {
+      return [values];
+    }
+
+    const chunks: T[][] = [];
+    for (let index = 0; index < values.length; index += chunkSize) {
+      chunks.push(values.slice(index, index + chunkSize));
+    }
+    return chunks;
+  }
+
   async function flushPrivateMessagesUiRefresh(): Promise<void> {
     const shouldReloadChats = shouldReloadChatsOnPrivateMessagesUiRefresh;
     const shouldReloadMessages = shouldReloadMessagesOnPrivateMessagesUiRefresh;
@@ -394,8 +630,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
         await runStartupTask('Failed to subscribe to My Relays updates on startup', () =>
           subscribeMyRelayListUpdates(seedRelayUrls)
         );
+        await runStartupTask('Failed to restore private preferences on startup', () =>
+          restorePrivatePreferences(seedRelayUrls)
+        );
         await runStartupTask('Failed to restore private contact list on startup', () =>
           restorePrivateContactList(seedRelayUrls)
+        );
+        await runStartupTask('Failed to restore contact cursor state on startup', () =>
+          restoreContactCursorState(seedRelayUrls)
         );
         await runStartupTask('Failed to subscribe to private contact list updates on startup', () =>
           subscribePrivateContactListUpdates(seedRelayUrls)
@@ -2238,6 +2480,480 @@ export const useNostrStore = defineStore('nostrStore', () => {
     lastPrivateContactListEventId = event.id?.trim() ?? '';
   }
 
+  function compareContactCursorState(
+    first: ContactCursorState | ContactCursorContent | null | undefined,
+    second: ContactCursorState | ContactCursorContent | null | undefined
+  ): number {
+    const firstTimestamp =
+      first && 'last_seen_incoming_activity_at' in first
+        ? first.last_seen_incoming_activity_at
+        : first?.at;
+    const secondTimestamp =
+      second && 'last_seen_incoming_activity_at' in second
+        ? second.last_seen_incoming_activity_at
+        : second?.at;
+    const byTimestamp =
+      toComparableTimestamp(firstTimestamp) - toComparableTimestamp(secondTimestamp);
+    if (byTimestamp !== 0) {
+      return byTimestamp;
+    }
+
+    const firstEventId = normalizeEventId(
+      first && 'last_seen_incoming_activity_event_id' in first
+        ? first.last_seen_incoming_activity_event_id
+        : first?.eventId
+    ) ?? '';
+    const secondEventId = normalizeEventId(
+      second && 'last_seen_incoming_activity_event_id' in second
+        ? second.last_seen_incoming_activity_event_id
+        : second?.eventId
+    ) ?? '';
+
+    return firstEventId.localeCompare(secondEventId);
+  }
+
+  function buildChatMetaWithUnseenReactionCount(
+    meta: Record<string, unknown>,
+    unseenReactionCount: number
+  ): Record<string, unknown> {
+    const normalizedCount = Math.max(0, Math.floor(Number(unseenReactionCount) || 0));
+    const nextMeta = { ...meta };
+
+    if (normalizedCount > 0) {
+      nextMeta.unseen_reaction_count = normalizedCount;
+    } else {
+      delete nextMeta.unseen_reaction_count;
+    }
+
+    return nextMeta;
+  }
+
+  async function publishPrivatePreferences(
+    preferences: PrivatePreferences,
+    seedRelayUrls: string[] = []
+  ): Promise<void> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish private preferences without at least one relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+    const user = await getLoggedInSignerUser();
+
+    const preferencesEvent = new NDKEvent(ndk, {
+      kind: PRIVATE_PREFERENCES_KIND,
+      created_at: Math.floor(Date.now() / 1000),
+      pubkey: user.pubkey,
+      content: await encryptPrivatePreferencesContent(preferences),
+      tags: [['d', PRIVATE_PREFERENCES_D_TAG]]
+    });
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    await preferencesEvent.publishReplaceable(relaySet);
+    updateStoredEventSinceFromCreatedAt(preferencesEvent.created_at);
+  }
+
+  async function restorePrivatePreferences(seedRelayUrls: string[] = []): Promise<void> {
+    if (restorePrivatePreferencesPromise) {
+      return restorePrivatePreferencesPromise;
+    }
+
+    restorePrivatePreferencesPromise = (async () => {
+      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+      if (!loggedInPubkeyHex) {
+        return;
+      }
+
+      const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+      if (relayUrls.length === 0) {
+        return;
+      }
+
+      await ensureRelayConnections(relayUrls);
+      await getLoggedInSignerUser();
+
+      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+      const preferencesEvent = await ndk.fetchEvent(
+        {
+          kinds: [PRIVATE_PREFERENCES_KIND],
+          authors: [loggedInPubkeyHex],
+          '#d': [PRIVATE_PREFERENCES_D_TAG]
+        },
+        {
+          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+        },
+        relaySet
+      );
+      if (!preferencesEvent) {
+        return;
+      }
+
+      updateStoredEventSinceFromCreatedAt(preferencesEvent.created_at);
+      let decryptedPreferences: PrivatePreferences | null = null;
+      try {
+        decryptedPreferences = await decryptPrivatePreferencesContent(preferencesEvent.content);
+      } catch (error) {
+        console.warn('Failed to decrypt private preferences event', error);
+        return;
+      }
+      if (!decryptedPreferences) {
+        return;
+      }
+
+      writePrivatePreferencesToStorage(decryptedPreferences);
+    })().finally(() => {
+      restorePrivatePreferencesPromise = null;
+    });
+
+    return restorePrivatePreferencesPromise;
+  }
+
+  async function fetchContactCursorEvents(
+    contacts: ContactRecord[],
+    seedRelayUrls: string[] = []
+  ): Promise<Map<string, ContactCursorContent>> {
+    const contactDTagEntries = await Promise.all(
+      contacts.map(async (contact) => {
+        const dTag = await deriveContactCursorDTag(contact.public_key);
+        return dTag ? ([dTag, contact.public_key] as const) : null;
+      })
+    );
+
+    const normalizedContactDTags = contactDTagEntries
+      .filter((entry): entry is readonly [string, string] => Boolean(entry))
+      .map(([dTag]) => dTag);
+    if (normalizedContactDTags.length === 0) {
+      return new Map<string, ContactCursorContent>();
+    }
+
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      return new Map<string, ContactCursorContent>();
+    }
+
+    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return new Map<string, ContactCursorContent>();
+    }
+
+    await ensureRelayConnections(relayUrls);
+    await getLoggedInSignerUser();
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const eventsByDTag = new Map<string, ContactCursorContent>();
+
+    for (const dTagBatch of chunkValues(normalizedContactDTags, CONTACT_CURSOR_FETCH_BATCH_SIZE)) {
+      const events = await ndk.fetchEvents(
+        {
+          kinds: [PRIVATE_PREFERENCES_KIND],
+          authors: [loggedInPubkeyHex],
+          '#d': dTagBatch
+        },
+        {
+          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+        },
+        relaySet
+      );
+
+      for (const event of events) {
+        updateStoredEventSinceFromCreatedAt(event.created_at);
+        const eventDTag = event.getMatchingTags('d')[0]?.[1]?.trim();
+        if (!eventDTag) {
+          continue;
+        }
+
+        let cursorContent: ContactCursorContent | null = null;
+        try {
+          cursorContent = await decryptContactCursorContent(event.content);
+        } catch (error) {
+          console.warn('Failed to decrypt contact cursor event', eventDTag, error);
+          continue;
+        }
+        if (!cursorContent) {
+          continue;
+        }
+
+        const existingCursor = eventsByDTag.get(eventDTag);
+        if (existingCursor && compareContactCursorState(existingCursor, cursorContent) >= 0) {
+          continue;
+        }
+
+        eventsByDTag.set(eventDTag, cursorContent);
+      }
+    }
+
+    return eventsByDTag;
+  }
+
+  async function applyContactCursorStateToContact(
+    contact: ContactRecord,
+    cursor: ContactCursorContent
+  ): Promise<boolean> {
+    const normalizedContactPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!normalizedContactPubkey || !loggedInPubkeyHex) {
+      return false;
+    }
+
+    let didChange = false;
+    const nextContactMeta: ContactMetadata = {
+      ...(contact.meta ?? {}),
+      last_seen_incoming_activity_at: cursor.last_seen_incoming_activity_at
+    };
+    if (cursor.last_seen_incoming_activity_event_id) {
+      nextContactMeta.last_seen_incoming_activity_event_id =
+        cursor.last_seen_incoming_activity_event_id;
+    } else {
+      delete nextContactMeta.last_seen_incoming_activity_event_id;
+    }
+
+    if (
+      contact.meta.last_seen_incoming_activity_at !== nextContactMeta.last_seen_incoming_activity_at ||
+      (contact.meta.last_seen_incoming_activity_event_id ?? null) !==
+        (nextContactMeta.last_seen_incoming_activity_event_id ?? null)
+    ) {
+      await contactsService.updateContact(contact.id, {
+        meta: nextContactMeta
+      });
+      didChange = true;
+    }
+
+    const chatRow = await chatDataService.getChatByPublicKey(normalizedContactPubkey);
+    if (!chatRow) {
+      return didChange;
+    }
+
+    const messageRows = await chatDataService.listMessages(normalizedContactPubkey);
+    const cursorTimestamp = toComparableTimestamp(cursor.last_seen_incoming_activity_at);
+    const nextUnreadMessageCount = messageRows.reduce((count, messageRow) => {
+      if (
+        inputSanitizerService.normalizeHexKey(messageRow.author_public_key) === loggedInPubkeyHex
+      ) {
+        return count;
+      }
+
+      return count + (toComparableTimestamp(messageRow.created_at) > cursorTimestamp ? 1 : 0);
+    }, 0);
+
+    let nextUnseenReactionCount = 0;
+    for (const messageRow of messageRows) {
+      if (
+        inputSanitizerService.normalizeHexKey(messageRow.author_public_key) !== loggedInPubkeyHex
+      ) {
+        continue;
+      }
+
+      const currentReactions = normalizeMessageReactions(messageRow.meta.reactions);
+      const nextReactions = currentReactions.map((reaction) => {
+        const normalizedReactionAt = normalizeTimestamp(reaction.createdAt);
+        if (
+          !normalizedReactionAt ||
+          inputSanitizerService.normalizeHexKey(reaction.reactorPublicKey) === loggedInPubkeyHex
+        ) {
+          return reaction;
+        }
+
+        if (toComparableTimestamp(normalizedReactionAt) <= cursorTimestamp) {
+          if (reaction.viewedByAuthorAt) {
+            return reaction;
+          }
+
+          return {
+            ...reaction,
+            viewedByAuthorAt: cursor.last_seen_incoming_activity_at
+          };
+        }
+
+        if (!reaction.viewedByAuthorAt) {
+          return reaction;
+        }
+
+        const { viewedByAuthorAt: _viewedByAuthorAt, ...reactionWithoutViewedAt } = reaction;
+        return reactionWithoutViewedAt;
+      });
+
+      nextUnseenReactionCount += countUnseenReactionsForAuthor(nextReactions, loggedInPubkeyHex);
+
+      const didChangeReactions =
+        currentReactions.length !== nextReactions.length ||
+        currentReactions.some((reaction, index) => {
+          const nextReaction = nextReactions[index];
+          return nextReaction ? !areMessageReactionsEqual(reaction, nextReaction) : true;
+        });
+      if (!didChangeReactions) {
+        continue;
+      }
+
+      await chatDataService.updateMessageMeta(
+        messageRow.id,
+        buildMetaWithReactions(messageRow.meta, nextReactions)
+      );
+      didChange = true;
+    }
+
+    const nextChatMeta = buildChatMetaWithUnseenReactionCount(
+      {
+        ...chatRow.meta,
+        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: cursor.last_seen_incoming_activity_at
+      },
+      nextUnseenReactionCount
+    );
+
+    if (
+      JSON.stringify(chatRow.meta) !== JSON.stringify(nextChatMeta)
+    ) {
+      await chatDataService.updateChatMeta(normalizedContactPubkey, nextChatMeta);
+      didChange = true;
+    }
+
+    if (Number(chatRow.unread_count ?? 0) !== nextUnreadMessageCount) {
+      await chatDataService.updateChatUnreadCount(normalizedContactPubkey, nextUnreadMessageCount);
+      didChange = true;
+    }
+
+    return didChange;
+  }
+
+  async function restoreContactCursorState(seedRelayUrls: string[] = []): Promise<void> {
+    if (restoreContactCursorStatePromise) {
+      return restoreContactCursorStatePromise;
+    }
+
+    restoreContactCursorStatePromise = (async () => {
+      if (!readPrivatePreferencesFromStorage()) {
+        await restorePrivatePreferences(seedRelayUrls);
+      }
+
+      if (!readPrivatePreferencesFromStorage()) {
+        return;
+      }
+
+      await contactsService.init();
+      const contacts = await contactsService.listContacts();
+      if (contacts.length === 0) {
+        return;
+      }
+
+      const cursorsByDTag = await fetchContactCursorEvents(contacts, seedRelayUrls);
+      if (cursorsByDTag.size === 0) {
+        return;
+      }
+
+      let didApplyCursorState = false;
+      for (const contact of contacts) {
+        const contactDTag = await deriveContactCursorDTag(contact.public_key);
+        if (!contactDTag) {
+          continue;
+        }
+
+        const cursor = cursorsByDTag.get(contactDTag);
+        if (!cursor) {
+          continue;
+        }
+
+        didApplyCursorState =
+          (await applyContactCursorStateToContact(contact, cursor)) || didApplyCursorState;
+      }
+
+      if (!didApplyCursorState) {
+        return;
+      }
+
+      await Promise.all([
+        chatStore.reload(),
+        import('src/stores/messageStore').then(({ useMessageStore }) =>
+          useMessageStore().reloadLoadedMessages()
+        )
+      ]);
+    })().finally(() => {
+      restoreContactCursorStatePromise = null;
+    });
+
+    return restoreContactCursorStatePromise;
+  }
+
+  async function publishContactCursor(
+    contactPublicKey: string,
+    cursor: ContactCursorState,
+    seedRelayUrls: string[] = []
+  ): Promise<void> {
+    const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(contactPublicKey);
+    if (!normalizedContactPublicKey || !normalizeTimestamp(cursor.at)) {
+      return;
+    }
+
+    const preferences = await ensurePrivatePreferences({
+      publishIfCreated: true
+    });
+    const dTag = await sha256Hex(`${preferences.contactSecret}${normalizedContactPublicKey}`);
+    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish contact cursor without at least one relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+    const user = await getLoggedInSignerUser();
+
+    const cursorEvent = new NDKEvent(ndk, {
+      kind: PRIVATE_PREFERENCES_KIND,
+      created_at: Math.floor(Date.now() / 1000),
+      pubkey: user.pubkey,
+      content: await encryptContactCursorContent(cursor),
+      tags: [['d', dTag]]
+    });
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    await cursorEvent.publishReplaceable(relaySet);
+    updateStoredEventSinceFromCreatedAt(cursorEvent.created_at);
+  }
+
+  function scheduleContactCursorPublish(
+    contactPublicKey: string,
+    cursor: ContactCursorState
+  ): void {
+    const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(contactPublicKey);
+    const normalizedCursorAt = normalizeTimestamp(cursor.at);
+    if (!normalizedContactPublicKey || !normalizedCursorAt) {
+      return;
+    }
+
+    const nextCursorState: ContactCursorState = {
+      at: normalizedCursorAt,
+      eventId: normalizeEventId(cursor.eventId)
+    };
+    const pendingCursor = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
+    if (pendingCursor && compareContactCursorState(pendingCursor, nextCursorState) >= 0) {
+      return;
+    }
+
+    pendingContactCursorPublishStates.set(normalizedContactPublicKey, nextCursorState);
+
+    const existingTimer = pendingContactCursorPublishTimers.get(normalizedContactPublicKey);
+    if (existingTimer) {
+      globalThis.clearTimeout(existingTimer);
+    }
+
+    const nextTimer = globalThis.setTimeout(() => {
+      pendingContactCursorPublishTimers.delete(normalizedContactPublicKey);
+      const cursorToPublish = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
+      pendingContactCursorPublishStates.delete(normalizedContactPublicKey);
+      if (!cursorToPublish) {
+        return;
+      }
+
+      void publishContactCursor(normalizedContactPublicKey, cursorToPublish).catch((error) => {
+        console.error('Failed to publish contact cursor event', normalizedContactPublicKey, error);
+      });
+    }, CONTACT_CURSOR_PUBLISH_DELAY_MS);
+
+    pendingContactCursorPublishTimers.set(normalizedContactPublicKey, nextTimer);
+  }
+
   async function applyPrivateContactListPubkeys(pubkeys: string[]): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     await contactsService.init();
@@ -3672,6 +4388,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ndk.signer = undefined;
     pendingIncomingReactions.clear();
     pendingIncomingDeletions.clear();
+    pendingContactCursorPublishStates.clear();
+    pendingContactCursorPublishTimers.forEach((timerId) => {
+      globalThis.clearTimeout(timerId);
+    });
+    pendingContactCursorPublishTimers.clear();
     lastPrivateContactListCreatedAt = 0;
     lastPrivateContactListEventId = '';
     stopMyRelayListSubscription();
@@ -3685,6 +4406,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     window.localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
     window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
     window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
+    clearPrivatePreferencesStorage();
   }
 
   async function logout(): Promise<void> {
@@ -3696,6 +4418,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restoreMyRelayListPromise = null;
     syncLoggedInContactProfilePromise = null;
     restorePrivateContactListPromise = null;
+    restorePrivatePreferencesPromise = null;
+    restoreContactCursorStatePromise = null;
     syncRecentChatContactsPromise = null;
     myRelayListApplyQueue = Promise.resolve();
     privateContactListApplyQueue = Promise.resolve();
@@ -4063,10 +4787,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resolveIdentifier,
     ensureRespondedPubkeyIsContact,
     refreshContactByPublicKey,
+    restoreContactCursorState,
     restoreMyRelayList,
     restorePrivateContactList,
+    restorePrivatePreferences,
     restoreStartupState,
     retryDirectMessageRelay,
+    scheduleContactCursorPublish,
     sendDirectMessage,
     sendDirectMessageDeletion,
     sendDirectMessageReaction,

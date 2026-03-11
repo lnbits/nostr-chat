@@ -265,6 +265,10 @@ class InputSanitizerService {
     const banner = this.readOptionalString(value.banner);
     const chatId = this.readOptionalString(value.chatId);
     const avatar = this.readOptionalString(value.avatar);
+    const lastSeenIncomingActivityAt = this.readOptionalString(value.last_seen_incoming_activity_at);
+    const lastSeenIncomingActivityEventId = this.readOptionalString(
+      value.last_seen_incoming_activity_event_id
+    );
     const birthday = this.normalizeContactBirthday(value.birthday);
 
     if (name) {
@@ -325,6 +329,14 @@ class InputSanitizerService {
 
     if (avatar) {
       meta.avatar = avatar;
+    }
+
+    if (lastSeenIncomingActivityAt) {
+      meta.last_seen_incoming_activity_at = lastSeenIncomingActivityAt;
+    }
+
+    if (lastSeenIncomingActivityEventId) {
+      meta.last_seen_incoming_activity_event_id = lastSeenIncomingActivityEventId;
     }
 
     return meta;

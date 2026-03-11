@@ -342,8 +342,6 @@ async function syncChatRoute(): Promise<void> {
 
     if (chatStore.selectedChatId !== chatId) {
       chatStore.selectChat(chatId);
-    } else {
-      await chatStore.markAsRead(chatId);
     }
 
     await messageStore.loadMessages(chatId);

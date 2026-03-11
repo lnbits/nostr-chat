@@ -279,16 +279,11 @@ export const useChatStore = defineStore('chatStore', () => {
     }
 
     selectedChatId.value = normalizedChatId;
-    void markAsRead(normalizedChatId);
   }
 
   function setVisibleChatId(chatId: string | null): void {
     const nextChatId = normalizeChatIdentifier(chatId);
     visibleChatId.value = nextChatId;
-
-    if (nextChatId) {
-      void markAsRead(nextChatId);
-    }
   }
 
   async function getLatestIncomingMessageAt(chatId: string): Promise<string | null> {
@@ -543,6 +538,30 @@ export const useChatStore = defineStore('chatStore', () => {
     });
   }
 
+  async function setUnreadCount(chatId: string, count: number): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    const normalizedCount = Math.max(0, Math.floor(Number(count) || 0));
+
+    chats.value = chats.value.map((chat) =>
+      chat.id === normalizedChatId
+        ? {
+            ...chat,
+            unreadCount: normalizedCount
+          }
+        : chat
+    );
+
+    try {
+      await chatDataService.updateChatUnreadCount(normalizedChatId, normalizedCount);
+    } catch (error) {
+      console.error('Failed to persist chat unread count', error);
+    }
+  }
+
   function applyIncomingMessage(input: LiveChatPreviewInput): void {
     const nextPublicKey = normalizeChatIdentifier(input.publicKey);
 
@@ -749,6 +768,7 @@ export const useChatStore = defineStore('chatStore', () => {
     setSearchQuery,
     updateChatPreview,
     setLastSeenReceivedActivityAt,
+    setUnreadCount,
     setUnseenReactionCount,
     applyIncomingMessage,
     addContact,

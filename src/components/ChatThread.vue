@@ -754,14 +754,20 @@ async function syncVisibleReactionViews(): Promise<void> {
     return entry ? isEntryVisibleWithinThread(entry) : false;
   });
 
-  let latestVisibleReceivedActivityAt: string | null = null;
+  let latestVisibleReceivedActivity: {
+    at: string;
+    eventId: string | null;
+  } | null = null;
   visibleMessages.forEach((message) => {
     if (message.sender === 'them') {
       if (
-        !latestVisibleReceivedActivityAt ||
-        toComparableTimestamp(message.sentAt) > toComparableTimestamp(latestVisibleReceivedActivityAt)
+        !latestVisibleReceivedActivity ||
+        toComparableTimestamp(message.sentAt) > toComparableTimestamp(latestVisibleReceivedActivity.at)
       ) {
-        latestVisibleReceivedActivityAt = message.sentAt;
+        latestVisibleReceivedActivity = {
+          at: message.sentAt,
+          eventId: message.eventId ?? null
+        };
       }
     }
 
@@ -777,17 +783,32 @@ async function syncVisibleReactionViews(): Promise<void> {
       }
 
       if (
-        !latestVisibleReceivedActivityAt ||
+        !latestVisibleReceivedActivity ||
         toComparableTimestamp(reaction.createdAt) >
-          toComparableTimestamp(latestVisibleReceivedActivityAt)
+          toComparableTimestamp(latestVisibleReceivedActivity.at)
       ) {
-        latestVisibleReceivedActivityAt = reaction.createdAt;
+        latestVisibleReceivedActivity = {
+          at: reaction.createdAt,
+          eventId: reaction.eventId ?? null
+        };
       }
     });
   });
 
-  if (latestVisibleReceivedActivityAt) {
-    await chatStore.setLastSeenReceivedActivityAt(currentChatId, latestVisibleReceivedActivityAt);
+  if (latestVisibleReceivedActivity) {
+    await chatStore.setLastSeenReceivedActivityAt(currentChatId, latestVisibleReceivedActivity.at);
+    const nextUnreadMessageCount = props.messages.reduce((count, message) => {
+      if (
+        message.sender !== 'them' ||
+        toComparableTimestamp(message.sentAt) <= toComparableTimestamp(latestVisibleReceivedActivity.at)
+      ) {
+        return count;
+      }
+
+      return count + 1;
+    }, 0);
+    await chatStore.setUnreadCount(currentChatId, nextUnreadMessageCount);
+    nostrStore.scheduleContactCursorPublish(currentChatId, latestVisibleReceivedActivity);
   }
 
   if (unseenReactionMessages.value.length === 0) {

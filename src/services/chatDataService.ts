@@ -352,6 +352,31 @@ class ChatDataService {
     await waitForTransaction(transaction);
   }
 
+  async updateChatUnreadCount(chatPublicKey: string, unreadCount: number): Promise<void> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
+      return;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(CHATS_STORE, 'readwrite');
+    const store = transaction.objectStore(CHATS_STORE);
+    const existingRecord = await requestToPromise<ChatRecord | undefined>(
+      store.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
+    );
+
+    if (!existingRecord || existingRecord.unread_count === normalizeUnreadCount(unreadCount)) {
+      await waitForTransaction(transaction);
+      return;
+    }
+
+    store.put({
+      ...existingRecord,
+      unread_count: normalizeUnreadCount(unreadCount)
+    });
+    await waitForTransaction(transaction);
+  }
+
   async markChatAsRead(chatPublicKey: string): Promise<void> {
     const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
     if (!normalizedPublicKey) {
