@@ -90,16 +90,15 @@
               v-if="showReactionJumpButton"
               flat
               dense
-              round
               aria-label="Jump to the first new reaction"
               class="thread-scroll-jump thread-scroll-jump--reaction"
               @click="handleReactionJump"
             >
-              <span class="thread-reaction-jump__icon" aria-hidden="true">
-                <q-icon name="favorite" size="18px" />
-                <span class="thread-reaction-jump__count">
-                  {{ unseenReactionCount }}
-                </span>
+              <span class="thread-reaction-jump__icon-shell" aria-hidden="true">
+                <q-icon name="favorite" size="14px" class="thread-reaction-jump__icon" />
+              </span>
+              <span class="thread-reaction-jump__count">
+                {{ formatReactionCount(unseenReactionCount) }}
               </span>
             </q-btn>
 
@@ -270,6 +269,10 @@ const unseenReactionCount = computed(() => {
     );
   }, 0);
 });
+
+function formatReactionCount(value: number): string {
+  return value > 99 ? '99+' : String(value);
+}
 
 const firstUnseenReactionMessageId = computed(() => {
   return unseenReactionMessages.value[0]?.id ?? null;
@@ -825,24 +828,64 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
 }
 
-.thread-reaction-jump__icon {
-  position: relative;
+.q-btn.thread-scroll-jump--reaction {
+  min-height: 36px;
+  padding: 0 12px 0 6px;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 84%, #fff1f5 16%),
+      color-mix(in srgb, var(--tg-sidebar) 94%, #ffffff 6%)
+    ) !important;
+  border-color: color-mix(in srgb, var(--tg-border) 78%, #f29fb3 22%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 10px 22px rgba(190, 72, 109, 0.16) !important;
+  color: #9e3557;
+}
+
+.q-btn.thread-scroll-jump--reaction .q-btn__content {
+  gap: 6px;
+}
+
+.q-btn.thread-scroll-jump--reaction:hover {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 78%, #ffe5ed 22%),
+      color-mix(in srgb, var(--tg-sidebar) 90%, #fff6f8 10%)
+    ) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.56),
+    0 12px 24px rgba(190, 72, 109, 0.18) !important;
+}
+
+.thread-reaction-jump__icon-shell {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff93af 0%, #f0628a 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 4px 10px rgba(240, 98, 138, 0.28);
+}
+
+.thread-reaction-jump__icon {
+  color: #ffffff;
 }
 
 .thread-reaction-jump__count {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 9px;
+  display: inline-block;
+  min-width: 1.4em;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
-  color: #ffffff;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .thread-scroll-jump-enter-active,
@@ -867,6 +910,36 @@ body.body--dark .q-btn.thread-scroll-jump {
 
 body.body--dark .q-btn.thread-scroll-jump:hover {
   background: color-mix(in srgb, var(--tg-sidebar) 82%, #27446a 18%) !important;
+}
+
+body.body--dark .q-btn.thread-scroll-jump--reaction {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 84%, #4a1f33 16%),
+      color-mix(in srgb, var(--tg-sidebar) 94%, #1f2838 6%)
+    ) !important;
+  border-color: color-mix(in srgb, var(--tg-border) 76%, #cc7892 24%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 26px rgba(0, 0, 0, 0.28) !important;
+  color: #ffd5df;
+}
+
+body.body--dark .q-btn.thread-scroll-jump--reaction:hover {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 80%, #5a233b 20%),
+      color-mix(in srgb, var(--tg-sidebar) 90%, #2c2234 10%)
+    ) !important;
+}
+
+body.body--dark .thread-reaction-jump__icon-shell {
+  background: linear-gradient(180deg, #ff97b2 0%, #dc5b84 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 4px 10px rgba(220, 91, 132, 0.28);
 }
 
 .thread-day-sticky {

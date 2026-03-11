@@ -23,8 +23,10 @@
           class="chat-item__reaction-badge"
           :aria-label="`${unseenReactionCount} unseen reactions`"
         >
-          <q-icon name="favorite" size="18px" class="chat-item__reaction-icon" />
-          <span class="chat-item__reaction-count">{{ unseenReactionCount }}</span>
+          <span class="chat-item__reaction-icon-shell" aria-hidden="true">
+            <q-icon name="favorite" size="13px" class="chat-item__reaction-icon" />
+          </span>
+          <span class="chat-item__reaction-count">{{ formatReactionCount(unseenReactionCount) }}</span>
         </div>
 
         <q-badge v-if="chat.unreadCount > 0" rounded color="primary">
@@ -156,6 +158,10 @@ const avatarImageUrl = computed(() => {
 const isMuted = computed(() => props.chat.meta.muted === true);
 const unseenReactionCount = computed(() => readMetaCount('unseen_reaction_count'));
 
+function formatReactionCount(value: number): string {
+  return value > 99 ? '99+' : String(value);
+}
+
 function handleSelectChat(): void {
   try {
     emit('select', props.chat.id);
@@ -267,39 +273,71 @@ function emitDeleteChat(): void {
 }
 
 .chat-item__reaction-badge {
-  position: relative;
-  width: 24px;
-  height: 24px;
+  min-height: 24px;
+  padding: 2px 7px 2px 3px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 84%, #fff1f5 16%),
+      color-mix(in srgb, var(--tg-sidebar) 94%, #ffffff 6%)
+    );
+  border: 1px solid color-mix(in srgb, var(--tg-border) 78%, #f29fb3 22%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 8px 16px rgba(190, 72, 109, 0.12);
+  color: #9e3557;
+}
+
+.chat-item__reaction-icon-shell {
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, #eef6ff 8%);
-  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ea5c1 16%);
+  background: linear-gradient(180deg, #ff93af 0%, #f0628a 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 6px 14px rgba(15, 56, 104, 0.12);
-  color: color-mix(in srgb, var(--q-primary) 80%, #0f5ea9 20%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 4px 10px rgba(240, 98, 138, 0.28);
 }
 
-.chat-item__reaction-count {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  line-height: 1;
-  font-weight: 800;
+.chat-item__reaction-icon {
   color: #ffffff;
 }
 
+.chat-item__reaction-count {
+  display: inline-block;
+  min-width: 1.3em;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 body.body--dark .chat-item__reaction-badge {
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, #22344c 10%);
-  border-color: color-mix(in srgb, var(--tg-border) 84%, #6f88a8 16%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 84%, #4a1f33 16%),
+      color-mix(in srgb, var(--tg-sidebar) 94%, #1f2838 6%)
+    );
+  border-color: color-mix(in srgb, var(--tg-border) 76%, #cc7892 24%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 16px rgba(0, 0, 0, 0.24);
-  color: #9ed0ff;
+    0 10px 18px rgba(0, 0, 0, 0.24);
+  color: #ffd5df;
+}
+
+body.body--dark .chat-item__reaction-icon-shell {
+  background: linear-gradient(180deg, #ff97b2 0%, #dc5b84 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 4px 10px rgba(220, 91, 132, 0.28);
 }
 
 .q-btn.chat-item__more {
