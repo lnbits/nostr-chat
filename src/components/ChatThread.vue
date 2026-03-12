@@ -335,40 +335,14 @@ function readCurrentLastSeenReceivedActivityAt(): string {
   return typeof rawValue === 'string' ? rawValue.trim() : '';
 }
 
-function getFirstIncomingActivityTimestampAfter(message: Message, afterTimestamp: string): number | null {
+function getIncomingMessageTimestampAfter(message: Message, afterTimestamp: string): number | null {
   const afterComparableTimestamp = toComparableTimestamp(afterTimestamp);
-  let nextActivityTimestamp: number | null = null;
-
-  if (message.sender === 'them') {
-    const messageTimestamp = toComparableTimestamp(message.sentAt);
-    if (messageTimestamp > afterComparableTimestamp) {
-      nextActivityTimestamp = messageTimestamp;
-    }
+  if (message.sender !== 'them') {
+    return null;
   }
 
-  const currentLoggedInPublicKey = loggedInPublicKey.value;
-  const normalizedAuthorPublicKey = message.authorPublicKey.trim().toLowerCase();
-  normalizeMessageReactions(message.meta.reactions).forEach((reaction) => {
-    const isIncomingReaction = currentLoggedInPublicKey
-      ? reaction.reactorPublicKey !== currentLoggedInPublicKey
-      : message.sender === 'me'
-        ? reaction.reactorPublicKey !== normalizedAuthorPublicKey
-        : reaction.reactorPublicKey === normalizedAuthorPublicKey;
-    if (!isIncomingReaction) {
-      return;
-    }
-
-    const reactionTimestamp = toComparableTimestamp(reaction.createdAt);
-    if (reactionTimestamp <= afterComparableTimestamp) {
-      return;
-    }
-
-    if (nextActivityTimestamp === null || reactionTimestamp < nextActivityTimestamp) {
-      nextActivityTimestamp = reactionTimestamp;
-    }
-  });
-
-  return nextActivityTimestamp;
+  const messageTimestamp = toComparableTimestamp(message.sentAt);
+  return messageTimestamp > afterComparableTimestamp ? messageTimestamp : null;
 }
 
 const firstMessageAfterUnreadBoundaryId = computed(() => {
@@ -390,7 +364,7 @@ const firstMessageAfterUnreadBoundaryId = computed(() => {
   } | null = null;
 
   props.messages.forEach((message, index) => {
-    const activityTimestamp = getFirstIncomingActivityTimestampAfter(message, afterTimestamp);
+    const activityTimestamp = getIncomingMessageTimestampAfter(message, afterTimestamp);
     if (activityTimestamp === null) {
       return;
     }
