@@ -17,63 +17,6 @@
       </template>
 
       <div class="app-status__content">
-        <div class="app-status__metrics">
-          <div class="app-status__metric">
-            <div class="app-status__metric-label">Startup</div>
-            <div class="app-status__metric-value">{{ startupSummary }}</div>
-          </div>
-
-          <div class="app-status__metric">
-            <div class="app-status__metric-label">Relays online</div>
-            <div class="app-status__metric-value">{{ connectedRelayCount }} / {{ totalRelayCount }}</div>
-          </div>
-
-          <div class="app-status__metric">
-            <div class="app-status__metric-label">Read relays</div>
-            <div class="app-status__metric-value">{{ readRelayCount }}</div>
-          </div>
-
-          <div class="app-status__metric">
-            <div class="app-status__metric-label">Write relays</div>
-            <div class="app-status__metric-value">{{ writeRelayCount }}</div>
-          </div>
-        </div>
-
-        <div class="app-status__details">
-          <div class="app-status__details-title">Current startup step</div>
-
-          <div v-if="displayedStartupStep" class="app-status__startup-panel">
-            <q-linear-progress
-              v-if="displayedStartupStep.showProgress"
-              indeterminate
-              rounded
-              color="primary"
-              track-color="transparent"
-              class="app-status__progress"
-            />
-
-            <div class="app-status__startup-row">
-              <q-icon
-                :name="startupStatusIcon(displayedStartupStep.status)"
-                :class="startupStatusClass(displayedStartupStep.status)"
-                size="18px"
-              />
-              <div class="app-status__startup-copy">
-                <div class="app-status__startup-label">
-                  {{ displayedStartupStep.order }}. {{ displayedStartupStep.label }}
-                </div>
-                <div class="app-status__startup-meta">
-                  {{ startupStepMeta(displayedStartupStep) }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="app-status__details-copy">
-            Startup activity will appear here as relay data is restored.
-          </div>
-        </div>
-
         <div class="app-status__details">
           <div class="app-status__details-title">Startup history</div>
 
@@ -81,45 +24,24 @@
             No startup steps recorded yet.
           </div>
 
-          <div v-else class="app-status__history-list">
-            <div
-              v-for="step in startupHistory"
-              :key="step.id"
-              class="app-status__history-item"
-            >
-              <q-icon
-                :name="startupStatusIcon(step.status)"
-                :class="startupStatusClass(step.status)"
-                size="16px"
-              />
-              <div class="app-status__history-copy">
-                <div class="app-status__history-label">{{ step.order }}. {{ step.label }}</div>
-                <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
+          <div v-else class="app-status__history-scroll">
+            <div class="app-status__history-list">
+              <div
+                v-for="step in startupHistory"
+                :key="step.id"
+                class="app-status__history-item"
+              >
+                <q-icon
+                  :name="startupStatusIcon(step.status)"
+                  :class="startupStatusClass(step.status)"
+                  size="16px"
+                />
+                <div class="app-status__history-copy">
+                  <div class="app-status__history-label">{{ step.label }}</div>
+                  <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
+                </div>
+                <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
               </div>
-              <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="app-status__details">
-          <div class="app-status__details-title">Connection details</div>
-
-          <div v-if="offlineRelayPreview.length === 0" class="app-status__details-copy">
-            All configured relays are currently connected.
-          </div>
-
-          <div v-else class="app-status__relay-list">
-            <div
-              v-for="relay in offlineRelayPreview"
-              :key="relay"
-              class="app-status__relay-item"
-            >
-              <span class="app-status__relay-dot" aria-hidden="true" />
-              <span class="app-status__relay-url">{{ relay }}</span>
-            </div>
-
-            <div v-if="remainingOfflineRelayCount > 0" class="app-status__details-copy">
-              +{{ remainingOfflineRelayCount }} more relay{{ remainingOfflineRelayCount === 1 ? '' : 's' }} offline
             </div>
           </div>
         </div>
@@ -168,12 +90,6 @@ const relayConnectionSnapshot = computed(() => {
 const startupSteps = computed(() => nostrStore.startupSteps);
 const totalRelayCount = computed(() => relayConnectionSnapshot.value.total);
 const connectedRelayCount = computed(() => relayConnectionSnapshot.value.connected.length);
-const readRelayCount = computed(() => relayStore.relayEntries.filter((relay) => relay.read).length);
-const writeRelayCount = computed(() => relayStore.relayEntries.filter((relay) => relay.write).length);
-const offlineRelayPreview = computed(() => relayConnectionSnapshot.value.offline.slice(0, 4));
-const remainingOfflineRelayCount = computed(() => {
-  return Math.max(relayConnectionSnapshot.value.offline.length - offlineRelayPreview.value.length, 0);
-});
 
 const startedStartupStepCount = computed(() => {
   return startupSteps.value.filter((step) => step.status !== 'pending').length;
@@ -233,24 +149,6 @@ const startupHistory = computed(() => {
   return [...inProgress, ...finished, ...pending];
 });
 
-const startupSummary = computed(() => {
-  if (!hasStartupHistory.value) {
-    return 'Waiting to start';
-  }
-
-  const totalStepCount = startupSteps.value.length;
-  const doneCount = completedStartupStepCount.value + failedStartupStepCount.value;
-  if (failedStartupStepCount.value > 0) {
-    return `${doneCount} / ${totalStepCount} done, ${failedStartupStepCount.value} failed`;
-  }
-
-  if (isStartupRunning.value) {
-    return `${doneCount} / ${totalStepCount} done`;
-  }
-
-  return `${completedStartupStepCount.value} / ${totalStepCount} complete`;
-});
-
 const relaySummary = computed(() => {
   if (totalRelayCount.value === 0) {
     return 'No relays configured';
@@ -261,11 +159,7 @@ const relaySummary = computed(() => {
 
 const statusHeadline = computed(() => {
   if (isStartupRunning.value && displayedStartupStep.value) {
-    return `${displayedStartupStep.value.order}. ${displayedStartupStep.value.label}`;
-  }
-
-  if (hasStartupHistory.value) {
-    return startupSummary.value;
+    return displayedStartupStep.value.label;
   }
 
   return relaySummary.value;
@@ -392,6 +286,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 
 <style scoped>
 .app-status {
+  --app-status-history-item-height: 58px;
   flex-shrink: 0;
   border-top: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
   background: var(--tg-panel-header-bg);
@@ -481,34 +376,6 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   gap: 12px;
 }
 
-.app-status__metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.app-status__metric {
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 86%, #8ea4c0 14%);
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, transparent);
-}
-
-.app-status__metric-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.7;
-}
-
-.app-status__metric-value {
-  margin-top: 4px;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
 .app-status__details {
   padding: 12px;
   border-radius: 12px;
@@ -527,39 +394,24 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   color: color-mix(in srgb, currentColor 78%, #64748b 22%);
 }
 
-.app-status__startup-panel {
-  display: grid;
-  gap: 10px;
-}
-
-.app-status__progress {
-  height: 6px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(59, 130, 246, 0.12);
-}
-
-.app-status__startup-row,
 .app-status__history-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
+  min-height: var(--app-status-history-item-height);
 }
 
-.app-status__startup-copy,
 .app-status__history-copy {
   min-width: 0;
 }
 
-.app-status__startup-label,
 .app-status__history-label {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
 }
 
-.app-status__startup-meta,
 .app-status__history-meta,
 .app-status__history-duration {
   font-size: 12px;
@@ -570,6 +422,12 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__history-list {
   display: grid;
   gap: 10px;
+}
+
+.app-status__history-scroll {
+  max-height: calc(var(--app-status-history-item-height) * 5);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .app-status__history-item + .app-status__history-item {
@@ -596,35 +454,6 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__status-icon--progress,
 .app-status__status-icon--pending {
   color: #74839b;
-}
-
-.app-status__relay-list {
-  display: grid;
-  gap: 8px;
-}
-
-.app-status__relay-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.app-status__relay-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  flex: 0 0 auto;
-  background: #ef4444;
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
-}
-
-.app-status__relay-url {
-  min-width: 0;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 body.body--dark .app-status__expansion :deep(.q-item__section--side) {
@@ -666,11 +495,6 @@ body.body--dark .app-status__status-icon--pending {
 }
 
 @media (max-width: 420px) {
-  .app-status__metrics {
-    grid-template-columns: 1fr;
-  }
-
-  .app-status__startup-row,
   .app-status__history-item {
     grid-template-columns: auto minmax(0, 1fr);
   }
