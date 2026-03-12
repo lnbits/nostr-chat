@@ -30,6 +30,7 @@
             </q-item-section>
           </q-item>
         </q-list>
+        <AppStatus compact />
       </aside>
 
       <section v-if="!isMobile || !isSettingsListView" class="settings-content-panel">
@@ -76,6 +77,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
+import AppStatus from 'src/components/AppStatus.vue';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -243,6 +245,8 @@ async function handleConfirmLogout(): Promise<void> {
 
 .settings-menu {
   flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .settings-menu__item {

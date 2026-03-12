@@ -33,6 +33,7 @@
           @mark-as-read="handleMarkChatAsRead"
           @delete-chat="handleDeleteChat"
         />
+        <AppStatus />
       </aside>
 
       <section
@@ -62,6 +63,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
+import AppStatus from 'src/components/AppStatus.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatList from 'src/components/ChatList.vue';
 import ChatThread from 'src/components/ChatThread.vue';
