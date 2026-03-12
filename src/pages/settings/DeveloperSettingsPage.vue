@@ -13,7 +13,7 @@
     </template>
 
     <div class="developer-page">
-      <q-card flat bordered class="developer-card">
+      <q-card flat bordered class="developer-card developer-card--recent-trace">
         <q-card-section class="developer-card__row">
           <div>
             <div class="text-body1">Debug logging</div>
@@ -512,7 +512,24 @@
           </div>
 
           <div class="developer-card__header-side">
-            <q-badge color="primary" outline>{{ traceEntries.length }}</q-badge>
+            <q-badge color="primary" outline>{{ displayedTraceEntries.length }}</q-badge>
+            <q-btn
+              flat
+              dense
+              no-caps
+              class="developer-card__refresh-button"
+              @click.stop="handleRefreshRecentTrace"
+            >
+              <span>Refresh</span>
+              <q-badge
+                v-if="newTraceEntryCount > 0"
+                color="primary"
+                rounded
+                class="developer-card__refresh-badge"
+              >
+                {{ newTraceEntryCount }}
+              </q-badge>
+            </q-btn>
             <q-icon
               :name="expandedCards.recentTrace ? 'expand_less' : 'expand_more'"
               size="20px"
@@ -524,34 +541,70 @@
         <q-slide-transition>
           <div v-show="expandedCards.recentTrace">
             <q-card-section class="developer-card__section">
-          <div v-if="traceEntries.length === 0" class="developer-empty-state">
-            No trace entries captured yet.
-          </div>
+              <div v-if="displayedTraceEntries.length === 0" class="developer-empty-state">
+                No trace entries captured yet.
+              </div>
 
-          <q-expansion-item
-            v-for="entry in traceEntries"
-            :key="entry.id"
-            dense
-            expand-separator
-            class="developer-expansion"
-          >
-            <template #header>
-              <div class="developer-trace__header">
-                <q-badge :color="traceLevelColor(entry.level)" outline>
-                  {{ entry.level }}
-                </q-badge>
-                <div class="developer-trace__title">
-                  <span class="developer-trace__scope">{{ entry.scope }}</span>
-                  <span class="developer-trace__phase">{{ entry.phase }}</span>
-                </div>
-                <div class="developer-trace__timestamp developer-facts__value--mono">
-                  {{ entry.timestamp }}
+              <div v-else class="developer-trace-table-shell">
+                <q-markup-table flat class="developer-table developer-trace-table">
+                  <thead>
+                    <tr>
+                      <th class="text-left">Timestamp</th>
+                      <th class="text-left">Level</th>
+                      <th class="text-left">Scope</th>
+                      <th class="text-left">Phase</th>
+                      <th class="text-left">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="entry in paginatedTraceEntries" :key="entry.id">
+                      <td class="developer-table__mono">{{ entry.timestamp }}</td>
+                      <td>
+                        <q-badge :color="traceLevelColor(entry.level)" outline>
+                          {{ entry.level }}
+                        </q-badge>
+                      </td>
+                      <td>{{ entry.scope }}</td>
+                      <td>{{ entry.phase }}</td>
+                      <td class="developer-trace-table__details-cell">
+                        <div class="developer-trace-details">
+                          <q-btn
+                            flat
+                            dense
+                            no-caps
+                            label="..."
+                            class="developer-trace-details__toggle"
+                            @click.stop="toggleTraceDetail(entry.id)"
+                          />
+
+                          <pre
+                            v-if="expandedTraceDetailIds[entry.id] === true"
+                            class="developer-json developer-json--table"
+                          >{{ formatJson(entry.details) }}</pre>
+
+                          <div
+                            v-else
+                            class="developer-trace-details__preview developer-table__mono"
+                          >
+                            {{ formatTraceDetailsPreview(entry.details) }}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </q-markup-table>
+
+                <div v-if="totalTracePages > 1" class="developer-trace-table__pagination">
+                  <q-pagination
+                    v-model="tracePage"
+                    :max="totalTracePages"
+                    :max-pages="6"
+                    direction-links
+                    boundary-links
+                    color="primary"
+                  />
                 </div>
               </div>
-            </template>
-
-            <pre class="developer-json">{{ formatJson(entry.details) }}</pre>
-          </q-expansion-item>
             </q-card-section>
           </div>
         </q-slide-transition>
@@ -600,9 +653,30 @@ const expandedCards = ref<Record<ExpandableDeveloperCardKey, boolean>>({
 
 let refreshRequestId = 0;
 let refreshDebounceId: ReturnType<typeof globalThis.setTimeout> | null = null;
+const TRACE_PAGE_SIZE = 20;
+const displayedTraceEntries = ref<DeveloperTraceEntry[]>([]);
+const tracePage = ref(1);
+const expandedTraceDetailIds = ref<Record<string, boolean>>({});
 
-const traceEntries = computed<DeveloperTraceEntry[]>(() => {
+const liveTraceEntries = computed<DeveloperTraceEntry[]>(() => {
   return [...nostrStore.developerTraceEntries].reverse();
+});
+
+const displayedTraceEntryIds = computed(() => {
+  return new Set(displayedTraceEntries.value.map((entry) => entry.id));
+});
+
+const newTraceEntryCount = computed(() => {
+  return liveTraceEntries.value.filter((entry) => !displayedTraceEntryIds.value.has(entry.id)).length;
+});
+
+const totalTracePages = computed(() => {
+  return Math.max(1, Math.ceil(displayedTraceEntries.value.length / TRACE_PAGE_SIZE));
+});
+
+const paginatedTraceEntries = computed(() => {
+  const startIndex = (tracePage.value - 1) * TRACE_PAGE_SIZE;
+  return displayedTraceEntries.value.slice(startIndex, startIndex + TRACE_PAGE_SIZE);
 });
 
 const totalPendingReactions = computed(() => {
@@ -638,6 +712,8 @@ onBeforeUnmount(() => {
     refreshDebounceId = null;
   }
 });
+
+refreshRecentTraceEntries();
 
 async function refreshDiagnostics(): Promise<void> {
   const requestId = ++refreshRequestId;
@@ -754,6 +830,24 @@ async function handleReloadFromLookback(): Promise<void> {
 
 function handleClearTrace(): void {
   nostrStore.clearDeveloperTraceEntries();
+  refreshRecentTraceEntries();
+}
+
+function refreshRecentTraceEntries(): void {
+  displayedTraceEntries.value = [...liveTraceEntries.value];
+  tracePage.value = 1;
+  expandedTraceDetailIds.value = {};
+}
+
+function handleRefreshRecentTrace(): void {
+  refreshRecentTraceEntries();
+}
+
+function toggleTraceDetail(entryId: string): void {
+  expandedTraceDetailIds.value = {
+    ...expandedTraceDetailIds.value,
+    [entryId]: expandedTraceDetailIds.value[entryId] !== true
+  };
 }
 
 async function handleCopyDiagnostics(): Promise<void> {
@@ -845,6 +939,17 @@ function formatUnixTimestamp(value: number): string {
 function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
+
+function formatTraceDetailsPreview(value: unknown): string {
+  const compactValue = (JSON.stringify(value) ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (compactValue.length <= 128) {
+    return compactValue;
+  }
+
+  return `${compactValue.slice(0, 125)}...`;
+}
 </script>
 
 <style scoped>
@@ -856,6 +961,42 @@ function formatJson(value: unknown): string {
 .developer-card {
   background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
   border-color: color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+}
+
+.developer-card--recent-trace :deep(.q-btn) {
+  font-weight: 500;
+  letter-spacing: normal;
+  box-shadow: none;
+  transform: none;
+}
+
+.developer-card--recent-trace :deep(.q-btn .q-btn__content) {
+  gap: 4px;
+  font-weight: inherit;
+}
+
+.developer-card--recent-trace :deep(.q-btn:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini)) {
+  border-radius: 8px;
+}
+
+.developer-card--recent-trace :deep(.q-btn.q-btn--flat:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini)),
+.developer-card--recent-trace :deep(.q-btn.q-btn--outline:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini)) {
+  background: transparent;
+  box-shadow: none;
+}
+
+.developer-card--recent-trace :deep(.q-btn.q-btn--flat:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini)::before),
+.developer-card--recent-trace :deep(.q-btn.q-btn--outline:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini)::before) {
+  border-color: transparent;
+}
+
+.developer-card--recent-trace :deep(.q-btn:not(.q-btn--disabled):hover) {
+  transform: none;
+}
+
+.developer-card--recent-trace :deep(.q-btn.q-btn--flat:not(.q-btn--disabled):hover),
+.developer-card--recent-trace :deep(.q-btn.q-btn--outline:not(.q-btn--disabled):hover) {
+  background: color-mix(in srgb, var(--tg-panel-thread-bg) 72%, transparent);
 }
 
 .developer-card__header {
@@ -883,6 +1024,14 @@ function formatJson(value: unknown): string {
 
 .developer-card__header-icon {
   opacity: 0.7;
+}
+
+.developer-card__refresh-button {
+  position: relative;
+}
+
+.developer-card__refresh-badge {
+  margin-left: 8px;
 }
 
 .developer-card__section {
@@ -1024,34 +1173,43 @@ function formatJson(value: unknown): string {
   overflow-wrap: anywhere;
 }
 
-.developer-trace__header {
+.developer-json--table {
+  padding: 0;
+  max-width: min(480px, 52vw);
+}
+
+.developer-trace-table__details-cell {
   width: 100%;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
+  min-width: 280px;
 }
 
-.developer-trace__title {
-  min-width: 0;
+.developer-trace-details {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
-  align-items: baseline;
+  min-width: 0;
+}
+
+.developer-trace-details__toggle {
+  min-height: 24px;
+  padding: 0 6px;
+}
+
+.developer-trace-details__preview {
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.developer-trace__scope {
-  font-weight: 700;
-  overflow-wrap: anywhere;
+.developer-trace-table-shell {
+  display: grid;
+  gap: 14px;
 }
 
-.developer-trace__phase {
-  color: var(--tg-text-secondary);
-  overflow-wrap: anywhere;
-}
-
-.developer-trace__timestamp {
-  text-align: right;
+.developer-trace-table__pagination {
+  display: flex;
+  justify-content: center;
 }
 
 .developer-empty-state,
@@ -1068,12 +1226,8 @@ function formatJson(value: unknown): string {
     grid-template-columns: 1fr;
   }
 
-  .developer-trace__header {
-    grid-template-columns: 1fr;
-  }
-
-  .developer-trace__timestamp {
-    text-align: left;
+  .developer-json--table {
+    max-width: 100%;
   }
 }
 </style>
