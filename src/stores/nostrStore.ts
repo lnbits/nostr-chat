@@ -33,6 +33,7 @@ import { imageCacheService } from 'src/services/imageCacheService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   inputSanitizerService,
+  type PrivateKeyValidationResult,
   type NpubValidationResult,
   type NsecValidationResult
 } from 'src/services/inputSanitizerService';
@@ -70,6 +71,7 @@ export interface NostrIdentifierResolutionResult {
 
 export type NostrNpubValidationResult = NpubValidationResult;
 export type NostrNsecValidationResult = NsecValidationResult;
+export type NostrPrivateKeyValidationResult = PrivateKeyValidationResult;
 
 export interface NostrNip05DataResult {
   isValid: boolean;
@@ -5124,8 +5126,22 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return inputSanitizerService.validateNsec(input);
   }
 
+  function validatePrivateKey(input: string): NostrPrivateKeyValidationResult {
+    return inputSanitizerService.validatePrivateKey(input);
+  }
+
   function savePrivateKeyFromNsec(input: string): NostrNsecValidationResult {
     const validation = validateNsec(input);
+    if (!validation.isValid || !validation.hexPrivateKey) {
+      return validation;
+    }
+
+    savePrivateKeyHex(validation.hexPrivateKey);
+    return validation;
+  }
+
+  function savePrivateKey(input: string): NostrPrivateKeyValidationResult {
+    const validation = validatePrivateKey(input);
     if (!validation.isValid || !validation.hexPrivateKey) {
       return validation;
     }
@@ -5790,6 +5806,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     sendDirectMessage,
     sendDirectMessageDeletion,
     sendDirectMessageReaction,
+    savePrivateKey,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
     subscribeMyRelayListUpdates,
@@ -5799,6 +5816,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setDeveloperDiagnosticsEnabled,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
+    validatePrivateKey,
     validateNpub,
     validateNsec
   };

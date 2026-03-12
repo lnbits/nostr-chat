@@ -72,7 +72,7 @@
       <q-card v-else flat bordered class="auth-card">
         <q-card-section class="auth-card__header">
           <div class="auth-card__title">Login with Key</div>
-          <div class="auth-card__subtitle">Enter your private key to continue</div>
+          <div class="auth-card__subtitle">Enter your nsec or hex private key to continue</div>
         </q-card-section>
 
         <q-card-section class="auth-card__actions">
@@ -90,7 +90,7 @@
             outlined
             rounded
             type="password"
-            label="Private Key (nsec)"
+            label="Private Key (nsec or hex)"
             :error="Boolean(privateKeyError)"
             :error-message="privateKeyError"
             @keydown.enter.prevent="handleKeyLogin"
@@ -138,10 +138,10 @@ const loginStep = ref<AuthStep>('welcome');
 const privateKey = ref('');
 const isExtensionLoginInProgress = ref(false);
 const isKeyLoginInProgress = ref(false);
-const privateKeyValidation = computed(() => nostrStore.validateNsec(privateKey.value.trim()));
+const privateKeyValidation = computed(() => nostrStore.validatePrivateKey(privateKey.value.trim()));
 const privateKeyError = computed(() =>
   privateKey.value.trim() && !privateKeyValidation.value.isValid
-    ? 'Enter a valid nsec private key.'
+    ? 'Enter a valid nsec or 64-character hex private key.'
     : ''
 );
 const canLoginWithKey = computed(() => privateKeyValidation.value.isValid && !isKeyLoginInProgress.value);
@@ -207,7 +207,7 @@ async function handleKeyLogin(): Promise<void> {
     }
 
     isKeyLoginInProgress.value = true;
-    const validation = nostrStore.savePrivateKeyFromNsec(privateKey.value);
+    const validation = nostrStore.savePrivateKey(privateKey.value);
     if (!validation.isValid) {
       return;
     }

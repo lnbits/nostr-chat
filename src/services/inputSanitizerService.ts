@@ -6,10 +6,15 @@ export interface NpubValidationResult {
   normalizedPubkey: string | null;
 }
 
-export interface NsecValidationResult {
+export type PrivateKeyFormat = 'nsec' | 'hex';
+
+export interface PrivateKeyValidationResult {
   isValid: boolean;
   hexPrivateKey: string | null;
+  format: PrivateKeyFormat | null;
 }
+
+export type NsecValidationResult = PrivateKeyValidationResult;
 
 export interface RelayListEntryLike {
   url: string;
@@ -371,33 +376,50 @@ class InputSanitizerService {
   validateNsec(input: string): NsecValidationResult {
     const value = input.trim();
     if (!value) {
-      return { isValid: false, hexPrivateKey: null };
+      return { isValid: false, hexPrivateKey: null, format: null };
     }
 
     try {
       const decoded = nip19.decode(value);
       if (decoded.type !== 'nsec') {
-        return { isValid: false, hexPrivateKey: null };
+        return { isValid: false, hexPrivateKey: null, format: null };
       }
 
       const data = decoded.data as unknown;
       if (data instanceof Uint8Array) {
         if (data.length !== 32) {
-          return { isValid: false, hexPrivateKey: null };
+          return { isValid: false, hexPrivateKey: null, format: null };
         }
 
-        return { isValid: true, hexPrivateKey: bytesToHex(data) };
+        return { isValid: true, hexPrivateKey: bytesToHex(data), format: 'nsec' };
       }
 
       if (typeof data === 'string') {
         const normalized = this.normalizeHexKey(data);
-        return { isValid: Boolean(normalized), hexPrivateKey: normalized };
+        return {
+          isValid: Boolean(normalized),
+          hexPrivateKey: normalized,
+          format: normalized ? 'nsec' : null
+        };
       }
 
-      return { isValid: false, hexPrivateKey: null };
+      return { isValid: false, hexPrivateKey: null, format: null };
     } catch {
-      return { isValid: false, hexPrivateKey: null };
+      return { isValid: false, hexPrivateKey: null, format: null };
     }
+  }
+
+  validatePrivateKey(input: string): PrivateKeyValidationResult {
+    const normalizedHexKey = this.normalizeHexKey(input);
+    if (normalizedHexKey) {
+      return {
+        isValid: true,
+        hexPrivateKey: normalizedHexKey,
+        format: 'hex'
+      };
+    }
+
+    return this.validateNsec(input);
   }
 
   validateNpub(input: string): NpubValidationResult {
