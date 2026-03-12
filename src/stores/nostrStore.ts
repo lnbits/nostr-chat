@@ -273,6 +273,14 @@ export interface DeveloperDiagnosticsSnapshot {
   pendingDeletions: DeveloperPendingDeletionSnapshot[];
 }
 
+export interface DeveloperPendingQueueRefreshSummary {
+  initialTargetCount: number;
+  initialEntryCount: number;
+  fetchedWrappedEventCount: number;
+  remainingTargetCount: number;
+  remainingEntryCount: number;
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
@@ -5462,6 +5470,253 @@ export const useNostrStore = defineStore('nostrStore', () => {
       .sort((first, second) => second.count - first.count);
   }
 
+  function getPendingDeveloperQueueTargetEventIds(): string[] {
+    return Array.from(
+      new Set([
+        ...pendingIncomingReactions.keys(),
+        ...pendingIncomingDeletions.keys()
+      ])
+    );
+  }
+
+  function getPendingDeveloperQueueEntryCount(): number {
+    let total = 0;
+
+    for (const entries of pendingIncomingReactions.values()) {
+      total += entries.length;
+    }
+
+    for (const entries of pendingIncomingDeletions.values()) {
+      total += entries.length;
+    }
+
+    return total;
+  }
+
+  async function applyPendingReactionDeletionTarget(
+    targetEventId: string,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<boolean> {
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    if (!normalizedTargetEventId) {
+      return false;
+    }
+
+    const pendingEntries = pendingIncomingDeletions.get(normalizedTargetEventId) ?? [];
+    if (pendingEntries.length === 0) {
+      return false;
+    }
+
+    const remainingEntries: PendingIncomingDeletion[] = [];
+    let didApply = false;
+
+    for (const pendingDeletion of pendingEntries) {
+      const shouldTryReactionDeletion =
+        pendingDeletion.targetKind === null || pendingDeletion.targetKind === NDKKind.Reaction;
+      if (!shouldTryReactionDeletion) {
+        remainingEntries.push(pendingDeletion);
+        continue;
+      }
+
+      const handled = await processIncomingReactionDeletion(
+        normalizedTargetEventId,
+        pendingDeletion.deletionAuthorPublicKey,
+        options
+      );
+      if (!handled) {
+        remainingEntries.push(pendingDeletion);
+        continue;
+      }
+
+      didApply = true;
+    }
+
+    if (!didApply) {
+      return false;
+    }
+
+    if (remainingEntries.length > 0) {
+      pendingIncomingDeletions.set(normalizedTargetEventId, remainingEntries);
+    } else {
+      pendingIncomingDeletions.delete(normalizedTargetEventId);
+    }
+
+    return true;
+  }
+
+  async function applyPendingQueuesForStoredTargets(
+    targetEventIds: string[],
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<boolean> {
+    let didChange = false;
+
+    for (const targetEventId of targetEventIds) {
+      const normalizedTargetEventId = normalizeEventId(targetEventId);
+      if (!normalizedTargetEventId) {
+        continue;
+      }
+
+      const targetMessage = await chatDataService.getMessageByEventId(normalizedTargetEventId);
+      if (targetMessage) {
+        const previousReactionCount =
+          pendingIncomingReactions.get(normalizedTargetEventId)?.length ?? 0;
+        const previousDeletionCount =
+          pendingIncomingDeletions.get(normalizedTargetEventId)?.length ?? 0;
+
+        let nextMessage = await applyPendingIncomingReactionsForMessage(targetMessage, options);
+        nextMessage = await applyPendingIncomingDeletionsForMessage(nextMessage, options);
+
+        const nextReactionCount =
+          pendingIncomingReactions.get(normalizedTargetEventId)?.length ?? 0;
+        const nextDeletionCount =
+          pendingIncomingDeletions.get(normalizedTargetEventId)?.length ?? 0;
+
+        if (
+          nextReactionCount !== previousReactionCount ||
+          nextDeletionCount !== previousDeletionCount
+        ) {
+          didChange = true;
+        }
+        continue;
+      }
+
+      if (await applyPendingReactionDeletionTarget(normalizedTargetEventId, options)) {
+        didChange = true;
+      }
+    }
+
+    return didChange;
+  }
+
+  function getDeveloperPendingQueueRefreshSinceCandidates(): number[] {
+    const primarySince =
+      Number.isInteger(privateMessagesSubscriptionSince.value) &&
+      Number(privateMessagesSubscriptionSince.value) >= 0
+        ? Math.floor(Number(privateMessagesSubscriptionSince.value))
+        : getFilterSince();
+    const fallbackSince = getDefaultEventSince();
+
+    return primarySince > fallbackSince ? [primarySince, fallbackSince] : [fallbackSince];
+  }
+
+  async function refreshDeveloperPendingQueues(): Promise<DeveloperPendingQueueRefreshSummary> {
+    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
+
+    const initialTargetCount = getPendingDeveloperQueueTargetEventIds().length;
+    const initialEntryCount = getPendingDeveloperQueueEntryCount();
+    if (initialEntryCount === 0) {
+      return {
+        initialTargetCount,
+        initialEntryCount,
+        fetchedWrappedEventCount: 0,
+        remainingTargetCount: 0,
+        remainingEntryCount: 0
+      };
+    }
+
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Login is required to refresh pending queues.');
+    }
+
+    const relayUrls = await resolveLoggedInReadRelayUrls();
+    if (relayUrls.length === 0) {
+      throw new Error('No read relays available to refresh pending queues.');
+    }
+
+    let didChange = await applyPendingQueuesForStoredTargets(
+      getPendingDeveloperQueueTargetEventIds(),
+      {
+        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+      }
+    );
+    const processedWrappedEventIds = new Set<string>();
+
+    if (getPendingDeveloperQueueEntryCount() > 0) {
+      await ensureRelayConnections(relayUrls);
+      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+
+      for (const since of getDeveloperPendingQueueRefreshSinceCandidates()) {
+        if (getPendingDeveloperQueueEntryCount() === 0) {
+          break;
+        }
+
+        const fetchedWrappedEvents = await ndk.fetchEvents(
+          {
+            kinds: [NDKKind.GiftWrap],
+            '#p': [loggedInPubkeyHex],
+            since
+          },
+          {
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+          },
+          relaySet
+        );
+        const wrappedEventsToProcess = Array.from(fetchedWrappedEvents)
+          .map((event) => (event instanceof NDKEvent ? event : new NDKEvent(ndk, event)))
+          .filter((wrappedEvent) => {
+            const wrappedEventId = normalizeEventId(wrappedEvent.id);
+            if (!wrappedEventId) {
+              return true;
+            }
+
+            if (processedWrappedEventIds.has(wrappedEventId)) {
+              return false;
+            }
+
+            processedWrappedEventIds.add(wrappedEventId);
+            return true;
+          })
+          .sort((first, second) => {
+            const firstCreatedAt =
+              Number.isInteger(first.created_at) ? Number(first.created_at) : 0;
+            const secondCreatedAt =
+              Number.isInteger(second.created_at) ? Number(second.created_at) : 0;
+            if (firstCreatedAt !== secondCreatedAt) {
+              return firstCreatedAt - secondCreatedAt;
+            }
+
+            return (first.id ?? '').localeCompare(second.id ?? '');
+          });
+
+        for (const wrappedEvent of wrappedEventsToProcess) {
+          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+          await processIncomingPrivateMessage(wrappedEvent, loggedInPubkeyHex, {
+            uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+          });
+        }
+
+        if (
+          await applyPendingQueuesForStoredTargets(
+            getPendingDeveloperQueueTargetEventIds(),
+            {
+              uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+            }
+          )
+        ) {
+          didChange = true;
+        }
+      }
+    }
+
+    if (didChange || processedWrappedEventIds.size > 0) {
+      flushPrivateMessagesUiRefreshNow();
+      bumpDeveloperDiagnosticsVersion();
+    }
+
+    return {
+      initialTargetCount,
+      initialEntryCount,
+      fetchedWrappedEventCount: processedWrappedEventIds.size,
+      remainingTargetCount: getPendingDeveloperQueueTargetEventIds().length,
+      remainingEntryCount: getPendingDeveloperQueueEntryCount()
+    };
+  }
+
   async function getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot> {
     const relayStore = useRelayStore();
     const nip65RelayStore = useNip65RelayStore();
@@ -5593,6 +5848,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     hasNip07Extension,
     getLoggedInPublicKeyHex,
     getPrivateKeyHex,
+    refreshDeveloperPendingQueues,
     getRelayConnectionState,
     isRestoringStartupState,
     loginWithExtension,

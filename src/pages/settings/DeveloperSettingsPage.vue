@@ -435,6 +435,16 @@
           </div>
 
           <div class="developer-card__header-side">
+            <q-btn
+              flat
+              dense
+              no-caps
+              icon="refresh"
+              label="Refresh"
+              class="developer-card__refresh-button"
+              :loading="isRefreshingPendingQueues"
+              @click.stop="handleRefreshPendingQueues"
+            />
             <q-icon
               :name="expandedCards.pendingQueues ? 'expand_less' : 'expand_more'"
               size="20px"
@@ -641,6 +651,7 @@ const isRefreshingDiagnostics = ref(false);
 const isRestartingSubscription = ref(false);
 const isReconnectingAllRelays = ref(false);
 const isReloadingFromLookback = ref(false);
+const isRefreshingPendingQueues = ref(false);
 const reconnectingRelayUrls = ref<Record<string, boolean>>({});
 const replayLookbackMinutes = ref(180);
 const expandedCards = ref<Record<ExpandableDeveloperCardKey, boolean>>({
@@ -825,6 +836,46 @@ async function handleReloadFromLookback(): Promise<void> {
     reportUiError('Failed to replay private messages from lookback', error, 'Failed to reload messages from lookback.');
   } finally {
     isReloadingFromLookback.value = false;
+  }
+}
+
+async function handleRefreshPendingQueues(): Promise<void> {
+  if (isRefreshingPendingQueues.value) {
+    return;
+  }
+
+  isRefreshingPendingQueues.value = true;
+  try {
+    const summary = await nostrStore.refreshDeveloperPendingQueues();
+    await refreshDiagnostics();
+
+    if (summary.initialEntryCount === 0) {
+      $q.notify({
+        type: 'info',
+        message: 'No pending queue items to refresh.',
+        position: 'top-right'
+      });
+      return;
+    }
+
+    const clearedEntryCount = Math.max(0, summary.initialEntryCount - summary.remainingEntryCount);
+    const clearedEntryLabel = clearedEntryCount === 1 ? 'item' : 'items';
+    const fetchedWrappedEventLabel =
+      summary.fetchedWrappedEventCount === 1 ? 'wrapped event' : 'wrapped events';
+    const pendingEntryLabel = summary.remainingEntryCount === 1 ? 'item' : 'items';
+
+    $q.notify({
+      type: summary.remainingEntryCount === 0 ? 'positive' : 'info',
+      message:
+        summary.remainingEntryCount === 0
+          ? `Pending queues refreshed. Cleared ${clearedEntryCount} ${clearedEntryLabel}.`
+          : `Pending queues refreshed. Searched ${summary.fetchedWrappedEventCount} ${fetchedWrappedEventLabel}; ${summary.remainingEntryCount} ${pendingEntryLabel} still pending.`,
+      position: 'top-right'
+    });
+  } catch (error) {
+    reportUiError('Failed to refresh pending queues', error, 'Failed to refresh pending queues.');
+  } finally {
+    isRefreshingPendingQueues.value = false;
   }
 }
 
