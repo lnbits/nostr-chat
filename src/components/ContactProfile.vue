@@ -46,7 +46,6 @@
 
     <div class="profile-content" :class="{ 'profile-content--with-header': showHeader }">
       <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
-        <div class="profile-card__title">Contact Lookup</div>
         <q-input
           :model-value="displayHexPubkey"
           class="tg-input"
@@ -77,7 +76,7 @@
         </q-input>
         <q-input
           :model-value="displayNpub"
-          class="tg-input q-mt-xs"
+          class="tg-input"
           outlined
           dense
           rounded
