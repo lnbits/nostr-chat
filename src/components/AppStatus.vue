@@ -40,6 +40,68 @@
         </div>
 
         <div class="app-status__details">
+          <div class="app-status__details-title">Current startup step</div>
+
+          <div v-if="displayedStartupStep" class="app-status__startup-panel">
+            <q-linear-progress
+              v-if="displayedStartupStep.showProgress"
+              indeterminate
+              rounded
+              color="primary"
+              track-color="transparent"
+              class="app-status__progress"
+            />
+
+            <div class="app-status__startup-row">
+              <q-icon
+                :name="startupStatusIcon(displayedStartupStep.status)"
+                :class="startupStatusClass(displayedStartupStep.status)"
+                size="18px"
+              />
+              <div class="app-status__startup-copy">
+                <div class="app-status__startup-label">
+                  {{ displayedStartupStep.order }}. {{ displayedStartupStep.label }}
+                </div>
+                <div class="app-status__startup-meta">
+                  {{ startupStepMeta(displayedStartupStep) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="app-status__details-copy">
+            Startup activity will appear here as relay data is restored.
+          </div>
+        </div>
+
+        <div class="app-status__details">
+          <div class="app-status__details-title">Startup history</div>
+
+          <div v-if="startupHistory.length === 0" class="app-status__details-copy">
+            No startup steps recorded yet.
+          </div>
+
+          <div v-else class="app-status__history-list">
+            <div
+              v-for="step in startupHistory"
+              :key="step.id"
+              class="app-status__history-item"
+            >
+              <q-icon
+                :name="startupStatusIcon(step.status)"
+                :class="startupStatusClass(step.status)"
+                size="16px"
+              />
+              <div class="app-status__history-copy">
+                <div class="app-status__history-label">{{ step.order }}. {{ step.label }}</div>
+                <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
+              </div>
+              <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="app-status__details">
           <div class="app-status__details-title">Connection details</div>
 
           <div v-if="offlineRelayPreview.length === 0" class="app-status__details-copy">
@@ -68,6 +130,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import type { StartupStepSnapshot, StartupStepStatus } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 
@@ -102,6 +165,7 @@ const relayConnectionSnapshot = computed(() => {
   };
 });
 
+const startupSteps = computed(() => nostrStore.startupSteps);
 const totalRelayCount = computed(() => relayConnectionSnapshot.value.total);
 const connectedRelayCount = computed(() => relayConnectionSnapshot.value.connected.length);
 const readRelayCount = computed(() => relayStore.relayEntries.filter((relay) => relay.read).length);
@@ -111,8 +175,80 @@ const remainingOfflineRelayCount = computed(() => {
   return Math.max(relayConnectionSnapshot.value.offline.length - offlineRelayPreview.value.length, 0);
 });
 
+const startedStartupStepCount = computed(() => {
+  return startupSteps.value.filter((step) => step.status !== 'pending').length;
+});
+
+const completedStartupStepCount = computed(() => {
+  return startupSteps.value.filter((step) => step.status === 'success').length;
+});
+
+const failedStartupStepCount = computed(() => {
+  return startupSteps.value.filter((step) => step.status === 'error').length;
+});
+
+const inProgressStartupStepCount = computed(() => {
+  return startupSteps.value.filter((step) => step.status === 'in_progress').length;
+});
+
+const pendingStartupStepCount = computed(() => {
+  return startupSteps.value.filter((step) => step.status === 'pending').length;
+});
+
+const hasStartupHistory = computed(() => startedStartupStepCount.value > 0);
+
+const isStartupRunning = computed(() => {
+  return inProgressStartupStepCount.value > 0 || (hasStartupHistory.value && pendingStartupStepCount.value > 0);
+});
+
+const displayedStartupStep = computed(() => {
+  const displayStepId = nostrStore.startupDisplay.stepId;
+  if (!displayStepId) {
+    return null;
+  }
+
+  const step = startupSteps.value.find((entry) => entry.id === displayStepId);
+  if (!step) {
+    return null;
+  }
+
+  return {
+    ...step,
+    status: nostrStore.startupDisplay.status ?? step.status,
+    showProgress: nostrStore.startupDisplay.showProgress
+  };
+});
+
+const startupHistory = computed(() => {
+  const inProgress = startupSteps.value
+    .filter((step) => step.status === 'in_progress')
+    .sort((first, second) => (second.startedAt ?? 0) - (first.startedAt ?? 0));
+  const finished = startupSteps.value
+    .filter((step) => step.status === 'success' || step.status === 'error')
+    .sort((first, second) => (second.completedAt ?? 0) - (first.completedAt ?? 0));
+  const pending = startupSteps.value
+    .filter((step) => step.status === 'pending')
+    .sort((first, second) => first.order - second.order);
+
+  return [...inProgress, ...finished, ...pending];
+});
+
 const startupSummary = computed(() => {
-  return nostrStore.isRestoringStartupState ? 'Syncing startup data' : 'Startup ready';
+  if (!hasStartupHistory.value) {
+    return 'Waiting to start';
+  }
+
+  const totalStepCount = startupSteps.value.length;
+  const doneCount = completedStartupStepCount.value + failedStartupStepCount.value;
+  if (failedStartupStepCount.value > 0) {
+    return `${doneCount} / ${totalStepCount} done, ${failedStartupStepCount.value} failed`;
+  }
+
+  if (isStartupRunning.value) {
+    return `${doneCount} / ${totalStepCount} done`;
+  }
+
+  return `${completedStartupStepCount.value} / ${totalStepCount} complete`;
 });
 
 const relaySummary = computed(() => {
@@ -124,7 +260,11 @@ const relaySummary = computed(() => {
 });
 
 const statusHeadline = computed(() => {
-  if (nostrStore.isRestoringStartupState) {
+  if (isStartupRunning.value && displayedStartupStep.value) {
+    return `${displayedStartupStep.value.order}. ${displayedStartupStep.value.label}`;
+  }
+
+  if (hasStartupHistory.value) {
     return startupSummary.value;
   }
 
@@ -132,8 +272,16 @@ const statusHeadline = computed(() => {
 });
 
 const overallLabel = computed(() => {
-  if (nostrStore.isRestoringStartupState) {
+  if (isStartupRunning.value) {
     return 'Syncing';
+  }
+
+  if (failedStartupStepCount.value > 0) {
+    return 'Issues';
+  }
+
+  if (hasStartupHistory.value) {
+    return 'Ready';
   }
 
   if (totalRelayCount.value === 0) {
@@ -152,8 +300,16 @@ const overallLabel = computed(() => {
 });
 
 const overallTone = computed(() => {
-  if (nostrStore.isRestoringStartupState) {
+  if (isStartupRunning.value) {
     return 'busy';
+  }
+
+  if (failedStartupStepCount.value > 0) {
+    return 'issue';
+  }
+
+  if (hasStartupHistory.value) {
+    return 'good';
   }
 
   if (totalRelayCount.value === 0) {
@@ -170,6 +326,68 @@ const overallTone = computed(() => {
 
   return 'issue';
 });
+
+function startupStatusIcon(status: StartupStepStatus | null): string {
+  if (status === 'success') {
+    return 'check_circle';
+  }
+
+  if (status === 'error') {
+    return 'cancel';
+  }
+
+  if (status === 'in_progress') {
+    return 'radio_button_unchecked';
+  }
+
+  return 'more_horiz';
+}
+
+function startupStatusClass(status: StartupStepStatus | null): string {
+  if (status === 'success') {
+    return 'app-status__status-icon app-status__status-icon--success';
+  }
+
+  if (status === 'error') {
+    return 'app-status__status-icon app-status__status-icon--error';
+  }
+
+  if (status === 'in_progress') {
+    return 'app-status__status-icon app-status__status-icon--progress';
+  }
+
+  return 'app-status__status-icon app-status__status-icon--pending';
+}
+
+function startupStepMeta(
+  step: StartupStepSnapshot | (StartupStepSnapshot & { showProgress?: boolean })
+): string {
+  if (step.status === 'error') {
+    return step.errorMessage?.trim() || 'Failed';
+  }
+
+  if (step.status === 'success') {
+    return `Completed in ${startupStepDuration(step)}`;
+  }
+
+  if (step.status === 'in_progress') {
+    return step.showProgress === true ? 'Fetching from relays...' : 'In progress';
+  }
+
+  return 'Pending';
+}
+
+function startupStepDuration(step: StartupStepSnapshot): string {
+  if (typeof step.durationMs !== 'number' || !Number.isFinite(step.durationMs)) {
+    return step.status === 'in_progress' ? 'Running' : 'Pending';
+  }
+
+  if (step.durationMs < 1000) {
+    return `${Math.max(1, Math.round(step.durationMs))} ms`;
+  }
+
+  return `${(step.durationMs / 1000).toFixed(step.durationMs >= 10000 ? 0 : 1)} s`;
+}
 </script>
 
 <style scoped>
@@ -309,6 +527,77 @@ const overallTone = computed(() => {
   color: color-mix(in srgb, currentColor 78%, #64748b 22%);
 }
 
+.app-status__startup-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.app-status__progress {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.app-status__startup-row,
+.app-status__history-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.app-status__startup-copy,
+.app-status__history-copy {
+  min-width: 0;
+}
+
+.app-status__startup-label,
+.app-status__history-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.app-status__startup-meta,
+.app-status__history-meta,
+.app-status__history-duration {
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, currentColor 76%, #64748b 24%);
+}
+
+.app-status__history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.app-status__history-item + .app-status__history-item {
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--tg-border) 84%, transparent);
+}
+
+.app-status__history-duration {
+  white-space: nowrap;
+}
+
+.app-status__status-icon {
+  margin-top: 1px;
+}
+
+.app-status__status-icon--success {
+  color: #16a34a;
+}
+
+.app-status__status-icon--error {
+  color: #dc2626;
+}
+
+.app-status__status-icon--progress,
+.app-status__status-icon--pending {
+  color: #74839b;
+}
+
 .app-status__relay-list {
   display: grid;
   gap: 8px;
@@ -363,9 +652,31 @@ body.body--dark .app-status__badge--idle {
   background: rgba(37, 99, 235, 0.24);
 }
 
+body.body--dark .app-status__status-icon--success {
+  color: #7ee2a8;
+}
+
+body.body--dark .app-status__status-icon--error {
+  color: #ff9b90;
+}
+
+body.body--dark .app-status__status-icon--progress,
+body.body--dark .app-status__status-icon--pending {
+  color: #9aacbf;
+}
+
 @media (max-width: 420px) {
   .app-status__metrics {
     grid-template-columns: 1fr;
+  }
+
+  .app-status__startup-row,
+  .app-status__history-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .app-status__history-duration {
+    grid-column: 2;
   }
 }
 </style>

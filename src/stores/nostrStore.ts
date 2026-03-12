@@ -140,6 +140,7 @@ interface GiftWrappedRumorPublishResult {
 interface SubscribePrivateMessagesOptions {
   restoreThrottleMs?: number;
   sinceOverride?: number;
+  startupTrackStep?: boolean;
 }
 
 interface QueuePrivateMessageUiRefreshOptions {
@@ -282,6 +283,48 @@ export interface DeveloperPendingQueueRefreshSummary {
   remainingEntryCount: number;
 }
 
+const STARTUP_STEP_DEFINITIONS = [
+  { id: 'logged-in-profile', order: 1, label: 'Logged-in user profile/contact metadata' },
+  { id: 'logged-in-relays', order: 2, label: 'Logged-in user relay list' },
+  { id: 'my-relay-list', order: 3, label: 'My NIP-65 relay list' },
+  { id: 'private-preferences', order: 4, label: 'Encrypted private preferences' },
+  { id: 'private-contact-list', order: 5, label: 'Encrypted private contact list' },
+  { id: 'private-contact-profiles', order: 6, label: 'Private contact profile metadata' },
+  { id: 'private-contact-relays', order: 7, label: 'Private contact relay lists' },
+  { id: 'contact-cursor-data', order: 8, label: 'Per-contact cursor data' },
+  { id: 'private-message-events', order: 9, label: 'Private message events' },
+  { id: 'recent-chat-profiles', order: 10, label: 'Recent chat contact profiles' },
+  { id: 'recent-chat-relays', order: 11, label: 'Recent chat contact relay lists' }
+] as const;
+
+export type StartupStepId = (typeof STARTUP_STEP_DEFINITIONS)[number]['id'];
+export type StartupStepStatus = 'pending' | 'in_progress' | 'success' | 'error';
+
+export interface StartupStepSnapshot {
+  id: StartupStepId;
+  order: number;
+  label: string;
+  status: StartupStepStatus;
+  startedAt: number | null;
+  completedAt: number | null;
+  durationMs: number | null;
+  errorMessage: string | null;
+}
+
+export interface StartupDisplaySnapshot {
+  stepId: StartupStepId | null;
+  label: string | null;
+  status: StartupStepStatus | null;
+  showProgress: boolean;
+}
+
+interface ContactRefreshLifecycle {
+  onProfileFetchStart?: () => void;
+  onProfileFetchEnd?: (error: unknown | null) => void;
+  onRelayFetchStart?: () => void;
+  onRelayFetchEnd?: (error: unknown | null) => void;
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
@@ -302,6 +345,18 @@ const DEVELOPER_TRACE_LIMIT = 200;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 24 * 60 * 60;
 const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
+const STARTUP_STEP_MIN_PROGRESS_MS = 500;
+
+function createInitialStartupStepSnapshots(): StartupStepSnapshot[] {
+  return STARTUP_STEP_DEFINITIONS.map((step) => ({
+    ...step,
+    status: 'pending',
+    startedAt: null,
+    completedAt: null,
+    durationMs: null,
+    errorMessage: null
+  }));
+}
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -322,6 +377,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const contactListVersion = ref(0);
   const isRestoringStartupState = ref(false);
   const eventSince = ref(0);
+  const startupSteps = ref<StartupStepSnapshot[]>(createInitialStartupStepSnapshots());
+  const startupDisplay = ref<StartupDisplaySnapshot>({
+    stepId: null,
+    label: null,
+    status: null,
+    showProgress: false
+  });
   const developerDiagnosticsEnabled = ref(readDeveloperDiagnosticsEnabled());
   const developerDiagnosticsVersion = ref(0);
   const developerTraceEntries = ref<DeveloperTraceEntry[]>([]);
@@ -368,6 +430,182 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let shouldReloadChatsOnPrivateMessagesUiRefresh = false;
   let shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
   let pendingEventSinceUpdate = 0;
+  let startupDisplayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let startupDisplayToken = 0;
+  let startupDisplayShownAt = 0;
+
+  function clearStartupDisplayTimer(): void {
+    if (startupDisplayTimer !== null) {
+      globalThis.clearTimeout(startupDisplayTimer);
+      startupDisplayTimer = null;
+    }
+  }
+
+  function getStartupStepSnapshot(stepId: StartupStepId): StartupStepSnapshot {
+    const step = startupSteps.value.find((entry) => entry.id === stepId);
+    if (!step) {
+      throw new Error(`Unknown startup step: ${stepId}`);
+    }
+
+    return step;
+  }
+
+  function showStartupStepProgress(stepId: StartupStepId): void {
+    const step = getStartupStepSnapshot(stepId);
+    startupDisplayToken += 1;
+    startupDisplayShownAt = Date.now();
+    clearStartupDisplayTimer();
+    startupDisplay.value = {
+      stepId,
+      label: step.label,
+      status: 'in_progress',
+      showProgress: true
+    };
+  }
+
+  function finalizeStartupStepDisplay(stepId: StartupStepId, status: 'success' | 'error'): void {
+    const step = getStartupStepSnapshot(stepId);
+    if (startupDisplay.value.stepId !== stepId) {
+      return;
+    }
+
+    const displayToken = ++startupDisplayToken;
+    const applyFinalState = () => {
+      if (displayToken !== startupDisplayToken) {
+        return;
+      }
+
+      startupDisplay.value = {
+        stepId,
+        label: step.label,
+        status,
+        showProgress: false
+      };
+      startupDisplayTimer = null;
+    };
+
+    const elapsedMs = startupDisplayShownAt > 0 ? Date.now() - startupDisplayShownAt : 0;
+    const remainingProgressMs = Math.max(STARTUP_STEP_MIN_PROGRESS_MS - elapsedMs, 0);
+    clearStartupDisplayTimer();
+
+    if (remainingProgressMs > 0) {
+      startupDisplayTimer = globalThis.setTimeout(applyFinalState, remainingProgressMs);
+      return;
+    }
+
+    applyFinalState();
+  }
+
+  function beginStartupStep(stepId: StartupStepId): void {
+    const step = getStartupStepSnapshot(stepId);
+    if (step.status === 'in_progress') {
+      return;
+    }
+
+    const now = Date.now();
+    step.status = 'in_progress';
+    step.startedAt = now;
+    step.completedAt = null;
+    step.durationMs = null;
+    step.errorMessage = null;
+    showStartupStepProgress(stepId);
+  }
+
+  function completeStartupStep(stepId: StartupStepId): void {
+    const step = getStartupStepSnapshot(stepId);
+    const now = Date.now();
+    if (step.startedAt === null) {
+      step.startedAt = now;
+    }
+
+    step.status = 'success';
+    step.completedAt = now;
+    step.durationMs = Math.max(0, now - step.startedAt);
+    step.errorMessage = null;
+    finalizeStartupStepDisplay(stepId, 'success');
+  }
+
+  function failStartupStep(stepId: StartupStepId, error: unknown): void {
+    const step = getStartupStepSnapshot(stepId);
+    const now = Date.now();
+    if (step.startedAt === null) {
+      step.startedAt = now;
+    }
+
+    step.status = 'error';
+    step.completedAt = now;
+    step.durationMs = Math.max(0, now - step.startedAt);
+    step.errorMessage = error instanceof Error ? error.message : String(error);
+    finalizeStartupStepDisplay(stepId, 'error');
+  }
+
+  function resetStartupStepTracking(): void {
+    clearStartupDisplayTimer();
+    startupDisplayToken += 1;
+    startupDisplayShownAt = 0;
+    startupSteps.value = createInitialStartupStepSnapshots();
+    startupDisplay.value = {
+      stepId: null,
+      label: null,
+      status: null,
+      showProgress: false
+    };
+  }
+
+  function createStartupBatchTracker(stepId: StartupStepId): {
+    beginItem: () => void;
+    finishItem: (error?: unknown) => void;
+    seal: () => void;
+  } {
+    let started = false;
+    let sealed = false;
+    let inFlightCount = 0;
+
+    const maybeComplete = () => {
+      if (!sealed || inFlightCount > 0) {
+        return;
+      }
+
+      const step = getStartupStepSnapshot(stepId);
+      if (step.status === 'in_progress') {
+        completeStartupStep(stepId);
+      }
+    };
+
+    return {
+      beginItem() {
+        if (!started) {
+          beginStartupStep(stepId);
+          started = true;
+        }
+        inFlightCount += 1;
+      },
+      finishItem(error?: unknown) {
+        if (!started) {
+          beginStartupStep(stepId);
+          started = true;
+        }
+
+        inFlightCount = Math.max(0, inFlightCount - 1);
+        if (error) {
+          failStartupStep(stepId, error);
+          return;
+        }
+
+        maybeComplete();
+      },
+      seal() {
+        sealed = true;
+        if (!started) {
+          beginStartupStep(stepId);
+          completeStartupStep(stepId);
+          return;
+        }
+
+        maybeComplete();
+      }
+    };
+  }
 
   function normalizeThrottleMs(value: number | undefined): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
@@ -855,6 +1093,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     ensureStoredEventSince();
+    resetStartupStepTracking();
 
     const runStartupTask = async (
       errorMessage: string,
@@ -2708,13 +2947,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function fetchContactRelayEntries(pubkeyHex: string): Promise<ContactRelay[]> {
-    try {
-      const relayList = await getRelayListForUser(pubkeyHex, ndk);
-      return relayEntriesFromRelayList(relayList);
-    } catch (error) {
-      console.warn('Failed to fetch relay list for contact', pubkeyHex, error);
-      return [];
-    }
+    const relayList = await getRelayListForUser(pubkeyHex, ndk);
+    return relayEntriesFromRelayList(relayList);
   }
 
   function normalizeWritableRelayUrls(relays: ContactRelay[] | undefined): string[] {
@@ -2958,49 +3192,61 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return restorePrivatePreferencesPromise;
     }
 
+    beginStartupStep('private-preferences');
     restorePrivatePreferencesPromise = (async () => {
-      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-      if (!loggedInPubkeyHex) {
-        return;
-      }
-
-      const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
-      if (relayUrls.length === 0) {
-        return;
-      }
-
-      await ensureRelayConnections(relayUrls);
-      await getLoggedInSignerUser();
-
-      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-      const preferencesEvent = await ndk.fetchEvent(
-        {
-          kinds: [PRIVATE_PREFERENCES_KIND],
-          authors: [loggedInPubkeyHex],
-          '#d': [PRIVATE_PREFERENCES_D_TAG]
-        },
-        {
-          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-        },
-        relaySet
-      );
-      if (!preferencesEvent) {
-        return;
-      }
-
-      updateStoredEventSinceFromCreatedAt(preferencesEvent.created_at);
-      let decryptedPreferences: PrivatePreferences | null = null;
       try {
-        decryptedPreferences = await decryptPrivatePreferencesContent(preferencesEvent.content);
-      } catch (error) {
-        console.warn('Failed to decrypt private preferences event', error);
-        return;
-      }
-      if (!decryptedPreferences) {
-        return;
-      }
+        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+        if (!loggedInPubkeyHex) {
+          completeStartupStep('private-preferences');
+          return;
+        }
 
-      writePrivatePreferencesToStorage(decryptedPreferences);
+        const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+        if (relayUrls.length === 0) {
+          completeStartupStep('private-preferences');
+          return;
+        }
+
+        await ensureRelayConnections(relayUrls);
+        await getLoggedInSignerUser();
+
+        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+        const preferencesEvent = await ndk.fetchEvent(
+          {
+            kinds: [PRIVATE_PREFERENCES_KIND],
+            authors: [loggedInPubkeyHex],
+            '#d': [PRIVATE_PREFERENCES_D_TAG]
+          },
+          {
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+          },
+          relaySet
+        );
+        if (!preferencesEvent) {
+          completeStartupStep('private-preferences');
+          return;
+        }
+
+        updateStoredEventSinceFromCreatedAt(preferencesEvent.created_at);
+        let decryptedPreferences: PrivatePreferences | null = null;
+        try {
+          decryptedPreferences = await decryptPrivatePreferencesContent(preferencesEvent.content);
+        } catch (error) {
+          console.warn('Failed to decrypt private preferences event', error);
+          failStartupStep('private-preferences', error);
+          return;
+        }
+        if (!decryptedPreferences) {
+          completeStartupStep('private-preferences');
+          return;
+        }
+
+        writePrivatePreferencesToStorage(decryptedPreferences);
+        completeStartupStep('private-preferences');
+      } catch (error) {
+        failStartupStep('private-preferences', error);
+        throw error;
+      }
     })().finally(() => {
       restorePrivatePreferencesPromise = null;
     });
@@ -3219,52 +3465,66 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return restoreContactCursorStatePromise;
     }
 
+    beginStartupStep('contact-cursor-data');
     restoreContactCursorStatePromise = (async () => {
-      if (!readPrivatePreferencesFromStorage()) {
-        await restorePrivatePreferences(seedRelayUrls);
-      }
-
-      if (!readPrivatePreferencesFromStorage()) {
-        return;
-      }
-
-      await contactsService.init();
-      const contacts = await contactsService.listContacts();
-      if (contacts.length === 0) {
-        return;
-      }
-
-      const cursorsByDTag = await fetchContactCursorEvents(contacts, seedRelayUrls);
-      if (cursorsByDTag.size === 0) {
-        return;
-      }
-
-      let didApplyCursorState = false;
-      for (const contact of contacts) {
-        const contactDTag = await deriveContactCursorDTag(contact.public_key);
-        if (!contactDTag) {
-          continue;
+      try {
+        if (!readPrivatePreferencesFromStorage()) {
+          const privatePreferencesStep = getStartupStepSnapshot('private-preferences');
+          if (privatePreferencesStep.status === 'pending') {
+            await restorePrivatePreferences(seedRelayUrls);
+          }
         }
 
-        const cursor = cursorsByDTag.get(contactDTag);
-        if (!cursor) {
-          continue;
+        if (!readPrivatePreferencesFromStorage()) {
+          completeStartupStep('contact-cursor-data');
+          return;
         }
 
-        didApplyCursorState =
-          (await applyContactCursorStateToContact(contact, cursor)) || didApplyCursorState;
-      }
+        await contactsService.init();
+        const contacts = await contactsService.listContacts();
+        if (contacts.length === 0) {
+          completeStartupStep('contact-cursor-data');
+          return;
+        }
 
-      if (!didApplyCursorState) {
-        return;
-      }
+        const cursorsByDTag = await fetchContactCursorEvents(contacts, seedRelayUrls);
+        if (cursorsByDTag.size === 0) {
+          completeStartupStep('contact-cursor-data');
+          return;
+        }
 
-      await Promise.all([
-        chatStore.reload(),
-        import('src/stores/messageStore').then(({ useMessageStore }) =>
-          useMessageStore().reloadLoadedMessages()
-        )
-      ]);
+        let didApplyCursorState = false;
+        for (const contact of contacts) {
+          const contactDTag = await deriveContactCursorDTag(contact.public_key);
+          if (!contactDTag) {
+            continue;
+          }
+
+          const cursor = cursorsByDTag.get(contactDTag);
+          if (!cursor) {
+            continue;
+          }
+
+          didApplyCursorState =
+            (await applyContactCursorStateToContact(contact, cursor)) || didApplyCursorState;
+        }
+
+        if (!didApplyCursorState) {
+          completeStartupStep('contact-cursor-data');
+          return;
+        }
+
+        await Promise.all([
+          chatStore.reload(),
+          import('src/stores/messageStore').then(({ useMessageStore }) =>
+            useMessageStore().reloadLoadedMessages()
+          )
+        ]);
+        completeStartupStep('contact-cursor-data');
+      } catch (error) {
+        failStartupStep('contact-cursor-data', error);
+        throw error;
+      }
     })().finally(() => {
       restoreContactCursorStatePromise = null;
     });
@@ -3352,6 +3612,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
   async function applyPrivateContactListPubkeys(pubkeys: string[]): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     await contactsService.init();
+    const shouldTrackStartupSteps =
+      isRestoringStartupState.value ||
+      getStartupStepSnapshot('private-contact-list').status === 'in_progress';
+    const profileTracker = shouldTrackStartupSteps
+      ? createStartupBatchTracker('private-contact-profiles')
+      : null;
+    const relayTracker = shouldTrackStartupSteps
+      ? createStartupBatchTracker('private-contact-relays')
+      : null;
 
     const nextPubkeys = new Set(
       pubkeys.filter((pubkey) => !loggedInPubkeyHex || pubkey !== loggedInPubkeyHex)
@@ -3385,11 +3654,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       const fallbackName = existingContact?.name?.trim() || pubkeyHex.slice(0, 16);
       try {
-        await refreshContactByPublicKey(pubkeyHex, fallbackName);
+        await refreshContactByPublicKey(pubkeyHex, fallbackName, {
+          onProfileFetchStart: () => {
+            profileTracker?.beginItem();
+          },
+          onProfileFetchEnd: (error) => {
+            profileTracker?.finishItem(error ?? undefined);
+          },
+          onRelayFetchStart: () => {
+            relayTracker?.beginItem();
+          },
+          onRelayFetchEnd: (error) => {
+            relayTracker?.finishItem(error ?? undefined);
+          }
+        });
       } catch (error) {
+        profileTracker?.finishItem(error);
+        relayTracker?.finishItem(error);
         console.warn('Failed to refresh private contact list profile', pubkeyHex, error);
       }
     }
+
+    profileTracker?.seal();
+    relayTracker?.seal();
 
     bumpContactListVersion();
   }
@@ -3439,7 +3726,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   async function refreshContactByPublicKey(
     targetPubkeyHex: string,
-    fallbackName = ''
+    fallbackName = '',
+    lifecycle: ContactRefreshLifecycle = {}
   ): Promise<void> {
     const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
     if (!normalizedTargetPubkey) {
@@ -3455,10 +3743,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     let fetchedProfile: NDKUserProfile | null = null;
+    let profileError: unknown | null = null;
+    lifecycle.onProfileFetchStart?.();
     try {
       fetchedProfile = await resolvedUser.fetchProfile();
     } catch (error) {
+      profileError = error;
       console.warn('Failed to fetch profile metadata for contact', normalizedTargetPubkey, error);
+    } finally {
+      lifecycle.onProfileFetchEnd?.(profileError);
     }
 
     let resolvedNpub = existingContact?.meta.npub?.trim() ?? '';
@@ -3493,7 +3786,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       existingContact?.name?.trim() ||
       fallbackContactName;
 
-    const explicitRelayEntries = await fetchContactRelayEntries(normalizedTargetPubkey);
+    let explicitRelayEntries: ContactRelay[] = [];
+    let relayError: unknown | null = null;
+    lifecycle.onRelayFetchStart?.();
+    try {
+      explicitRelayEntries = await fetchContactRelayEntries(normalizedTargetPubkey);
+    } catch (error) {
+      relayError = error;
+      console.warn('Failed to fetch relay list for contact', normalizedTargetPubkey, error);
+    } finally {
+      lifecycle.onRelayFetchEnd?.(relayError);
+    }
     const fallbackRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
       resolvedUser.relayUrls ?? []
     );
@@ -3992,13 +4295,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return restoreMyRelayListPromise;
     }
 
+    beginStartupStep('my-relay-list');
     restoreMyRelayListPromise = (async () => {
-      const relayEntries = await fetchMyRelayListEntries(seedRelayUrls);
-      if (relayEntries === null) {
-        return;
-      }
+      try {
+        const relayEntries = await fetchMyRelayListEntries(seedRelayUrls);
+        if (relayEntries === null) {
+          completeStartupStep('my-relay-list');
+          return;
+        }
 
-      await applyMyRelayListEntries(relayEntries);
+        await applyMyRelayListEntries(relayEntries);
+        completeStartupStep('my-relay-list');
+      } catch (error) {
+        failStartupStep('my-relay-list', error);
+        throw error;
+      }
     })().finally(() => {
       restoreMyRelayListPromise = null;
     });
@@ -4156,42 +4467,52 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return restorePrivateContactListPromise;
     }
 
+    beginStartupStep('private-contact-list');
     restorePrivateContactListPromise = (async () => {
-      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-      if (!loggedInPubkeyHex) {
-        return;
+      try {
+        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+        if (!loggedInPubkeyHex) {
+          completeStartupStep('private-contact-list');
+          return;
+        }
+
+        const relayUrls = await resolvePrivateContactListReadRelayUrls(seedRelayUrls);
+        if (relayUrls.length === 0) {
+          completeStartupStep('private-contact-list');
+          return;
+        }
+
+        await ensureRelayConnections(relayUrls);
+        await getLoggedInSignerUser();
+
+        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+        const listEvent = await ndk.fetchEvent(
+          {
+            kinds: [NDKKind.FollowSet],
+            authors: [loggedInPubkeyHex],
+            '#d': [PRIVATE_CONTACT_LIST_D_TAG],
+            since: getFilterSince()
+          },
+          {
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+          },
+          relaySet
+        );
+        if (!listEvent) {
+          completeStartupStep('private-contact-list');
+          return;
+        }
+
+        updateStoredEventSinceFromCreatedAt(listEvent.created_at);
+
+        await applyPrivateContactListEvent(
+          listEvent instanceof NDKEvent ? listEvent : new NDKEvent(ndk, listEvent)
+        );
+        completeStartupStep('private-contact-list');
+      } catch (error) {
+        failStartupStep('private-contact-list', error);
+        throw error;
       }
-
-      const relayUrls = await resolvePrivateContactListReadRelayUrls(seedRelayUrls);
-      if (relayUrls.length === 0) {
-        return;
-      }
-
-      await ensureRelayConnections(relayUrls);
-      await getLoggedInSignerUser();
-
-      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-      const listEvent = await ndk.fetchEvent(
-        {
-          kinds: [NDKKind.FollowSet],
-          authors: [loggedInPubkeyHex],
-          '#d': [PRIVATE_CONTACT_LIST_D_TAG],
-          since: getFilterSince()
-        },
-        {
-          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-        },
-        relaySet
-      );
-      if (!listEvent) {
-        return;
-      }
-
-      updateStoredEventSinceFromCreatedAt(listEvent.created_at);
-
-      await applyPrivateContactListEvent(
-        listEvent instanceof NDKEvent ? listEvent : new NDKEvent(ndk, listEvent)
-      );
     })().finally(() => {
       restorePrivateContactListPromise = null;
     });
@@ -4731,6 +5052,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     force = false,
     options: SubscribePrivateMessagesOptions = {}
   ): Promise<void> {
+    const hasActiveStartupTracking = getStartupStepSnapshot('private-message-events').status === 'in_progress';
+    const shouldTrackStartupStep = options.startupTrackStep === true || hasActiveStartupTracking;
+    if (options.startupTrackStep === true) {
+      beginStartupStep('private-message-events');
+    }
+
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     const authMethod = getStoredAuthMethod();
 
@@ -4741,131 +5068,151 @@ export const useNostrStore = defineStore('nostrStore', () => {
         authMethod: authMethod ?? null
       });
       stopPrivateMessagesSubscription('missing-login');
+      if (shouldTrackStartupStep) {
+        completeStartupStep('private-message-events');
+      }
       return;
     }
 
-    await contactsService.init();
-    const relayUrls = await resolveLoggedInReadRelayUrls();
-    if (relayUrls.length === 0) {
-      logSubscription('private-messages', 'skip', {
-        reason: 'no-relays',
-        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        authMethod
-      });
-      stopPrivateMessagesSubscription('no-relays');
-      return;
-    }
-    const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
-    const filterSince =
-      Number.isInteger(options.sinceOverride) && Number(options.sinceOverride) >= 0
-        ? Math.floor(Number(options.sinceOverride))
-        : getFilterSince();
-    if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
-      logSubscription('private-messages', 'skip', {
-        reason: 'already-active',
+    try {
+      await contactsService.init();
+      const relayUrls = await resolveLoggedInReadRelayUrls();
+      if (relayUrls.length === 0) {
+        logSubscription('private-messages', 'skip', {
+          reason: 'no-relays',
+          pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+          authMethod
+        });
+        stopPrivateMessagesSubscription('no-relays');
+        if (shouldTrackStartupStep) {
+          completeStartupStep('private-message-events');
+        }
+        return;
+      }
+      const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
+      const filterSince =
+        Number.isInteger(options.sinceOverride) && Number(options.sinceOverride) >= 0
+          ? Math.floor(Number(options.sinceOverride))
+          : getFilterSince();
+      if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
+        logSubscription('private-messages', 'skip', {
+          reason: 'already-active',
+          signature,
+          pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+          authMethod,
+          ...buildSubscriptionRelayDetails(relayUrls)
+        });
+        if (shouldTrackStartupStep) {
+          completeStartupStep('private-message-events');
+        }
+        return;
+      }
+
+      logSubscription('private-messages', 'prepare', {
+        force,
         signature,
         pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
         authMethod,
+        ...buildFilterSinceDetails(filterSince),
+        restoreThrottleMs: normalizeThrottleMs(options.restoreThrottleMs),
+        relaySnapshots: getRelaySnapshots(relayUrls),
         ...buildSubscriptionRelayDetails(relayUrls)
       });
-      return;
-    }
 
-    logSubscription('private-messages', 'prepare', {
-      force,
-      signature,
-      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      authMethod,
-      ...buildFilterSinceDetails(filterSince),
-      restoreThrottleMs: normalizeThrottleMs(options.restoreThrottleMs),
-      relaySnapshots: getRelaySnapshots(relayUrls),
-      ...buildSubscriptionRelayDetails(relayUrls)
-    });
-
-    await ensureRelayConnections(relayUrls);
-    await getOrCreateSigner();
-    stopPrivateMessagesSubscription();
-    privateMessagesRestoreThrottleMs = normalizeThrottleMs(options.restoreThrottleMs);
-    const relaySnapshots = getRelaySnapshots(relayUrls);
-    const disconnectedRelayUrls = relayUrls.filter((relayUrl) => {
-      const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
-      return !relay || !relay.connected;
-    });
-
-    if (disconnectedRelayUrls.length > 0) {
-      logSubscription('private-messages', 'relay-health', {
-        reason: 'subscription-relays-disconnected',
-        signature,
-        disconnectedRelayUrls,
-        relaySnapshots
+      await ensureRelayConnections(relayUrls);
+      await getOrCreateSigner();
+      stopPrivateMessagesSubscription();
+      privateMessagesRestoreThrottleMs = normalizeThrottleMs(options.restoreThrottleMs);
+      const relaySnapshots = getRelaySnapshots(relayUrls);
+      const disconnectedRelayUrls = relayUrls.filter((relayUrl) => {
+        const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
+        return !relay || !relay.connected;
       });
-    }
 
-    logSubscription('private-messages', 'start', {
-      force,
-      signature,
-      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      authMethod,
-      ...buildFilterSinceDetails(filterSince),
-      restoreThrottleMs: privateMessagesRestoreThrottleMs,
-      relaySnapshots,
-      ...buildSubscriptionRelayDetails(relayUrls)
-    });
-
-    privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
-    privateMessagesSubscriptionSince.value = filterSince;
-    privateMessagesSubscriptionStartedAt.value = new Date().toISOString();
-    privateMessagesSubscriptionLastEoseAt.value = null;
-    bumpDeveloperDiagnosticsVersion();
-
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    privateMessagesSubscription = ndk.subscribe(
-      {
-        kinds: [NDKKind.GiftWrap],
-        '#p': [loggedInPubkeyHex],
-        since: filterSince
-      },
-      {
-        relaySet,
-        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
-        onEvent: (event) => {
-          const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
-          logSubscription('private-messages', 'event', {
-            signature,
-            ...buildSubscriptionEventDetails(wrappedEvent),
-            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
-          });
-          privateMessagesSubscriptionLastEventSeenAt.value = new Date().toISOString();
-          privateMessagesSubscriptionLastEventId.value = normalizeEventId(wrappedEvent.id) ?? wrappedEvent.id ?? null;
-          privateMessagesSubscriptionLastEventCreatedAt.value =
-            Number.isInteger(wrappedEvent.created_at) ? Number(wrappedEvent.created_at) : null;
-          bumpDeveloperDiagnosticsVersion();
-          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
-          queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
-        },
-        onEose: () => {
-          logSubscription('private-messages', 'eose', {
-            signature,
-            restoreThrottleMs: privateMessagesRestoreThrottleMs
-          });
-          privateMessagesSubscriptionLastEoseAt.value = new Date().toISOString();
-          bumpDeveloperDiagnosticsVersion();
-          privateMessagesRestoreThrottleMs = 0;
-          flushPrivateMessagesUiRefreshNow();
-        }
+      if (disconnectedRelayUrls.length > 0) {
+        logSubscription('private-messages', 'relay-health', {
+          reason: 'subscription-relays-disconnected',
+          signature,
+          disconnectedRelayUrls,
+          relaySnapshots
+        });
       }
-    );
-    privateMessagesSubscriptionSignature = signature;
 
-    logSubscription('private-messages', 'active', {
-      signature,
-      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      authMethod,
-      ...buildFilterSinceDetails(filterSince),
-      restoreThrottleMs: privateMessagesRestoreThrottleMs,
-      relaySnapshots,
-      ...buildSubscriptionRelayDetails(relayUrls)
-    });
+      logSubscription('private-messages', 'start', {
+        force,
+        signature,
+        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        authMethod,
+        ...buildFilterSinceDetails(filterSince),
+        restoreThrottleMs: privateMessagesRestoreThrottleMs,
+        relaySnapshots,
+        ...buildSubscriptionRelayDetails(relayUrls)
+      });
+
+      privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
+      privateMessagesSubscriptionSince.value = filterSince;
+      privateMessagesSubscriptionStartedAt.value = new Date().toISOString();
+      privateMessagesSubscriptionLastEoseAt.value = null;
+      bumpDeveloperDiagnosticsVersion();
+
+      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+      privateMessagesSubscription = ndk.subscribe(
+        {
+          kinds: [NDKKind.GiftWrap],
+          '#p': [loggedInPubkeyHex],
+          since: filterSince
+        },
+        {
+          relaySet,
+          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+          onEvent: (event) => {
+            const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+            logSubscription('private-messages', 'event', {
+              signature,
+              ...buildSubscriptionEventDetails(wrappedEvent),
+              ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+            });
+            privateMessagesSubscriptionLastEventSeenAt.value = new Date().toISOString();
+            privateMessagesSubscriptionLastEventId.value =
+              normalizeEventId(wrappedEvent.id) ?? wrappedEvent.id ?? null;
+            privateMessagesSubscriptionLastEventCreatedAt.value =
+              Number.isInteger(wrappedEvent.created_at) ? Number(wrappedEvent.created_at) : null;
+            bumpDeveloperDiagnosticsVersion();
+            updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+            queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
+          },
+          onEose: () => {
+            logSubscription('private-messages', 'eose', {
+              signature,
+              restoreThrottleMs: privateMessagesRestoreThrottleMs
+            });
+            privateMessagesSubscriptionLastEoseAt.value = new Date().toISOString();
+            bumpDeveloperDiagnosticsVersion();
+            privateMessagesRestoreThrottleMs = 0;
+            flushPrivateMessagesUiRefreshNow();
+            if (shouldTrackStartupStep) {
+              completeStartupStep('private-message-events');
+            }
+          }
+        }
+      );
+      privateMessagesSubscriptionSignature = signature;
+
+      logSubscription('private-messages', 'active', {
+        signature,
+        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        authMethod,
+        ...buildFilterSinceDetails(filterSince),
+        restoreThrottleMs: privateMessagesRestoreThrottleMs,
+        relaySnapshots,
+        ...buildSubscriptionRelayDetails(relayUrls)
+      });
+    } catch (error) {
+      if (shouldTrackStartupStep) {
+        failStartupStep('private-message-events', error);
+      }
+      throw error;
+    }
   }
 
   async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
@@ -4897,14 +5244,35 @@ export const useNostrStore = defineStore('nostrStore', () => {
         }
       }
 
+      const profileTracker = createStartupBatchTracker('logged-in-profile');
+      const relayTracker = createStartupBatchTracker('logged-in-relays');
       try {
-        await refreshContactByPublicKey(loggedInPubkeyHex);
+        await refreshContactByPublicKey(loggedInPubkeyHex, '', {
+          onProfileFetchStart: () => {
+            profileTracker.beginItem();
+          },
+          onProfileFetchEnd: (error) => {
+            profileTracker.finishItem(error ?? undefined);
+          },
+          onRelayFetchStart: () => {
+            relayTracker.beginItem();
+          },
+          onRelayFetchEnd: (error) => {
+            relayTracker.finishItem(error ?? undefined);
+          }
+        });
       } catch (error) {
+        profileTracker.finishItem(error);
+        relayTracker.finishItem(error);
         console.warn('Failed to refresh logged-in contact profile', error);
+      } finally {
+        profileTracker.seal();
+        relayTracker.seal();
       }
 
       await subscribePrivateMessagesForLoggedInUser(true, {
-        restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+        restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+        startupTrackStep: true
       });
     })().finally(() => {
       syncLoggedInContactProfilePromise = null;
@@ -4919,61 +5287,87 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     syncRecentChatContactsPromise = (async () => {
+      const profileTracker = createStartupBatchTracker('recent-chat-profiles');
+      const relayTracker = createStartupBatchTracker('recent-chat-relays');
       const normalizedLimit =
         Number.isInteger(limit) && Number(limit) > 0 ? Math.min(Number(limit), 50) : 10;
-      if (normalizedLimit <= 0) {
-        return;
-      }
-
-      const activeRelays = inputSanitizerService.normalizeStringArray(relayUrls);
-      if (activeRelays.length > 0) {
-        try {
-          await ensureRelayConnections(activeRelays);
-        } catch (error) {
-          console.warn('Failed to connect relays before syncing recent chat contacts', error);
-        }
-      }
-
-      await Promise.all([chatDataService.init(), contactsService.init()]);
-      const recentChats = await chatDataService.listChats();
-      if (recentChats.length === 0) {
-        return;
-      }
-
-      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-      const recentPublicKeys = new Set<string>();
-
-      for (const chat of recentChats) {
-        const normalizedPubkey = inputSanitizerService.normalizeHexKey(chat.public_key);
-        if (!normalizedPubkey) {
-          continue;
+      try {
+        if (normalizedLimit <= 0) {
+          return;
         }
 
-        if (loggedInPubkeyHex && normalizedPubkey === loggedInPubkeyHex) {
-          continue;
+        const activeRelays = inputSanitizerService.normalizeStringArray(relayUrls);
+        if (activeRelays.length > 0) {
+          try {
+            await ensureRelayConnections(activeRelays);
+          } catch (error) {
+            console.warn('Failed to connect relays before syncing recent chat contacts', error);
+          }
         }
 
-        recentPublicKeys.add(normalizedPubkey);
-        if (recentPublicKeys.size >= normalizedLimit) {
-          break;
-        }
-      }
-
-      if (recentPublicKeys.size === 0) {
-        return;
-      }
-
-      for (const pubkeyHex of recentPublicKeys) {
-        const existingContact = await contactsService.getContactByPublicKey(pubkeyHex);
-        if (!existingContact) {
-          continue;
+        await Promise.all([chatDataService.init(), contactsService.init()]);
+        const recentChats = await chatDataService.listChats();
+        if (recentChats.length === 0) {
+          return;
         }
 
-        const matchingChat = recentChats.find(
-          (chat) => inputSanitizerService.normalizeHexKey(chat.public_key) === pubkeyHex
-        );
-        const fallbackName = existingContact.name.trim() || matchingChat?.name?.trim() || '';
-        await refreshContactByPublicKey(pubkeyHex, fallbackName);
+        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+        const recentPublicKeys = new Set<string>();
+
+        for (const chat of recentChats) {
+          const normalizedPubkey = inputSanitizerService.normalizeHexKey(chat.public_key);
+          if (!normalizedPubkey) {
+            continue;
+          }
+
+          if (loggedInPubkeyHex && normalizedPubkey === loggedInPubkeyHex) {
+            continue;
+          }
+
+          recentPublicKeys.add(normalizedPubkey);
+          if (recentPublicKeys.size >= normalizedLimit) {
+            break;
+          }
+        }
+
+        if (recentPublicKeys.size === 0) {
+          return;
+        }
+
+        for (const pubkeyHex of recentPublicKeys) {
+          const existingContact = await contactsService.getContactByPublicKey(pubkeyHex);
+          if (!existingContact) {
+            continue;
+          }
+
+          const matchingChat = recentChats.find(
+            (chat) => inputSanitizerService.normalizeHexKey(chat.public_key) === pubkeyHex
+          );
+          const fallbackName = existingContact.name.trim() || matchingChat?.name?.trim() || '';
+          try {
+            await refreshContactByPublicKey(pubkeyHex, fallbackName, {
+              onProfileFetchStart: () => {
+                profileTracker.beginItem();
+              },
+              onProfileFetchEnd: (error) => {
+                profileTracker.finishItem(error ?? undefined);
+              },
+              onRelayFetchStart: () => {
+                relayTracker.beginItem();
+              },
+              onRelayFetchEnd: (error) => {
+                relayTracker.finishItem(error ?? undefined);
+              }
+            });
+          } catch (error) {
+            profileTracker.finishItem(error);
+            relayTracker.finishItem(error);
+            console.warn('Failed to refresh recent chat contact profile', pubkeyHex, error);
+          }
+        }
+      } finally {
+        profileTracker.seal();
+        relayTracker.seal();
       }
     })().finally(() => {
       syncRecentChatContactsPromise = null;
@@ -5053,6 +5447,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     cachedSigner = null;
     cachedSignerSessionKey = null;
     ndk.signer = undefined;
+    resetStartupStepTracking();
     pendingIncomingReactions.clear();
     pendingIncomingDeletions.clear();
     pendingContactCursorPublishStates.clear();
@@ -5817,6 +6212,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setDeveloperDiagnosticsEnabled,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
+    startupDisplay,
+    startupSteps,
     validatePrivateKey,
     validateNpub,
     validateNsec
