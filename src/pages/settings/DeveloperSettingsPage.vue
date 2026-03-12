@@ -108,16 +108,108 @@
       </q-card>
 
       <q-card flat bordered class="developer-card">
-        <q-card-section class="developer-card__header">
-          <div>
+        <q-card-section
+          class="developer-card__header developer-card__header--clickable"
+          role="button"
+          tabindex="0"
+          @click="toggleExpandableCard('relayStatus')"
+          @keydown.enter.prevent="toggleExpandableCard('relayStatus')"
+          @keydown.space.prevent="toggleExpandableCard('relayStatus')"
+        >
+          <div class="developer-card__header-main">
+            <div class="text-h6">Relay Status</div>
+            <div class="text-caption text-grey-6">
+              Effective relay set with connection state, roles, and quick reconnect actions.
+            </div>
+          </div>
+
+          <div class="developer-card__header-side">
+            <q-icon
+              :name="expandedCards.relayStatus ? 'expand_less' : 'expand_more'"
+              size="20px"
+              class="developer-card__header-icon"
+            />
+          </div>
+        </q-card-section>
+
+        <q-slide-transition>
+          <div v-show="expandedCards.relayStatus">
+            <q-card-section v-if="diagnostics" class="developer-card__section developer-card__section--flush">
+              <div v-if="diagnostics.relayRows.length === 0" class="developer-empty-state">
+                No relay diagnostics available yet.
+              </div>
+
+              <q-markup-table v-else flat class="developer-table">
+                <thead>
+                  <tr>
+                    <th class="text-left">Relay</th>
+                    <th class="text-left">Roles</th>
+                    <th class="text-left">Status</th>
+                    <th class="text-left">Attempts</th>
+                    <th class="text-left">Connected at</th>
+                    <th class="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="relay in diagnostics.relayRows" :key="relay.url">
+                    <td class="developer-table__mono">{{ relay.url }}</td>
+                    <td>{{ relayRoles(relay) }}</td>
+                    <td>
+                      <q-badge :color="relay.connected ? 'positive' : 'negative'" outline>
+                        {{ relay.statusName ?? (relay.connected ? 'CONNECTED' : 'MISSING') }}
+                      </q-badge>
+                    </td>
+                    <td>{{ relay.attempts ?? 'n/a' }}</td>
+                    <td class="developer-table__mono">
+                      {{ relay.connectedAt ? formatUnixTimestamp(relay.connectedAt) : 'n/a' }}
+                    </td>
+                    <td class="text-right">
+                      <q-btn
+                        flat
+                        dense
+                        no-caps
+                        icon="sync"
+                        label="Reconnect"
+                        :loading="Boolean(reconnectingRelayUrls[relay.url])"
+                        @click="handleReconnectRelay(relay.url)"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </q-markup-table>
+            </q-card-section>
+          </div>
+        </q-slide-transition>
+      </q-card>
+
+      <q-card flat bordered class="developer-card">
+        <q-card-section
+          class="developer-card__header developer-card__header--clickable"
+          role="button"
+          tabindex="0"
+          @click="toggleExpandableCard('nostrSession')"
+          @keydown.enter.prevent="toggleExpandableCard('nostrSession')"
+          @keydown.space.prevent="toggleExpandableCard('nostrSession')"
+        >
+          <div class="developer-card__header-main">
             <div class="text-h6">Nostr Session</div>
             <div class="text-caption text-grey-6">
               Current login, relay resolution, and cursor state used by the app.
             </div>
           </div>
+
+          <div class="developer-card__header-side">
+            <q-icon
+              :name="expandedCards.nostrSession ? 'expand_less' : 'expand_more'"
+              size="20px"
+              class="developer-card__header-icon"
+            />
+          </div>
         </q-card-section>
 
-        <q-card-section v-if="diagnostics" class="developer-card__section">
+        <q-slide-transition>
+          <div v-show="expandedCards.nostrSession">
+            <q-card-section v-if="diagnostics" class="developer-card__section">
           <div class="developer-facts">
             <div class="developer-facts__label">Auth method</div>
             <div class="developer-facts__value">{{ diagnostics.session.authMethod ?? 'none' }}</div>
@@ -218,23 +310,42 @@
               </div>
             </div>
           </div>
-        </q-card-section>
+            </q-card-section>
+          </div>
+        </q-slide-transition>
       </q-card>
 
       <q-card flat bordered class="developer-card">
-        <q-card-section class="developer-card__header">
-          <div>
+        <q-card-section
+          class="developer-card__header developer-card__header--clickable"
+          role="button"
+          tabindex="0"
+          @click="toggleExpandableCard('privateMessagesSubscription')"
+          @keydown.enter.prevent="toggleExpandableCard('privateMessagesSubscription')"
+          @keydown.space.prevent="toggleExpandableCard('privateMessagesSubscription')"
+        >
+          <div class="developer-card__header-main">
             <div class="text-h6">Private Messages Subscription</div>
             <div class="text-caption text-grey-6">
               Active DM subscription details, last event seen, and current relay set.
             </div>
           </div>
-          <q-badge :color="subscriptionBadgeColor" outline>
-            {{ diagnostics?.privateMessagesSubscription.active ? 'active' : 'inactive' }}
-          </q-badge>
+
+          <div class="developer-card__header-side">
+            <q-badge :color="subscriptionBadgeColor" outline>
+              {{ diagnostics?.privateMessagesSubscription.active ? 'active' : 'inactive' }}
+            </q-badge>
+            <q-icon
+              :name="expandedCards.privateMessagesSubscription ? 'expand_less' : 'expand_more'"
+              size="20px"
+              class="developer-card__header-icon"
+            />
+          </div>
         </q-card-section>
 
-        <q-card-section v-if="diagnostics" class="developer-card__section">
+        <q-slide-transition>
+          <div v-show="expandedCards.privateMessagesSubscription">
+            <q-card-section v-if="diagnostics" class="developer-card__section">
           <div class="developer-facts">
             <div class="developer-facts__label">Signature</div>
             <div class="developer-facts__value developer-facts__value--mono">
@@ -302,76 +413,39 @@
               </div>
             </div>
           </div>
-        </q-card-section>
+            </q-card-section>
+          </div>
+        </q-slide-transition>
       </q-card>
 
       <q-card flat bordered class="developer-card">
-        <q-card-section class="developer-card__header">
-          <div>
-            <div class="text-h6">Relay Status</div>
-            <div class="text-caption text-grey-6">
-              Effective relay set with connection state, roles, and quick reconnect actions.
-            </div>
-          </div>
-        </q-card-section>
-
-        <q-card-section v-if="diagnostics" class="developer-card__section developer-card__section--flush">
-          <div v-if="diagnostics.relayRows.length === 0" class="developer-empty-state">
-            No relay diagnostics available yet.
-          </div>
-
-          <q-markup-table v-else flat class="developer-table">
-            <thead>
-              <tr>
-                <th class="text-left">Relay</th>
-                <th class="text-left">Roles</th>
-                <th class="text-left">Status</th>
-                <th class="text-left">Attempts</th>
-                <th class="text-left">Connected at</th>
-                <th class="text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="relay in diagnostics.relayRows" :key="relay.url">
-                <td class="developer-table__mono">{{ relay.url }}</td>
-                <td>{{ relayRoles(relay) }}</td>
-                <td>
-                  <q-badge :color="relay.connected ? 'positive' : 'negative'" outline>
-                    {{ relay.statusName ?? (relay.connected ? 'CONNECTED' : 'MISSING') }}
-                  </q-badge>
-                </td>
-                <td>{{ relay.attempts ?? 'n/a' }}</td>
-                <td class="developer-table__mono">
-                  {{ relay.connectedAt ? formatUnixTimestamp(relay.connectedAt) : 'n/a' }}
-                </td>
-                <td class="text-right">
-                  <q-btn
-                    flat
-                    dense
-                    no-caps
-                    icon="sync"
-                    label="Reconnect"
-                    :loading="Boolean(reconnectingRelayUrls[relay.url])"
-                    @click="handleReconnectRelay(relay.url)"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </q-markup-table>
-        </q-card-section>
-      </q-card>
-
-      <q-card flat bordered class="developer-card">
-        <q-card-section class="developer-card__header">
-          <div>
+        <q-card-section
+          class="developer-card__header developer-card__header--clickable"
+          role="button"
+          tabindex="0"
+          @click="toggleExpandableCard('pendingQueues')"
+          @keydown.enter.prevent="toggleExpandableCard('pendingQueues')"
+          @keydown.space.prevent="toggleExpandableCard('pendingQueues')"
+        >
+          <div class="developer-card__header-main">
             <div class="text-h6">Pending Queues</div>
             <div class="text-caption text-grey-6">
               Incoming reactions and deletions waiting on their target messages or events.
             </div>
           </div>
+
+          <div class="developer-card__header-side">
+            <q-icon
+              :name="expandedCards.pendingQueues ? 'expand_less' : 'expand_more'"
+              size="20px"
+              class="developer-card__header-icon"
+            />
+          </div>
         </q-card-section>
 
-        <q-card-section v-if="diagnostics" class="developer-card__section">
+        <q-slide-transition>
+          <div v-show="expandedCards.pendingQueues">
+            <q-card-section v-if="diagnostics" class="developer-card__section">
           <div class="developer-queue-summary">
             <q-badge color="primary" outline>
               Reactions: {{ totalPendingReactions }}
@@ -416,21 +490,40 @@
               </q-expansion-item>
             </div>
           </div>
-        </q-card-section>
+            </q-card-section>
+          </div>
+        </q-slide-transition>
       </q-card>
 
       <q-card flat bordered class="developer-card">
-        <q-card-section class="developer-card__header">
-          <div>
+        <q-card-section
+          class="developer-card__header developer-card__header--clickable"
+          role="button"
+          tabindex="0"
+          @click="toggleExpandableCard('recentTrace')"
+          @keydown.enter.prevent="toggleExpandableCard('recentTrace')"
+          @keydown.space.prevent="toggleExpandableCard('recentTrace')"
+        >
+          <div class="developer-card__header-main">
             <div class="text-h6">Recent Trace</div>
             <div class="text-caption text-grey-6">
               Most recent relay, subscription, and ingest diagnostics captured in-app.
             </div>
           </div>
-          <q-badge color="primary" outline>{{ traceEntries.length }}</q-badge>
+
+          <div class="developer-card__header-side">
+            <q-badge color="primary" outline>{{ traceEntries.length }}</q-badge>
+            <q-icon
+              :name="expandedCards.recentTrace ? 'expand_less' : 'expand_more'"
+              size="20px"
+              class="developer-card__header-icon"
+            />
+          </div>
         </q-card-section>
 
-        <q-card-section class="developer-card__section">
+        <q-slide-transition>
+          <div v-show="expandedCards.recentTrace">
+            <q-card-section class="developer-card__section">
           <div v-if="traceEntries.length === 0" class="developer-empty-state">
             No trace entries captured yet.
           </div>
@@ -459,7 +552,9 @@
 
             <pre class="developer-json">{{ formatJson(entry.details) }}</pre>
           </q-expansion-item>
-        </q-card-section>
+            </q-card-section>
+          </div>
+        </q-slide-transition>
       </q-card>
     </div>
   </SettingsDetailLayout>
@@ -481,6 +576,13 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 const $q = useQuasar();
 const nostrStore = useNostrStore();
 
+type ExpandableDeveloperCardKey =
+  | 'nostrSession'
+  | 'privateMessagesSubscription'
+  | 'relayStatus'
+  | 'pendingQueues'
+  | 'recentTrace';
+
 const diagnostics = ref<DeveloperDiagnosticsSnapshot | null>(null);
 const isRefreshingDiagnostics = ref(false);
 const isRestartingSubscription = ref(false);
@@ -488,6 +590,13 @@ const isReconnectingAllRelays = ref(false);
 const isReloadingFromLookback = ref(false);
 const reconnectingRelayUrls = ref<Record<string, boolean>>({});
 const replayLookbackMinutes = ref(180);
+const expandedCards = ref<Record<ExpandableDeveloperCardKey, boolean>>({
+  nostrSession: false,
+  privateMessagesSubscription: false,
+  relayStatus: true,
+  pendingQueues: true,
+  recentTrace: true
+});
 
 let refreshRequestId = 0;
 let refreshDebounceId: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -552,6 +661,10 @@ async function refreshDiagnostics(): Promise<void> {
 
 function handleDeveloperDiagnosticsToggle(enabled: boolean): void {
   nostrStore.setDeveloperDiagnosticsEnabled(enabled);
+}
+
+function toggleExpandableCard(key: ExpandableDeveloperCardKey): void {
+  expandedCards.value[key] = !expandedCards.value[key];
 }
 
 async function handleRestartSubscription(): Promise<void> {
@@ -751,6 +864,25 @@ function formatJson(value: unknown): string {
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+}
+
+.developer-card__header--clickable {
+  cursor: pointer;
+}
+
+.developer-card__header-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.developer-card__header-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.developer-card__header-icon {
+  opacity: 0.7;
 }
 
 .developer-card__section {
