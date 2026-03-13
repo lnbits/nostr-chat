@@ -10,6 +10,7 @@ interface ChatContactContext {
   picture: string;
   givenName: string;
   contactName: string;
+  lastSeenIncomingActivityAt: string;
 }
 
 interface LiveChatPreviewInput {
@@ -253,6 +254,44 @@ function buildChatActivitySnapshotByPublicKey(
   return snapshotsByPublicKey;
 }
 
+function buildIncomingMessageTimestampsByPublicKey(
+  messageRows: Awaited<ReturnType<typeof chatDataService.listAllMessages>>,
+  loggedInPublicKey: string | null
+): Map<string, string[]> {
+  const timestampsByPublicKey = new Map<string, string[]>();
+  if (!loggedInPublicKey) {
+    return timestampsByPublicKey;
+  }
+
+  for (const row of messageRows) {
+    const chatPublicKey = normalizeChatIdentifier(row.chat_public_key);
+    const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
+    if (!chatPublicKey || !authorPublicKey || authorPublicKey === loggedInPublicKey) {
+      continue;
+    }
+
+    const timestamps = timestampsByPublicKey.get(chatPublicKey) ?? [];
+    timestamps.push(row.created_at);
+    timestampsByPublicKey.set(chatPublicKey, timestamps);
+  }
+
+  return timestampsByPublicKey;
+}
+
+function countUnreadMessagesAfter(
+  timestamps: string[] | undefined,
+  lastSeenReceivedActivityAt: string
+): number {
+  if (!timestamps || timestamps.length === 0) {
+    return 0;
+  }
+
+  const lastSeenTimestamp = toComparableTimestamp(lastSeenReceivedActivityAt);
+  return timestamps.reduce((count, timestamp) => {
+    return count + (toComparableTimestamp(timestamp) > lastSeenTimestamp ? 1 : 0);
+  }, 0);
+}
+
 function syncChatActivityMeta(
   meta: Record<string, unknown>,
   snapshot: ChatActivitySnapshot | undefined
@@ -320,10 +359,16 @@ function resolvePictureFromContactMeta(meta: Record<string, unknown>): string {
 }
 
 function toContactContext(contact: ContactRecord): ChatContactContext {
+  const contactMeta =
+    contact.meta && typeof contact.meta === 'object' && !Array.isArray(contact.meta)
+      ? (contact.meta as Record<string, unknown>)
+      : {};
+
   return {
-    picture: resolvePictureFromContactMeta(contact.meta as Record<string, unknown>),
+    picture: resolvePictureFromContactMeta(contactMeta),
     givenName: contact.given_name?.trim() ?? '',
-    contactName: contact.name.trim()
+    contactName: contact.name.trim(),
+    lastSeenIncomingActivityAt: readMetaString(contactMeta, 'last_seen_incoming_activity_at')
   };
 }
 
@@ -351,8 +396,19 @@ function syncChatMeta(
       'contact_name',
       contactContext.contactName
     );
+    const didChangeLastSeenReceivedActivityAt = syncMetaLatestTimestamp(
+      writableMeta,
+      LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
+      contactContext.lastSeenIncomingActivityAt
+    );
 
-    if (!didChangePicture && !didChangeGivenName && !didChangeContactName && nextMeta !== meta) {
+    if (
+      !didChangePicture &&
+      !didChangeGivenName &&
+      !didChangeContactName &&
+      !didChangeLastSeenReceivedActivityAt &&
+      nextMeta !== meta
+    ) {
       nextMeta = meta;
     }
   }
@@ -425,7 +481,12 @@ export const useChatStore = defineStore('chatStore', () => {
       messageRows,
       getLoggedInPublicKey()
     );
+    const incomingMessageTimestampsByPublicKey = buildIncomingMessageTimestampsByPublicKey(
+      messageRows,
+      getLoggedInPublicKey()
+    );
     const metaSyncPromises: Promise<void>[] = [];
+    const unreadCountSyncPromises: Promise<void>[] = [];
 
     for (const contact of contacts) {
       contactContextByPublicKey.set(contact.public_key.toLowerCase(), toContactContext(contact));
@@ -433,8 +494,14 @@ export const useChatStore = defineStore('chatStore', () => {
 
     chats.value = sortByLatest(
       rows.map((row) => {
-        const nextMeta = syncChatActivityMeta(
+        const contactContext = contactContextByPublicKey.get(row.public_key.toLowerCase());
+        const nextMetaWithContactContext = syncChatMeta(
           row.meta,
+          contactContext,
+          contactContext?.givenName || contactContext?.contactName || row.name || row.public_key
+        );
+        const nextMeta = syncChatActivityMeta(
+          nextMetaWithContactContext,
           activitySnapshotByPublicKey.get(row.public_key.toLowerCase())
         );
         if (nextMeta !== row.meta) {
@@ -445,16 +512,29 @@ export const useChatStore = defineStore('chatStore', () => {
           );
         }
 
+        const normalizedUnreadCount = countUnreadMessagesAfter(
+          incomingMessageTimestampsByPublicKey.get(row.public_key.toLowerCase()),
+          readMetaString(nextMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY)
+        );
+        if (normalizedUnreadCount !== row.unread_count) {
+          unreadCountSyncPromises.push(
+            chatDataService.updateChatUnreadCount(row.public_key, normalizedUnreadCount).catch((error) => {
+              console.error('Failed to persist derived chat unread count', error);
+            })
+          );
+        }
+
         return mapChatRowToChat(
           {
             ...row,
+            unread_count: normalizedUnreadCount,
             meta: nextMeta
           },
-          contactContextByPublicKey.get(row.public_key.toLowerCase())
+          contactContext
         );
       })
     );
-    await Promise.all(metaSyncPromises);
+    await Promise.all([...metaSyncPromises, ...unreadCountSyncPromises]);
 
     if (selectedChatId.value && chats.value.some((chat) => chat.id === selectedChatId.value)) {
       return;

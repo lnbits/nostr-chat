@@ -153,6 +153,15 @@ interface SubscribePrivateMessagesOptions {
   startupTrackStep?: boolean;
 }
 
+interface PrivateMessagesBackfillState {
+  pubkey: string;
+  nextSince: number;
+  nextUntil: number;
+  floorSince: number;
+  delayMs: number;
+  completed: boolean;
+}
+
 interface QueuePrivateMessageUiRefreshOptions {
   throttleMs?: number;
   reloadChats?: boolean;
@@ -328,6 +337,8 @@ const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
 const EVENT_SINCE_STORAGE_KEY = 'nostr-event-since';
+const PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY = 'nostr-private-messages-last-received-event';
+const PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY = 'nostr-private-messages-backfill-state';
 const PRIVATE_PREFERENCES_STORAGE_KEY = 'privatePreferences';
 const DEVELOPER_DIAGNOSTICS_STORAGE_KEY = 'developer-diagnostics-enabled';
 const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
@@ -340,6 +351,11 @@ const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
 const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
+const PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
+const PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS = 24 * 60 * 60;
+const PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
+const PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS = 1000;
+const PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS = 10 * 1000;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 2 * 60 * 60;
 const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
@@ -421,12 +437,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let lastPrivateContactListEventId = '';
   let privateMessagesSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let privateMessagesSubscriptionSignature = '';
+  let privateMessagesBackfillSubscription: ReturnType<typeof ndk.subscribe> | null = null;
+  let privateMessagesBackfillPromise: Promise<void> | null = null;
+  let privateMessagesBackfillRunToken = 0;
+  let privateMessagesBackfillSignature = '';
+  let privateMessagesBackfillDelayTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let privateMessagesBackfillDelayResolver: (() => void) | null = null;
   let privateMessagesIngestQueue = Promise.resolve();
   let privateMessagesRestoreThrottleMs = 0;
   let privateMessagesUiRefreshQueue = Promise.resolve();
   let privateMessagesUiRefreshTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let shouldReloadChatsOnPrivateMessagesUiRefresh = false;
   let shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
+  let chatChecksQueue = Promise.resolve();
+  let postPrivateMessagesEoseChecksQueue = Promise.resolve();
+  let chatChecksTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let shouldRunChatChecksForAllChats = false;
+  const pendingChatCheckChatIds = new Set<string>();
   let pendingEventSinceUpdate = 0;
   let startupDisplayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   let startupDisplayToken = 0;
@@ -787,6 +814,199 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return Math.max(0, ensureStoredEventSince() - EVENT_FILTER_LOOKBACK_SECONDS);
   }
 
+  function readStoredPrivateMessagesLastReceivedCreatedAt(): number | null {
+    if (!hasStorage()) {
+      return null;
+    }
+
+    const storedValue = Number.parseInt(
+      window.localStorage.getItem(PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY) ?? '',
+      10
+    );
+    return Number.isInteger(storedValue) && storedValue > 0 ? storedValue : null;
+  }
+
+  function updateStoredPrivateMessagesLastReceivedFromCreatedAt(value: unknown): void {
+    const createdAt = Number(value);
+    if (!Number.isInteger(createdAt) || createdAt <= 0) {
+      return;
+    }
+
+    const normalizedCreatedAt = Math.floor(createdAt);
+    const existingCreatedAt = readStoredPrivateMessagesLastReceivedCreatedAt();
+    if (existingCreatedAt !== null && normalizedCreatedAt <= existingCreatedAt) {
+      return;
+    }
+
+    if (hasStorage()) {
+      window.localStorage.setItem(
+        PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY,
+        String(normalizedCreatedAt)
+      );
+    }
+  }
+
+  function clearStoredPrivateMessagesLastReceivedCreatedAt(): void {
+    if (hasStorage()) {
+      window.localStorage.removeItem(PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY);
+    }
+  }
+
+  function normalizePrivateMessagesBackfillState(
+    value: unknown
+  ): PrivateMessagesBackfillState | null {
+    if (!isPlainRecord(value)) {
+      return null;
+    }
+
+    const pubkey = inputSanitizerService.normalizeHexKey(
+      typeof value.pubkey === 'string' ? value.pubkey : ''
+    );
+    const nextSince = Number(value.nextSince);
+    const nextUntil = Number(value.nextUntil);
+    const floorSince = Number(value.floorSince);
+    const delayMs = Number(value.delayMs);
+    const completed = value.completed === true;
+
+    if (
+      !pubkey ||
+      !Number.isInteger(nextSince) ||
+      nextSince < 0 ||
+      !Number.isInteger(nextUntil) ||
+      nextUntil < 0 ||
+      !Number.isInteger(floorSince) ||
+      floorSince < 0 ||
+      !Number.isFinite(delayMs)
+    ) {
+      return null;
+    }
+
+    return {
+      pubkey,
+      nextSince: Math.floor(nextSince),
+      nextUntil: Math.floor(nextUntil),
+      floorSince: Math.floor(floorSince),
+      delayMs: Math.min(
+        PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
+        Math.max(PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS, Math.floor(delayMs))
+      ),
+      completed
+    };
+  }
+
+  function readPrivateMessagesBackfillState(): PrivateMessagesBackfillState | null {
+    if (!hasStorage()) {
+      return null;
+    }
+
+    const stored = window.localStorage.getItem(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY)?.trim();
+    if (!stored) {
+      return null;
+    }
+
+    try {
+      return normalizePrivateMessagesBackfillState(JSON.parse(stored));
+    } catch {
+      return null;
+    }
+  }
+
+  function writePrivateMessagesBackfillState(state: PrivateMessagesBackfillState): void {
+    if (!hasStorage()) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY,
+      JSON.stringify(state)
+    );
+  }
+
+  function clearPrivateMessagesBackfillState(): void {
+    if (hasStorage()) {
+      window.localStorage.removeItem(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY);
+    }
+  }
+
+  function getPrivateMessagesStartupFloorSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
+    return Math.max(0, Math.floor(baseUnixTime) - PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS);
+  }
+
+  function getPrivateMessagesStartupLiveSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
+    const normalizedNow = Math.max(0, Math.floor(baseUnixTime));
+    const lastReceivedCreatedAt = readStoredPrivateMessagesLastReceivedCreatedAt();
+    const anchorCreatedAt = lastReceivedCreatedAt ?? normalizedNow;
+
+    return Math.max(
+      getPrivateMessagesStartupFloorSince(normalizedNow),
+      anchorCreatedAt - PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS
+    );
+  }
+
+  function createInitialPrivateMessagesBackfillState(
+    pubkeyHex: string,
+    liveSince: number,
+    floorSince: number
+  ): PrivateMessagesBackfillState | null {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    const normalizedLiveSince = Math.max(0, Math.floor(liveSince));
+    const normalizedFloorSince = Math.max(0, Math.floor(floorSince));
+    if (!normalizedPubkey || normalizedLiveSince <= normalizedFloorSince) {
+      return null;
+    }
+
+    const nextUntil = normalizedLiveSince;
+    const nextSince = Math.max(
+      normalizedFloorSince,
+      nextUntil - PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS
+    );
+    if (nextSince >= nextUntil) {
+      return null;
+    }
+
+    return {
+      pubkey: normalizedPubkey,
+      nextSince,
+      nextUntil,
+      floorSince: normalizedFloorSince,
+      delayMs: PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS,
+      completed: false
+    };
+  }
+
+  function getPrivateMessagesBackfillResumeState(
+    pubkeyHex: string,
+    liveSince: number,
+    floorSince: number
+  ): PrivateMessagesBackfillState | null {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    if (!normalizedPubkey) {
+      return null;
+    }
+
+    const storedState = readPrivateMessagesBackfillState();
+    if (storedState && storedState.pubkey === normalizedPubkey) {
+      const normalizedFloorSince = Math.max(floorSince, storedState.floorSince);
+      if (storedState.completed && storedState.floorSince <= normalizedFloorSince) {
+        return null;
+      }
+
+      const nextSince = Math.max(normalizedFloorSince, storedState.nextSince);
+      const nextUntil = Math.max(nextSince, storedState.nextUntil);
+      if (nextSince < nextUntil) {
+        return {
+          ...storedState,
+          nextSince,
+          nextUntil,
+          floorSince: normalizedFloorSince,
+          completed: false
+        };
+      }
+    }
+
+    return createInitialPrivateMessagesBackfillState(normalizedPubkey, liveSince, floorSince);
+  }
+
   function updateStoredEventSinceFromCreatedAt(value: unknown): void {
     const createdAt = Number(value);
     if (!Number.isInteger(createdAt) || createdAt <= 0) {
@@ -818,6 +1038,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (hasStorage()) {
       window.localStorage.removeItem(EVENT_SINCE_STORAGE_KEY);
     }
+
+    clearStoredPrivateMessagesLastReceivedCreatedAt();
+    clearPrivateMessagesBackfillState();
   }
 
   function toComparableTimestamp(value: string | null | undefined): number {
@@ -843,7 +1066,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return null;
     }
 
-    const normalizedContactSecret = inputSanitizerService.normalizeHexKey(value.contactSecret);
+    const normalizedContactSecret = inputSanitizerService.normalizeHexKey(
+      typeof value.contactSecret === 'string' ? value.contactSecret : ''
+    );
     if (!normalizedContactSecret) {
       return null;
     }
@@ -1091,6 +1316,92 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
+  async function runPendingChatChecks(): Promise<void> {
+    try {
+      await chatDataService.init();
+      let chatIds: string[] = [];
+
+      if (shouldRunChatChecksForAllChats) {
+        const chatRows = await chatDataService.listChats();
+        chatIds = chatRows
+          .map((row) => inputSanitizerService.normalizeHexKey(row.public_key))
+          .filter((value): value is string => Boolean(value));
+      } else {
+        chatIds = Array.from(pendingChatCheckChatIds);
+      }
+
+      shouldRunChatChecksForAllChats = false;
+      pendingChatCheckChatIds.clear();
+
+      if (chatIds.length === 0) {
+        return;
+      }
+
+      console.log('Starting chat checks', {
+        chatCount: chatIds.length
+      });
+
+      await chatStore.reload();
+      const { useMessageStore } = await import('src/stores/messageStore');
+      const messageStore = useMessageStore();
+
+      for (const chatId of chatIds) {
+        try {
+          await messageStore.syncChatUnseenReactionCount(chatId);
+        } catch (error) {
+          console.warn('Failed to sync unseen reaction count during chat checks', chatId, error);
+        }
+      }
+
+      await messageStore.reloadLoadedMessages();
+    } catch (error) {
+      console.error('Failed to run chat checks', error);
+    }
+  }
+
+  function scheduleChatChecks(chatIds: string[] = [], options: { allChats?: boolean } = {}): void {
+    if (options.allChats) {
+      shouldRunChatChecksForAllChats = true;
+      pendingChatCheckChatIds.clear();
+    } else if (!shouldRunChatChecksForAllChats) {
+      for (const chatId of chatIds) {
+        const normalizedChatId = inputSanitizerService.normalizeHexKey(chatId);
+        if (normalizedChatId) {
+          pendingChatCheckChatIds.add(normalizedChatId);
+        }
+      }
+    }
+
+    if (chatChecksTimeoutId !== null) {
+      return;
+    }
+
+    chatChecksTimeoutId = globalThis.setTimeout(() => {
+      chatChecksTimeoutId = null;
+      chatChecksQueue = chatChecksQueue.then(() => runPendingChatChecks());
+    }, 0);
+  }
+
+  function schedulePostPrivateMessagesEoseChecks(): void {
+    postPrivateMessagesEoseChecksQueue = postPrivateMessagesEoseChecksQueue
+      .then(async () => {
+        try {
+          await privateMessagesIngestQueue.catch((error) => {
+            console.error('Failed while draining private message ingest queue before EOSE checks', error);
+          });
+
+          const summary = await refreshDeveloperPendingQueues();
+          console.log('Checked pending queues after DM EOSE', summary);
+          scheduleChatChecks([], { allChats: true });
+        } catch (error) {
+          console.error('Failed to run post-DM EOSE checks', error);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to enqueue post-DM EOSE checks', error);
+      });
+  }
+
   async function restoreStartupState(seedRelayUrls: string[] = []): Promise<void> {
     if (restoreStartupStatePromise) {
       return restoreStartupStatePromise;
@@ -1255,6 +1566,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       sinceIso:
         normalizedSince && normalizedSince > 0
           ? new Date(normalizedSince * 1000).toISOString()
+          : null
+    };
+  }
+
+  function buildFilterUntilDetails(until: number | undefined): Record<string, unknown> {
+    const normalizedUntil = Number.isInteger(until) ? Number(until) : null;
+    return {
+      until: normalizedUntil,
+      untilIso:
+        normalizedUntil && normalizedUntil > 0
+          ? new Date(normalizedUntil * 1000).toISOString()
           : null
     };
   }
@@ -3405,6 +3727,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
       delete nextContactMeta.last_seen_incoming_activity_event_id;
     }
 
+    const didChangeLastSeenIncomingActivityAt =
+      contact.meta.last_seen_incoming_activity_at !== nextContactMeta.last_seen_incoming_activity_at ||
+      (contact.meta.last_seen_incoming_activity_event_id ?? null) !==
+        (nextContactMeta.last_seen_incoming_activity_event_id ?? null);
+
     if (
       contact.meta.last_seen_incoming_activity_at !== nextContactMeta.last_seen_incoming_activity_at ||
       (contact.meta.last_seen_incoming_activity_event_id ?? null) !==
@@ -3507,6 +3834,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (Number(chatRow.unread_count ?? 0) !== nextUnreadMessageCount) {
       await chatDataService.updateChatUnreadCount(normalizedContactPubkey, nextUnreadMessageCount);
       didChange = true;
+    }
+
+    if (didChangeLastSeenIncomingActivityAt) {
+      scheduleChatChecks([normalizedContactPubkey]);
     }
 
     return didChange;
@@ -3878,6 +4209,94 @@ export const useNostrStore = defineStore('nostrStore', () => {
       relays: nextRelays
     });
     await chatStore.syncContactProfile(normalizedTargetPubkey);
+  }
+
+  async function refreshAllStoredContacts(): Promise<{
+    totalCount: number;
+    refreshedCount: number;
+    failedCount: number;
+    cursorContactCount: number;
+    cursorAppliedCount: number;
+    cursorUiReloaded: boolean;
+  }> {
+    await contactsService.init();
+    const storedContacts = await contactsService.listContacts();
+    console.log('Starting stored contacts refresh after DM startup EOSE', {
+      contactCount: storedContacts.length
+    });
+    if (storedContacts.length === 0) {
+      return {
+        totalCount: 0,
+        refreshedCount: 0,
+        failedCount: 0,
+        cursorContactCount: 0,
+        cursorAppliedCount: 0,
+        cursorUiReloaded: false
+      };
+    }
+
+    let refreshedCount = 0;
+    let failedCount = 0;
+
+    for (const contact of storedContacts) {
+      const fallbackName = contact.name.trim() || contact.public_key.slice(0, 16);
+      try {
+        await refreshContactByPublicKey(contact.public_key, fallbackName);
+        refreshedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        console.warn('Failed to refresh stored contact after DM startup EOSE', contact.public_key, error);
+      }
+    }
+
+    const refreshedContacts = await contactsService.listContacts();
+    let cursorAppliedCount = 0;
+    let cursorUiReloaded = false;
+    if (readPrivatePreferencesFromStorage() && refreshedContacts.length > 0) {
+      console.log('Starting per-contact cursor data refresh after DM startup EOSE', {
+        contactCount: refreshedContacts.length
+      });
+      const cursorsByDTag = await fetchContactCursorEvents(refreshedContacts);
+      for (const contact of refreshedContacts) {
+        const contactDTag = await deriveContactCursorDTag(contact.public_key);
+        if (!contactDTag) {
+          continue;
+        }
+
+        const cursor = cursorsByDTag.get(contactDTag);
+        if (!cursor) {
+          continue;
+        }
+
+        if (await applyContactCursorStateToContact(contact, cursor)) {
+          cursorAppliedCount += 1;
+        }
+      }
+
+      if (cursorAppliedCount > 0) {
+        console.log('Starting UI refresh after per-contact cursor data refresh', {
+          cursorAppliedCount
+        });
+        await Promise.all([
+          chatStore.reload(),
+          import('src/stores/messageStore').then(({ useMessageStore }) =>
+            useMessageStore().reloadLoadedMessages()
+          )
+        ]);
+        cursorUiReloaded = true;
+      }
+    }
+
+    bumpContactListVersion();
+
+    return {
+      totalCount: storedContacts.length,
+      refreshedCount,
+      failedCount,
+      cursorContactCount: refreshedContacts.length,
+      cursorAppliedCount,
+      cursorUiReloaded
+    };
   }
 
   async function ensureRespondedPubkeyIsContact(
@@ -4669,7 +5088,292 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function clearPrivateMessagesBackfillDelay(): void {
+    if (privateMessagesBackfillDelayTimerId !== null) {
+      globalThis.clearTimeout(privateMessagesBackfillDelayTimerId);
+      privateMessagesBackfillDelayTimerId = null;
+    }
+
+    if (privateMessagesBackfillDelayResolver) {
+      const resolver = privateMessagesBackfillDelayResolver;
+      privateMessagesBackfillDelayResolver = null;
+      resolver();
+    }
+  }
+
+  function stopPrivateMessagesBackfill(reason = 'replace'): void {
+    privateMessagesBackfillRunToken += 1;
+    clearPrivateMessagesBackfillDelay();
+
+    if (privateMessagesBackfillSubscription) {
+      logSubscription('private-messages', 'backfill-stop', {
+        reason,
+        signature: privateMessagesBackfillSignature || null
+      });
+      privateMessagesBackfillSubscription.stop();
+      privateMessagesBackfillSubscription = null;
+    }
+
+    privateMessagesBackfillPromise = null;
+    privateMessagesBackfillSignature = '';
+  }
+
+  async function waitForPrivateMessagesBackfillDelay(
+    delayMs: number,
+    runToken: number
+  ): Promise<boolean> {
+    const normalizedDelayMs = normalizeThrottleMs(delayMs);
+    if (normalizedDelayMs <= 0) {
+      return runToken === privateMessagesBackfillRunToken;
+    }
+
+    await new Promise<void>((resolve) => {
+      privateMessagesBackfillDelayResolver = () => {
+        privateMessagesBackfillDelayResolver = null;
+        resolve();
+      };
+      privateMessagesBackfillDelayTimerId = globalThis.setTimeout(() => {
+        privateMessagesBackfillDelayTimerId = null;
+        const resolver = privateMessagesBackfillDelayResolver;
+        privateMessagesBackfillDelayResolver = null;
+        resolver?.();
+      }, normalizedDelayMs);
+    });
+
+    return runToken === privateMessagesBackfillRunToken;
+  }
+
+  async function runPrivateMessagesBackfillWindow(options: {
+    loggedInPubkeyHex: string;
+    relayUrls: string[];
+    since: number;
+    until: number;
+    signature: string;
+  }): Promise<number> {
+    return new Promise<number>((resolve, reject) => {
+      let didFinish = false;
+      let eventCount = 0;
+      let subscription: ReturnType<typeof ndk.subscribe> | null = null;
+
+      const finish = (error?: unknown) => {
+        if (didFinish) {
+          return;
+        }
+
+        didFinish = true;
+        if (subscription && privateMessagesBackfillSubscription === subscription) {
+          privateMessagesBackfillSubscription = null;
+        }
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(eventCount);
+      };
+
+      try {
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
+        console.log('Starting private messages backfill subscription window', {
+          signature: options.signature,
+          since: options.since,
+          until: options.until,
+          relayCount: options.relayUrls.length
+        });
+        subscription = ndk.subscribe(
+          {
+            kinds: [NDKKind.GiftWrap],
+            '#p': [options.loggedInPubkeyHex],
+            since: options.since,
+            until: options.until
+          },
+          {
+            relaySet,
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+            closeOnEose: true,
+            onEvent: (event) => {
+              const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+              eventCount += 1;
+              updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
+              updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+              queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
+                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+              });
+            },
+            onEose: () => {
+              logSubscription('private-messages', 'backfill-eose', {
+                signature: options.signature,
+                eventCount,
+                ...buildFilterSinceDetails(options.since),
+                ...buildFilterUntilDetails(options.until)
+              });
+              schedulePostPrivateMessagesEoseChecks();
+              flushPrivateMessagesUiRefreshNow();
+              finish();
+            },
+            onClose: () => {
+              finish();
+            }
+          }
+        );
+
+        privateMessagesBackfillSubscription = subscription;
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  function startPrivateMessagesStartupBackfill(
+    loggedInPubkeyHex: string,
+    relayUrls: string[],
+    liveSince: number
+  ): void {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(loggedInPubkeyHex);
+    if (!normalizedPubkey || relayUrls.length === 0) {
+      return;
+    }
+
+    const signature = `${normalizedPubkey}:${relaySignature(relayUrls)}:${liveSince}`;
+    if (privateMessagesBackfillPromise && privateMessagesBackfillSignature === signature) {
+      return;
+    }
+
+    stopPrivateMessagesBackfill('replace');
+    privateMessagesBackfillSignature = signature;
+    const runToken = ++privateMessagesBackfillRunToken;
+    privateMessagesBackfillPromise = (async () => {
+      const floorSince = getPrivateMessagesStartupFloorSince();
+      let state = getPrivateMessagesBackfillResumeState(normalizedPubkey, liveSince, floorSince);
+
+      if (!state) {
+        logSubscription('private-messages', 'backfill-skip', {
+          signature,
+          reason: 'no-pending-window',
+          ...buildFilterSinceDetails(liveSince),
+          floorSince,
+          floorSinceIso: toOptionalIsoTimestampFromUnix(floorSince)
+        });
+        return;
+      }
+
+      logSubscription('private-messages', 'backfill-start', {
+        signature,
+        ...buildFilterSinceDetails(state.nextSince),
+        ...buildFilterUntilDetails(state.nextUntil),
+        floorSince: state.floorSince,
+        floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince),
+        delayMs: state.delayMs
+      });
+
+      while (runToken === privateMessagesBackfillRunToken) {
+        if (state.nextSince >= state.nextUntil || state.nextUntil <= state.floorSince) {
+          writePrivateMessagesBackfillState({
+            ...state,
+            completed: true
+          });
+          logSubscription('private-messages', 'backfill-complete', {
+            signature,
+            ...buildFilterSinceDetails(state.nextSince),
+            ...buildFilterUntilDetails(state.nextUntil),
+            floorSince: state.floorSince,
+            floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince)
+          });
+          return;
+        }
+
+        writePrivateMessagesBackfillState(state);
+        logSubscription('private-messages', 'backfill-window-start', {
+          signature,
+          ...buildFilterSinceDetails(state.nextSince),
+          ...buildFilterUntilDetails(state.nextUntil),
+          delayMs: state.delayMs
+        });
+
+        await runPrivateMessagesBackfillWindow({
+          loggedInPubkeyHex: normalizedPubkey,
+          relayUrls,
+          since: state.nextSince,
+          until: state.nextUntil,
+          signature
+        });
+
+        if (runToken !== privateMessagesBackfillRunToken) {
+          return;
+        }
+
+        const reachedFloor = state.nextSince <= state.floorSince;
+        if (reachedFloor) {
+          writePrivateMessagesBackfillState({
+            ...state,
+            completed: true
+          });
+          logSubscription('private-messages', 'backfill-complete', {
+            signature,
+            ...buildFilterSinceDetails(state.nextSince),
+            ...buildFilterUntilDetails(state.nextUntil),
+            floorSince: state.floorSince,
+            floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince)
+          });
+          return;
+        }
+
+        const waitDelayMs = state.delayMs;
+        const nextUntil = state.nextSince;
+        const nextSince = Math.max(
+          state.floorSince,
+          nextUntil - PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS
+        );
+        state = {
+          ...state,
+          nextSince,
+          nextUntil,
+          delayMs: Math.min(
+            PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
+            state.delayMs + PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS
+          ),
+          completed: false
+        };
+        writePrivateMessagesBackfillState(state);
+
+        logSubscription('private-messages', 'backfill-wait', {
+          signature,
+          delayMs: waitDelayMs,
+          nextSince,
+          nextSinceIso: toOptionalIsoTimestampFromUnix(nextSince),
+          nextUntil,
+          nextUntilIso: toOptionalIsoTimestampFromUnix(nextUntil)
+        });
+
+        const shouldContinue = await waitForPrivateMessagesBackfillDelay(waitDelayMs, runToken);
+        if (!shouldContinue) {
+          return;
+        }
+      }
+    })()
+      .catch((error) => {
+        console.error('Failed to backfill private messages', error);
+        logSubscription('private-messages', 'backfill-error', {
+          signature,
+          error
+        });
+      })
+      .finally(() => {
+        if (runToken !== privateMessagesBackfillRunToken) {
+          return;
+        }
+
+        clearPrivateMessagesBackfillDelay();
+        privateMessagesBackfillSubscription = null;
+        privateMessagesBackfillPromise = null;
+        privateMessagesBackfillSignature = '';
+      });
+  }
+
   function stopPrivateMessagesSubscription(reason = 'replace'): void {
+    stopPrivateMessagesBackfill(reason);
+
     if (privateMessagesSubscription) {
       logSubscription('private-messages', 'stop', {
         reason,
@@ -4695,9 +5399,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function queuePrivateMessageIngestion(
     wrappedEvent: NDKEvent,
-    loggedInPubkeyHex: string
+    loggedInPubkeyHex: string,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
   ): void {
-    const uiThrottleMs = privateMessagesRestoreThrottleMs;
+    const uiThrottleMs =
+      typeof options.uiThrottleMs === 'number'
+        ? normalizeThrottleMs(options.uiThrottleMs)
+        : privateMessagesRestoreThrottleMs;
 
     privateMessagesIngestQueue = privateMessagesIngestQueue
       .then(() =>
@@ -4977,6 +5687,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
     const isBlockedChat = chat.meta?.inbox_state === 'blocked';
+    const contactLastSeenIncomingActivityAt = normalizeTimestamp(
+      isPlainRecord(contact?.meta) ? contact.meta.last_seen_incoming_activity_at : null
+    );
+    const chatLastSeenReceivedActivityAt = normalizeTimestamp(
+      isPlainRecord(chat.meta) ? chat.meta[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY] : null
+    );
+    const effectiveLastSeenIncomingActivityAt =
+      toComparableTimestamp(contactLastSeenIncomingActivityAt) >=
+      toComparableTimestamp(chatLastSeenReceivedActivityAt)
+        ? contactLastSeenIncomingActivityAt
+        : chatLastSeenReceivedActivityAt;
     const replyPreview = replyTargetEventId
       ? await buildReplyPreviewFromTargetEvent(
           replyTargetEventId,
@@ -5034,27 +5755,42 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
     }
 
+    const currentUnreadCount = Math.max(0, Number(chat.unread_count ?? 0));
+    const shouldIncrementUnreadCount =
+      !isSelfSentMessage &&
+      !isBlockedChat &&
+      chatStore.visibleChatId !== chat.public_key &&
+      toComparableTimestamp(createdAt) >
+        toComparableTimestamp(effectiveLastSeenIncomingActivityAt);
     const nextUnreadCount = isSelfSentMessage
-      ? Number(chat.unread_count ?? 0)
-      : isBlockedChat
+      ? currentUnreadCount
+      : isBlockedChat || chatStore.visibleChatId === chat.public_key
         ? 0
-      : chatStore.visibleChatId === chat.public_key
-        ? 0
-        : Number(chat.unread_count ?? 0) + 1;
+        : shouldIncrementUnreadCount
+          ? currentUnreadCount + 1
+          : currentUnreadCount;
+    const shouldUpdateChatPreview =
+      toComparableTimestamp(createdAt) >= toComparableTimestamp(chat.last_message_at);
 
-    await chatDataService.updateChatPreview(
-      chat.public_key,
-      messageText,
-      createdAt,
-      nextUnreadCount
-    );
+    if (shouldUpdateChatPreview) {
+      await chatDataService.updateChatPreview(
+        chat.public_key,
+        messageText,
+        createdAt,
+        nextUnreadCount
+      );
+    } else if (nextUnreadCount !== currentUnreadCount) {
+      await chatDataService.updateChatUnreadCount(chat.public_key, nextUnreadCount);
+    }
 
     logInboundEvent('message-persisted', {
       persistence: 'created',
       direction,
       messageId: nextMessageRow.id,
       chatId: chat.id,
+      effectiveLastSeenIncomingActivityAt,
       unreadCount: nextUnreadCount,
+      updatedPreview: shouldUpdateChatPreview,
       uiThrottleMs,
       ...buildInboundTraceDetails({
         wrappedEvent,
@@ -5090,17 +5826,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     try {
-      chatStore.applyIncomingMessage({
-        publicKey: chat.public_key,
-        fallbackName: deriveChatName(contact, chatPubkey),
-        messageText,
-        at: createdAt,
-        unreadCount: nextUnreadCount,
-        meta: {
-          ...(chat.meta ?? {}),
-          ...(contact?.meta.picture ? { picture: contact.meta.picture } : {})
-        }
-      });
+      if (shouldUpdateChatPreview) {
+        chatStore.applyIncomingMessage({
+          publicKey: chat.public_key,
+          fallbackName: deriveChatName(contact, chatPubkey),
+          messageText,
+          at: createdAt,
+          unreadCount: nextUnreadCount,
+          meta: {
+            ...(chat.meta ?? {}),
+            ...(contact?.meta.picture ? { picture: contact.meta.picture } : {})
+          }
+        });
+      } else if (nextUnreadCount !== currentUnreadCount) {
+        await chatStore.setUnreadCount(chat.public_key, nextUnreadCount);
+      }
 
       const { useMessageStore } = await import('src/stores/messageStore');
       await useMessageStore().upsertPersistedMessage(nextMessageRow);
@@ -5115,6 +5855,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ): Promise<void> {
     const hasActiveStartupTracking = getStartupStepSnapshot('private-message-events').status === 'in_progress';
     const shouldTrackStartupStep = options.startupTrackStep === true || hasActiveStartupTracking;
+    const shouldRunStartupBackfill =
+      !Number.isInteger(options.sinceOverride) &&
+      (options.startupTrackStep === true || hasActiveStartupTracking || isRestoringStartupState.value);
     if (options.startupTrackStep === true) {
       beginStartupStep('private-message-events');
     }
@@ -5154,7 +5897,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       const filterSince =
         Number.isInteger(options.sinceOverride) && Number(options.sinceOverride) >= 0
           ? Math.floor(Number(options.sinceOverride))
-          : getFilterSince();
+          : shouldRunStartupBackfill
+            ? getPrivateMessagesStartupLiveSince()
+            : getFilterSince();
       if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
         logSubscription('private-messages', 'skip', {
           reason: 'already-active',
@@ -5209,6 +5954,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relaySnapshots,
         ...buildSubscriptionRelayDetails(relayUrls)
       });
+      console.log('Starting private messages live subscription', {
+        signature,
+        since: filterSince,
+        relayCount: relayUrls.length
+      });
 
       privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
       privateMessagesSubscriptionSince.value = filterSince;
@@ -5239,6 +5989,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
             privateMessagesSubscriptionLastEventCreatedAt.value =
               Number.isInteger(wrappedEvent.created_at) ? Number(wrappedEvent.created_at) : null;
             bumpDeveloperDiagnosticsVersion();
+            updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
             updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
             queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
           },
@@ -5251,8 +6002,28 @@ export const useNostrStore = defineStore('nostrStore', () => {
             bumpDeveloperDiagnosticsVersion();
             privateMessagesRestoreThrottleMs = 0;
             flushPrivateMessagesUiRefreshNow();
+            schedulePostPrivateMessagesEoseChecks();
             if (shouldTrackStartupStep) {
               completeStartupStep('private-message-events');
+            }
+            if (shouldRunStartupBackfill) {
+              void (async () => {
+                try {
+                  const contactRefreshSummary = await refreshAllStoredContacts();
+                  logSubscription('private-messages', 'contacts-refresh-after-eose', {
+                    signature,
+                    ...contactRefreshSummary
+                  });
+                } catch (error) {
+                  console.warn('Failed to refresh contacts after private messages startup EOSE', error);
+                  logSubscription('private-messages', 'contacts-refresh-after-eose-error', {
+                    signature,
+                    error
+                  });
+                } finally {
+                  startPrivateMessagesStartupBackfill(loggedInPubkeyHex, relayUrls, filterSince);
+                }
+              })();
             }
           }
         }
@@ -5520,6 +6291,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     stopMyRelayListSubscription();
     stopPrivateContactListSubscription();
     stopPrivateMessagesSubscription();
+    if (chatChecksTimeoutId !== null) {
+      globalThis.clearTimeout(chatChecksTimeoutId);
+      chatChecksTimeoutId = null;
+    }
+    shouldRunChatChecksForAllChats = false;
+    pendingChatCheckChatIds.clear();
+    chatChecksQueue = Promise.resolve();
+    postPrivateMessagesEoseChecksQueue = Promise.resolve();
+    clearStoredPrivateMessagesLastReceivedCreatedAt();
+    clearPrivateMessagesBackfillState();
     bumpDeveloperDiagnosticsVersion();
 
     if (!hasStorage()) {
