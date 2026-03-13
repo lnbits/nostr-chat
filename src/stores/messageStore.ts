@@ -249,6 +249,11 @@ export const useMessageStore = defineStore('messageStore', () => {
     return Math.max(0, Math.floor(numericValue));
   }
 
+  function readMetaString(meta: Record<string, unknown>, key: string): string {
+    const value = meta[key];
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
   function buildChatMetaWithUnseenReactionCount(
     meta: Record<string, unknown>,
     unseenReactionCount: number
@@ -992,6 +997,170 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
   }
 
+  async function syncChatsReadStateFromSeenBoundary(
+    chatIds: string[] = []
+  ): Promise<{
+    chatCount: number;
+    boundaryAdvancedCount: number;
+    unreadCountAdjustedCount: number;
+    reactionMessageCount: number;
+    reactionsMarkedCount: number;
+  }> {
+    const normalizedChatIds = Array.from(
+      new Set(
+        chatIds
+          .map((chatId) => normalizeChatIdentifier(chatId))
+          .filter((chatId): chatId is string => Boolean(chatId))
+      )
+    );
+    const targetChatIds = normalizedChatIds.length > 0 ? new Set(normalizedChatIds) : null;
+    const loggedInPublicKey = getLoggedInPublicKey();
+    const summary = {
+      chatCount: 0,
+      boundaryAdvancedCount: 0,
+      unreadCountAdjustedCount: 0,
+      reactionMessageCount: 0,
+      reactionsMarkedCount: 0
+    };
+
+    await Promise.all([chatDataService.init(), contactsService.init()]);
+
+    const [chatRows, messageRows, contacts] = await Promise.all([
+      chatDataService.listChats(),
+      chatDataService.listAllMessages(),
+      contactsService.listContacts()
+    ]);
+    const messageRowsByChat = new Map<string, MessageRow[]>();
+    const seenBoundaryByChat = new Map<string, string>();
+
+    for (const contact of contacts) {
+      const normalizedChatId = normalizeChatIdentifier(contact.public_key);
+      if (!normalizedChatId || (targetChatIds && !targetChatIds.has(normalizedChatId))) {
+        continue;
+      }
+
+      const contactMeta =
+        contact.meta && typeof contact.meta === 'object' && !Array.isArray(contact.meta)
+          ? (contact.meta as Record<string, unknown>)
+          : {};
+      const seenBoundaryAt = readMetaString(contactMeta, 'last_seen_incoming_activity_at');
+      if (toComparableTimestamp(seenBoundaryAt) <= 0) {
+        continue;
+      }
+
+      seenBoundaryByChat.set(normalizedChatId, seenBoundaryAt);
+    }
+
+    for (const row of messageRows) {
+      const normalizedChatId = normalizeChatIdentifier(row.chat_public_key);
+      if (!normalizedChatId || (targetChatIds && !targetChatIds.has(normalizedChatId))) {
+        continue;
+      }
+
+      const chatMessageRows = messageRowsByChat.get(normalizedChatId) ?? [];
+      chatMessageRows.push(row);
+      messageRowsByChat.set(normalizedChatId, chatMessageRows);
+    }
+
+    for (const chatRow of chatRows) {
+      const normalizedChatId = normalizeChatIdentifier(chatRow.public_key);
+      if (!normalizedChatId || (targetChatIds && !targetChatIds.has(normalizedChatId))) {
+        continue;
+      }
+
+      summary.chatCount += 1;
+
+      const currentLastSeenReceivedActivityAt = readMetaString(
+        chatRow.meta,
+        'last_seen_received_activity_at'
+      );
+      const contactLastSeenIncomingActivityAt = seenBoundaryByChat.get(normalizedChatId) ?? '';
+      const boundaryAt =
+        toComparableTimestamp(contactLastSeenIncomingActivityAt) >
+        toComparableTimestamp(currentLastSeenReceivedActivityAt)
+          ? contactLastSeenIncomingActivityAt
+          : currentLastSeenReceivedActivityAt;
+      const boundaryTimestamp = toComparableTimestamp(boundaryAt);
+
+      if (
+        boundaryTimestamp > 0 &&
+        boundaryTimestamp > toComparableTimestamp(currentLastSeenReceivedActivityAt)
+      ) {
+        await chatDataService.updateChatMeta(normalizedChatId, {
+          ...chatRow.meta,
+          last_seen_received_activity_at: boundaryAt
+        });
+        summary.boundaryAdvancedCount += 1;
+      }
+
+      const chatMessageRows = messageRowsByChat.get(normalizedChatId) ?? [];
+      const nextUnreadCount = chatMessageRows.reduce((count, row) => {
+        if (normalizeChatIdentifier(row.author_public_key) === loggedInPublicKey) {
+          return count;
+        }
+
+        return count + (toComparableTimestamp(row.created_at) > boundaryTimestamp ? 1 : 0);
+      }, 0);
+
+      if (Number(chatRow.unread_count ?? 0) !== nextUnreadCount) {
+        await chatDataService.updateChatUnreadCount(normalizedChatId, nextUnreadCount);
+        summary.unreadCountAdjustedCount += 1;
+      }
+
+      if (!loggedInPublicKey) {
+        continue;
+      }
+
+      if (boundaryTimestamp <= 0) {
+        continue;
+      }
+
+      for (const row of chatMessageRows) {
+        if (normalizeChatIdentifier(row.author_public_key) !== loggedInPublicKey) {
+          continue;
+        }
+
+        const currentReactions = normalizeMessageReactions(row.meta.reactions);
+        let markedReactionCount = 0;
+        const nextReactions = currentReactions.map((reaction) => {
+          const reactionCreatedAt = normalizeTimestamp(reaction.createdAt);
+          if (
+            !reactionCreatedAt ||
+            reaction.viewedByAuthorAt ||
+            normalizeChatIdentifier(reaction.reactorPublicKey) === loggedInPublicKey ||
+            toComparableTimestamp(reactionCreatedAt) > boundaryTimestamp
+          ) {
+            return reaction;
+          }
+
+          markedReactionCount += 1;
+          return {
+            ...reaction,
+            viewedByAuthorAt: boundaryAt
+          };
+        });
+
+        if (markedReactionCount === 0) {
+          continue;
+        }
+
+        const updatedRow = await chatDataService.updateMessageMeta(
+          row.id,
+          buildMetaWithReactions(row.meta, nextReactions)
+        );
+        if (!updatedRow) {
+          continue;
+        }
+
+        summary.reactionMessageCount += 1;
+        summary.reactionsMarkedCount += markedReactionCount;
+        await upsertPersistedMessage(updatedRow);
+      }
+    }
+
+    return summary;
+  }
+
   async function markMessageReactionsViewed(chatId: string, messageId: string): Promise<void> {
     await markMessagesReactionsViewed(chatId, [messageId]);
   }
@@ -1023,6 +1192,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     deleteMessage,
     markMessageReactionsViewed,
     markMessagesReactionsViewed,
+    syncChatsReadStateFromSeenBoundary,
     syncChatUnseenReactionCount,
     removeChatMessages,
     upsertPersistedMessage,

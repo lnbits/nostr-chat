@@ -1392,6 +1392,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
           const summary = await refreshDeveloperPendingQueues();
           console.log('Checked pending queues after DM EOSE', summary);
+          const { useMessageStore } = await import('src/stores/messageStore');
+          console.log('Starting seen boundary sync after DM EOSE');
+          const seenBoundarySummary = await useMessageStore().syncChatsReadStateFromSeenBoundary();
+          console.log(
+            'Checked seen boundary after DM EOSE',
+            seenBoundarySummary
+          );
           scheduleChatChecks([], { allChats: true });
         } catch (error) {
           console.error('Failed to run post-DM EOSE checks', error);
