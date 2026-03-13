@@ -345,7 +345,7 @@ import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
-import { TOP_500_EMOJIS } from 'src/data/topEmojis';
+import { getEmojiEntryByValue, type EmojiOption } from 'src/data/topEmojis';
 import type {
   DeletedMessageMetadata,
   Message,
@@ -609,7 +609,11 @@ const baseVisibleMessageText = computed(() => {
   const [firstLine = ''] = props.message.text.split(/\r?\n/u);
   return firstLine;
 });
-const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
+const DEFAULT_QUICK_REACTION_EMOJIS = ['👍', '👎', '🙏', '❤️', '😂'] as const;
+
+const quickReactionEntries = DEFAULT_QUICK_REACTION_EMOJIS
+  .map((emoji) => getEmojiEntryByValue(emoji))
+  .filter((entry): entry is EmojiOption => entry !== null);
 const SINGLE_EMOJI_PATTERN =
   /^(?:\p{Regional_Indicator}{2}|(?:[#*0-9]\uFE0F?\u20E3)|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)$/u;
 const isSingleEmojiMessage = computed(() => {
