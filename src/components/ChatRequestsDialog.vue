@@ -12,7 +12,7 @@
       <div class="requests-dialog__empty-copy">Unknown inbound chats will appear here.</div>
     </div>
 
-    <q-scroll-area v-else class="requests-dialog__scroll">
+    <div v-else class="requests-dialog__scroll">
       <div class="requests-dialog__list">
         <ChatRequestItem
           v-for="chat in requests"
@@ -24,7 +24,7 @@
           @block="emit('block', $event)"
         />
       </div>
-    </q-scroll-area>
+    </div>
   </AppDialog>
 </template>
 
@@ -54,6 +54,8 @@ const emit = defineEmits<{
 
 .requests-dialog__scroll {
   max-height: min(62vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .requests-dialog__list {
