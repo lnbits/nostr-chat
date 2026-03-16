@@ -12,7 +12,6 @@
         @react="handleReactToMessage"
         @delete-message="handleDeleteMessage"
         @remove-reaction="handleRemoveReaction"
-        @refresh-chat="handleRefreshChat"
       />
     </div>
   </q-page>
@@ -217,19 +216,6 @@ function handleOpenProfile(publicKey: string): void {
   }
 }
 
-async function handleRefreshChat(chatId: string): Promise<void> {
-  try {
-    if (!chatId || chatId !== activeChatId.value) {
-      return;
-    }
-
-    await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
-    await chatStore.reload();
-    await messageStore.loadMessages(chatId, true);
-  } catch (error) {
-    reportUiError('Failed to refresh chat from chat page', error, 'Failed to refresh chat.');
-  }
-}
 </script>
 
 <style scoped>

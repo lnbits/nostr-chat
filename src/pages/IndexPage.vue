@@ -9,6 +9,16 @@
         <div class="sidebar-top">
           <div class="sidebar-top__row">
             <div class="sidebar-top__title">Chats</div>
+            <q-btn
+              flat
+              dense
+              round
+              icon="refresh"
+              color="primary"
+              class="sidebar-top__action"
+              aria-label="Refresh Chats"
+              @click="handleRefreshChats"
+            />
           </div>
 
           <q-input
@@ -56,7 +66,6 @@
         @react="handleReactToMessage"
         @delete-message="handleDeleteMessage"
         @remove-reaction="handleRemoveReaction"
-        @refresh-chat="handleRefreshChat"
       />
       </section>
 
@@ -342,18 +351,36 @@ async function handleRefreshChatProfile(chatId: string): Promise<void> {
   }
 }
 
+async function refreshChats(chatId = ''): Promise<void> {
+  await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
+  await chatStore.reload();
+
+  const targetChatId = chatId.trim() || activeChatId.value;
+  if (!targetChatId) {
+    return;
+  }
+
+  const chat = findChatById(targetChatId);
+  if (!chat) {
+    return;
+  }
+
+  await messageStore.loadMessages(targetChatId, true);
+}
+
 async function handleRefreshChat(chatId: string): Promise<void> {
   try {
-    const chat = findChatById(chatId);
-    if (!chat) {
-      return;
-    }
-
-    await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
-    await chatStore.reload();
-    await messageStore.loadMessages(chatId, true);
+    await refreshChats(chatId);
   } catch (error) {
     reportUiError('Failed to refresh chat', error, 'Failed to refresh chat.');
+  }
+}
+
+async function handleRefreshChats(): Promise<void> {
+  try {
+    await refreshChats();
+  } catch (error) {
+    reportUiError('Failed to refresh chats', error, 'Failed to refresh chats.');
   }
 }
 
@@ -571,6 +598,10 @@ onBeforeUnmount(() => {
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
+}
+
+.sidebar-top__action {
+  color: var(--tg-primary);
 }
 
 .thread-panel {

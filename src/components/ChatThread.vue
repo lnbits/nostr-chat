@@ -33,18 +33,6 @@
           class="thread-header__action"
           @click="handleOpenProfile"
         />
-        <q-btn
-          flat
-          dense
-          round
-          icon="refresh"
-          aria-label="Refresh Chat"
-          color="primary"
-          class="thread-header__action"
-          @click="handleRefreshChat"
-        >
-          <AppTooltip>Refresh Chat</AppTooltip>
-        </q-btn>
       </div>
 
       <div ref="threadBodyRef" class="thread-body" @scroll="handleThreadScroll">
@@ -158,7 +146,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import AppTooltip from 'src/components/AppTooltip.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
@@ -191,7 +178,6 @@ const emit = defineEmits<{
   (event: 'send', payload: { text: string; replyTo: MessageReplyPreview | null }): void;
   (event: 'back'): void;
   (event: 'open-profile', publicKey: string): void;
-  (event: 'refresh-chat', chatId: string): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
@@ -973,18 +959,6 @@ function handleOpenProfile(): void {
     emit('open-profile', props.chat.publicKey);
   } catch (error) {
     reportUiError('Failed to open profile from chat thread', error);
-  }
-}
-
-function handleRefreshChat(): void {
-  try {
-    if (!props.chat?.id) {
-      return;
-    }
-
-    emit('refresh-chat', props.chat.id);
-  } catch (error) {
-    reportUiError('Failed to refresh chat from thread header', error);
   }
 }
 
