@@ -260,6 +260,62 @@ class NostrEventDataService {
     });
   }
 
+  async resolvePendingOutboundRelayStatuses(
+    detail = 'Marked as failed after app reload interrupted publish.'
+  ): Promise<number> {
+    const normalizedDetail = detail.trim() || 'Marked as failed after app reload interrupted publish.';
+    const db = await this.getDatabase();
+    const transaction = db.transaction(EVENTS_STORE, 'readwrite');
+    const store = transaction.objectStore(EVENTS_STORE);
+    const records = await requestToPromise<NostrEventStoreRecord[]>(
+      store.getAll() as IDBRequest<NostrEventStoreRecord[]>
+    );
+
+    let updatedStatusCount = 0;
+    const updatedAt = new Date().toISOString();
+
+    for (const record of records) {
+      const event = normalizeEvent(record.event);
+      const direction = normalizeDirection(record.direction);
+      if (!event || !direction) {
+        continue;
+      }
+
+      let didChange = false;
+      const nextRelayStatuses = normalizeMessageRelayStatuses(record.relay_statuses).map((relayStatus) => {
+        if (relayStatus.direction !== 'outbound' || relayStatus.status !== 'pending') {
+          return relayStatus;
+        }
+
+        didChange = true;
+        updatedStatusCount += 1;
+        return {
+          ...relayStatus,
+          status: 'failed' as const,
+          updated_at: updatedAt,
+          detail: relayStatus.detail?.trim() || normalizedDetail
+        };
+      });
+
+      if (!didChange) {
+        continue;
+      }
+
+      const nextRecord: NostrEventStoreRecord = {
+        event,
+        direction,
+        relay_statuses: nextRelayStatuses
+      };
+
+      await requestToPromise<IDBValidKey>(
+        store.put(nextRecord, event.id) as IDBRequest<IDBValidKey>
+      );
+    }
+
+    await waitForTransaction(transaction);
+    return updatedStatusCount;
+  }
+
   async deleteEventsByIds(eventIds: string[]): Promise<void> {
     const normalizedEventIds = Array.from(
       new Set(eventIds.map((eventId) => normalizeEventId(eventId)).filter((eventId): eventId is string => Boolean(eventId)))

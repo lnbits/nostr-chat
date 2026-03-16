@@ -1451,6 +1451,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
   }
 
+  async function resolveStalePendingOutboundMessageRelayStatuses(): Promise<void> {
+    await nostrEventDataService.init();
+    const updatedStatusCount = await nostrEventDataService.resolvePendingOutboundRelayStatuses();
+    if (updatedStatusCount <= 0) {
+      return;
+    }
+
+    try {
+      const { useMessageStore } = await import('src/stores/messageStore');
+      await useMessageStore().reloadLoadedMessages();
+    } catch (error) {
+      console.warn('Failed to reload messages after resolving stale relay statuses', error);
+    }
+  }
+
   async function restoreStartupState(seedRelayUrls: string[] = []): Promise<void> {
     if (restoreStartupStatePromise) {
       return restoreStartupStatePromise;
@@ -1473,6 +1488,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     isRestoringStartupState.value = true;
     restoreStartupStatePromise = (async () => {
       try {
+        await runStartupTask('Failed to resolve stale relay statuses on startup', () =>
+          resolveStalePendingOutboundMessageRelayStatuses()
+        );
         await runStartupTask('Failed to sync logged-in contact on startup', () =>
           syncLoggedInContactProfile(seedRelayUrls)
         );
@@ -2234,6 +2252,27 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }));
   }
 
+  function buildFailedOutboundRelayStatuses(
+    relayUrls: string[],
+    scope: 'recipient' | 'self',
+    detail: string
+  ): MessageRelayStatus[] {
+    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
+    const normalizedDetail = detail.trim() || 'Failed to publish event.';
+    const errorsByRelayUrl = new Map<string, string>();
+
+    for (const relayUrl of normalizedRelayUrls) {
+      errorsByRelayUrl.set(relayUrl, normalizedDetail);
+    }
+
+    return buildOutboundRelayStatuses(
+      normalizedRelayUrls,
+      new Set<string>(),
+      errorsByRelayUrl,
+      scope
+    );
+  }
+
   function extractRelayUrlsFromEvent(event: NDKEvent): string[] {
     return normalizeRelayStatusUrls([
       event.relay?.url ?? '',
@@ -2360,88 +2399,138 @@ export const useNostrStore = defineStore('nostrStore', () => {
       recipientRumorNostrEvent?.id ?? recipientRumorEvent.id
     );
     const selfRelayUrls = await resolveLoggedInPublishRelayUrls();
+    const persistOutboundRelayStatuses = async (
+      relayStatuses: MessageRelayStatus[]
+    ): Promise<void> => {
+      if (!options.localMessageId || !rumorEventId || relayStatuses.length === 0) {
+        return;
+      }
+
+      await appendRelayStatusesToMessageEvent(
+        options.localMessageId,
+        relayStatuses,
+        {
+          event: recipientRumorNostrEvent ?? undefined,
+          direction: 'out',
+          eventId: rumorEventId
+        }
+      );
+    };
+    const appendFailedOutboundRelayStatuses = async (
+      relayUrlsToFail: string[],
+      scope: 'recipient' | 'self',
+      detail: string
+    ): Promise<MessageRelayStatus[]> => {
+      const failedRelayStatuses = buildFailedOutboundRelayStatuses(
+        relayUrlsToFail,
+        scope,
+        detail
+      );
+      await persistOutboundRelayStatuses(failedRelayStatuses);
+      return failedRelayStatuses;
+    };
+    let recipientRelayStatusesFinalized = false;
+    let selfRelayStatusesFinalized = selfRelayUrls.length === 0;
+
     if (options.localMessageId && rumorEventId) {
       try {
-        await appendRelayStatusesToMessageEvent(
-          options.localMessageId,
-          [
-            ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
-            ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
-          ],
-          {
-            event: recipientRumorNostrEvent ?? undefined,
-            direction: 'out',
-            eventId: rumorEventId
-          }
-        );
+        await persistOutboundRelayStatuses([
+          ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
+          ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
+        ]);
       } catch (error) {
         console.warn('Failed to persist encrypted event details before publish', error);
       }
     }
 
-    const recipientGiftWrapEvent = await giftWrap(recipientRumorEvent, recipient, signer, {
-      rumorKind
-    });
-    const recipientPublishResult = await publishEventWithRelayStatuses(
-      recipientGiftWrapEvent,
-      relayUrls,
-      'recipient'
-    );
-    const combinedRelayStatuses = [...recipientPublishResult.relayStatuses];
-    if (options.localMessageId) {
-      await appendRelayStatusesToMessageEvent(
-        options.localMessageId,
-        recipientPublishResult.relayStatuses,
-        {
-          event: recipientRumorNostrEvent ?? undefined,
-          direction: 'out',
-          eventId: rumorEventId ?? undefined
-        }
-      );
-    }
-    if (recipientPublishResult.error) {
-      throw recipientPublishResult.error;
-    }
+    const combinedRelayStatuses: MessageRelayStatus[] = [];
 
-    if (selfRelayUrls.length > 0) {
-      await ensureRelayConnections(selfRelayUrls);
-      const senderRecipient = new NDKUser({ pubkey: signer.pubkey });
-      const selfRumorEvent = createRumorEvent(
-        signer.pubkey,
-        normalizedRecipientPubkey,
-        createdAt
-      );
-      const selfGiftWrapEvent = await giftWrap(selfRumorEvent, senderRecipient, signer, {
+    try {
+      const recipientGiftWrapEvent = await giftWrap(recipientRumorEvent, recipient, signer, {
         rumorKind
       });
-      const selfPublishResult = await publishEventWithRelayStatuses(
-        selfGiftWrapEvent,
-        selfRelayUrls,
-        'self'
+      const recipientPublishResult = await publishEventWithRelayStatuses(
+        recipientGiftWrapEvent,
+        relayUrls,
+        'recipient'
       );
-      combinedRelayStatuses.push(...selfPublishResult.relayStatuses);
-      if (options.localMessageId) {
-        await appendRelayStatusesToMessageEvent(
-          options.localMessageId,
-          selfPublishResult.relayStatuses,
-          {
-            event: recipientRumorNostrEvent ?? undefined,
-            direction: 'out',
-            eventId: rumorEventId ?? undefined
-          }
-        );
-      }
-      if (selfPublishResult.error) {
-        console.warn('Failed to publish encrypted event self-copy', selfPublishResult.error);
-      }
-    }
+      combinedRelayStatuses.push(...recipientPublishResult.relayStatuses);
+      await persistOutboundRelayStatuses(recipientPublishResult.relayStatuses);
+      recipientRelayStatusesFinalized = true;
 
-    return {
-      giftWrapEvent: await recipientGiftWrapEvent.toNostrEvent(),
-      rumorEvent: recipientRumorNostrEvent,
-      rumorEventId,
-      relayStatuses: combinedRelayStatuses
-    };
+      if (recipientPublishResult.error) {
+        const skippedSelfRelayStatuses = await appendFailedOutboundRelayStatuses(
+          selfRelayUrls,
+          'self',
+          'Skipped because recipient relay publish failed.'
+        );
+        combinedRelayStatuses.push(...skippedSelfRelayStatuses);
+        selfRelayStatusesFinalized = true;
+        throw recipientPublishResult.error;
+      }
+
+      if (selfRelayUrls.length > 0) {
+        try {
+          await ensureRelayConnections(selfRelayUrls);
+          const senderRecipient = new NDKUser({ pubkey: signer.pubkey });
+          const selfRumorEvent = createRumorEvent(
+            signer.pubkey,
+            normalizedRecipientPubkey,
+            createdAt
+          );
+          const selfGiftWrapEvent = await giftWrap(selfRumorEvent, senderRecipient, signer, {
+            rumorKind
+          });
+          const selfPublishResult = await publishEventWithRelayStatuses(
+            selfGiftWrapEvent,
+            selfRelayUrls,
+            'self'
+          );
+          combinedRelayStatuses.push(...selfPublishResult.relayStatuses);
+          await persistOutboundRelayStatuses(selfPublishResult.relayStatuses);
+          selfRelayStatusesFinalized = true;
+
+          if (selfPublishResult.error) {
+            console.warn('Failed to publish encrypted event self-copy', selfPublishResult.error);
+          }
+        } catch (error) {
+          const selfFailureDetail =
+            error instanceof Error && error.message.trim()
+              ? error.message.trim()
+              : 'Failed to publish encrypted event self-copy.';
+          const failedSelfRelayStatuses = await appendFailedOutboundRelayStatuses(
+            selfRelayUrls,
+            'self',
+            selfFailureDetail
+          );
+          combinedRelayStatuses.push(...failedSelfRelayStatuses);
+          selfRelayStatusesFinalized = true;
+          console.warn('Failed to publish encrypted event self-copy', error);
+        }
+      }
+
+      return {
+        giftWrapEvent: await recipientGiftWrapEvent.toNostrEvent(),
+        rumorEvent: recipientRumorNostrEvent,
+        rumorEventId,
+        relayStatuses: combinedRelayStatuses
+      };
+    } catch (error) {
+      const failureDetail =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to publish encrypted event.';
+
+      if (!recipientRelayStatusesFinalized) {
+        await appendFailedOutboundRelayStatuses(relayUrls, 'recipient', failureDetail);
+      }
+
+      if (!selfRelayStatusesFinalized) {
+        await appendFailedOutboundRelayStatuses(selfRelayUrls, 'self', failureDetail);
+      }
+
+      throw error;
+    }
   }
 
   function queuePendingIncomingReaction(
@@ -7289,41 +7378,60 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
     );
 
-    await ensureRelayConnections([normalizedRelayUrl]);
-    const recipient =
-      scope === 'self'
-        ? new NDKUser({ pubkey: signer.pubkey })
-        : new NDKUser({ pubkey: recipientPubkey });
-    const giftWrapEvent = await giftWrap(rumorEvent, recipient, signer, {
-      rumorKind: NDKKind.PrivateDirectMessage
-    });
-    const publishResult = await publishEventWithRelayStatuses(
-      giftWrapEvent,
-      [normalizedRelayUrl],
-      scope
-    );
-
-    await appendRelayStatusesToMessageEvent(
-      normalizedMessageId,
-      publishResult.relayStatuses,
-      {
-        event: storedEvent.event,
-        direction: 'out',
-        eventId: message.event_id
-      }
-    );
-
-    if (publishResult.error) {
-      const failedRelayStatus = publishResult.relayStatuses.find(
-        (relayStatus) =>
-          relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
+    try {
+      await ensureRelayConnections([normalizedRelayUrl]);
+      const recipient =
+        scope === 'self'
+          ? new NDKUser({ pubkey: signer.pubkey })
+          : new NDKUser({ pubkey: recipientPubkey });
+      const giftWrapEvent = await giftWrap(rumorEvent, recipient, signer, {
+        rumorKind: NDKKind.PrivateDirectMessage
+      });
+      const publishResult = await publishEventWithRelayStatuses(
+        giftWrapEvent,
+        [normalizedRelayUrl],
+        scope
       );
-      const detail = failedRelayStatus?.detail?.trim();
-      if (detail) {
-        throw new Error(detail);
-      }
 
-      throw publishResult.error;
+      await appendRelayStatusesToMessageEvent(
+        normalizedMessageId,
+        publishResult.relayStatuses,
+        {
+          event: storedEvent.event,
+          direction: 'out',
+          eventId: message.event_id
+        }
+      );
+
+      if (publishResult.error) {
+        const failedRelayStatus = publishResult.relayStatuses.find(
+          (relayStatus) =>
+            relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
+        );
+        const detail = failedRelayStatus?.detail?.trim();
+        if (detail) {
+          throw new Error(detail);
+        }
+
+        throw publishResult.error;
+      }
+    } catch (error) {
+      const retryFailureDetail =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to publish event.';
+
+      await appendRelayStatusesToMessageEvent(
+        normalizedMessageId,
+        buildFailedOutboundRelayStatuses([normalizedRelayUrl], scope, retryFailureDetail),
+        {
+          event: storedEvent.event,
+          direction: 'out',
+          eventId: message.event_id
+        }
+      );
+
+      throw error;
     }
   }
 
