@@ -22,7 +22,15 @@
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeSection === 'chats' }"
           @click="goToSection('chats')"
-        />
+        >
+          <q-badge
+            v-if="unreadChatCount > 0"
+            rounded
+            floating
+            class="mobile-nav__badge"
+            :label="unreadChatBadgeLabel"
+          />
+        </q-btn>
         <q-btn
           :flat="activeSection !== 'contacts'"
           :unelevated="activeSection === 'contacts'"
@@ -105,6 +113,10 @@ const routeLoaders: Record<NavigationSection, RouteLoader> = {
   contacts: loadContactsPage,
   settings: loadSettingsPage
 };
+const unreadChatCount = computed(() => chatStore.unreadChatCount);
+const unreadChatBadgeLabel = computed(() =>
+  unreadChatCount.value > 99 ? '99+' : String(unreadChatCount.value)
+);
 
 const showMobileNav = computed(() => {
   if (!isMobile.value) {
@@ -271,6 +283,21 @@ function goToSection(section: NavigationSection): void {
     color 0.2s ease;
 }
 
+.mobile-nav__badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #ff6c7d 0%, #f0445d 100%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 8px 16px rgba(240, 68, 93, 0.24);
+}
+
 .mobile-nav__btn :deep(.q-btn__content) {
   gap: 5px;
   justify-content: center;
@@ -303,5 +330,9 @@ body.body--dark .mobile-nav__btn {
 body.body--dark .mobile-nav__btn--active {
   border-color: rgba(128, 193, 255, 0.62);
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.38);
+}
+
+body.body--dark .mobile-nav__badge {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
 }
 </style>

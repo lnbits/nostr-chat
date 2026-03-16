@@ -469,6 +469,12 @@ export const useChatStore = defineStore('chatStore', () => {
     inboxChats.value.filter((chat) => chatMatchesSearch(chat, searchQuery.value))
   );
   const requestCount = computed(() => requestChats.value.length);
+  const unreadChatCount = computed(() =>
+    chats.value.filter((chat) => {
+      const category = resolveChatCategory(chat.meta as Record<string, unknown>);
+      return category !== 'blocked' && chat.unreadCount > 0;
+    }).length
+  );
 
   async function loadChatsIntoState(): Promise<void> {
     await Promise.all([chatDataService.init(), contactsService.init()]);
@@ -1329,6 +1335,7 @@ export const useChatStore = defineStore('chatStore', () => {
     visibleChats,
     requestChats,
     requestCount,
+    unreadChatCount,
     isLoaded,
     searchQuery,
     composerDraftsByChatId,

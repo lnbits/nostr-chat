@@ -11,6 +11,13 @@
         @click="$emit('select', item.key)"
       >
         <q-icon :name="item.icon" size="18px" />
+        <q-badge
+          v-if="item.key === 'chats' && unreadChatCount > 0"
+          rounded
+          floating
+          class="nav-rail__badge"
+          :label="unreadChatBadgeLabel"
+        />
 
         <AppTooltip anchor="center right" self="center left" :offset="[8, 0]">
           {{ item.label }}
@@ -36,12 +43,16 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
+import { useChatStore } from 'src/stores/chatStore';
 
 const topItems = [
   { key: 'chats', label: 'Chats', icon: 'chat' },
   { key: 'contacts', label: 'Contacts', icon: 'contacts' }
 ] as const;
+
+const chatStore = useChatStore();
 
 defineProps<{
   active: 'chats' | 'contacts' | 'settings';
@@ -50,6 +61,11 @@ defineProps<{
 defineEmits<{
   (event: 'select', value: 'chats' | 'contacts' | 'settings'): void;
 }>();
+
+const unreadChatCount = computed(() => chatStore.unreadChatCount);
+const unreadChatBadgeLabel = computed(() =>
+  unreadChatCount.value > 99 ? '99+' : String(unreadChatCount.value)
+);
 </script>
 
 <style scoped>
@@ -104,6 +120,21 @@ defineEmits<{
     color 0.2s ease;
 }
 
+.nav-rail__badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #ff6c7d 0%, #f0445d 100%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 8px 16px rgba(240, 68, 93, 0.24);
+}
+
 .nav-rail__btn:hover {
   transform: translateY(-1px);
   background: transparent;
@@ -128,5 +159,9 @@ body.body--dark .nav-rail__btn--active {
   background: linear-gradient(140deg, rgba(16, 126, 93, 0.42), rgba(30, 94, 184, 0.34));
   border-color: rgba(86, 166, 255, 0.36);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+}
+
+body.body--dark .nav-rail__badge {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
 }
 </style>
