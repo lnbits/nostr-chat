@@ -7,8 +7,17 @@
 
       <aside v-if="!isMobile || !isMobileProfileOpen" class="contacts-sidebar">
         <div class="contacts-sidebar__top">
-          <div class="contacts-sidebar__row">
-            <div class="contacts-sidebar__title">Contacts</div>
+          <div class="contacts-sidebar__row" :class="{ 'contacts-sidebar__row--mobile': isMobile }">
+            <div v-if="!isMobile" class="contacts-sidebar__title">Contacts</div>
+            <q-input
+              v-if="isMobile"
+              v-model="contactQuery"
+              class="tg-input contacts-sidebar__search contacts-sidebar__search--mobile"
+              dense
+              outlined
+              rounded
+              placeholder="Filter contacts"
+            />
             <div class="contacts-sidebar__actions">
               <q-btn
                 dense
@@ -35,6 +44,7 @@
           </div>
 
           <q-input
+            v-if="!isMobile"
             v-model="contactQuery"
             class="tg-input"
             dense
@@ -978,16 +988,27 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   margin-bottom: 8px;
 }
 
+.contacts-sidebar__row--mobile {
+  gap: 8px;
+  margin-bottom: 0;
+}
+
 .contacts-sidebar__actions {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .contacts-sidebar__title {
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
+}
+
+.contacts-sidebar__search--mobile {
+  flex: 1;
+  min-width: 0;
 }
 
 .contacts-list {

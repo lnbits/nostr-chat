@@ -7,8 +7,17 @@
 
       <aside v-if="!isMobile || !isMobileThreadOpen" class="sidebar">
         <div class="sidebar-top">
-          <div class="sidebar-top__row">
-            <div class="sidebar-top__title">Chats</div>
+          <div class="sidebar-top__row" :class="{ 'sidebar-top__row--mobile': isMobile }">
+            <div v-if="!isMobile" class="sidebar-top__title">Chats</div>
+            <q-input
+              v-if="isMobile"
+              v-model="searchQuery"
+              class="tg-input sidebar-top__search sidebar-top__search--mobile"
+              dense
+              outlined
+              rounded
+              placeholder="Search"
+            />
             <q-btn-dropdown
               flat
               dense
@@ -42,6 +51,7 @@
           </div>
 
           <q-input
+            v-if="!isMobile"
             v-model="searchQuery"
             class="tg-input"
             dense
@@ -679,14 +689,29 @@ onBeforeUnmount(() => {
   margin-bottom: 8px;
 }
 
+.sidebar-top__row--mobile {
+  gap: 8px;
+  margin-bottom: 0;
+}
+
 .sidebar-top__title {
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
 }
 
+.sidebar-top__search--mobile {
+  flex: 1;
+  min-width: 0;
+}
+
 .sidebar-top__action {
   color: var(--tg-primary);
+  flex-shrink: 0;
+}
+
+.sidebar-top__action:deep(.q-btn-dropdown__arrow) {
+  margin-left: 0;
 }
 
 .thread-panel {
