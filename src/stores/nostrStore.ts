@@ -3564,7 +3564,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function resolveLoggedInPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    const relayUrls = inputSanitizerService.normalizeStringArray(seedRelayUrls);
+    const relayUrls = normalizeRelayStatusUrls([
+      ...getAppRelayUrls(),
+      ...inputSanitizerService.normalizeStringArray(seedRelayUrls)
+    ]);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
       return relayUrls;
@@ -3573,7 +3576,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await contactsService.init();
     const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
 
-    return inputSanitizerService.normalizeStringArray([
+    return normalizeRelayStatusUrls([
       ...relayUrls,
       ...normalizeWritableRelayUrls(loggedInContact?.relays)
     ]);
