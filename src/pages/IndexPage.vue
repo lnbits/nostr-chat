@@ -16,6 +16,8 @@
               dense
               outlined
               rounded
+              clearable
+              clear-icon="close"
               placeholder="Search"
             />
             <q-btn-dropdown
@@ -57,6 +59,8 @@
             dense
             outlined
             rounded
+            clearable
+            clear-icon="close"
             placeholder="Search"
           />
         </div>
@@ -214,7 +218,7 @@ const currentMessages = computed(() => {
 
 const searchQuery = computed({
   get: () => chatStore.searchQuery,
-  set: (value: string) => chatStore.setSearchQuery(value)
+  set: (value: string | null) => chatStore.setSearchQuery(typeof value === 'string' ? value : '')
 });
 
 function getVisibleViewportHeight(fallbackHeight: number): number {

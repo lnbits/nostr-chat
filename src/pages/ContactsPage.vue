@@ -11,11 +11,13 @@
             <div v-if="!isMobile" class="contacts-sidebar__title">Contacts</div>
             <q-input
               v-if="isMobile"
-              v-model="contactQuery"
+              v-model="contactQueryModel"
               class="tg-input contacts-sidebar__search contacts-sidebar__search--mobile"
               dense
               outlined
               rounded
+              clearable
+              clear-icon="close"
               placeholder="Filter contacts"
             />
             <div class="contacts-sidebar__actions">
@@ -45,11 +47,13 @@
 
           <q-input
             v-if="!isMobile"
-            v-model="contactQuery"
+            v-model="contactQueryModel"
             class="tg-input"
             dense
             outlined
             rounded
+            clearable
+            clear-icon="close"
             placeholder="Filter contacts"
           />
         </div>
@@ -242,6 +246,12 @@ const relayStore = useRelayStore();
 const isMobile = computed(() => $q.screen.lt.md);
 const isMobileProfileOpen = computed(() => isMobile.value && Boolean(selectedContactPubkey.value.trim()));
 const contactQuery = ref('');
+const contactQueryModel = computed({
+  get: () => contactQuery.value,
+  set: (value: string | null) => {
+    contactQuery.value = typeof value === 'string' ? value : '';
+  }
+});
 const isAddContactDialogOpen = ref(false);
 const isLoadingContacts = ref(false);
 const isCreatingContact = ref(false);
@@ -440,10 +450,11 @@ async function initializeContacts(): Promise<void> {
 async function loadContacts(query = ''): Promise<void> {
   const requestId = ++latestSearchRequestId;
   isLoadingContacts.value = true;
+  const normalizedQuery = typeof query === 'string' ? query : '';
 
   try {
-    const nextContacts = query.trim()
-      ? await contactsService.searchContacts(query)
+    const nextContacts = normalizedQuery.trim()
+      ? await contactsService.searchContacts(normalizedQuery)
       : await contactsService.listContacts();
 
     if (requestId !== latestSearchRequestId) {

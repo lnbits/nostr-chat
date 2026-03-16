@@ -980,8 +980,8 @@ export const useChatStore = defineStore('chatStore', () => {
     }
   }
 
-  function setSearchQuery(query: string): void {
-    searchQuery.value = query;
+  function setSearchQuery(query: string | null | undefined): void {
+    searchQuery.value = typeof query === 'string' ? query : '';
   }
 
   function getComposerDraft(chatId: string | null | undefined): string {
