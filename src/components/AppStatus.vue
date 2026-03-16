@@ -91,32 +91,6 @@ const startupSteps = computed(() => nostrStore.startupSteps);
 const totalRelayCount = computed(() => relayConnectionSnapshot.value.total);
 const connectedRelayCount = computed(() => relayConnectionSnapshot.value.connected.length);
 
-const startedStartupStepCount = computed(() => {
-  return startupSteps.value.filter((step) => step.status !== 'pending').length;
-});
-
-const completedStartupStepCount = computed(() => {
-  return startupSteps.value.filter((step) => step.status === 'success').length;
-});
-
-const failedStartupStepCount = computed(() => {
-  return startupSteps.value.filter((step) => step.status === 'error').length;
-});
-
-const inProgressStartupStepCount = computed(() => {
-  return startupSteps.value.filter((step) => step.status === 'in_progress').length;
-});
-
-const pendingStartupStepCount = computed(() => {
-  return startupSteps.value.filter((step) => step.status === 'pending').length;
-});
-
-const hasStartupHistory = computed(() => startedStartupStepCount.value > 0);
-
-const isStartupRunning = computed(() => {
-  return inProgressStartupStepCount.value > 0 || (hasStartupHistory.value && pendingStartupStepCount.value > 0);
-});
-
 const displayedStartupStep = computed(() => {
   const displayStepId = nostrStore.startupDisplay.stepId;
   if (!displayStepId) {
@@ -157,29 +131,13 @@ const relaySummary = computed(() => {
   return `${connectedRelayCount.value}/${totalRelayCount.value} relays online`;
 });
 
-const statusHeadline = computed(() => {
-  if (isStartupRunning.value && displayedStartupStep.value) {
-    return displayedStartupStep.value.label;
-  }
-
-  return relaySummary.value;
+const hasHeaderActivity = computed(() => {
+  return displayedStartupStep.value?.status === 'in_progress' || displayedStartupStep.value?.showProgress === true;
 });
 
-const overallLabel = computed(() => {
-  if (isStartupRunning.value) {
-    return 'Syncing';
-  }
-
-  if (failedStartupStepCount.value > 0) {
-    return 'Issues';
-  }
-
-  if (hasStartupHistory.value) {
-    return 'Ready';
-  }
-
+const relayHealthLabel = computed(() => {
   if (totalRelayCount.value === 0) {
-    return 'Idle';
+    return 'No relays';
   }
 
   if (connectedRelayCount.value === totalRelayCount.value) {
@@ -193,19 +151,7 @@ const overallLabel = computed(() => {
   return 'Offline';
 });
 
-const overallTone = computed(() => {
-  if (isStartupRunning.value) {
-    return 'busy';
-  }
-
-  if (failedStartupStepCount.value > 0) {
-    return 'issue';
-  }
-
-  if (hasStartupHistory.value) {
-    return 'good';
-  }
-
+const relayHealthTone = computed(() => {
   if (totalRelayCount.value === 0) {
     return 'idle';
   }
@@ -219,6 +165,30 @@ const overallTone = computed(() => {
   }
 
   return 'issue';
+});
+
+const statusHeadline = computed(() => {
+  if (hasHeaderActivity.value && displayedStartupStep.value) {
+    return displayedStartupStep.value.label;
+  }
+
+  return relaySummary.value;
+});
+
+const overallLabel = computed(() => {
+  if (hasHeaderActivity.value) {
+    return 'Syncing';
+  }
+
+  return relayHealthLabel.value;
+});
+
+const overallTone = computed(() => {
+  if (hasHeaderActivity.value) {
+    return 'busy';
+  }
+
+  return relayHealthTone.value;
 });
 
 function startupStatusIcon(status: StartupStepStatus | null): string {

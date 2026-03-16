@@ -103,7 +103,9 @@ function goBack(): void {
 }
 
 async function resolveFallbackRelayUrls(chatPublicKey: string): Promise<string[] | null> {
-  return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays);
+  return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays, {
+    fallbackName: activeChat.value?.name ?? ''
+  });
 }
 
 async function handleSend(payload: { text: string; replyTo: MessageReplyPreview | null }): Promise<void> {

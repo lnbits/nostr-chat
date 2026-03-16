@@ -1,6 +1,7 @@
 import type { QVueGlobals } from 'quasar';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { useNostrStore } from 'src/stores/nostrStore';
 
 export const CONTACT_RELAY_FALLBACK_MESSAGE =
   'No relays found for this contact. Do you want to use the application default relays?';
@@ -76,7 +77,10 @@ export function confirmUseAppRelaysDialog($q: QVueGlobals): Promise<AppRelayFall
 export async function resolveContactAppRelayFallback(
   $q: QVueGlobals,
   contactPublicKey: string,
-  appRelayUrls: string[]
+  appRelayUrls: string[],
+  options: {
+    fallbackName?: string;
+  } = {}
 ): Promise<string[] | null> {
   const decision = await confirmUseAppRelaysDialog($q);
   if (!decision.shouldUseAppRelays) {
@@ -96,6 +100,15 @@ export async function resolveContactAppRelayFallback(
   if (decision.rememberThis) {
     try {
       await contactsService.init();
+      const existingContact = await contactsService.getContactByPublicKey(contactPublicKey);
+      if (!existingContact) {
+        const nostrStore = useNostrStore();
+        await nostrStore.ensureRespondedPubkeyIsContact(
+          contactPublicKey,
+          options.fallbackName ?? ''
+        );
+      }
+
       const updatedContact = await contactsService.updateSendMessagesToAppRelays(
         contactPublicKey,
         true

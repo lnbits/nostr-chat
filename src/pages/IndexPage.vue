@@ -199,7 +199,9 @@ function handleOpenRequestChat(chatId: string): void {
 }
 
 async function resolveFallbackRelayUrls(chatPublicKey: string): Promise<string[] | null> {
-  return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays);
+  return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays, {
+    fallbackName: activeChat.value?.name ?? ''
+  });
 }
 
 async function handleSend(payload: { text: string; replyTo: MessageReplyPreview | null }): Promise<void> {
@@ -357,7 +359,17 @@ async function handleRefreshChat(chatId: string): Promise<void> {
 
 async function handleAcceptRequest(chatId: string): Promise<void> {
   try {
+    const chat = findChatById(chatId);
     await chatStore.acceptChat(chatId);
+    if (!chat) {
+      return;
+    }
+
+    try {
+      await nostrStore.ensureRespondedPubkeyIsContact(chat.publicKey, chat.name);
+    } catch (error) {
+      console.warn('Failed to add accepted chat to contacts', chat.publicKey, error);
+    }
   } catch (error) {
     reportUiError('Failed to accept chat request', error, 'Failed to accept request.');
   }
