@@ -59,7 +59,7 @@
           :error="Boolean(pubkeyError)"
           :error-message="pubkeyError"
         >
-          <template v-if="props.showPubkeyCopyActions" #append>
+          <template #append>
             <q-btn
               flat
               dense
@@ -84,7 +84,7 @@
           label="npub"
           placeholder="npub1..."
         >
-          <template v-if="props.showPubkeyCopyActions" #append>
+          <template #append>
             <q-btn
               flat
               dense
@@ -377,14 +377,12 @@ interface Props {
   pubkey: string;
   readOnly?: boolean;
   showHeader?: boolean;
-  showPubkeyCopyActions?: boolean;
   showRelaysEditAction?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   readOnly: false,
   showHeader: false,
-  showPubkeyCopyActions: false,
   showRelaysEditAction: false
 });
 
