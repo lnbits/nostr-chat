@@ -8,16 +8,17 @@ Owner-Managed Private Groups
 
 This NIP defines a private group messaging scheme with owner-managed membership, built on top of NIP-17. A managed group is represented by a stable group identity keypair and a rotating epoch keypair shared by the current members.
 
-Managed groups are designed for conversations in which one party controls membership.
+Managed groups are designed for conversations in which one party (the. group owner) controls membership.
 
 ## Terms
 
 - **group identity**: a dedicated keypair that represents the group as a Nostr account.
 - **group owner**: the party that controls the group identity private key.
-- **group epoch**: the current membership version of the group.
+- **epoch number**: a monotonically increasing non-negative integer that identifies a group epoch.
+- **group epoch**: the current membership version of the group, identified by an epoch number and an epoch keypair.
 - **epoch keypair**: a keypair shared by the current members of a group epoch. Its public key is the recipient of NIP-17 gift wraps for that epoch.
-- **epoch ticket**: a `kind:1014` invitation that conveys the current epoch private key to one member.
-- **current epoch ticket**: the latest valid `kind:1014` invitation a client has received for itself from a given group identity.
+- **epoch ticket**: a `kind:1014` invitation that conveys the current epoch number and epoch private key to one member.
+- **current epoch ticket**: the valid `kind:1014` invitation a client uses for itself for a given group identity, selected according to the rules below.
 
 Control of the group identity private key is the only authority required by this NIP. How the owner proves a relationship between the group identity and any other Nostr account is out of scope.
 
@@ -43,7 +44,7 @@ Clients MUST ignore any message whose effective sender pubkey is equal to a know
 
 ## Kind `1014`: Epoch Ticket
 
-`kind:1014` is a regular event signed by the group identity key. Each epoch ticket targets exactly one member and conveys the current epoch private key.
+`kind:1014` is a regular event signed by the group identity key. Each epoch ticket targets exactly one member and conveys the current epoch number and epoch private key.
 
 The event has the following form:
 
@@ -54,7 +55,8 @@ The event has the following form:
   "created_at": "<unix timestamp>",
   "kind": 1014,
   "tags": [
-    ["p", "<member-pubkey>"]
+    ["p", "<member-pubkey>"],
+    ["epoch", "<non-negative decimal integer>"]
   ],
   "content": "<32-byte lowercase hex epoch-private-key>",
   "sig": "<signature by the group private key>"
@@ -64,13 +66,19 @@ The event has the following form:
 The `kind:1014` event:
 
 - MUST contain exactly one `p` tag naming the invited member.
+- MUST contain exactly one `epoch` tag whose value is a non-negative decimal integer.
 - MUST contain the current epoch private key in `content`, encoded as 32-byte lowercase hex.
 - MUST be signed by the group identity private key.
 - MUST be delivered to the invited member inside a NIP-59 gift wrap.
+- All valid `kind:1014` tickets for the same group epoch MUST use the same `epoch` tag value and the same epoch private key.
+- When creating a new epoch keypair, the group owner MUST use an epoch number greater than any previously used epoch number for that group identity.
+- The initial epoch number SHOULD be `0`.
 
 Clients SHOULD treat the `pubkey` of a valid `kind:1014` event as the stable identity of the group and MAY display the group as a regular chat thread.
 
-For a given group identity, the current epoch ticket for the local user is the valid `kind:1014` addressed to that user with the greatest `created_at`. If two invitations share the same `created_at`, clients SHOULD prefer the lexicographically lowest event `id`.
+For a given group identity, the current epoch ticket for the local user is the valid `kind:1014` addressed to that user with the highest epoch number. If multiple tickets share that highest epoch number and the same epoch private key, clients SHOULD prefer the one with the greatest `created_at`. If they still tie, clients SHOULD prefer the lexicographically lowest event `id`.
+
+If two valid tickets for the same group identity and epoch number contain different epoch private keys, clients SHOULD treat that epoch as inconsistent and SHOULD NOT use it for sending or receiving.
 
 ## Sending Group Messages
 
@@ -83,6 +91,7 @@ The inner rumor event:
 - MUST be unsigned, as required by NIP-59.
 - MUST contain exactly one `p` tag naming the current epoch public key.
 - MUST contain exactly one `h` tag whose value is the group identity public key.
+- MUST contain exactly one `epoch` tag whose value is the sender's current epoch number.
 - MUST contain exactly one `invited_at` tag whose value is the `created_at` of the sender's current epoch ticket.
 - MUST contain exactly one `invitation_proof` tag whose value is the `sig` of the sender's current epoch ticket.
 
@@ -92,6 +101,7 @@ Example rumor tags:
 [
   ["p", "<epoch-pubkey>"],
   ["h", "<group-pubkey>"],
+  ["epoch", "<epoch from sender kind:1014>"],
   ["invited_at", "<created_at from sender kind:1014>"],
   ["invitation_proof", "<sig from sender kind:1014>"]
 ]
@@ -105,15 +115,16 @@ The wrapping rules are the same as in NIP-17 and NIP-59, with these constraints:
 
 ## Receiving Group Messages
 
-To receive messages for a group, clients MUST listen for NIP-59 gift wraps addressed to the latest known epoch public key for that group.
+To receive messages for a group, clients MUST listen for NIP-59 gift wraps addressed to the epoch public key from the highest valid current epoch ticket they have for that group.
 
 After unwrapping a message, clients MUST:
 
 1. verify the NIP-17 sender binding by checking that the `pubkey` on the `kind:13` seal matches the `pubkey` on the inner rumor.
-2. verify that the rumor contains exactly one `p`, `h`, `invited_at`, and `invitation_proof` tag as defined above.
+2. verify that the rumor contains exactly one `p`, `h`, `epoch`, `invited_at`, and `invitation_proof` tag as defined above.
 3. verify that the rumor `p` tag equals the current epoch public key for the group.
 4. verify that the rumor `h` tag equals the group identity public key for that group.
-5. rebuild the sender's epoch ticket using the current epoch private key known locally:
+5. verify that the rumor `epoch` tag equals the current epoch number for the group.
+6. rebuild the sender's epoch ticket using the current epoch number and epoch private key known locally:
 
 ```jsonc
 {
@@ -122,28 +133,30 @@ After unwrapping a message, clients MUST:
   "created_at": "<invited_at>",
   "kind": 1014,
   "tags": [
-    ["p", "<sender-pubkey>"]
+    ["p", "<sender-pubkey>"],
+    ["epoch", "<current epoch number>"]
   ],
   "content": "<current epoch-private-key hex>",
   "sig": "<invitation_proof>"
 }
 ```
 
-6. verify the rebuilt `kind:1014` signature against the group identity public key.
+7. verify the rebuilt `kind:1014` signature against the group identity public key.
 
 If that signature is valid, the sender has possession of a valid epoch ticket for the current epoch and is therefore a current member of the group. If validation fails, the event MUST be dropped.
 
-Clients MUST use only the latest known epoch public key for receiving new messages. Messages addressed to older epoch public keys SHOULD be treated as historical data from earlier epochs and SHOULD NOT be mixed into the current writable epoch.
+Clients MUST use only the epoch public key from the highest valid epoch number for receiving new messages. Messages addressed to older epoch public keys SHOULD be treated as historical data from earlier epochs and SHOULD NOT be mixed into the current writable epoch.
 
 ## Group Management
 
-The group owner creates a group by generating a dedicated group identity keypair and an initial epoch keypair, then issuing `kind:1014` epoch tickets to the initial members.
+The group owner creates a group by generating a dedicated group identity keypair and an initial epoch keypair, then issuing `kind:1014` epoch tickets for the initial epoch to the initial members.
 
 When removing a member, the owner:
 
 1. MUST generate a fresh epoch keypair.
-2. MUST issue a new `kind:1014` epoch ticket to each remaining member.
-3. MUST stop using the previous epoch public key for new messages.
+2. MUST choose an epoch number greater than any previously used epoch number for that group identity.
+3. MUST issue a new `kind:1014` epoch ticket to each remaining member.
+4. MUST stop using the previous epoch public key for new messages.
 
 Removing a member does not revoke messages already delivered to that member, nor does it prevent that member from revealing them later.
 
