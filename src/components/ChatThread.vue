@@ -59,6 +59,7 @@
             v-else
             class="thread-message-entry"
             :class="{
+              'thread-message-entry--sender-change': item.showSenderName,
               'thread-message-entry--target':
                 highlightedMessageId === item.message.id ||
                 highlightedMessageId === item.message.eventId
@@ -72,6 +73,10 @@
               :message="item.message"
               :contact-name="chat.name"
               :contact-relay-urls="contactRelayUrls"
+              :author-avatar-fallback="item.authorAvatarFallback"
+              :author-avatar-src="item.authorAvatarSrc"
+              :author-label="item.authorLabel"
+              :show-author-name="item.showSenderName"
               @reply="handleReplyToMessage"
               @react="handleReactToMessage"
               @delete-message="handleDeleteMessage"
@@ -197,12 +202,34 @@ const hasJumpedToLastReadMessage = ref(false);
 const pendingInitialPositionChatId = ref<string | null>(null);
 const openedUnreadBoundaryAt = ref<string | null>(null);
 const contactRelayUrls = ref<string[]>([]);
+const selfAvatarImageUrl = ref('');
+const selfAvatarFallback = ref('YO');
 let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
 let visibleReactionSyncFrameId: number | null = null;
 let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
 let pendingSentMessageReveal = false;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
+let selfAuthorIdentityRefreshToken = 0;
+
+function buildAvatar(identifier: string): string {
+  const parts = identifier
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  const compact = identifier.replace(/\s+/g, '').toUpperCase();
+  return compact.slice(0, 2) || 'NA';
+}
+
+function readMetaString(meta: Record<string, unknown> | null | undefined, key: string): string {
+  const value = meta?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
 
 type ThreadItem =
   | {
@@ -220,6 +247,10 @@ type ThreadItem =
       key: string;
       dayKey: string;
       dayLabel: string;
+      authorAvatarFallback: string;
+      authorAvatarSrc: string;
+      authorLabel: string;
+      showSenderName: boolean;
       message: Message;
     };
 
@@ -247,6 +278,14 @@ const avatarImageUrl = computed(() => {
   }
 
   return '';
+});
+
+const contactAuthorLabel = computed(() => {
+  return props.chat?.name?.trim() || 'Contact';
+});
+
+const contactAvatarFallback = computed(() => {
+  return props.chat?.avatar?.trim() || buildAvatar(contactAuthorLabel.value);
 });
 
 const loggedInPublicKey = computed(() => {
@@ -408,7 +447,8 @@ const threadItems = computed<ThreadItem[]>(() => {
   let lastDayKey = '';
   const unreadBoundaryMessageId = firstMessageAfterUnreadBoundaryId.value;
 
-  for (const message of props.messages) {
+  for (const [index, message] of props.messages.entries()) {
+    const previousMessage = index > 0 ? props.messages[index - 1] : null;
     const dayKey = getDayKey(message.sentAt);
     const dayLabel = formatDayLabel(message.sentAt);
     if (dayKey !== lastDayKey) {
@@ -433,6 +473,11 @@ const threadItems = computed<ThreadItem[]>(() => {
       key: message.id,
       dayKey,
       dayLabel,
+      authorAvatarFallback:
+        message.sender === 'me' ? selfAvatarFallback.value : contactAvatarFallback.value,
+      authorAvatarSrc: message.sender === 'me' ? selfAvatarImageUrl.value : avatarImageUrl.value,
+      authorLabel: message.sender === 'me' ? 'You' : contactAuthorLabel.value,
+      showSenderName: previousMessage?.sender !== message.sender,
       message
     });
   }
@@ -464,6 +509,49 @@ async function refreshContactRelayUrls(chatPublicKey: string | null): Promise<vo
 
     contactRelayUrls.value = [];
     console.error('Failed to load contact relay urls for chat thread', chatPublicKey, error);
+  }
+}
+
+async function refreshSelfAuthorIdentity(loggedInPublicKeyValue: string | null): Promise<void> {
+  const refreshToken = ++selfAuthorIdentityRefreshToken;
+  if (!loggedInPublicKeyValue) {
+    selfAvatarImageUrl.value = '';
+    selfAvatarFallback.value = buildAvatar('You');
+    return;
+  }
+
+  try {
+    await contactsService.init();
+    const loggedInContact = await contactsService.getContactByPublicKey(loggedInPublicKeyValue);
+    if (refreshToken !== selfAuthorIdentityRefreshToken) {
+      return;
+    }
+
+    const meta =
+      loggedInContact?.meta && typeof loggedInContact.meta === 'object'
+        ? loggedInContact.meta
+        : null;
+    const preferredName =
+      readMetaString(meta, 'display_name') ||
+      readMetaString(meta, 'name') ||
+      loggedInContact?.name?.trim() ||
+      loggedInContact?.given_name?.trim() ||
+      'You';
+
+    selfAvatarImageUrl.value = readMetaString(meta, 'picture');
+    selfAvatarFallback.value = readMetaString(meta, 'avatar') || buildAvatar(preferredName);
+  } catch (error) {
+    if (refreshToken !== selfAuthorIdentityRefreshToken) {
+      return;
+    }
+
+    selfAvatarImageUrl.value = '';
+    selfAvatarFallback.value = buildAvatar('You');
+    console.error(
+      'Failed to load logged-in user avatar for chat thread',
+      loggedInPublicKeyValue,
+      error
+    );
   }
 }
 
@@ -991,9 +1079,10 @@ function handleOpenProfile(): void {
 }
 
 watch(
-  () => [props.chat?.id ?? null, nostrStore.contactListVersion] as const,
-  ([chatId]) => {
-    void refreshContactRelayUrls(chatId);
+  () => [props.chat?.publicKey ?? null, loggedInPublicKey.value, nostrStore.contactListVersion] as const,
+  ([chatPublicKey, loggedInPublicKeyValue]) => {
+    void refreshContactRelayUrls(chatPublicKey);
+    void refreshSelfAuthorIdentity(loggedInPublicKeyValue);
   },
   { immediate: true }
 );
@@ -1346,6 +1435,16 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
 .thread-message-entry {
   scroll-margin-top: 88px;
   scroll-margin-bottom: 16px;
+}
+
+.thread-message-entry--sender-change {
+  margin-top: 6px;
+}
+
+@media (max-width: 1023px) {
+  .thread-message-entry--sender-change {
+    margin-top: 0;
+  }
 }
 
 .thread-message-entry--target :deep(.bubble) {

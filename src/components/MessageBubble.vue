@@ -2,6 +2,19 @@
   <div class="bubble-row" :class="isMine ? 'bubble-row--mine' : 'bubble-row--their'">
     <div class="bubble-stack" :class="isMine ? 'bubble-stack--mine' : 'bubble-stack--their'">
       <div
+        v-if="showAuthorName"
+        class="bubble__author"
+        :class="isMine ? 'bubble__author--mine' : 'bubble__author--their'"
+      >
+        <CachedAvatar
+          :src="authorAvatarSrc"
+          :alt="authorLabel"
+          :fallback="authorAvatarFallback"
+          class="bubble__author-avatar"
+        />
+        <span class="bubble__author-name">{{ authorLabel }}</span>
+      </div>
+      <div
         class="bubble"
         :class="isMine ? 'bubble--mine' : 'bubble--their'"
       >
@@ -153,31 +166,30 @@
         </button>
       </div>
 
-        <div class="bubble__meta">
-          <span class="bubble__time">{{ formattedTime }}</span>
+      <div class="bubble__meta">
+        <span class="bubble__time">{{ formattedTime }}</span>
+        <div
+          v-if="hasRelayStatuses"
+          class="bubble__status-hitbox"
+          tabindex="0"
+          role="button"
+          aria-haspopup="dialog"
+          :aria-expanded="isStatusDialogOpen ? 'true' : 'false'"
+          @click.stop="openStatusDialog"
+          @keydown.enter.prevent="openStatusDialog"
+          @keydown.space.prevent="openStatusDialog"
+        >
           <div
-            v-if="hasRelayStatuses"
-            class="bubble__status-hitbox"
-            tabindex="0"
-            role="button"
-            aria-haspopup="dialog"
-            :aria-expanded="isStatusDialogOpen ? 'true' : 'false'"
-            @click.stop="openStatusDialog"
-            @keydown.enter.prevent="openStatusDialog"
-            @keydown.space.prevent="openStatusDialog"
+            class="bubble__status"
+            :class="{ 'bubble__status--pending': hasPendingRelayStatuses }"
           >
-            <div
-              class="bubble__status"
-              :class="{ 'bubble__status--pending': hasPendingRelayStatuses }"
-            >
-              <span
-                v-for="segment in statusSegments"
-                :key="segment.key"
-                class="bubble__status-segment"
-                :class="segment.className"
-                :style="{ flex: `${segment.weight} 1 0` }"
-              />
-            </div>
+            <span
+              v-for="segment in statusSegments"
+              :key="segment.key"
+              class="bubble__status-segment"
+              :class="segment.className"
+              :style="{ flex: `${segment.weight} 1 0` }"
+            />
           </div>
         </div>
       </div>
@@ -205,6 +217,7 @@
       </div>
     </div>
   </div>
+</div>
 
   <AppDialog
     v-if="hasRelayStatuses"
@@ -306,6 +319,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
+import CachedAvatar from 'src/components/CachedAvatar.vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { getEmojiEntryByValue, type EmojiOption } from 'src/data/topEmojis';
 import type {
@@ -322,8 +336,12 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = defineProps<{
   message: Message;
+  authorAvatarFallback?: string;
+  authorAvatarSrc?: string;
+  authorLabel?: string;
   contactName?: string;
   contactRelayUrls?: string[];
+  showAuthorName?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -576,6 +594,28 @@ const statusDialogTitle = computed(() => {
 });
 
 const isStatusDialogOpen = ref(false);
+const showAuthorName = computed(() => props.showAuthorName === true);
+const authorLabel = computed(() => {
+  const explicitLabel = props.authorLabel?.trim();
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
+  if (isMine.value) {
+    return 'You';
+  }
+
+  return props.contactName?.trim() || 'Contact';
+});
+const authorAvatarSrc = computed(() => props.authorAvatarSrc?.trim() || '');
+const authorAvatarFallback = computed(() => {
+  const explicitFallback = props.authorAvatarFallback?.trim();
+  if (explicitFallback) {
+    return explicitFallback;
+  }
+
+  return authorLabel.value;
+});
 const retryingRelayKeys = ref<string[]>([]);
 const replyPreview = computed(() => {
   const candidate = props.message.meta.reply;
@@ -1187,19 +1227,29 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.bubble-row,
+.bubble-stack,
+.bubble {
+  --bubble-author-avatar-size: 40px;
+  --bubble-author-gap: 10px;
+  --bubble-author-indent: calc(var(--bubble-author-avatar-size) + var(--bubble-author-gap));
+}
+
 .bubble-row {
   display: flex;
-  margin-bottom: 10px;
+  width: 100%;
+  margin-bottom: 4px;
 }
 
 .bubble-stack {
   display: flex;
   flex-direction: column;
-  max-width: min(82%, 560px);
+  width: 100%;
+  max-width: 100%;
 }
 
 .bubble-stack--mine {
-  align-items: flex-end;
+  align-items: flex-start;
 }
 
 .bubble-stack--their {
@@ -1207,7 +1257,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble-row--mine {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .bubble-row--their {
@@ -1216,11 +1266,47 @@ onBeforeUnmount(() => {
 
 .bubble {
   position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
   max-width: 100%;
-  border-radius: 16px;
-  padding: 10px 36px 10px 12px;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+  padding: 2px 34px 2px 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
   animation: bubble-in 180ms ease both;
+}
+
+.bubble__author {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bubble-author-gap);
+  margin: 0 0 4px;
+  opacity: 0.82;
+}
+
+.bubble__author--mine {
+  color: color-mix(in srgb, #2a7a4b 72%, currentColor 28%);
+}
+
+.bubble__author--their {
+  color: color-mix(in srgb, var(--q-primary) 72%, currentColor 28%);
+}
+
+.bubble__author-avatar {
+  width: var(--bubble-author-avatar-size);
+  height: var(--bubble-author-avatar-size);
+  min-width: var(--bubble-author-avatar-size);
+  min-height: var(--bubble-author-avatar-size);
+  font-size: 14px;
+}
+
+.bubble__author-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
 }
 
 .q-btn.bubble__menu-trigger {
@@ -1263,13 +1349,11 @@ onBeforeUnmount(() => {
 }
 
 .bubble--mine {
-  background: var(--tg-sent);
-  border-bottom-right-radius: 6px;
+  background: transparent;
 }
 
 .bubble--their {
-  background: var(--tg-received);
-  border-bottom-left-radius: 6px;
+  background: transparent;
 }
 
 .bubble__text {
@@ -1309,7 +1393,12 @@ onBeforeUnmount(() => {
 }
 
 .bubble__content {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
   min-width: 0;
+  margin-left: var(--bubble-author-indent);
+  max-width: min(82%, 560px);
 }
 
 .bubble__reply-preview {
@@ -1318,12 +1407,12 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   gap: 8px;
   margin-bottom: 8px;
-  padding: 6px 8px;
+  padding: 0;
   border: 0;
-  border-radius: 12px;
+  border-radius: 0;
   color: inherit;
   text-align: left;
-  background: color-mix(in srgb, currentColor 7%, transparent);
+  background: transparent;
   cursor: pointer;
 }
 
@@ -1390,7 +1479,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: -8px;
+  margin-top: 4px;
+  margin-left: var(--bubble-author-indent);
   position: relative;
   z-index: 1;
 }
@@ -1499,11 +1589,96 @@ onBeforeUnmount(() => {
 }
 
 .bubble__meta {
-  margin-top: 4px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  align-self: flex-end;
+  margin-left: auto;
   gap: 6px;
+  padding-bottom: 2px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1023px) {
+  .bubble-row,
+  .bubble-stack,
+  .bubble {
+    --bubble-author-indent: 0px;
+  }
+
+  .bubble-row {
+    width: auto;
+    margin-bottom: 10px;
+  }
+
+  .bubble-stack {
+    width: auto;
+    max-width: min(82%, 560px);
+  }
+
+  .bubble-stack--mine {
+    align-items: flex-end;
+  }
+
+  .bubble-stack--their {
+    align-items: flex-start;
+  }
+
+  .bubble-row--mine {
+    justify-content: flex-end;
+  }
+
+  .bubble-row--their {
+    justify-content: flex-start;
+  }
+
+  .bubble {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    border-radius: 16px;
+    padding: 10px 36px 10px 12px;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+  }
+
+  .bubble--mine {
+    background: var(--tg-sent);
+    border-bottom-right-radius: 6px;
+  }
+
+  .bubble--their {
+    background: var(--tg-received);
+    border-bottom-left-radius: 6px;
+  }
+
+  .bubble__author {
+    display: none;
+  }
+
+  .bubble__content {
+    display: block;
+    flex: none;
+    margin-left: 0;
+    max-width: none;
+  }
+
+  .bubble__reply-preview {
+    padding: 6px 8px;
+    border-radius: 12px;
+    background: color-mix(in srgb, currentColor 7%, transparent);
+  }
+
+  .bubble__reactions {
+    margin-top: -8px;
+    margin-left: 0;
+  }
+
+  .bubble__meta {
+    align-self: auto;
+    justify-content: flex-end;
+    margin-top: 4px;
+    margin-left: 0;
+    padding-bottom: 0;
+  }
 }
 
 .bubble__time {
