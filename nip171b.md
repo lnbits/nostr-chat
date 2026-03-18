@@ -165,6 +165,8 @@ An announcement message MUST:
 
 Content `+` means the `member` pubkeys joined the group. Content `-` means the `member` pubkeys left the group.
 
+Announcements are non-authoritative. They do not grant membership, revoke membership, or prove current access by themselves. Membership is determined by the current epoch ticket and epoch rotation rules.
+
 Clients MAY display these announcements however they see fit.
 
 ## Group Management
