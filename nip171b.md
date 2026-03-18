@@ -1,14 +1,14 @@
 NIP-171
 =======
 
-Owner-Managed Private Groups
+Epoch-Ticketed Private Groups
 -----------
 
 `draft` `optional` `client`
 
-This NIP defines a private group messaging scheme with owner-managed membership, built on top of NIP-17. A managed group is represented by a stable group identity keypair and a rotating epoch keypair shared by the current members.
+This NIP defines a private group messaging scheme built on top of NIP-17 in which members prove posting rights for the current epoch by presenting an epoch ticket. A ticketed group is represented by a stable group identity keypair and a rotating epoch keypair shared by the current members.
 
-Managed groups are designed for conversations in which one party (the group owner) controls membership.
+Ticketed groups are designed for conversations in which posting requires a valid epoch ticket and one party (the group owner) controls membership.
 
 ## Terms
 
@@ -24,7 +24,7 @@ Control of the group identity private key is the only authority required by this
 
 ## Group Identity
 
-Each managed group has exactly one group identity and exactly one current group epoch.
+Each ticketed group has exactly one group identity and exactly one current group epoch.
 
 The group identity:
 
@@ -192,7 +192,7 @@ Relays that already protect access to `kind:1059` events SHOULD apply the same p
 
 ## Security and Limitations
 
-- Managed groups are intentionally centralized around a single owner.
+- Ticketed groups are intentionally centralized around a single owner.
 - Any member can reveal messages they were able to decrypt while they were a member.
 - Membership changes only affect future epochs after rotation.
 - If the owner adds a member without rotating the epoch, that member may be able to read older messages still available on relays for that epoch.
