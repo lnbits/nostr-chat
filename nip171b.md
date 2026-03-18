@@ -184,6 +184,42 @@ These requests are advisory only:
 
 Clients MAY present these requests as explicit join or leave actions instead of ordinary chat messages.
 
+## Optional Group Identity Secret Storage
+
+A client MAY store a group identity private key for backup or cross-device restore using NIP-78.
+
+When doing so, the client:
+
+- SHOULD use one `kind:30078` event per group.
+- MUST encrypt `content` with NIP-44 to the local user's own public key.
+- MUST NOT publish the group identity private key in plaintext.
+- SHOULD use `["d", "<group-pubkey>"]`.
+- SHOULD use `["t", "group"]`.
+
+One recommended form is:
+
+```jsonc
+{
+  "kind": 30078,
+  "tags": [
+    ["d", "<group-pubkey>"],
+    ["t", "group"]
+  ],
+  "content": "<NIP-44 encrypted JSON payload>"
+}
+```
+
+The decrypted payload SHOULD be:
+
+```jsonc
+{
+  "version": 1,
+  "group_privkey": "<group-private-key-hex>"
+}
+```
+
+Clients SHOULD verify after decryption that `group_privkey` corresponds to the group identity public key stored in the event's `d` tag. If validation fails, the stored secret MUST be ignored.
+
 ## Relay Behavior
 
 This NIP does not require new relay-side semantics beyond NIP-17 and NIP-59.
