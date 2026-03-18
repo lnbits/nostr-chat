@@ -120,11 +120,12 @@ To receive messages for a group, clients MUST listen for NIP-59 gift wraps addre
 After unwrapping a message, clients MUST:
 
 1. verify the NIP-17 sender binding by checking that the `pubkey` on the `kind:13` seal matches the `pubkey` on the inner rumor.
-2. verify that the rumor contains exactly one `p`, `h`, `epoch`, `invited_at`, and `invitation_proof` tag as defined above.
-3. verify that the rumor `p` tag equals the current epoch public key for the group.
-4. verify that the rumor `h` tag equals the group identity public key for that group.
-5. verify that the rumor `epoch` tag equals the current epoch number for the group.
-6. rebuild the sender's epoch ticket using the current epoch number and epoch private key known locally:
+2. if the sender pubkey equals the group identity public key, validate and interpret the message according to the Announcements section.
+3. otherwise, verify that the rumor contains exactly one `p`, `h`, `epoch`, `invited_at`, and `invitation_proof` tag as defined above.
+4. verify that the rumor `p` tag equals the current epoch public key for the group.
+5. verify that the rumor `h` tag equals the group identity public key for that group.
+6. verify that the rumor `epoch` tag equals the current epoch number for the group.
+7. rebuild the sender's epoch ticket using the current epoch number and epoch private key known locally:
 
 ```jsonc
 {
@@ -141,11 +142,30 @@ After unwrapping a message, clients MUST:
 }
 ```
 
-7. verify the rebuilt `kind:1014` signature against the group identity public key.
+8. verify the rebuilt `kind:1014` signature against the group identity public key.
 
 If that signature is valid, the sender has possession of a valid epoch ticket for the current epoch and is therefore a current member of the group. If validation fails, the event MUST be dropped.
 
+Messages from the group identity public key that do not match the Announcements section SHOULD be ignored.
+
 Clients MUST use only the epoch public key from the highest valid epoch number for receiving new messages. Messages addressed to older epoch public keys SHOULD be treated as historical data from earlier epochs and SHOULD NOT be mixed into the current writable epoch.
+
+## Announcements
+
+The group identity MAY send a NIP-17 `kind:14` message to announce joins or leaves.
+
+An announcement message MUST:
+
+- contain exactly one `p` tag naming the current epoch public key.
+- contain one or more `member` tags naming affected member public keys.
+- contain exactly one `h` tag whose value is the group identity public key.
+- contain exactly one `epoch` tag whose value is the current epoch number.
+- use content exactly equal to `+` or `-`.
+- SHOULD NOT contain `invited_at` or `invitation_proof` tags.
+
+Content `+` means the `member` pubkeys joined the group. Content `-` means the `member` pubkeys left the group.
+
+Clients MAY display these announcements however they see fit.
 
 ## Group Management
 
