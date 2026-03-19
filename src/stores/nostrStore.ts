@@ -229,6 +229,8 @@ interface GroupIdentitySecretContent {
   version: number;
   group_pubkey: string;
   group_privkey: string;
+  epoch_number?: number;
+  epoch_privkey?: string;
   name?: string;
   about?: string;
 }
@@ -1298,6 +1300,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const groupPrivkey = inputSanitizerService.normalizeHexKey(
       typeof value.group_privkey === 'string' ? value.group_privkey : ''
     );
+    const epochNumber = Number(value.epoch_number);
+    const epochPrivkey = inputSanitizerService.normalizeHexKey(
+      typeof value.epoch_privkey === 'string' ? value.epoch_privkey : ''
+    );
     const name = typeof value.name === 'string' ? value.name.trim() : '';
     const about = typeof value.about === 'string' ? value.about.trim() : '';
 
@@ -1323,6 +1329,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
       version,
       group_pubkey: groupPubkey,
       group_privkey: groupPrivkey,
+      ...(
+        Number.isInteger(epochNumber) &&
+        epochNumber >= 0 &&
+        epochPrivkey
+          ? {
+              epoch_number: Math.floor(epochNumber),
+              epoch_privkey: epochPrivkey
+            }
+          : {}
+      ),
       ...(name ? { name } : {}),
       ...(about ? { about } : {})
     };
@@ -1353,6 +1369,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
     } catch {
       return null;
     }
+  }
+
+  function createInitialGroupEpochSecretState(): Pick<
+    GroupIdentitySecretContent,
+    'epoch_number' | 'epoch_privkey'
+  > {
+    const epochSigner = NDKPrivateKeySigner.generate();
+    return {
+      epoch_number: 0,
+      epoch_privkey: epochSigner.privateKey
+    };
   }
 
   function buildRelaySaveStatus(relayStatuses: MessageRelayStatus[]): RelaySaveStatus {
@@ -1513,6 +1540,205 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return didChange;
+  }
+
+  async function ensureGroupIdentitySecretEpochState(
+    groupContact: ContactRecord,
+    seedRelayUrls: string[] = []
+  ): Promise<{
+    contact: ContactRecord;
+    secret: GroupIdentitySecretContent;
+  }> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupContact.public_key);
+    if (!normalizedGroupPublicKey || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const encryptedGroupPrivateKey =
+      groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    if (!encryptedGroupPrivateKey) {
+      throw new Error('Encrypted group private key not found.');
+    }
+
+    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
+    if (
+      !decryptedSecret ||
+      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !== normalizedGroupPublicKey
+    ) {
+      throw new Error('Failed to decrypt the group private key.');
+    }
+
+    if (
+      Number.isInteger(decryptedSecret.epoch_number) &&
+      Number(decryptedSecret.epoch_number) >= 0 &&
+      inputSanitizerService.normalizeHexKey(decryptedSecret.epoch_privkey ?? '')
+    ) {
+      return {
+        contact: groupContact,
+        secret: {
+          ...decryptedSecret,
+          epoch_number: Math.floor(Number(decryptedSecret.epoch_number)),
+          epoch_privkey: inputSanitizerService.normalizeHexKey(decryptedSecret.epoch_privkey ?? '') ?? undefined
+        }
+      };
+    }
+
+    const nextSecret: GroupIdentitySecretContent = {
+      ...decryptedSecret,
+      ...createInitialGroupEpochSecretState()
+    };
+    const nextEncryptedSecret = await encryptGroupIdentitySecretContent(nextSecret);
+    const nextMeta: ContactMetadata = {
+      ...(groupContact.meta ?? {}),
+      [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: nextEncryptedSecret
+    };
+    const updatedContact = await contactsService.updateContact(groupContact.id, {
+      meta: nextMeta
+    });
+    if (!updatedContact) {
+      throw new Error('Failed to persist initial group epoch state.');
+    }
+
+    bumpContactListVersion();
+    try {
+      await publishGroupIdentitySecret(normalizedGroupPublicKey, nextEncryptedSecret, seedRelayUrls);
+    } catch (error) {
+      console.warn('Failed to publish updated group epoch secret', error);
+    }
+
+    return {
+      contact: updatedContact,
+      secret: nextSecret
+    };
+  }
+
+  async function resolveGiftWrapRecipientRelayUrls(
+    recipientPubkey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<string[]> {
+    const normalizedRecipientPubkey = inputSanitizerService.normalizeHexKey(recipientPubkey);
+    if (!normalizedRecipientPubkey) {
+      return resolveLoggedInPublishRelayUrls(seedRelayUrls);
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedRecipientPubkey);
+
+    let fetchedRelayEntries: ContactRelay[] = [];
+    try {
+      const relayList = await fetchContactRelayList(normalizedRecipientPubkey);
+      fetchedRelayEntries = relayList?.relayEntries ?? [];
+    } catch (error) {
+      console.warn('Failed to fetch relay list for gift wrap recipient', normalizedRecipientPubkey, error);
+    }
+
+    const relayUrls = normalizeRelayStatusUrls([
+      ...inputSanitizerService.normalizeStringArray(seedRelayUrls),
+      ...inputSanitizerService.normalizeReadableRelayUrls(existingContact?.relays),
+      ...inputSanitizerService.normalizeReadableRelayUrls(fetchedRelayEntries)
+    ]);
+
+    if (relayUrls.length > 0) {
+      return relayUrls;
+    }
+
+    return resolveLoggedInPublishRelayUrls(seedRelayUrls);
+  }
+
+  async function sendGroupEpochTicket(
+    groupPublicKey: string,
+    memberPublicKey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<RelaySaveStatus> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedMemberPublicKey = inputSanitizerService.normalizeHexKey(memberPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey || !normalizedMemberPublicKey) {
+      throw new Error('A valid group public key and member public key are required.');
+    }
+
+    await contactsService.init();
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can send epoch tickets for this group.');
+    }
+
+    const { contact: updatedGroupContact, secret } = await ensureGroupIdentitySecretEpochState(
+      groupContact,
+      seedRelayUrls
+    );
+    const normalizedEpochPrivateKey = inputSanitizerService.normalizeHexKey(
+      secret.epoch_privkey ?? ''
+    );
+    if (!normalizedEpochPrivateKey || !Number.isInteger(secret.epoch_number)) {
+      throw new Error('Missing current epoch state for this group.');
+    }
+
+    const groupSigner = new NDKPrivateKeySigner(secret.group_privkey, ndk);
+    const signerUser = await groupSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
+      throw new Error('Decrypted group private key does not match the group public key.');
+    }
+
+    const relayUrls = await resolveGiftWrapRecipientRelayUrls(
+      normalizedMemberPublicKey,
+      seedRelayUrls
+    );
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot send epoch ticket without at least one relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const createdAt = Math.floor(Date.now() / 1000);
+    const epochTicketEvent = new NDKEvent(ndk, {
+      kind: 1014,
+      created_at: createdAt,
+      pubkey: normalizedGroupPublicKey,
+      content: normalizedEpochPrivateKey,
+      tags: [
+        ['p', normalizedMemberPublicKey],
+        ['epoch', String(Math.floor(Number(secret.epoch_number)))]
+      ]
+    });
+    await epochTicketEvent.sign(groupSigner);
+
+    const recipient = new NDKUser({ pubkey: normalizedMemberPublicKey });
+    const giftWrapEvent = await giftWrap(epochTicketEvent, recipient, groupSigner, {
+      rumorKind: 1014
+    });
+    const publishResult = await publishEventWithRelayStatuses(
+      giftWrapEvent,
+      relayUrls,
+      'recipient'
+    );
+    const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
+    if (publishResult.error && !relaySaveStatus.errorMessage) {
+      relaySaveStatus.errorMessage = publishResult.error.message;
+    }
+
+    if (
+      publishResult.error &&
+      !publishResult.relayStatuses.some(
+        (entry) => entry.direction === 'outbound' && entry.status === 'published'
+      )
+    ) {
+      throw publishResult.error;
+    }
+
+    void updatedGroupContact;
+    return relaySaveStatus;
   }
 
   async function ensurePrivatePreferences(
@@ -4671,6 +4897,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   async function createGroupChat(options: CreateGroupChatInput = {}): Promise<CreateGroupChatResult> {
     const relayUrls = Array.isArray(options.relayUrls) ? options.relayUrls : [];
     const groupSigner = NDKPrivateKeySigner.generate();
+    const initialEpochState = createInitialGroupEpochSecretState();
     const groupPublicKey = inputSanitizerService.normalizeHexKey(groupSigner.pubkey);
     if (!groupPublicKey) {
       throw new Error('Failed to generate a valid group identity.');
@@ -4680,6 +4907,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       version: GROUP_IDENTITY_SECRET_VERSION,
       group_pubkey: groupPublicKey,
       group_privkey: groupSigner.privateKey,
+      ...initialEpochState,
       ...(typeof options.name === 'string' && options.name.trim()
         ? { name: options.name.trim() }
         : {}),
@@ -7071,6 +7299,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
+    if (rumorEvent.kind === 1014) {
+      console.log(
+        'Received kind:1014 event',
+        rumorNostrEvent ?? (await toStoredNostrEvent(rumorEvent)) ?? rumorEvent
+      );
+      return;
+    }
+
     if (rumorEvent.kind !== NDKKind.PrivateDirectMessage) {
       logInboundEvent('drop', {
         reason: 'unsupported-rumor-kind',
@@ -8583,6 +8819,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restartPrivateMessagesDiagnosticsSubscription,
     retryDirectMessageRelay,
     scheduleContactCursorPublish,
+    sendGroupEpochTicket,
     sendDirectMessage,
     sendDirectMessageDeletion,
     sendDirectMessageReaction,

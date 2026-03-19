@@ -1002,6 +1002,24 @@ async function handleAddMember(): Promise<void> {
         resolution.identifierType === 'nip05' ? trimmedIdentifier : null
       )
     ]);
+
+    const groupPublicKey = currentContact.value?.public_key?.trim() ?? '';
+    if (groupPublicKey) {
+      try {
+        await nostrStore.sendGroupEpochTicket(
+          groupPublicKey,
+          normalizedPublicKey,
+          resolution.relays
+        );
+      } catch (error) {
+        reportUiError(
+          'Failed to send group epoch ticket',
+          error,
+          'Member added, but the epoch ticket could not be sent.'
+        );
+      }
+    }
+
     newMemberIdentifier.value = '';
     newMemberIdentifierError.value = '';
   } catch (error) {
