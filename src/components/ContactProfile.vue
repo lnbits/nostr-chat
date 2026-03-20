@@ -405,6 +405,31 @@
 
           <q-tab-panel v-if="isGroupContact" name="members" class="profile-tab-panel">
             <div class="profile-members">
+              <div v-if="showMembersTabActions" class="profile-tab-actions">
+                <q-btn
+                  v-if="props.showHeader"
+                  no-caps
+                  outline
+                  color="primary"
+                  label="Refresh"
+                  class="profile-tab-actions__button"
+                  :disable="!normalizedHeaderPubkey || isRefreshingContact"
+                  :loading="isRefreshingContact"
+                  @click="handleRefreshContactProfile"
+                />
+                <q-btn
+                  v-if="props.showPublishAction"
+                  no-caps
+                  unelevated
+                  color="primary"
+                  label="Publish"
+                  class="profile-tab-actions__button"
+                  :disable="!normalizedHeaderPubkey"
+                  :loading="isPublishingMembersEpoch"
+                  @click="handleMembersPublish"
+                />
+              </div>
+
               <div class="profile-members-toolbar">
                 <q-input
                   v-model="newMemberIdentifier"
@@ -434,15 +459,6 @@
                     />
                   </template>
                 </q-input>
-
-                <q-btn
-                  no-caps
-                  outline
-                  color="primary"
-                  label="Publish"
-                  class="profile-members-toolbar__publish"
-                  @click="handleMembersPublish"
-                />
               </div>
 
               <div
@@ -610,6 +626,7 @@ const relayIconErrorByUrl = ref<Record<string, boolean>>({});
 const newMemberIdentifier = ref('');
 const newMemberIdentifierError = ref('');
 const isAddingMember = ref(false);
+const isPublishingMembersEpoch = ref(false);
 const groupMembers = ref<GroupMemberDraft[]>([]);
 const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 let lookupRequestId = 0;
@@ -631,6 +648,7 @@ const mobileNavGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${isGroupContact.value ? 2 : 1}, minmax(0, 1fr))`
 }));
 const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
+const showMembersTabActions = computed(() => props.showHeader || props.showPublishAction);
 
 const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
 
@@ -1073,8 +1091,51 @@ async function handleRefreshMember(index: number): Promise<void> {
   }
 }
 
-function handleMembersPublish(): void {
-  // Placeholder for the future NIP-171 member ticket publish flow.
+async function handleMembersPublish(): Promise<void> {
+  const groupPublicKey = currentContact.value?.public_key?.trim() ?? '';
+  if (!groupPublicKey || isPublishingMembersEpoch.value) {
+    return;
+  }
+
+  isPublishingMembersEpoch.value = true;
+
+  try {
+    const publishResult = await nostrStore.rotateGroupEpochAndSendTickets(
+      groupPublicKey,
+      groupMembers.value.map((member) => member.public_key)
+    );
+
+    await loadContactFromPubkey(groupPublicKey);
+
+    if (publishResult.failedMemberPubkeys.length === 0) {
+      $q.notify({
+        type: 'positive',
+        message:
+          publishResult.attemptedMemberCount > 0
+            ? `Epoch ${publishResult.epochNumber} published to ${publishResult.deliveredMemberCount} member${publishResult.deliveredMemberCount === 1 ? '' : 's'}.`
+            : `Epoch ${publishResult.epochNumber} created locally. No members to notify.`,
+        caption: `Published to ${publishResult.publishedRelayUrls.length} relay${publishResult.publishedRelayUrls.length === 1 ? '' : 's'}.`,
+        position: 'top-right'
+      });
+      return;
+    }
+
+    $q.notify({
+      type: 'warning',
+      message: `Epoch ${publishResult.epochNumber} published with partial delivery.`,
+      caption: `${publishResult.deliveredMemberCount} delivered, ${publishResult.failedMemberPubkeys.length} failed, ${publishResult.publishedRelayUrls.length} relay${publishResult.publishedRelayUrls.length === 1 ? '' : 's'}.`,
+      position: 'top-right',
+      timeout: 6000
+    });
+  } catch (error) {
+    reportUiError(
+      'Failed to publish group epoch to members',
+      error,
+      'Failed to publish group epoch.'
+    );
+  } finally {
+    isPublishingMembersEpoch.value = false;
+  }
 }
 
 function resetMembersEditor(): void {
@@ -1613,11 +1674,6 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   min-width: 0;
 }
 
-.profile-members-toolbar__publish {
-  flex-shrink: 0;
-  min-height: 40px;
-}
-
 .profile-members-list {
   border-radius: 14px;
   background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
@@ -1719,10 +1775,6 @@ body.body--dark .mobile-nav__btn--active {
   .profile-members-toolbar {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .profile-members-toolbar__publish {
-    align-self: flex-end;
   }
 }
 </style>
