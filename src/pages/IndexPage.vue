@@ -699,6 +699,7 @@ async function handleAcceptRequest(chatId: string): Promise<void> {
   try {
     const chat = findChatById(chatId);
     await chatStore.acceptChat(chatId);
+    isRequestsDialogOpen.value = false;
     if (!chat) {
       return;
     }

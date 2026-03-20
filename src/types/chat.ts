@@ -3,6 +3,11 @@ import type { NostrEvent } from '@nostr-dev-kit/ndk';
 export type ChatInboxState = 'accepted' | 'blocked';
 export type ChatType = 'user' | 'group';
 
+export interface ChatGroupEpochKey {
+  epoch_number: number;
+  epoch_private_key_encrypted: string;
+}
+
 export interface ChatMetadata {
   avatar?: string;
   picture?: string;
@@ -18,6 +23,7 @@ export interface ChatMetadata {
   blocked_at?: string;
   last_incoming_message_at?: string;
   last_outgoing_message_at?: string;
+  group_epoch_keys?: ChatGroupEpochKey[];
   [key: string]: unknown;
 }
 

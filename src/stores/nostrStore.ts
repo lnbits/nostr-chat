@@ -46,6 +46,8 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import type {
+  ChatGroupEpochKey,
+  ChatMetadata,
   DeletedMessageMetadata,
   MessageReplyPreview,
   MessageReaction,
@@ -403,11 +405,13 @@ const GROUP_IDENTITY_SECRET_TAG = 'group';
 const GROUP_IDENTITY_SECRET_VERSION = 1;
 const GROUP_PRIVATE_KEY_CONTACT_META_KEY = 'group_private_key_encrypted';
 const GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY = 'owner_public_key';
+const GROUP_EPOCH_KEYS_CHAT_META_KEY = 'group_epoch_keys';
 const CHAT_REQUEST_TYPE_META_KEY = 'request_type';
 const CHAT_REQUEST_MESSAGE_META_KEY = 'request_message';
 const CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY = 'last_incoming_message_at';
 const GROUP_INVITE_REQUEST_TYPE = 'group_invite';
 const GROUP_INVITE_REQUEST_MESSAGE = 'This is an invitation to a group.';
+const INVITATION_PROOF_TAG = 'invitation_proof';
 const CONTACT_CURSOR_VERSION = '0.1';
 const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
 const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
@@ -1376,6 +1380,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
+  async function encryptPrivateStringContent(content: string): Promise<string> {
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      throw new Error('Private content is required.');
+    }
+
+    const user = await getLoggedInSignerUser();
+    ndk.assertSigner();
+    return ndk.signer.encrypt(user, normalizedContent, 'nip44');
+  }
+
   function createInitialGroupEpochSecretState(): Pick<
     GroupIdentitySecretContent,
     'epoch_number' | 'epoch_privkey'
@@ -1385,6 +1400,76 @@ export const useNostrStore = defineStore('nostrStore', () => {
       epoch_number: 0,
       epoch_privkey: epochSigner.privateKey
     };
+  }
+
+  function readFirstTagValue(
+    tags: string[][],
+    tagName: string
+  ): string | null {
+    for (const tag of tags) {
+      if (!Array.isArray(tag) || tag[0] !== tagName) {
+        continue;
+      }
+
+      const value = typeof tag[1] === 'string' ? tag[1].trim() : '';
+      if (value) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  function readEpochNumberTag(tags: string[][]): number | null {
+    const epochValue = readFirstTagValue(tags, 'epoch');
+    if (!epochValue) {
+      return null;
+    }
+
+    const epochNumber = Number(epochValue);
+    if (!Number.isInteger(epochNumber) || epochNumber < 0) {
+      return null;
+    }
+
+    return Math.floor(epochNumber);
+  }
+
+  function normalizeChatGroupEpochKeys(value: unknown): ChatGroupEpochKey[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const entriesByEpoch = new Map<number, ChatGroupEpochKey>();
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        continue;
+      }
+
+      const epochNumber = Number(
+        'epoch_number' in entry ? entry.epoch_number : Number.NaN
+      );
+      const epochPrivateKeyEncrypted =
+        'epoch_private_key_encrypted' in entry &&
+        typeof entry.epoch_private_key_encrypted === 'string'
+          ? entry.epoch_private_key_encrypted.trim()
+          : '';
+      if (
+        !Number.isInteger(epochNumber) ||
+        epochNumber < 0 ||
+        !epochPrivateKeyEncrypted
+      ) {
+        continue;
+      }
+
+      entriesByEpoch.set(Math.floor(epochNumber), {
+        epoch_number: Math.floor(epochNumber),
+        epoch_private_key_encrypted: epochPrivateKeyEncrypted
+      });
+    }
+
+    return Array.from(entriesByEpoch.values()).sort(
+      (first, second) => second.epoch_number - first.epoch_number
+    );
   }
 
   function buildRelaySaveStatus(relayStatuses: MessageRelayStatus[]): RelaySaveStatus {
@@ -1615,6 +1700,92 @@ export const useNostrStore = defineStore('nostrStore', () => {
       contact: updatedContact,
       secret: nextSecret
     };
+  }
+
+  async function persistIncomingGroupEpochTicket(
+    groupPublicKey: string,
+    epochNumber: number,
+    epochPrivateKey: string,
+    options: {
+      fallbackName?: string;
+      accepted?: boolean;
+    } = {}
+  ): Promise<void> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedEpochPrivateKey = inputSanitizerService.normalizeHexKey(epochPrivateKey);
+    if (
+      !normalizedGroupPublicKey ||
+      !normalizedEpochPrivateKey ||
+      !Number.isInteger(epochNumber) ||
+      epochNumber < 0
+    ) {
+      return;
+    }
+
+    await chatDataService.init();
+
+    const encryptedEpochPrivateKey = await encryptPrivateStringContent(normalizedEpochPrivateKey);
+    const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+    const existingGroupEpochKeys = normalizeChatGroupEpochKeys(
+      existingChat?.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]
+    );
+    const entriesByEpoch = new Map<number, ChatGroupEpochKey>(
+      existingGroupEpochKeys.map((entry) => [entry.epoch_number, entry])
+    );
+    entriesByEpoch.set(epochNumber, {
+      epoch_number: epochNumber,
+      epoch_private_key_encrypted: encryptedEpochPrivateKey
+    });
+
+    const nextGroupEpochKeys = Array.from(entriesByEpoch.values()).sort(
+      (first, second) => second.epoch_number - first.epoch_number
+    );
+    const fallbackName =
+      typeof options.fallbackName === 'string' && options.fallbackName.trim()
+        ? options.fallbackName.trim()
+        : resolveGroupDisplayName(normalizedGroupPublicKey);
+    const nextMeta: ChatMetadata = {
+      ...(existingChat?.meta ?? {}),
+      [GROUP_EPOCH_KEYS_CHAT_META_KEY]: nextGroupEpochKeys
+    };
+
+    if (!existingChat) {
+      const createdAt = new Date().toISOString();
+      await chatDataService.createChat({
+        public_key: normalizedGroupPublicKey,
+        type: 'group',
+        name: fallbackName,
+        last_message: '',
+        last_message_at: createdAt,
+        unread_count: 0,
+        meta: {
+          avatar: buildAvatarFallback(fallbackName),
+          ...(options.accepted
+            ? {
+                inbox_state: 'accepted',
+                accepted_at: createdAt
+              }
+            : {}),
+          ...nextMeta
+        }
+      });
+      await useChatStore().reload();
+      return;
+    }
+
+    const shouldUpdateType = existingChat.type !== 'group';
+    const shouldUpdateName = existingChat.name !== fallbackName;
+    const shouldUpdateMeta = JSON.stringify(existingChat.meta ?? {}) !== JSON.stringify(nextMeta);
+    if (!shouldUpdateType && !shouldUpdateName && !shouldUpdateMeta) {
+      return;
+    }
+
+    await chatDataService.updateChat(normalizedGroupPublicKey, {
+      ...(shouldUpdateType ? { type: 'group' as const } : {}),
+      ...(shouldUpdateName ? { name: fallbackName } : {}),
+      ...(shouldUpdateMeta ? { meta: nextMeta } : {})
+    });
+    await useChatStore().reload();
   }
 
   async function resolveGiftWrapRecipientRelayUrls(
@@ -1862,13 +2033,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
     if (existingChat) {
+      const acceptedAt =
+        typeof existingChat.meta?.accepted_at === 'string' && existingChat.meta.accepted_at.trim()
+          ? existingChat.meta.accepted_at.trim()
+          : new Date().toISOString();
+      const nextChatMeta: ChatMetadata = {
+        ...(existingChat.meta ?? {}),
+        contact_name: initialName,
+        inbox_state: 'accepted',
+        accepted_at: acceptedAt
+      };
+      delete nextChatMeta[CHAT_REQUEST_TYPE_META_KEY];
+      delete nextChatMeta[CHAT_REQUEST_MESSAGE_META_KEY];
+
       await chatDataService.updateChat(normalizedTargetPubkey, {
         type: 'group',
         ...(existingChat.name !== initialName ? { name: initialName } : {}),
-        meta: {
-          ...(existingChat.meta ?? {}),
-          contact_name: initialName
-        }
+        meta: nextChatMeta
       });
     }
 
@@ -2634,7 +2815,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       created_at: approximateGiftWrapNow(),
       pubkey: event.pubkey,
       content: JSON.stringify(rumorPayload),
-      tags: [['invitation_proof', invitationProof]]
+      tags: [[INVITATION_PROOF_TAG, invitationProof]]
     });
     await sealEvent.encrypt(recipient, signer, 'nip44');
     await sealEvent.sign(signer);
@@ -2674,6 +2855,49 @@ export const useNostrStore = defineStore('nostrStore', () => {
     } catch {
       return null;
     }
+  }
+
+  async function verifyIncomingGroupEpochTicket(
+    rumorEvent: NDKEvent,
+    sealEvent: NostrEvent | null
+  ): Promise<{
+    isValid: boolean;
+    signedEvent: NostrEvent | null;
+    epochNumber: number | null;
+    epochPrivateKey: string | null;
+  }> {
+    const sealTags = Array.isArray(sealEvent?.tags)
+      ? sealEvent.tags.filter((tag): tag is string[] => Array.isArray(tag))
+      : [];
+    const invitationProof = readFirstTagValue(sealTags, INVITATION_PROOF_TAG);
+    const epochNumber = readEpochNumberTag(rumorEvent.tags);
+    const epochPrivateKey = inputSanitizerService.normalizeHexKey(rumorEvent.content ?? '');
+    if (!invitationProof || epochNumber === null || !epochPrivateKey) {
+      return {
+        isValid: false,
+        signedEvent: null,
+        epochNumber,
+        epochPrivateKey
+      };
+    }
+
+    const signedEvent = new NDKEvent(ndk, {
+      created_at: rumorEvent.created_at,
+      content: rumorEvent.content,
+      tags: rumorEvent.tags.map((tag) => [...tag]),
+      kind: rumorEvent.kind,
+      pubkey: rumorEvent.pubkey,
+      ...(rumorEvent.id?.trim() ? { id: rumorEvent.id.trim() } : {}),
+      sig: invitationProof
+    });
+    const isValid = signedEvent.verifySignature(false) === true;
+
+    return {
+      isValid,
+      signedEvent: isValid ? await toStoredNostrEvent(signedEvent) : null,
+      epochNumber,
+      epochPrivateKey
+    };
   }
 
   function readDirectMessageRecipientPubkey(event: NostrEvent): string | null {
@@ -7529,19 +7753,49 @@ export const useNostrStore = defineStore('nostrStore', () => {
         console.log('Received kind:1014 seal event', loggedSealEvent);
       }
 
+      const verificationResult = await verifyIncomingGroupEpochTicket(rumorEvent, loggedSealEvent);
+      console.log('Received kind:1014 signature verification', {
+        isValid: verificationResult.isValid,
+        event: verificationResult.signedEvent ?? loggedEvent
+      });
+      if (!verificationResult.isValid) {
+        return;
+      }
+
       await contactsService.init();
       const senderContact = await contactsService.getContactByPublicKey(senderPubkeyHex);
+      let fallbackName =
+        senderContact?.meta?.display_name?.trim() ||
+        senderContact?.meta?.name?.trim() ||
+        senderContact?.name?.trim() ||
+        resolveGroupDisplayName(senderPubkeyHex);
+
       if (!senderContact) {
         const groupPreview = await fetchContactPreviewByPublicKey(
           senderPubkeyHex,
           resolveGroupDisplayName(senderPubkeyHex)
         );
+        fallbackName =
+          groupPreview?.meta?.display_name?.trim() ||
+          groupPreview?.meta?.name?.trim() ||
+          groupPreview?.name?.trim() ||
+          fallbackName;
         await upsertIncomingGroupInviteRequestChat(
           senderPubkeyHex,
           toIsoTimestampFromUnix(rumorEvent.created_at),
           groupPreview
         );
       }
+
+      await persistIncomingGroupEpochTicket(
+        senderPubkeyHex,
+        verificationResult.epochNumber ?? 0,
+        verificationResult.epochPrivateKey ?? '',
+        {
+          fallbackName,
+          accepted: Boolean(senderContact)
+        }
+      );
       return;
     }
 
