@@ -60,6 +60,8 @@
         :key="`${relay}-${index}`"
         expand-separator
         switch-toggle-side
+        expand-icon="keyboard_arrow_right"
+        expanded-icon="keyboard_arrow_down"
         class="relay-expansion-item"
         @show="emitRelayExpand(relay)"
       >

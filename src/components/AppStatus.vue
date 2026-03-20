@@ -3,6 +3,8 @@
     <q-expansion-item
       switch-toggle-side
       expand-separator
+      expand-icon="keyboard_arrow_right"
+      expanded-icon="keyboard_arrow_down"
       class="app-status__expansion"
     >
       <template #header>

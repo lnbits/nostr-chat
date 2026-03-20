@@ -476,6 +476,8 @@
                 :key="`reaction-${entry.targetEventId}`"
                 dense
                 expand-separator
+                expand-icon="keyboard_arrow_right"
+                expanded-icon="keyboard_arrow_down"
                 class="developer-expansion"
                 :label="`${entry.targetEventId} (${entry.count})`"
               >
@@ -493,6 +495,8 @@
                 :key="`deletion-${entry.targetEventId}`"
                 dense
                 expand-separator
+                expand-icon="keyboard_arrow_right"
+                expanded-icon="keyboard_arrow_down"
                 class="developer-expansion"
                 :label="`${entry.targetEventId} (${entry.count})`"
               >

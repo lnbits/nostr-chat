@@ -139,6 +139,8 @@
                 default-opened
                 expand-separator
                 switch-toggle-side
+                expand-icon="keyboard_arrow_right"
+                expanded-icon="keyboard_arrow_down"
                 class="profile-section"
               >
                 <template #header>
@@ -218,7 +220,13 @@
                 </div>
               </q-expansion-item>
 
-              <q-expansion-item expand-separator switch-toggle-side class="profile-section">
+              <q-expansion-item
+                expand-separator
+                switch-toggle-side
+                expand-icon="keyboard_arrow_right"
+                expanded-icon="keyboard_arrow_down"
+                class="profile-section"
+              >
                 <template #header>
                   <q-item-section>
                     <q-item-label class="profile-card__title">Extra Metadata Fields (NIP-24)</q-item-label>
@@ -338,7 +346,13 @@
                 </div>
               </q-expansion-item>
 
-              <q-expansion-item expand-separator switch-toggle-side class="profile-section">
+              <q-expansion-item
+                expand-separator
+                switch-toggle-side
+                expand-icon="keyboard_arrow_right"
+                expanded-icon="keyboard_arrow_down"
+                class="profile-section"
+              >
                 <template #header>
                   <q-item-section>
                     <div class="profile-card__title-row">
