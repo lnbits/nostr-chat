@@ -484,12 +484,11 @@ defineExpose({
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 10px 16px;
   padding-bottom: calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .composer__emoji-autocomplete {
@@ -499,11 +498,9 @@ defineExpose({
   flex-direction: column;
   gap: 4px;
   padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #90a6c1 12%);
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at top left, rgba(96, 165, 250, 0.12), transparent 42%),
-    color-mix(in srgb, var(--tg-sidebar) 94%, #f8fbff 6%);
+  border: 1px solid var(--tg-border);
+  border-radius: 12px;
+  background: var(--tg-panel-sidebar-bg);
   box-shadow: var(--tg-shadow-md);
 }
 
@@ -514,24 +511,22 @@ defineExpose({
   width: 100%;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 12px;
-  background: var(--tg-btn-soft-bg);
-  box-shadow: var(--tg-btn-soft-shadow);
+  border-radius: 10px;
+  background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
   transition:
     background-color 0.16s ease,
     border-color 0.16s ease,
-    transform 0.16s ease,
-    box-shadow 0.16s ease;
+    transform 0.16s ease;
 }
 
 .composer__emoji-option:hover,
 .composer__emoji-option--active {
-  transform: translateY(-1px);
-  border-color: var(--tg-btn-soft-border);
-  background: var(--tg-btn-soft-hover-bg);
+  transform: none;
+  border-color: transparent;
+  background: var(--tg-hover);
 }
 
 .composer__emoji-option-char {
@@ -552,7 +547,7 @@ defineExpose({
 .composer__emoji-empty {
   padding: 8px 10px;
   font-size: 13px;
-  color: color-mix(in srgb, currentColor 64%, #64748b 36%);
+  color: var(--tg-text-secondary);
 }
 
 .composer__reply {
@@ -561,8 +556,8 @@ defineExpose({
   align-items: flex-start;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--tg-sidebar) 76%, transparent);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .composer__reply-accent {
@@ -594,7 +589,7 @@ defineExpose({
 
 .composer__reply-close {
   flex: 0 0 auto;
-  color: #64748b;
+  color: var(--tg-text-secondary);
 }
 
 .composer__row {
@@ -611,9 +606,10 @@ defineExpose({
 
 .composer__send {
   border-radius: 999px;
-  min-width: 40px;
-  width: 40px;
-  height: 40px;
+  min-width: 42px;
+  width: 42px;
+  height: 42px;
   padding: 0;
+  box-shadow: none !important;
 }
 </style>

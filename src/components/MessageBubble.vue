@@ -1230,7 +1230,7 @@ onBeforeUnmount(() => {
 .bubble-row,
 .bubble-stack,
 .bubble {
-  --bubble-author-avatar-size: 40px;
+  --bubble-author-avatar-size: 36px;
   --bubble-author-gap: 10px;
   --bubble-author-indent: calc(var(--bubble-author-avatar-size) + var(--bubble-author-gap));
 }
@@ -1238,7 +1238,7 @@ onBeforeUnmount(() => {
 .bubble-row {
   display: flex;
   width: 100%;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .bubble-stack {
@@ -1287,11 +1287,11 @@ onBeforeUnmount(() => {
 }
 
 .bubble__author--mine {
-  color: color-mix(in srgb, #2a7a4b 72%, currentColor 28%);
+  color: var(--tg-text-secondary);
 }
 
 .bubble__author--their {
-  color: color-mix(in srgb, var(--q-primary) 72%, currentColor 28%);
+  color: #79c0ff;
 }
 
 .bubble__author-avatar {
@@ -1313,7 +1313,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 6px;
   right: 6px;
-  color: color-mix(in srgb, currentColor 68%, #64748b 32%);
+  color: var(--tg-text-secondary);
   background: transparent !important;
   box-shadow: none !important;
   opacity: 0;
@@ -1434,8 +1434,8 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 6px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--tg-sidebar) 86%, transparent);
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, transparent);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--tg-border);
 }
 
 .bubble__quick-reaction {
@@ -1460,7 +1460,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble__quick-reaction:hover {
-  transform: translateY(-1px);
+  transform: none;
   color: var(--q-primary);
   opacity: 1;
 }
@@ -1471,7 +1471,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble__quick-reaction--more {
-  color: color-mix(in srgb, currentColor 76%, #5b6f86 24%);
+  color: var(--tg-text-secondary);
   font-size: 0;
 }
 
@@ -1495,19 +1495,16 @@ onBeforeUnmount(() => {
   border: 1px solid var(--tg-btn-round-border);
   border-radius: 999px;
   background: var(--tg-btn-round-bg);
-  box-shadow: var(--tg-btn-soft-shadow);
   transition:
     transform 0.18s ease,
     background-color 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease,
     color 0.18s ease;
 }
 
 .bubble__reaction-chip--fresh {
   background: var(--tg-reaction-accent-bg);
   border-color: var(--tg-reaction-accent-border);
-  box-shadow: var(--tg-reaction-accent-shadow);
   color: var(--tg-reaction-accent-text);
   transform-origin: center;
   animation: bubble-reaction-fresh-shake 720ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1518,8 +1515,8 @@ onBeforeUnmount(() => {
 }
 
 .bubble__reaction-chip--removable:hover {
-  transform: translateY(-1px);
-  background: color-mix(in srgb, var(--q-primary) 16%, var(--tg-sidebar) 84%);
+  transform: none;
+  background: rgba(100, 181, 246, 0.18);
 }
 
 .bubble__reaction-emoji {
@@ -1585,7 +1582,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0.82;
+  color: var(--tg-text-secondary);
 }
 
 .bubble__meta {
@@ -1637,7 +1634,7 @@ onBeforeUnmount(() => {
     max-width: 100%;
     border-radius: 16px;
     padding: 10px 36px 10px 12px;
-    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+    box-shadow: none;
   }
 
   .bubble--mine {
@@ -1664,7 +1661,7 @@ onBeforeUnmount(() => {
   .bubble__reply-preview {
     padding: 6px 8px;
     border-radius: 12px;
-    background: color-mix(in srgb, currentColor 7%, transparent);
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .bubble__reactions {
@@ -1683,7 +1680,7 @@ onBeforeUnmount(() => {
 
 .bubble__time {
   font-size: 11px;
-  opacity: 0.65;
+  color: var(--tg-text-secondary);
 }
 
 .bubble__status {

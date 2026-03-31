@@ -223,13 +223,13 @@ function handleOpenProfile(publicKey: string): void {
   display: flex;
   flex-direction: column;
   height: calc(100vh - env(safe-area-inset-top));
-  padding: 10px;
+  padding: 0;
 }
 
 .chat-page__thread {
   flex: 1;
-  border: 1px solid var(--tg-border);
-  border-radius: 16px;
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -240,10 +240,6 @@ function handleOpenProfile(publicKey: string): void {
 }
 
 @media (max-width: 1023px) {
-  .chat-page {
-    padding: 0;
-  }
-
   .chat-page__thread {
     border-radius: 0;
     border-left: 0;

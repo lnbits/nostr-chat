@@ -1329,10 +1329,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .thread-header__identity {
@@ -1351,16 +1350,17 @@ onBeforeUnmount(() => {
 }
 
 .thread-header__name {
+  font-size: 15px;
   font-weight: 600;
 }
 
 .thread-header__time {
   font-size: 12px;
-  opacity: 0.65;
+  color: var(--tg-text-secondary);
 }
 
 .thread-header__action {
-  color: #64748b;
+  color: var(--tg-text-secondary);
 }
 
 .thread-body {
@@ -1369,8 +1369,9 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 14px;
+  padding: 12px 16px;
   position: relative;
+  background: var(--tg-thread-bg);
 }
 
 .thread-composer-anchor {
@@ -1391,12 +1392,10 @@ onBeforeUnmount(() => {
 }
 
 .q-btn.thread-scroll-jump {
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, #eef6ff 8%) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 10px 24px rgba(15, 56, 104, 0.16) !important;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ea5c1 16%);
-  color: color-mix(in srgb, var(--q-primary) 80%, #0f5ea9 20%);
+  background: var(--tg-panel-sidebar-bg) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--tg-border);
+  color: var(--q-primary);
 }
 
 .q-btn.thread-scroll-jump::before {
@@ -1404,11 +1403,9 @@ onBeforeUnmount(() => {
 }
 
 .q-btn.thread-scroll-jump:hover {
-  background: color-mix(in srgb, var(--tg-sidebar) 86%, #dcecff 14%) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.58),
-    0 12px 28px rgba(15, 56, 104, 0.18) !important;
-  transform: translateY(-1px);
+  background: var(--tg-hover) !important;
+  box-shadow: none !important;
+  transform: none;
 }
 
 .q-btn.thread-scroll-jump--reaction {
@@ -1417,7 +1414,6 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: var(--tg-reaction-accent-bg) !important;
   border-color: var(--tg-reaction-accent-border);
-  box-shadow: var(--tg-reaction-accent-shadow) !important;
   color: var(--tg-reaction-accent-text);
 }
 
@@ -1427,7 +1423,7 @@ onBeforeUnmount(() => {
 
 .q-btn.thread-scroll-jump--reaction:hover {
   background: var(--tg-reaction-accent-bg-hover) !important;
-  box-shadow: var(--tg-reaction-accent-shadow-hover) !important;
+  box-shadow: none !important;
 }
 
 .thread-reaction-jump__icon-shell {
@@ -1438,7 +1434,6 @@ onBeforeUnmount(() => {
   height: 22px;
   border-radius: 999px;
   background: var(--tg-reaction-accent-icon-bg);
-  box-shadow: var(--tg-reaction-accent-icon-shadow);
 }
 
 .thread-reaction-jump__icon {
@@ -1467,16 +1462,14 @@ onBeforeUnmount(() => {
 }
 
 body.body--dark .q-btn.thread-scroll-jump {
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, #22344c 10%) !important;
-  border-color: color-mix(in srgb, var(--tg-border) 84%, #6f88a8 16%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 14px 28px rgba(0, 0, 0, 0.28) !important;
+  background: var(--tg-panel-sidebar-bg) !important;
+  border-color: var(--tg-border);
+  box-shadow: none !important;
   color: #9ed0ff;
 }
 
 body.body--dark .q-btn.thread-scroll-jump:hover {
-  background: color-mix(in srgb, var(--tg-sidebar) 82%, #27446a 18%) !important;
+  background: var(--tg-hover) !important;
 }
 
 
@@ -1497,44 +1490,39 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   min-height: 28px;
   padding: 4px 12px;
   border-radius: 999px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 94%, #dbe8ff 6%),
-      color-mix(in srgb, var(--tg-sidebar) 98%, #ffffff 2%)
-    );
-  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ca3bf 16%);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
+  background: rgba(36, 47, 61, 0.92);
+  border: 1px solid var(--tg-border);
+  box-shadow: none;
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--q-primary) 40%, var(--tg-text) 60%);
-  backdrop-filter: blur(var(--tg-glass-blur));
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--tg-text-secondary);
+  backdrop-filter: none;
 }
 
 .thread-day-separator {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 14px 0 12px;
+  margin: 12px 0 10px;
 }
 
 .thread-day-separator__line {
   flex: 1;
   height: 1px;
-  background: color-mix(in srgb, var(--tg-border) 76%, transparent);
+  background: var(--tg-border);
 }
 
 .thread-day-separator__label {
   flex: 0 0 auto;
   padding: 4px 10px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tg-sidebar) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--tg-border) 70%, transparent);
+  background: rgba(36, 47, 61, 0.92);
+  border: 1px solid var(--tg-border);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--q-primary) 45%, var(--tg-text) 55%);
+  letter-spacing: 0;
+  color: var(--tg-text-secondary);
   white-space: nowrap;
 }
 
@@ -1549,7 +1537,7 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
 .thread-unread-separator__line {
   flex: 1;
   height: 1px;
-  background: color-mix(in srgb, var(--q-primary) 34%, var(--tg-border) 66%);
+  background: rgba(100, 181, 246, 0.3);
 }
 
 .thread-unread-separator__label {
@@ -1558,11 +1546,10 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   border-radius: 999px;
   background: var(--tg-reaction-accent-bg);
   border: 1px solid var(--tg-reaction-accent-border);
-  box-shadow: var(--tg-reaction-accent-shadow-soft);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
   color: var(--tg-reaction-accent-text);
   white-space: nowrap;
 }
@@ -1580,7 +1567,7 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
 }
 
 .thread-message-entry--sender-change {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 @media (max-width: 1023px) {
@@ -1616,7 +1603,7 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   height: 100%;
   padding: 24px;
   text-align: center;
-  opacity: 0.7;
+  color: var(--tg-text-secondary);
 }
 
 .thread-empty--loading {
@@ -1634,6 +1621,6 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
 
 .thread-empty__status {
   font-weight: 600;
-  color: color-mix(in srgb, var(--q-primary) 55%, currentColor 45%);
+  color: var(--q-primary);
 }
 </style>

@@ -1,10 +1,6 @@
 <template>
   <q-page class="contacts-page" :style-fn="contactsPageStyleFn">
     <div class="contacts-shell" :class="{ 'contacts-shell--mobile': isMobile }">
-      <aside v-if="!isMobile" class="rail-panel">
-        <AppNavRail active="contacts" @select="handleRailSelect" />
-      </aside>
-
       <aside v-if="!isMobile || !isMobileProfileOpen" class="contacts-sidebar">
         <div class="contacts-sidebar__top">
           <div class="contacts-sidebar__row" :class="{ 'contacts-sidebar__row--mobile': isMobile }">
@@ -123,7 +119,13 @@
             </div>
           </q-list>
         </q-scroll-area>
-        <AppStatus />
+        <AppStatus compact />
+        <AppNavRail
+          v-if="!isMobile"
+          class="contacts-sidebar__nav"
+          active="contacts"
+          @select="handleRailSelect"
+        />
       </aside>
 
       <section
@@ -1059,44 +1061,43 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 <style scoped>
 .contacts-page {
   height: calc(100vh - env(safe-area-inset-top));
-  padding: 12px;
+  padding: 0;
   overflow: hidden;
   width: 100%;
   max-width: 100%;
+  background: var(--tg-app-background);
 }
 
 .contacts-shell {
   display: grid;
-  grid-template-columns: 76px 340px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 0;
   height: 100%;
   min-height: 0;
   width: 100%;
   max-width: 100%;
+  background: var(--tg-panel-thread-bg);
 }
 
 .contacts-shell--mobile {
   grid-template-columns: 1fr;
 }
 
-.rail-panel,
 .contacts-sidebar,
 .contacts-detail-panel {
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
-  border-radius: 18px;
   overflow: hidden;
-  background: var(--tg-panel-sidebar-bg);
-  box-shadow: var(--tg-shadow-sm);
-}
-
-.rail-panel {
-  background: var(--tg-panel-rail-bg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .contacts-sidebar {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  background: var(--tg-panel-sidebar-bg);
+  border-right: 1px solid var(--tg-border);
 }
 
 .contacts-detail-panel {
@@ -1127,9 +1128,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .contacts-detail-mobile-header__title {
@@ -1150,17 +1150,16 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contacts-sidebar__top {
-  padding: 13px;
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  padding: 12px;
+  border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .contacts-sidebar__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .contacts-sidebar__row--mobile {
@@ -1176,9 +1175,9 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contacts-sidebar__title {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .contacts-sidebar__search--mobile {
@@ -1202,13 +1201,14 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contact-item {
   min-width: 0;
-  border-radius: 14px;
-  margin: 6px 8px;
-  border: 1px solid transparent;
+  margin: 0;
+  border-radius: 0;
+  min-height: 72px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--tg-border);
   transition:
     background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    border-color 0.2s ease;
 }
 
 .q-btn.contact-item__more {
@@ -1242,9 +1242,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contact-item:hover {
-  background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
-  border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
-  box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
+  background: var(--tg-hover);
 }
 
 .contact-item__caption {
@@ -1255,9 +1253,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contact-item--active {
-  background: linear-gradient(130deg, rgba(52, 137, 255, 0.18), rgba(28, 186, 137, 0.14));
-  border-color: rgba(56, 136, 255, 0.34);
-  box-shadow: 0 10px 20px rgba(53, 110, 186, 0.14);
+  background: var(--tg-active);
 }
 
 .contacts-empty {
@@ -1277,21 +1273,16 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .add-contact-dialog {
   width: min(92vw, 420px);
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, #eef6ff 8%);
-  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ea4c0 16%);
+  background: var(--tg-panel-sidebar-bg);
+  border: 1px solid var(--tg-border);
   box-shadow: var(--tg-shadow-md);
 }
 
 .add-contact-dialog__header {
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 88%, #dbe9ff 12%),
-      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
-    );
+  border-bottom: 1px solid var(--tg-border);
+  background: var(--tg-panel-header-bg);
   padding: 11px 14px;
 }
 
@@ -1310,22 +1301,16 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   min-width: 74px;
 }
 
-@media (max-width: 1023px) {
-  .contacts-page {
-    padding: 0;
-  }
+.contacts-sidebar__nav {
+  border-top: 1px solid var(--tg-border);
+}
 
+@media (max-width: 1023px) {
   .contacts-sidebar {
-    border-radius: 0;
-    border-left: 0;
     border-right: 0;
-    border-top: 0;
   }
 
   .contacts-detail-panel--mobile {
-    border-radius: 0;
-    border-left: 0;
-    border-right: 0;
     border-bottom: 0;
     border-top: 0;
   }

@@ -1,16 +1,12 @@
 <template>
   <q-page class="settings-page" :style-fn="settingsPageStyleFn">
     <div class="settings-shell" :class="{ 'settings-shell--mobile': isMobile }">
-      <aside v-if="!isMobile" class="rail-panel">
-        <AppNavRail active="settings" @select="handleRailSelect" />
-      </aside>
-
       <aside v-if="!isMobile || isSettingsListView" class="settings-sidebar">
         <div class="settings-sidebar__top">
           <div class="settings-sidebar__title">Settings</div>
         </div>
 
-        <q-list class="settings-menu q-pa-sm">
+        <q-list class="settings-menu">
           <q-item
             v-for="item in settingsItems"
             :key="item.key"
@@ -31,6 +27,12 @@
           </q-item>
         </q-list>
         <AppStatus compact />
+        <AppNavRail
+          v-if="!isMobile"
+          class="settings-sidebar__nav"
+          active="settings"
+          @select="handleRailSelect"
+        />
       </aside>
 
       <section v-if="!isMobile || !isSettingsListView" class="settings-content-panel">
@@ -206,57 +208,55 @@ async function handleConfirmLogout(): Promise<void> {
 <style scoped>
 .settings-page {
   height: calc(100vh - env(safe-area-inset-top));
-  padding: 12px;
+  padding: 0;
   overflow: hidden;
   width: 100%;
   max-width: 100%;
+  background: var(--tg-app-background);
 }
 
 .settings-shell {
   display: grid;
-  grid-template-columns: 76px 320px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 0;
   height: 100%;
   min-height: 0;
   width: 100%;
   max-width: 100%;
+  background: var(--tg-panel-thread-bg);
 }
 
 .settings-shell--mobile {
   grid-template-columns: 1fr;
 }
 
-.rail-panel,
 .settings-sidebar,
 .settings-content-panel {
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
-  border-radius: 18px;
   overflow: hidden;
-  background: var(--tg-panel-sidebar-bg);
-  box-shadow: var(--tg-shadow-sm);
-}
-
-.rail-panel {
-  background: var(--tg-panel-rail-bg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .settings-sidebar {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  background: var(--tg-panel-sidebar-bg);
+  border-right: 1px solid var(--tg-border);
 }
 
 .settings-sidebar__top {
-  padding: 13px;
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  padding: 12px;
+  border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .settings-sidebar__title {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .settings-menu {
@@ -266,38 +266,32 @@ async function handleConfirmLogout(): Promise<void> {
 }
 
 .settings-menu__item {
-  border-radius: 14px;
-  margin-bottom: 8px;
-  border: 1px solid transparent;
+  border-radius: 0;
+  min-height: 56px;
+  margin-bottom: 0;
+  border: 0;
+  border-bottom: 1px solid var(--tg-border);
   transition:
-    transform 0.2s ease,
     background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    border-color 0.2s ease;
 }
 
 .settings-menu__item:hover {
-  transform: translateX(3px);
-  background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
-  border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
-  box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
+  transform: none;
+  background: var(--tg-hover);
 }
 
 .settings-menu__item--active {
-  background: linear-gradient(130deg, rgba(52, 137, 255, 0.18), rgba(28, 186, 137, 0.14));
-  border-color: rgba(56, 136, 255, 0.34);
-  box-shadow: 0 10px 20px rgba(53, 110, 186, 0.14);
+  background: var(--tg-active);
 }
 
 .settings-menu__item--danger {
-  margin-top: 10px;
-  color: #b42318;
+  margin-top: 0;
+  color: #f39aa0;
 }
 
 .settings-menu__item--danger:hover {
-  background: linear-gradient(130deg, rgba(239, 68, 68, 0.12), rgba(249, 115, 22, 0.1));
-  border-color: rgba(220, 38, 38, 0.2);
-  box-shadow: 0 8px 16px rgba(185, 28, 28, 0.1);
+  background: rgba(239, 107, 115, 0.12);
 }
 
 .settings-logout-dialog__body {
@@ -312,18 +306,16 @@ async function handleConfirmLogout(): Promise<void> {
 }
 
 body.body--dark .settings-menu__item--danger {
-  color: #ff9e8f;
+  color: #f7a7ad;
+}
+
+.settings-sidebar__nav {
+  border-top: 1px solid var(--tg-border);
 }
 
 @media (max-width: 1023px) {
-  .settings-page {
-    padding: 0;
-  }
-
   .settings-sidebar,
   .settings-content-panel {
-    border-radius: 0;
-    border-left: 0;
     border-right: 0;
   }
 }

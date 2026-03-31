@@ -1,10 +1,6 @@
 <template>
   <q-page class="home-page" :style-fn="homePageStyleFn">
     <div class="home-shell" :class="{ 'home-shell--mobile': isMobile }">
-      <aside v-if="!isMobile" class="rail-panel">
-        <AppNavRail active="chats" @select="handleRailSelect" />
-      </aside>
-
       <aside v-if="!isMobile || !isMobileThreadOpen" class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-top__row" :class="{ 'sidebar-top__row--mobile': isMobile }">
@@ -104,7 +100,13 @@
           @mark-as-read="handleMarkChatAsRead"
           @delete-chat="handleDeleteChat"
         />
-        <AppStatus />
+        <AppStatus compact />
+        <AppNavRail
+          v-if="!isMobile"
+          class="sidebar-nav"
+          active="chats"
+          @select="handleRailSelect"
+        />
       </aside>
 
       <section
@@ -858,43 +860,42 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .home-page {
-  padding: 12px;
+  padding: 0;
   overflow: hidden;
   width: 100%;
   max-width: 100%;
+  background: var(--tg-app-background);
 }
 
 .home-shell {
   display: grid;
-  grid-template-columns: 76px 340px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 0;
   height: 100%;
   min-height: 0;
   width: 100%;
   max-width: 100%;
+  background: var(--tg-panel-thread-bg);
 }
 
 .home-shell--mobile {
   grid-template-columns: 1fr;
 }
 
-.rail-panel,
 .sidebar,
 .thread-panel {
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
-  border-radius: 18px;
   overflow: hidden;
-  background: var(--tg-panel-sidebar-bg);
-  box-shadow: var(--tg-shadow-sm);
-}
-
-.rail-panel {
-  background: var(--tg-panel-rail-bg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  background: var(--tg-panel-sidebar-bg);
+  border-right: 1px solid var(--tg-border);
 }
 
 .sidebar-list {
@@ -903,17 +904,16 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-top {
-  padding: 13px;
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  padding: 12px;
+  border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .sidebar-top__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .sidebar-top__row--mobile {
@@ -922,9 +922,9 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-top__title {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .sidebar-top__search--mobile {
@@ -935,13 +935,13 @@ onBeforeUnmount(() => {
 .sidebar-top__actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .sidebar-top__action {
-  color: var(--tg-primary);
+  color: var(--tg-text-secondary);
   flex-shrink: 0;
 }
 
@@ -951,7 +951,7 @@ onBeforeUnmount(() => {
 
 .create-group-dialog {
   width: min(420px, calc(100vw - 32px));
-  border-radius: 18px;
+  border-radius: 12px;
 }
 
 .create-group-dialog__header {
@@ -975,21 +975,16 @@ onBeforeUnmount(() => {
   background: var(--tg-panel-thread-bg);
 }
 
-@media (max-width: 1023px) {
-  .home-page {
-    padding: 0;
-  }
+.sidebar-nav {
+  border-top: 1px solid var(--tg-border);
+}
 
+@media (max-width: 1023px) {
   .sidebar {
-    border-radius: 0;
-    border-left: 0;
     border-right: 0;
   }
 
   .thread-panel--mobile {
-    border-radius: 0;
-    border-left: 0;
-    border-right: 0;
     border-bottom: 0;
   }
 }

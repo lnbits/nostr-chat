@@ -1,44 +1,27 @@
 <template>
   <aside class="nav-rail">
-    <div class="nav-rail__group">
-      <q-btn
-        v-for="item in topItems"
-        :key="item.key"
-        unelevated
-        class="nav-rail__btn"
-        :class="{ 'nav-rail__btn--active': active === item.key }"
-        :aria-label="item.label"
-        @click="$emit('select', item.key)"
-      >
-        <q-icon :name="item.icon" size="18px" />
-        <q-badge
-          v-if="item.key === 'chats' && unreadChatCount > 0"
-          rounded
-          floating
-          class="nav-rail__badge"
-          :label="unreadChatBadgeLabel"
-        />
+    <q-btn
+      v-for="item in navItems"
+      :key="item.key"
+      unelevated
+      class="nav-rail__btn"
+      :class="{ 'nav-rail__btn--active': active === item.key }"
+      :aria-label="item.label"
+      @click="$emit('select', item.key)"
+    >
+      <q-icon :name="item.icon" size="20px" />
+      <q-badge
+        v-if="item.key === 'chats' && unreadChatCount > 0"
+        rounded
+        floating
+        class="nav-rail__badge"
+        :label="unreadChatBadgeLabel"
+      />
 
-        <AppTooltip anchor="center right" self="center left" :offset="[8, 0]">
-          {{ item.label }}
-        </AppTooltip>
-      </q-btn>
-    </div>
-
-    <div class="nav-rail__settings">
-      <q-btn
-        unelevated
-        class="nav-rail__btn"
-        :class="{ 'nav-rail__btn--active': active === 'settings' }"
-        aria-label="Settings"
-        @click="$emit('select', 'settings')"
-      >
-        <q-icon name="settings" size="18px" />
-        <AppTooltip anchor="center right" self="center left" :offset="[8, 0]">
-          Settings
-        </AppTooltip>
-      </q-btn>
-    </div>
+      <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
+        {{ item.label }}
+      </AppTooltip>
+    </q-btn>
   </aside>
 </template>
 
@@ -47,9 +30,10 @@ import { computed } from 'vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import { useChatStore } from 'src/stores/chatStore';
 
-const topItems = [
+const navItems = [
   { key: 'chats', label: 'Chats', icon: 'chat' },
-  { key: 'contacts', label: 'Contacts', icon: 'contacts' }
+  { key: 'contacts', label: 'Contacts', icon: 'contacts' },
+  { key: 'settings', label: 'Settings', icon: 'settings' }
 ] as const;
 
 const chatStore = useChatStore();
@@ -70,98 +54,59 @@ const unreadChatBadgeLabel = computed(() =>
 
 <style scoped>
 .nav-rail {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 10px 8px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-rail) 92%, #dbe8ff 8%) 0%,
-      color-mix(in srgb, var(--tg-rail) 96%, #dbe8ff 4%) 100%
-    );
-}
-
-.nav-rail__group {
   display: grid;
-  gap: 6px;
-}
-
-.nav-rail__settings {
-  display: grid;
-  gap: 6px;
-  padding-top: 8px;
-}
-
-.nav-rail__settings::before {
-  content: '';
-  display: block;
-  height: 1px;
-  margin: 0 4px;
-  background: var(--tg-border);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
+  background: var(--tg-panel-sidebar-bg);
 }
 
 .nav-rail__btn {
-  border-radius: 14px;
-  min-height: 44px;
+  border-radius: 10px;
+  min-height: 48px;
   min-width: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #5d718d;
+  color: var(--tg-text-secondary);
   background: transparent;
   border: 1px solid transparent;
   box-shadow: none;
-  transition:
-    transform 0.2s ease,
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .nav-rail__badge {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #ff6c7d 0%, #f0445d 100%);
+  background: var(--q-negative);
   color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-  box-shadow: 0 8px 16px rgba(240, 68, 93, 0.24);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .nav-rail__btn:hover {
-  transform: translateY(-1px);
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
+  background: var(--tg-hover);
+  color: var(--tg-text);
 }
 
 .nav-rail__btn--active {
-  background: linear-gradient(140deg, rgba(30, 172, 124, 0.2), rgba(46, 135, 255, 0.2));
-  color: #0f6246;
-  border-color: rgba(45, 138, 255, 0.34);
-  box-shadow: 0 9px 20px rgba(38, 112, 217, 0.18);
+  background: var(--tg-active);
+  color: #ffffff;
 }
 
 body.body--dark .nav-rail__btn {
-  color: #9cacbf;
+  color: var(--tg-text-secondary);
   background: transparent;
 }
 
 body.body--dark .nav-rail__btn--active {
-  color: #79e0b2;
-  background: linear-gradient(140deg, rgba(16, 126, 93, 0.42), rgba(30, 94, 184, 0.34));
-  border-color: rgba(86, 166, 255, 0.36);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
-}
-
-body.body--dark .nav-rail__badge {
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+  background: var(--tg-active);
 }
 </style>

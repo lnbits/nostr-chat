@@ -265,43 +265,33 @@ function goToSection(section: NavigationSection): void {
   position: absolute;
   inset: 0;
   z-index: 5;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 96%, transparent),
-      color-mix(in srgb, var(--tg-sidebar) 88%, transparent)
-    );
+  background: rgba(14, 22, 33, 0.45);
   pointer-events: auto;
 }
 
 .mobile-nav {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--tg-sidebar) 78%, transparent), var(--tg-sidebar));
-  border-top: 1px solid color-mix(in srgb, var(--tg-border) 84%, #6b7d96 16%);
+  background: var(--tg-panel-sidebar-bg);
+  border-top: 1px solid var(--tg-border);
   padding-bottom: env(safe-area-inset-bottom);
-  backdrop-filter: blur(var(--tg-glass-blur-strong));
 }
 
 .mobile-nav__inner {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px 5px;
+  gap: 2px;
+  padding: 6px 8px 8px;
 }
 
 .mobile-nav__btn {
-  color: #55697f;
-  border-radius: 12px;
-  min-height: 42px;
+  color: var(--tg-text-secondary);
+  border-radius: 10px;
+  min-height: 46px;
   padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 74%, transparent);
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, #eef5ff 10%);
+  border: 1px solid transparent;
+  background: transparent;
   transition:
-    transform 0.2s ease,
     background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
     color 0.2s ease;
 }
 
@@ -313,11 +303,10 @@ function goToSection(section: NavigationSection): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #ff6c7d 0%, #f0445d 100%);
+  background: var(--q-negative);
   color: #fff;
   font-size: 11px;
-  font-weight: 800;
-  box-shadow: 0 8px 16px rgba(240, 68, 93, 0.24);
+  font-weight: 700;
 }
 
 .mobile-nav__btn :deep(.q-btn__content) {
@@ -333,28 +322,20 @@ function goToSection(section: NavigationSection): void {
 }
 
 .mobile-nav__btn:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--tg-border) 72%, #6d8db8 28%);
-  background: color-mix(in srgb, var(--tg-sidebar) 82%, #dce9ff 18%);
+  background: var(--tg-hover);
 }
 
 .mobile-nav__btn--active {
-  border-color: rgba(33, 110, 236, 0.68);
-  box-shadow: 0 8px 18px rgba(30, 102, 214, 0.24);
+  background: var(--tg-active);
 }
 
 body.body--dark .mobile-nav__btn {
-  color: #a5b6c9;
-  border-color: color-mix(in srgb, var(--tg-border) 72%, transparent);
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, #102035 10%);
+  color: var(--tg-text-secondary);
+  background: transparent;
 }
 
 body.body--dark .mobile-nav__btn--active {
-  border-color: rgba(128, 193, 255, 0.62);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.38);
-}
-
-body.body--dark .mobile-nav__badge {
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+  background: var(--tg-active);
+  color: #ffffff;
 }
 </style>

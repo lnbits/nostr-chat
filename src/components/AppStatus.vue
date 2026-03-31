@@ -260,9 +260,8 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status {
   --app-status-history-item-height: 58px;
   flex-shrink: 0;
-  border-top: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  border-top: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .app-status__expansion {
@@ -276,17 +275,12 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 }
 
 .app-status__expansion :deep(.q-item__section--side) {
-  color: #5d718d;
+  color: var(--tg-text-secondary);
   padding-left: 12px;
 }
 
 .app-status__expansion :deep(.q-expansion-item__content) {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 82%, transparent),
-      color-mix(in srgb, var(--tg-sidebar) 94%, transparent)
-    );
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .app-status__header-main {
@@ -339,7 +333,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
-  color: color-mix(in srgb, currentColor 72%, #64748b 28%);
+  color: var(--tg-text-secondary);
 }
 
 .app-status__content {
@@ -351,7 +345,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__details {
   padding: 12px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--tg-sidebar) 88%, var(--tg-border) 12%);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .app-status__details-title {
@@ -363,7 +357,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__details-copy {
   font-size: 12px;
   line-height: 1.5;
-  color: color-mix(in srgb, currentColor 78%, #64748b 22%);
+  color: var(--tg-text-secondary);
 }
 
 .app-status__history-item {
@@ -388,7 +382,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__history-duration {
   font-size: 12px;
   line-height: 1.45;
-  color: color-mix(in srgb, currentColor 76%, #64748b 24%);
+  color: var(--tg-text-secondary);
 }
 
 .app-status__history-list {
@@ -404,7 +398,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 
 .app-status__history-item + .app-status__history-item {
   padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--tg-border) 84%, transparent);
+  border-top: 1px solid var(--tg-border);
 }
 
 .app-status__history-duration {
@@ -429,7 +423,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 }
 
 body.body--dark .app-status__expansion :deep(.q-item__section--side) {
-  color: #9aacbf;
+  color: var(--tg-text-secondary);
 }
 
 body.body--dark .app-status__badge--good {
@@ -463,7 +457,38 @@ body.body--dark .app-status__status-icon--error {
 
 body.body--dark .app-status__status-icon--progress,
 body.body--dark .app-status__status-icon--pending {
-  color: #9aacbf;
+  color: var(--tg-text-secondary);
+}
+
+.app-status--compact {
+  --app-status-history-item-height: 50px;
+}
+
+.app-status--compact .app-status__expansion :deep(.q-item) {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+.app-status--compact .app-status__header-main {
+  min-height: 30px;
+}
+
+.app-status--compact .app-status__summary {
+  font-size: 12px;
+}
+
+.app-status--compact .app-status__badge {
+  min-height: 20px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.app-status--compact .app-status__content {
+  padding: 0 10px 10px;
+}
+
+.app-status--compact .app-status__details {
+  padding: 10px;
 }
 
 @media (max-width: 420px) {

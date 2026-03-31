@@ -227,28 +227,27 @@ function emitDeleteChat(): void {
 <style scoped>
 .chat-item {
   min-width: 0;
-  border-radius: 14px;
-  margin: 6px 8px;
-  border: 1px solid transparent;
+  min-height: 78px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--tg-border);
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    color 0.2s ease;
 }
 
 .chat-item:hover {
-  background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
-  border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
-  box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
+  background: var(--tg-hover);
 }
 
 .chat-item--active {
-  background: linear-gradient(130deg, rgba(52, 137, 255, 0.18), rgba(28, 186, 137, 0.14));
-  border-color: rgba(56, 136, 255, 0.34);
-  box-shadow: 0 10px 20px rgba(53, 110, 186, 0.14);
+  background: var(--tg-active);
 }
 
 .chat-item__name {
+  font-size: 15px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -268,6 +267,7 @@ function emitDeleteChat(): void {
 
 .chat-item__meta {
   flex: 0 0 auto;
+  color: var(--tg-text-secondary);
 }
 
 .chat-item__badges {
@@ -286,7 +286,6 @@ function emitDeleteChat(): void {
   gap: 5px;
   background: var(--tg-reaction-accent-bg);
   border: 1px solid var(--tg-reaction-accent-border);
-  box-shadow: var(--tg-reaction-accent-shadow-soft);
   color: var(--tg-reaction-accent-text);
 }
 
@@ -298,7 +297,6 @@ function emitDeleteChat(): void {
   align-items: center;
   justify-content: center;
   background: var(--tg-reaction-accent-icon-bg);
-  box-shadow: var(--tg-reaction-accent-icon-shadow);
 }
 
 .chat-item__reaction-icon {
@@ -316,9 +314,10 @@ function emitDeleteChat(): void {
 }
 
 .q-btn.chat-item__more {
-  color: color-mix(in srgb, var(--tg-border) 20%, #5f718a 80%);
+  color: var(--tg-text-secondary);
   background: transparent !important;
   box-shadow: none !important;
+  opacity: 0;
   transition: color 0.2s ease, opacity 0.2s ease;
 }
 
@@ -327,9 +326,29 @@ function emitDeleteChat(): void {
 }
 
 .q-btn.chat-item__more:hover {
-  color: color-mix(in srgb, var(--tg-border) 10%, #4f637e 90%);
+  color: var(--tg-text);
   background: transparent !important;
   box-shadow: none !important;
   transform: none !important;
+}
+
+.chat-item:hover .chat-item__more,
+.chat-item:focus-within .chat-item__more,
+.chat-item--active .chat-item__more {
+  opacity: 1;
+}
+
+.chat-item :deep(.q-item__section--avatar) {
+  min-width: 60px;
+}
+
+.chat-item :deep(.q-item__label--caption) {
+  color: var(--tg-text-secondary);
+}
+
+.chat-item :deep(.q-avatar) {
+  width: 54px;
+  height: 54px;
+  font-size: 15px;
 }
 </style>
