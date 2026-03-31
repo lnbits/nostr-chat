@@ -438,6 +438,7 @@ function mapChatRowToChat(
   return {
     id: row.public_key,
     publicKey: row.public_key,
+    epochPublicKey: readMetaString(nextMeta, 'current_epoch_public_key') || null,
     type: row.type,
     name: nextName,
     avatar,

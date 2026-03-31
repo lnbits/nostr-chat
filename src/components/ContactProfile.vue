@@ -50,6 +50,7 @@
             no-caps
             class="profile-tab"
           />
+          <q-tab v-if="isGroupContact" name="empochs" label="Empochs" no-caps class="profile-tab" />
         </q-tabs>
 
         <q-tab-panels
@@ -546,6 +547,64 @@
             </div>
           </q-tab-panel>
 
+          <q-tab-panel v-if="isGroupContact" name="empochs" class="profile-tab-panel">
+            <div class="profile-epochs">
+              <div class="profile-card__section">
+                <div class="profile-card__title">Current Epoch Public Key</div>
+                <q-input
+                  :model-value="currentEpochPublicKey"
+                  class="tg-input q-mt-sm"
+                  outlined
+                  dense
+                  rounded
+                  readonly
+                  label="Current Epoch Public Key"
+                  placeholder="No current epoch public key yet"
+                >
+                  <template #append>
+                    <q-btn
+                      flat
+                      dense
+                      round
+                      icon="content_copy"
+                      color="primary"
+                      aria-label="Copy current epoch public key"
+                      :disable="!currentEpochPublicKey"
+                      @click.stop="
+                        handleCopyProfileValue(currentEpochPublicKey, 'Current epoch public key')
+                      "
+                    >
+                      <AppTooltip>Copy current epoch public key</AppTooltip>
+                    </q-btn>
+                  </template>
+                </q-input>
+              </div>
+
+              <div class="profile-card__section q-mt-md">
+                <div class="profile-card__title">All Epochs</div>
+
+                <div v-if="groupEpochRows.length === 0" class="profile-members-state q-mt-sm">
+                  <div class="text-body2">No epochs stored for this group yet.</div>
+                </div>
+
+                <q-markup-table v-else flat bordered class="profile-epochs-table q-mt-sm">
+                  <thead>
+                    <tr>
+                      <th class="text-left">Epoch</th>
+                      <th class="text-left">Public Key</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="epoch in groupEpochRows" :key="`${epoch.epoch_number}:${epoch.epoch_public_key}`">
+                      <td class="text-left">{{ epoch.epoch_number }}</td>
+                      <td class="text-left">{{ epoch.epoch_public_key }}</td>
+                    </tr>
+                  </tbody>
+                </q-markup-table>
+              </div>
+            </div>
+          </q-tab-panel>
+
           <q-tab-panel v-if="isOwnedGroupContact" name="relays" class="profile-tab-panel">
             <div class="profile-group-relays">
               <div v-if="showRelaysTabActions" class="profile-tab-actions">
@@ -644,6 +703,19 @@
           :class="{ 'mobile-nav__btn--active': activeTab === 'relays' }"
           @click="activeTab = 'relays'"
         />
+        <q-btn
+          v-if="isGroupContact"
+          :flat="activeTab !== 'empochs'"
+          :unelevated="activeTab === 'empochs'"
+          :color="activeTab === 'empochs' ? 'primary' : undefined"
+          :text-color="activeTab === 'empochs' ? 'white' : undefined"
+          no-caps
+          icon="history"
+          label="Empochs"
+          class="mobile-nav__btn"
+          :class="{ 'mobile-nav__btn--active': activeTab === 'empochs' }"
+          @click="activeTab = 'empochs'"
+        />
       </div>
     </div>
   </div>
@@ -657,6 +729,7 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
+import { chatDataService, type ChatRow } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type {
@@ -665,13 +738,14 @@ import type {
   ContactRecord,
   ContactRelay
 } from 'src/types/contact';
+import type { ChatGroupEpochKey } from 'src/types/chat';
 import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
-type ProfileTab = 'profile' | 'members' | 'relays';
+type ProfileTab = 'profile' | 'members' | 'empochs' | 'relays';
 type RelayTogglePayload = {
   index: number;
   value: boolean;
@@ -715,6 +789,7 @@ const localPubkey = computed({
 const localProfile = reactive<ContactProfileForm>(cloneProfile(props.modelValue));
 const activeTab = ref<ProfileTab>('profile');
 const currentContact = ref<ContactRecord | null>(null);
+const currentGroupChat = ref<ChatRow | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
 const pubkeyError = ref('');
@@ -774,12 +849,21 @@ const canUseDefaultGroupRelays = computed(() => {
   return groupRelayEntries.value.some((relay) => relay.read !== true || relay.write !== true);
 });
 const mobileNavGridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${isGroupContact.value ? (isOwnedGroupContact.value ? 3 : 2) : 1}, minmax(0, 1fr))`
+  gridTemplateColumns: `repeat(${isGroupContact.value ? (isOwnedGroupContact.value ? 4 : 3) : 1}, minmax(0, 1fr))`
 }));
 const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
 const showMembersTabActions = computed(() => props.showHeader || props.showPublishAction);
 const showRelaysTabActions = computed(() => props.showHeader || props.showPublishAction);
 const allKnownRelays = computed(() => uniqueRelays([...relayList.value, ...groupRelayUrls.value]));
+const groupEpochRows = computed(() => normalizeGroupEpochRows(currentGroupChat.value?.meta?.group_epoch_keys));
+const currentEpochPublicKey = computed(() => {
+  const fromChat = currentGroupChat.value?.meta?.current_epoch_public_key;
+  if (typeof fromChat === 'string' && fromChat.trim()) {
+    return fromChat.trim().toLowerCase();
+  }
+
+  return groupEpochRows.value[0]?.epoch_public_key ?? '';
+});
 
 const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
 
@@ -873,6 +957,41 @@ watch(
   },
   { immediate: true }
 );
+
+function normalizeGroupEpochRows(value: unknown): ChatGroupEpochKey[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const rows: ChatGroupEpochKey[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue;
+    }
+
+    const epochNumber = Number('epoch_number' in entry ? entry.epoch_number : Number.NaN);
+    const epochPublicKey =
+      'epoch_public_key' in entry && typeof entry.epoch_public_key === 'string'
+        ? entry.epoch_public_key.trim().toLowerCase()
+        : '';
+    const epochPrivateKeyEncrypted =
+      'epoch_private_key_encrypted' in entry && typeof entry.epoch_private_key_encrypted === 'string'
+        ? entry.epoch_private_key_encrypted.trim()
+        : '';
+
+    if (!Number.isInteger(epochNumber) || epochNumber < 0 || !epochPublicKey || !epochPrivateKeyEncrypted) {
+      continue;
+    }
+
+    rows.push({
+      epoch_number: Math.floor(epochNumber),
+      epoch_public_key: epochPublicKey,
+      epoch_private_key_encrypted: epochPrivateKeyEncrypted
+    });
+  }
+
+  return rows.sort((first, second) => second.epoch_number - first.epoch_number);
+}
 
 function cloneProfile(value: ContactProfileForm): ContactProfileForm {
   return {
@@ -1741,6 +1860,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
   if (!input.trim()) {
     currentContact.value = null;
+    currentGroupChat.value = null;
     isLoadingContact.value = false;
     pubkeyError.value = '';
     pubkeyInfo.value = '';
@@ -1749,6 +1869,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
   if (!normalizedPubkey) {
     currentContact.value = null;
+    currentGroupChat.value = null;
     isLoadingContact.value = false;
     pubkeyError.value = 'Enter a valid hex pubkey or npub.';
     pubkeyInfo.value = '';
@@ -1760,19 +1881,24 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   pubkeyInfo.value = '';
 
   try {
-    await contactsService.init();
-    const contact = await contactsService.getContactByPublicKey(normalizedPubkey);
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+    const [contact, groupChat] = await Promise.all([
+      contactsService.getContactByPublicKey(normalizedPubkey),
+      chatDataService.getChatByPublicKey(normalizedPubkey)
+    ]);
     if (requestId !== lookupRequestId) {
       return;
     }
 
     if (!contact) {
       currentContact.value = null;
+      currentGroupChat.value = null;
       pubkeyInfo.value = 'No contact found for this public key.';
       return;
     }
 
     currentContact.value = contact;
+    currentGroupChat.value = groupChat;
     Object.assign(localProfile, mapContactToProfile(contact));
   } catch (error) {
     if (requestId !== lookupRequestId) {
@@ -1780,6 +1906,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
     }
 
     currentContact.value = null;
+    currentGroupChat.value = null;
     pubkeyError.value = error instanceof Error ? error.message : 'Failed to load contact.';
     pubkeyInfo.value = '';
   } finally {
@@ -1992,6 +2119,16 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 .profile-group-relays {
   display: flex;
   flex-direction: column;
+}
+
+.profile-epochs {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-epochs-table td:last-child,
+.profile-epochs-table th:last-child {
+  word-break: break-all;
 }
 
 .profile-members-toolbar {

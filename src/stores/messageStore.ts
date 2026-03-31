@@ -527,6 +527,16 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
+    const recipientPublicKey =
+      chat.type === 'group'
+        ? (typeof chat.meta.current_epoch_public_key === 'string'
+            ? chat.meta.current_epoch_public_key.trim().toLowerCase()
+            : '')
+        : chat.public_key;
+    if (!recipientPublicKey) {
+      throw new Error('Group chat is missing the current epoch public key.');
+    }
+
     const recipientRelayUrls = await resolveSendRelayUrls(chat.public_key, options.relayUrls);
 
     const replyTargetEventId = await resolveReplyTargetEventId(replyTo);
@@ -561,7 +571,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     try {
       const nostrStore = await getNostrStore();
       await nostrStore.sendDirectMessage(
-        chat.public_key,
+        recipientPublicKey,
         newMessage.text,
         recipientRelayUrls,
         {

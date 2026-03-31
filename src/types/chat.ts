@@ -5,6 +5,7 @@ export type ChatType = 'user' | 'group';
 
 export interface ChatGroupEpochKey {
   epoch_number: number;
+  epoch_public_key: string;
   epoch_private_key_encrypted: string;
 }
 
@@ -24,12 +25,16 @@ export interface ChatMetadata {
   last_incoming_message_at?: string;
   last_outgoing_message_at?: string;
   group_epoch_keys?: ChatGroupEpochKey[];
+  current_epoch_public_key?: string;
+  current_epoch_private_key_encrypted?: string;
+  epoch_public_key?: string;
   [key: string]: unknown;
 }
 
 export interface Chat {
   id: string;
   publicKey: string;
+  epochPublicKey: string | null;
   type: ChatType;
   name: string;
   avatar: string;
