@@ -1,6 +1,11 @@
 <template>
   <q-page class="contacts-page" :style-fn="contactsPageStyleFn">
-    <div class="contacts-shell" :class="{ 'contacts-shell--mobile': isMobile }">
+    <div
+      ref="shellRef"
+      class="contacts-shell"
+      :class="{ 'contacts-shell--mobile': isMobile }"
+      :style="shellStyle"
+    >
       <aside v-if="!isMobile || !isMobileProfileOpen" class="contacts-sidebar">
         <div class="contacts-sidebar__top">
           <div class="contacts-sidebar__row" :class="{ 'contacts-sidebar__row--mobile': isMobile }">
@@ -128,6 +133,20 @@
         />
       </aside>
 
+      <div
+        v-if="!isMobile"
+        class="app-shell__resize-handle"
+        role="separator"
+        aria-label="Resize left panel"
+        aria-orientation="vertical"
+        :aria-valuemin="minSidebarWidth"
+        :aria-valuemax="maxSidebarWidth"
+        :aria-valuenow="sidebarWidth"
+        tabindex="0"
+        @pointerdown="startSidebarResize"
+        @keydown="handleSidebarResizeKeydown"
+      />
+
       <section
         v-if="!isMobile || isMobileProfileOpen"
         class="contacts-detail-panel"
@@ -230,6 +249,7 @@ import AppNavRail from 'src/components/AppNavRail.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -252,6 +272,15 @@ const relayStore = useRelayStore();
 relayStore.init();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const {
+  shellRef,
+  shellStyle,
+  sidebarWidth,
+  minSidebarWidth,
+  maxSidebarWidth,
+  startSidebarResize,
+  handleSidebarResizeKeydown
+} = useDesktopSidebarWidth(isMobile);
 const isMobileProfileOpen = computed(() => isMobile.value && Boolean(selectedContactPubkey.value.trim()));
 const contactQuery = ref('');
 const contactQueryModel = computed({
@@ -1070,7 +1099,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contacts-shell {
   display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-columns: var(--desktop-sidebar-width, 360px) 0px minmax(0, 1fr);
   gap: 0;
   height: 100%;
   min-height: 0;
@@ -1097,7 +1126,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   min-height: 0;
   min-width: 0;
   background: var(--tg-panel-sidebar-bg);
-  border-right: 1px solid var(--tg-border);
+  border-right: 0;
 }
 
 .contacts-detail-panel {

@@ -1,6 +1,11 @@
 <template>
   <q-page class="settings-page" :style-fn="settingsPageStyleFn">
-    <div class="settings-shell" :class="{ 'settings-shell--mobile': isMobile }">
+    <div
+      ref="shellRef"
+      class="settings-shell"
+      :class="{ 'settings-shell--mobile': isMobile }"
+      :style="shellStyle"
+    >
       <aside v-if="!isMobile || isSettingsListView" class="settings-sidebar">
         <div class="settings-sidebar__top">
           <div class="settings-sidebar__title">Settings</div>
@@ -34,6 +39,20 @@
           @select="handleRailSelect"
         />
       </aside>
+
+      <div
+        v-if="!isMobile"
+        class="app-shell__resize-handle"
+        role="separator"
+        aria-label="Resize left panel"
+        aria-orientation="vertical"
+        :aria-valuemin="minSidebarWidth"
+        :aria-valuemax="maxSidebarWidth"
+        :aria-valuenow="sidebarWidth"
+        tabindex="0"
+        @pointerdown="startSidebarResize"
+        @keydown="handleSidebarResizeKeydown"
+      />
 
       <section v-if="!isMobile || !isSettingsListView" class="settings-content-panel">
         <router-view />
@@ -80,6 +99,7 @@ import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import AppStatus from 'src/components/AppStatus.vue';
+import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -89,6 +109,15 @@ const router = useRouter();
 const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const {
+  shellRef,
+  shellStyle,
+  sidebarWidth,
+  minSidebarWidth,
+  maxSidebarWidth,
+  startSidebarResize,
+  handleSidebarResizeKeydown
+} = useDesktopSidebarWidth(isMobile);
 const isSettingsListView = computed(() => route.name === 'settings');
 const isLogoutDialogOpen = ref(false);
 const isLoggingOut = ref(false);
@@ -217,7 +246,7 @@ async function handleConfirmLogout(): Promise<void> {
 
 .settings-shell {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: var(--desktop-sidebar-width, 360px) 0px minmax(0, 1fr);
   gap: 0;
   height: 100%;
   min-height: 0;
@@ -244,7 +273,7 @@ async function handleConfirmLogout(): Promise<void> {
   min-height: 0;
   min-width: 0;
   background: var(--tg-panel-sidebar-bg);
-  border-right: 1px solid var(--tg-border);
+  border-right: 0;
 }
 
 .settings-sidebar__top {

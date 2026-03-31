@@ -248,6 +248,49 @@ body.body--dark {
   transform: none !important;
 }
 
+.app-shell__resize-handle {
+  position: relative;
+  width: 0;
+  min-width: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+  overflow: visible;
+  z-index: 2;
+}
+
+.app-shell__resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 10px;
+  background: transparent;
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+
+.app-shell__resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--tg-border);
+  transform: translateX(-50%);
+  transition: background-color 0.18s ease, width 0.18s ease;
+  pointer-events: none;
+}
+
+.app-shell__resize-handle:hover::after,
+.app-shell__resize-handle:focus-visible::after {
+  width: 2px;
+  background: var(--q-primary);
+}
+
 .tg-pop-menu {
   border-radius: 12px;
   overflow: hidden;
@@ -288,4 +331,10 @@ body.body--dark .tg-pop-menu__list .q-item {
 body.body--dark .tg-pop-menu__list .q-item:hover {
   color: var(--tg-text);
   background: var(--tg-hover);
+}
+
+@media (max-width: 1023px) {
+  .app-shell__resize-handle {
+    display: none;
+  }
 }

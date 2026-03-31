@@ -1,6 +1,11 @@
 <template>
   <q-page class="home-page" :style-fn="homePageStyleFn">
-    <div class="home-shell" :class="{ 'home-shell--mobile': isMobile }">
+    <div
+      ref="shellRef"
+      class="home-shell"
+      :class="{ 'home-shell--mobile': isMobile }"
+      :style="shellStyle"
+    >
       <aside v-if="!isMobile || !isMobileThreadOpen" class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-top__row" :class="{ 'sidebar-top__row--mobile': isMobile }">
@@ -109,6 +114,20 @@
         />
       </aside>
 
+      <div
+        v-if="!isMobile"
+        class="app-shell__resize-handle"
+        role="separator"
+        aria-label="Resize left panel"
+        aria-orientation="vertical"
+        :aria-valuemin="minSidebarWidth"
+        :aria-valuemax="maxSidebarWidth"
+        :aria-valuenow="sidebarWidth"
+        tabindex="0"
+        @pointerdown="startSidebarResize"
+        @keydown="handleSidebarResizeKeydown"
+      />
+
       <section
         v-if="!isMobile || isMobileThreadOpen"
         class="thread-panel"
@@ -192,6 +211,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch 
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import ChatList from 'src/components/ChatList.vue';
+import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
 import { useChatStore } from 'src/stores/chatStore';
 import {
   isMissingContactRelaysError,
@@ -218,6 +238,15 @@ const chatStore = useChatStore();
 const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const {
+  shellRef,
+  shellStyle,
+  sidebarWidth,
+  minSidebarWidth,
+  maxSidebarWidth,
+  startSidebarResize,
+  handleSidebarResizeKeydown
+} = useDesktopSidebarWidth(isMobile);
 const isRequestsDialogOpen = ref(false);
 const isCreateGroupDialogOpen = ref(false);
 const isCreatingGroup = ref(false);
@@ -869,7 +898,7 @@ onBeforeUnmount(() => {
 
 .home-shell {
   display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-columns: var(--desktop-sidebar-width, 360px) 0px minmax(0, 1fr);
   gap: 0;
   height: 100%;
   min-height: 0;
@@ -895,7 +924,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-width: 0;
   background: var(--tg-panel-sidebar-bg);
-  border-right: 1px solid var(--tg-border);
+  border-right: 0;
 }
 
 .sidebar-list {

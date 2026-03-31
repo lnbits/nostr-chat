@@ -1,6 +1,10 @@
 const THEME_MODE_STORAGE_KEY = 'ui-theme-mode';
 const PANEL_OPACITY_STORAGE_KEY = 'ui-panel-opacity';
+const DESKTOP_SIDEBAR_WIDTH_STORAGE_KEY = 'ui-desktop-sidebar-width';
 const DEFAULT_PANEL_OPACITY = 75;
+export const DEFAULT_DESKTOP_SIDEBAR_WIDTH = 360;
+export const MIN_DESKTOP_SIDEBAR_WIDTH = 280;
+export const MAX_DESKTOP_SIDEBAR_WIDTH = 4096;
 
 function canUseStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -19,6 +23,20 @@ function normalizePanelOpacityPreference(value: unknown): number {
   }
 
   return Math.min(100, Math.max(0, Math.round(parsedValue)));
+}
+
+function normalizeDesktopSidebarWidthPreference(value: unknown): number {
+  const parsedValue =
+    typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+
+  if (!Number.isFinite(parsedValue)) {
+    return DEFAULT_DESKTOP_SIDEBAR_WIDTH;
+  }
+
+  return Math.min(
+    MAX_DESKTOP_SIDEBAR_WIDTH,
+    Math.max(MIN_DESKTOP_SIDEBAR_WIDTH, Math.round(parsedValue))
+  );
 }
 
 export function readDarkModePreference(): boolean | null {
@@ -123,4 +141,38 @@ export function clearPanelOpacityPreference(): void {
   }
 
   applyPanelOpacityPreference(DEFAULT_PANEL_OPACITY);
+}
+
+export function readDesktopSidebarWidthPreference(): number {
+  if (!canUseStorage()) {
+    return DEFAULT_DESKTOP_SIDEBAR_WIDTH;
+  }
+
+  try {
+    const value = window.localStorage.getItem(DESKTOP_SIDEBAR_WIDTH_STORAGE_KEY);
+    if (value === null) {
+      return DEFAULT_DESKTOP_SIDEBAR_WIDTH;
+    }
+
+    return normalizeDesktopSidebarWidthPreference(value);
+  } catch (error) {
+    console.error('Failed to read saved desktop sidebar width.', error);
+  }
+
+  return DEFAULT_DESKTOP_SIDEBAR_WIDTH;
+}
+
+export function saveDesktopSidebarWidthPreference(width: number): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      DESKTOP_SIDEBAR_WIDTH_STORAGE_KEY,
+      String(normalizeDesktopSidebarWidthPreference(width))
+    );
+  } catch (error) {
+    console.error('Failed to persist desktop sidebar width.', error);
+  }
 }
