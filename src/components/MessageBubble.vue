@@ -1283,7 +1283,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--bubble-author-gap);
   margin: 0 0 4px;
-  opacity: 0.82;
+  opacity: 1;
 }
 
 .bubble__author--mine {
@@ -1361,6 +1361,8 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   word-break: break-word;
   cursor: pointer;
+  color: var(--tg-text);
+  line-height: 1.5;
 }
 
 .bubble__more {
@@ -1789,7 +1791,8 @@ onBeforeUnmount(() => {
 
 .bubble__status-list-item--empty {
   list-style: none;
-  opacity: 0.72;
+  color: var(--tg-text-secondary);
+  opacity: 1;
   padding-left: 0;
 }
 
@@ -1824,7 +1827,7 @@ onBeforeUnmount(() => {
 
 .bubble__status-list-detail {
   min-width: 0;
-  color: rgba(100, 116, 139, 0.95);
+  color: var(--tg-text-secondary);
   word-break: break-word;
 }
 
@@ -1836,7 +1839,7 @@ onBeforeUnmount(() => {
 .bubble__status-empty {
   font-size: 12px;
   line-height: 1.45;
-  opacity: 0.72;
+  color: var(--tg-text-secondary);
 }
 
 .bubble__info {
@@ -1854,7 +1857,8 @@ onBeforeUnmount(() => {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  opacity: 0.72;
+  color: var(--tg-text-secondary);
+  opacity: 1;
 }
 
 .bubble__info-value {

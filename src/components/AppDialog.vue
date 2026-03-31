@@ -165,19 +165,20 @@ function closeDialog(): void {
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: 0.02em;
+  color: var(--tg-text);
 }
 
 .app-dialog__subtitle {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.4;
-  color: color-mix(in srgb, currentColor 68%, #64748b 32%);
+  color: var(--tg-text-secondary);
 }
 
 .app-dialog__close {
   flex: 0 0 auto;
-  color: #64748b;
-  background: rgba(255, 255, 255, 0.55);
+  color: var(--tg-text-secondary);
+  background: var(--tg-surface-soft-strong);
 }
 
 .app-dialog__body {

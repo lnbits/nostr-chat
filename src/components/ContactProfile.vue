@@ -1981,15 +1981,17 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
 .profile-header__name {
   font-weight: 600;
+  color: var(--tg-text);
 }
 
 .profile-header__subtitle {
   font-size: 12px;
-  opacity: 0.65;
+  color: var(--tg-text-secondary);
+  opacity: 1;
 }
 
 .profile-header__action {
-  color: #64748b;
+  color: var(--tg-text-secondary);
 }
 
 .profile-tabs {
@@ -2067,6 +2069,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 4px;
+  color: var(--tg-text);
 }
 
 .profile-card__title-row {
@@ -2082,6 +2085,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 .profile-card__subtitle {
   font-size: 14px;
   font-weight: 600;
+  color: var(--tg-text);
 }
 
 .profile-card__bot-row {
@@ -2109,6 +2113,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 .profile-members-state__title {
   font-size: 16px;
   font-weight: 700;
+  color: var(--tg-text);
 }
 
 .profile-members {
@@ -2153,10 +2158,12 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
 .profile-members-list__name {
   font-weight: 600;
+  color: var(--tg-text);
 }
 
 .profile-members-list__caption {
   word-break: break-word;
+  color: var(--tg-text-secondary);
 }
 
 .profile-members-list__actions {

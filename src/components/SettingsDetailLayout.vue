@@ -74,6 +74,7 @@ function goBack(): void {
   font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  color: var(--tg-text);
 }
 
 .settings-detail-layout__spacer {

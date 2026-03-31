@@ -108,6 +108,9 @@ body.body--dark {
   --tg-reaction-accent-border: rgba(100, 181, 246, 0.34);
   --tg-reaction-accent-text: #d8eeff;
   --tg-reaction-accent-icon-bg: #64b5f6;
+  --tg-text: #edf3f9;
+  --tg-text-secondary: #a6b8ca;
+  --tg-muted: #8799ac;
   --tg-search-bg: #242f3d;
   --tg-hover: #1e2a36;
   --tg-active: #2b5278;
@@ -150,6 +153,18 @@ body.body--dark {
 .settings-detail-layout__title {
   font-family: var(--tg-title-font);
   letter-spacing: 0.02em;
+  color: var(--tg-text);
+}
+
+body.body--dark .text-grey-5 {
+  color: var(--tg-muted) !important;
+}
+
+body.body--dark .text-grey-6,
+body.body--dark .text-grey-7,
+body.body--dark .text-grey-8,
+body.body--dark .text-grey-9 {
+  color: var(--tg-text-secondary) !important;
 }
 
 .tg-input .q-field__control {
@@ -178,6 +193,10 @@ body.body--dark {
 .tg-input .q-field__append,
 .tg-input .q-field__suffix {
   color: inherit;
+}
+
+.tg-input .q-field__label {
+  color: var(--tg-text-secondary);
 }
 
 .q-btn {

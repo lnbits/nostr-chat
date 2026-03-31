@@ -1352,6 +1352,7 @@ onBeforeUnmount(() => {
 .thread-header__name {
   font-size: 15px;
   font-weight: 600;
+  color: var(--tg-text);
 }
 
 .thread-header__time {

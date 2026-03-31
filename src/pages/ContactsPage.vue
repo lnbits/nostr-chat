@@ -1207,6 +1207,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   font-size: 20px;
   font-weight: 600;
   line-height: 1.2;
+  color: var(--tg-text);
 }
 
 .contacts-sidebar__search--mobile {
@@ -1268,6 +1269,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--tg-text);
 }
 
 .contact-item:hover {
@@ -1275,7 +1277,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contact-item__caption {
-  opacity: 0.78;
+  color: var(--tg-text-secondary);
+  opacity: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1298,7 +1301,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contacts-empty {
   padding: 14px;
   text-align: center;
-  opacity: 0.7;
+  color: var(--tg-text-secondary);
+  opacity: 1;
 }
 
 .contacts-empty-state {
@@ -1307,7 +1311,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   place-items: center;
   text-align: center;
   padding: 20px;
-  opacity: 0.7;
+  color: var(--tg-text-secondary);
+  opacity: 1;
 }
 
 .add-contact-dialog {
