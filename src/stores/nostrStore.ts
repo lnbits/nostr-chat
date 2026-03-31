@@ -322,6 +322,14 @@ export interface DeveloperPrivateMessagesSubscriptionSnapshot {
   lastEoseAt: string | null;
 }
 
+export interface DeveloperGroupMessageSubscriptionSnapshot {
+  name: string;
+  pubkey: string;
+  epochPubkey: string;
+  epochNumber: number | null;
+  details: Record<string, unknown>;
+}
+
 export interface DeveloperSessionSnapshot {
   loggedInPubkey: string | null;
   authMethod: AuthMethod | null;
@@ -341,6 +349,7 @@ export interface DeveloperSessionSnapshot {
 export interface DeveloperDiagnosticsSnapshot {
   session: DeveloperSessionSnapshot;
   privateMessagesSubscription: DeveloperPrivateMessagesSubscriptionSnapshot;
+  groupMessagesSubscription: DeveloperGroupMessageSubscriptionSnapshot[];
   relayRows: DeveloperRelayRow[];
   pendingReactions: DeveloperPendingReactionSnapshot[];
   pendingDeletions: DeveloperPendingDeletionSnapshot[];
@@ -1837,24 +1846,39 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await chatDataService.init();
 
-    const encryptedEpochPrivateKey = await encryptPrivateStringContent(normalizedEpochPrivateKey);
     const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
     const existingGroupEpochKeys = normalizeChatGroupEpochKeys(
       existingChat?.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]
     );
+    const existingEpochEntry =
+      existingGroupEpochKeys.find(
+        (entry) =>
+          entry.epoch_number === epochNumber && entry.epoch_public_key === normalizedEpochPublicKey
+      ) ?? null;
     const entriesByEpoch = new Map<number, ChatGroupEpochKey>(
       existingGroupEpochKeys.map((entry) => [entry.epoch_number, entry])
     );
-    entriesByEpoch.set(epochNumber, {
-      epoch_number: epochNumber,
-      epoch_public_key: normalizedEpochPublicKey,
-      epoch_private_key_encrypted: encryptedEpochPrivateKey
-    });
+    if (existingEpochEntry) {
+      entriesByEpoch.set(epochNumber, existingEpochEntry);
+    } else {
+      const encryptedEpochPrivateKey = await encryptPrivateStringContent(normalizedEpochPrivateKey);
+      entriesByEpoch.set(epochNumber, {
+        epoch_number: epochNumber,
+        epoch_public_key: normalizedEpochPublicKey,
+        epoch_private_key_encrypted: encryptedEpochPrivateKey
+      });
+    }
 
     const nextGroupEpochKeys = Array.from(entriesByEpoch.values()).sort(
       (first, second) => second.epoch_number - first.epoch_number
     );
     const currentEpochEntry = nextGroupEpochKeys[0] ?? null;
+    const previousCurrentEpochPublicKey = inputSanitizerService.normalizeHexKey(
+      typeof existingChat?.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
+        ? String(existingChat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
+        : existingGroupEpochKeys[0]?.epoch_public_key ?? ''
+    );
+    const nextCurrentEpochPublicKey = currentEpochEntry?.epoch_public_key ?? null;
     const fallbackName =
       typeof options.fallbackName === 'string' && options.fallbackName.trim()
         ? options.fallbackName.trim()
@@ -1913,6 +1937,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...(shouldUpdateMeta ? { meta: nextMeta } : {})
     });
     await useChatStore().reload();
+    if (previousCurrentEpochPublicKey === nextCurrentEpochPublicKey) {
+      return;
+    }
     try {
       await subscribePrivateMessagesForLoggedInUser(true);
     } catch (error) {
@@ -9563,6 +9590,120 @@ export const useNostrStore = defineStore('nostrStore', () => {
       .sort((first, second) => second.count - first.count);
   }
 
+  function buildDeveloperGroupSubscriptionContactMeta(
+    meta: ContactMetadata | undefined
+  ): Record<string, unknown> {
+    if (!meta || typeof meta !== 'object') {
+      return {};
+    }
+
+    return {
+      ...meta,
+      ...(meta.group_private_key_encrypted
+        ? { group_private_key_encrypted: '[redacted]' }
+        : {}),
+      ...(Array.isArray(meta.group_members)
+        ? {
+            group_members: meta.group_members.map((member) => ({ ...member }))
+          }
+        : {})
+    };
+  }
+
+  function buildDeveloperGroupSubscriptionChatMeta(
+    meta: Record<string, unknown> | undefined
+  ): Record<string, unknown> {
+    const normalizedEpochKeys = normalizeChatGroupEpochKeys(meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]);
+
+    return {
+      ...(meta && typeof meta === 'object' ? { ...meta } : {}),
+      ...(normalizedEpochKeys.length > 0
+        ? {
+            [GROUP_EPOCH_KEYS_CHAT_META_KEY]: normalizedEpochKeys.map((entry) => ({
+              epoch_number: entry.epoch_number,
+              epoch_public_key: entry.epoch_public_key,
+              epoch_private_key_encrypted: '[redacted]'
+            }))
+          }
+        : {}),
+      ...(typeof meta?.[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY] === 'string' &&
+      String(meta[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]).trim()
+        ? {
+            [GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]: '[redacted]'
+          }
+        : {})
+    };
+  }
+
+  async function buildDeveloperGroupMessageSubscriptionSnapshot(): Promise<
+    DeveloperGroupMessageSubscriptionSnapshot[]
+  > {
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+
+    const recipientPubkeys = new Set(await listPrivateMessageRecipientPubkeys());
+    const groupContacts = (await contactsService.listContacts()).filter(
+      (contact) => contact.type === 'group'
+    );
+    if (groupContacts.length === 0) {
+      return [];
+    }
+
+    const chatsByPubkey = new Map(
+      (await chatDataService.listChats()).map((chat) => [chat.public_key, chat] as const)
+    );
+
+    return groupContacts
+      .map((contact) => {
+        const normalizedGroupPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
+        if (!normalizedGroupPubkey) {
+          return null;
+        }
+
+        const groupChat = chatsByPubkey.get(normalizedGroupPubkey) ?? null;
+        const epochKeys = normalizeChatGroupEpochKeys(groupChat?.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]);
+        const currentEpochPubkey = inputSanitizerService.normalizeHexKey(
+          typeof groupChat?.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
+            ? String(groupChat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
+            : epochKeys[0]?.epoch_public_key ?? ''
+        );
+        if (!currentEpochPubkey || !recipientPubkeys.has(currentEpochPubkey)) {
+          return null;
+        }
+
+        const currentEpochEntry =
+          epochKeys.find((entry) => entry.epoch_public_key === currentEpochPubkey) ??
+          epochKeys[0] ??
+          null;
+        const name = contact.name.trim() || groupChat?.name?.trim() || normalizedGroupPubkey;
+
+        return {
+          name,
+          pubkey: normalizedGroupPubkey,
+          epochPubkey: currentEpochPubkey,
+          epochNumber: currentEpochEntry?.epoch_number ?? null,
+          details: {
+            contactId: contact.id,
+            contactType: contact.type,
+            contactRelays: Array.isArray(contact.relays)
+              ? contact.relays.map((relay) => ({ ...relay }))
+              : [],
+            contactMeta: buildDeveloperGroupSubscriptionContactMeta(contact.meta),
+            chatId: groupChat?.id ?? null,
+            chatType: groupChat?.type ?? null,
+            unreadCount: groupChat?.unread_count ?? null,
+            lastMessageAt: groupChat?.last_message_at ?? null,
+            lastMessage: groupChat?.last_message ?? null,
+            epochCount: epochKeys.length,
+            chatMeta: buildDeveloperGroupSubscriptionChatMeta(groupChat?.meta)
+          }
+        };
+      })
+      .filter(
+        (entry): entry is DeveloperGroupMessageSubscriptionSnapshot => Boolean(entry)
+      )
+      .sort((first, second) => first.name.localeCompare(second.name));
+  }
+
   function getPendingDeveloperQueueTargetEventIds(): string[] {
     return Array.from(
       new Set([
@@ -9734,6 +9875,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const effectivePublishRelayUrls = await resolveLoggedInPublishRelayUrls();
     const configuredRelayList = Array.from(configuredRelayUrls);
     const privateMessagesRelayUrls = normalizeRelayStatusUrls(privateMessagesSubscriptionRelayUrls.value);
+    const groupMessagesSubscription = await buildDeveloperGroupMessageSubscriptionSnapshot();
     const relayRows = normalizeRelayStatusUrls([
       ...appRelayUrls,
       ...effectiveReadRelayUrls,
@@ -9787,6 +9929,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         ),
         lastEoseAt: privateMessagesSubscriptionLastEoseAt.value
       },
+      groupMessagesSubscription,
       relayRows,
       pendingReactions: buildPendingReactionDiagnostics(),
       pendingDeletions: buildPendingDeletionDiagnostics()

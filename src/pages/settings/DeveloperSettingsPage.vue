@@ -187,6 +187,98 @@
           class="developer-card__header developer-card__header--clickable"
           role="button"
           tabindex="0"
+          @click="toggleExpandableCard('groupMessagesSubscription')"
+          @keydown.enter.prevent="toggleExpandableCard('groupMessagesSubscription')"
+          @keydown.space.prevent="toggleExpandableCard('groupMessagesSubscription')"
+        >
+          <div class="developer-card__header-main">
+            <div class="text-h6">Group Messages Subscription</div>
+            <div class="text-caption text-grey-6">
+              Group epoch inboxes currently included in the app message subscription.
+            </div>
+          </div>
+
+          <div class="developer-card__header-side">
+            <q-badge color="primary" outline>
+              {{ diagnostics?.groupMessagesSubscription.length ?? 0 }}
+            </q-badge>
+            <q-icon
+              :name="expandedCards.groupMessagesSubscription ? 'expand_less' : 'expand_more'"
+              size="20px"
+              class="developer-card__header-icon"
+            />
+          </div>
+        </q-card-section>
+
+        <q-slide-transition>
+          <div v-show="expandedCards.groupMessagesSubscription">
+            <q-card-section v-if="diagnostics" class="developer-card__section developer-card__section--flush">
+              <div
+                v-if="diagnostics.groupMessagesSubscription.length === 0"
+                class="developer-empty-state"
+              >
+                No group subscriptions are active.
+              </div>
+
+              <q-markup-table v-else flat class="developer-table">
+                <thead>
+                  <tr>
+                    <th class="text-left">Name</th>
+                    <th class="text-left">Pubkey</th>
+                    <th class="text-left">Epoch Pubkey</th>
+                    <th class="text-left">Epoch Number</th>
+                    <th class="text-left">Subscription</th>
+                    <th class="text-left">Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="entry in diagnostics.groupMessagesSubscription"
+                    :key="`${entry.pubkey}:${entry.epochPubkey}`"
+                  >
+                    <td>{{ entry.name }}</td>
+                    <td class="developer-table__mono">{{ entry.pubkey }}</td>
+                    <td class="developer-table__mono">{{ entry.epochPubkey }}</td>
+                    <td>{{ entry.epochNumber ?? 'n/a' }}</td>
+                    <td class="developer-subscription-table__details-cell">
+                      <q-expansion-item
+                        dense
+                        expand-separator
+                        expand-icon="keyboard_arrow_right"
+                        expanded-icon="keyboard_arrow_down"
+                        class="developer-expansion"
+                        label="JSON"
+                      >
+                        <pre class="developer-json developer-json--table">{{
+                          formatJson(buildGroupSubscriptionPayload(entry))
+                        }}</pre>
+                      </q-expansion-item>
+                    </td>
+                    <td class="developer-subscription-table__details-cell">
+                      <q-expansion-item
+                        dense
+                        expand-separator
+                        expand-icon="keyboard_arrow_right"
+                        expanded-icon="keyboard_arrow_down"
+                        class="developer-expansion"
+                        label="JSON"
+                      >
+                        <pre class="developer-json developer-json--table">{{ formatJson(entry.details) }}</pre>
+                      </q-expansion-item>
+                    </td>
+                  </tr>
+                </tbody>
+              </q-markup-table>
+            </q-card-section>
+          </div>
+        </q-slide-transition>
+      </q-card>
+
+      <q-card flat bordered class="developer-card">
+        <q-card-section
+          class="developer-card__header developer-card__header--clickable"
+          role="button"
+          tabindex="0"
           @click="toggleExpandableCard('nostrSession')"
           @keydown.enter.prevent="toggleExpandableCard('nostrSession')"
           @keydown.space.prevent="toggleExpandableCard('nostrSession')"
@@ -672,6 +764,7 @@ import { useQuasar } from 'quasar';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import type {
   DeveloperDiagnosticsSnapshot,
+  DeveloperGroupMessageSubscriptionSnapshot,
   DeveloperRelayRow,
   DeveloperTraceEntry,
   DeveloperTraceLevel
@@ -685,6 +778,7 @@ const nostrStore = useNostrStore();
 type ExpandableDeveloperCardKey =
   | 'nostrSession'
   | 'privateMessagesSubscription'
+  | 'groupMessagesSubscription'
   | 'relayStatus'
   | 'pendingQueues'
   | 'recentTrace';
@@ -700,6 +794,7 @@ const replayLookbackMinutes = ref(180);
 const expandedCards = ref<Record<ExpandableDeveloperCardKey, boolean>>({
   nostrSession: false,
   privateMessagesSubscription: false,
+  groupMessagesSubscription: false,
   relayStatus: true,
   pendingQueues: true,
   recentTrace: true
@@ -1102,6 +1197,73 @@ function formatJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function formatCompactDeveloperKey(value: string | null | undefined): string | null {
+  const normalizedValue = value?.trim() ?? '';
+  if (!normalizedValue) {
+    return null;
+  }
+
+  if (normalizedValue.length <= 18) {
+    return normalizedValue;
+  }
+
+  return `${normalizedValue.slice(0, 8)}...${normalizedValue.slice(-8)}`;
+}
+
+function buildGroupSubscriptionPayload(
+  entry: DeveloperGroupMessageSubscriptionSnapshot
+): Record<string, unknown> {
+  const privateMessagesSubscription = diagnostics.value?.privateMessagesSubscription ?? null;
+  const compactGroupPubkey = formatCompactDeveloperKey(entry.pubkey);
+  const compactEpochPubkey = formatCompactDeveloperKey(entry.epochPubkey);
+  const statusLog = latestTraceEntries.value
+    .filter((traceEntry) => {
+      if (traceEntry.scope !== 'subscription:private-messages') {
+        return false;
+      }
+
+      const recipients = Array.isArray(traceEntry.details.recipients)
+        ? traceEntry.details.recipients.filter(
+            (value): value is string => typeof value === 'string' && value.trim().length > 0
+          )
+        : [];
+      const chatPubkey =
+        typeof traceEntry.details.chatPubkey === 'string'
+          ? traceEntry.details.chatPubkey.trim()
+          : '';
+
+      return (
+        (compactEpochPubkey ? recipients.includes(compactEpochPubkey) : false) ||
+        (compactGroupPubkey ? chatPubkey === compactGroupPubkey : false)
+      );
+    })
+    .slice(0, 25)
+    .map((traceEntry) => ({
+      timestamp: traceEntry.timestamp,
+      level: traceEntry.level,
+      phase: traceEntry.phase,
+      details: traceEntry.details
+    }));
+
+  return {
+    active: privateMessagesSubscription?.active ?? false,
+    signature: privateMessagesSubscription?.signature ?? null,
+    epochPubkey: entry.epochPubkey,
+    epochNumber: entry.epochNumber,
+    relayUrls: privateMessagesSubscription?.relayUrls ?? [],
+    relaySnapshots: privateMessagesSubscription?.relaySnapshots ?? [],
+    since: privateMessagesSubscription?.since ?? null,
+    sinceIso: privateMessagesSubscription?.sinceIso ?? null,
+    startedAt: privateMessagesSubscription?.startedAt ?? null,
+    lastEventSeenAt: privateMessagesSubscription?.lastEventSeenAt ?? null,
+    lastEventId: privateMessagesSubscription?.lastEventId ?? null,
+    lastEventCreatedAt: privateMessagesSubscription?.lastEventCreatedAt ?? null,
+    lastEventCreatedAtIso: privateMessagesSubscription?.lastEventCreatedAtIso ?? null,
+    lastEoseAt: privateMessagesSubscription?.lastEoseAt ?? null,
+    statusLog
+  };
+}
+
 function formatTraceDetailsPreview(value: unknown): string {
   const compactValue = (JSON.stringify(value) ?? '')
     .replace(/\s+/g, ' ')
@@ -1384,6 +1546,10 @@ function syncTraceFiltersWithAvailableOptions(): void {
 
 .developer-trace-table__details-cell {
   width: 100%;
+  min-width: 280px;
+}
+
+.developer-subscription-table__details-cell {
   min-width: 280px;
 }
 
