@@ -50,7 +50,7 @@
             no-caps
             class="profile-tab"
           />
-          <q-tab v-if="isGroupContact" name="empochs" label="Empochs" no-caps class="profile-tab" />
+          <q-tab v-if="isGroupContact" name="epochs" label="Epochs" no-caps class="profile-tab" />
         </q-tabs>
 
         <q-tab-panels
@@ -547,7 +547,7 @@
             </div>
           </q-tab-panel>
 
-          <q-tab-panel v-if="isGroupContact" name="empochs" class="profile-tab-panel">
+          <q-tab-panel v-if="isGroupContact" name="epochs" class="profile-tab-panel">
             <div class="profile-epochs">
               <div class="profile-card__section">
                 <div class="profile-card__title">Current Epoch Public Key</div>
@@ -705,16 +705,16 @@
         />
         <q-btn
           v-if="isGroupContact"
-          :flat="activeTab !== 'empochs'"
-          :unelevated="activeTab === 'empochs'"
-          :color="activeTab === 'empochs' ? 'primary' : undefined"
-          :text-color="activeTab === 'empochs' ? 'white' : undefined"
+          :flat="activeTab !== 'epochs'"
+          :unelevated="activeTab === 'epochs'"
+          :color="activeTab === 'epochs' ? 'primary' : undefined"
+          :text-color="activeTab === 'epochs' ? 'white' : undefined"
           no-caps
           icon="history"
-          label="Empochs"
+          label="Epochs"
           class="mobile-nav__btn"
-          :class="{ 'mobile-nav__btn--active': activeTab === 'empochs' }"
-          @click="activeTab = 'empochs'"
+          :class="{ 'mobile-nav__btn--active': activeTab === 'epochs' }"
+          @click="activeTab = 'epochs'"
         />
       </div>
     </div>
@@ -745,7 +745,7 @@ import {
 } from 'src/types/contactProfile';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
-type ProfileTab = 'profile' | 'members' | 'empochs' | 'relays';
+type ProfileTab = 'profile' | 'members' | 'epochs' | 'relays';
 type RelayTogglePayload = {
   index: number;
   value: boolean;
