@@ -75,6 +75,7 @@
                   :src="contactPictureUrl(contact)"
                   :alt="contactListTitle(contact)"
                   :fallback="contactAvatar(contact)"
+                  class="contact-item__avatar"
                 />
               </q-item-section>
 
@@ -1262,6 +1263,16 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contact-item__main {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.contact-item :deep(.q-item__section--avatar) {
+  min-width: 60px;
+}
+
+.contact-item :deep(.contact-item__avatar) {
+  width: 54px;
+  height: 54px;
+  font-size: 23px;
 }
 
 .contact-item__name {

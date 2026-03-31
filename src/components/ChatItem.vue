@@ -7,7 +7,12 @@
     @click="handleSelectChat"
   >
     <q-item-section avatar>
-      <CachedAvatar :src="avatarImageUrl" :alt="chatTitle" :fallback="chat.avatar" />
+      <CachedAvatar
+        :src="avatarImageUrl"
+        :alt="chatTitle"
+        :fallback="chat.avatar"
+        class="chat-item__avatar"
+      />
     </q-item-section>
 
     <q-item-section class="chat-item__main">
@@ -347,10 +352,10 @@ function emitDeleteChat(): void {
   color: var(--tg-text-secondary);
 }
 
-.chat-item :deep(.q-avatar) {
+.chat-item :deep(.chat-item__avatar) {
   width: 54px;
   height: 54px;
-  font-size: 15px;
+  font-size: 24px;
 }
 
 .chat-item--active .chat-item__meta,

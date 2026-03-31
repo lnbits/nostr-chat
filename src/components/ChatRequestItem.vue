@@ -2,7 +2,12 @@
   <q-card flat bordered class="request-item">
     <q-item clickable class="request-item__content" @click="handleOpen">
       <q-item-section avatar>
-        <CachedAvatar :src="avatarImageUrl" :alt="chatTitle" :fallback="chat.avatar" />
+        <CachedAvatar
+          :src="avatarImageUrl"
+          :alt="chatTitle"
+          :fallback="chat.avatar"
+          class="request-item__avatar"
+        />
       </q-item-section>
 
       <q-item-section class="request-item__main">
@@ -187,6 +192,16 @@ function handleBlock(): void {
 
 .request-item__content {
   padding-bottom: 10px;
+}
+
+.request-item :deep(.q-item__section--avatar) {
+  min-width: 60px;
+}
+
+.request-item :deep(.request-item__avatar) {
+  width: 54px;
+  height: 54px;
+  font-size: 24px;
 }
 
 .request-item__main {
