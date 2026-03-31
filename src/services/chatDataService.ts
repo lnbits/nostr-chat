@@ -87,12 +87,44 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function normalizeMetaValue(value: unknown): unknown {
+  if (value === null) {
+    return null;
+  }
+
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => normalizeMetaValue(entry))
+      .filter((entry) => entry !== undefined);
+  }
+
+  if (isPlainRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, entry]) => {
+        const normalizedEntry = normalizeMetaValue(entry);
+        return normalizedEntry === undefined ? [] : [[key, normalizedEntry]];
+      })
+    );
+  }
+
+  return undefined;
+}
+
 function normalizeMeta(value: Record<string, unknown> | undefined): Record<string, unknown> {
   if (!isPlainRecord(value)) {
     return {};
   }
 
-  return { ...value };
+  const normalized = normalizeMetaValue(value);
+  return isPlainRecord(normalized) ? normalized : {};
 }
 
 function toIsoTimestamp(value: unknown): string | null {

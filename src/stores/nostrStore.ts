@@ -2301,6 +2301,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     try {
+      await subscribePrivateMessagesForLoggedInUser(true);
+    } catch (error) {
+      console.warn(
+        'Failed to refresh private messages after accepting group invite',
+        normalizedTargetPubkey,
+        error
+      );
+    }
+
+    try {
       await refreshContactByPublicKey(normalizedTargetPubkey, initialName);
     } catch (error) {
       console.warn('Failed to refresh accepted group invite profile', normalizedTargetPubkey, error);
@@ -2575,6 +2585,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
         );
         await runStartupTask('Failed to restore group identity secrets on startup', () =>
           restoreGroupIdentitySecrets(seedRelayUrls)
+        );
+        await runStartupTask('Failed to refresh group relay lists on startup', () =>
+          refreshGroupRelayListsOnStartup(seedRelayUrls)
         );
         await runStartupTask('Failed to restore contact cursor state on startup', () =>
           restoreContactCursorState(seedRelayUrls)
@@ -4923,6 +4936,41 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return updatedContact.relays ?? [];
   }
 
+  async function refreshGroupRelayListsOnStartup(seedRelayUrls: string[] = []): Promise<void> {
+    await contactsService.init();
+
+    const groupContacts = (await contactsService.listContacts()).filter(
+      (contact) => contact.type === 'group'
+    );
+    if (groupContacts.length === 0) {
+      return;
+    }
+
+    const knownGroupRelayUrls = groupContacts.flatMap((contact) =>
+      inputSanitizerService.normalizeReadableRelayUrls(contact.relays)
+    );
+    const relayUrls = normalizeRelayStatusUrls([
+      ...(await resolveLoggedInReadRelayUrls(seedRelayUrls)),
+      ...knownGroupRelayUrls
+    ]);
+    if (relayUrls.length > 0) {
+      await ensureRelayConnections(relayUrls);
+    }
+
+    for (const groupContact of groupContacts) {
+      const groupPublicKey = inputSanitizerService.normalizeHexKey(groupContact.public_key);
+      if (!groupPublicKey) {
+        continue;
+      }
+
+      try {
+        await refreshContactRelayList(groupPublicKey);
+      } catch (error) {
+        console.warn('Failed to refresh group relay list on startup', groupPublicKey, error);
+      }
+    }
+  }
+
   async function listTrackedContactPubkeys(): Promise<string[]> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     await contactsService.init();
@@ -4987,6 +5035,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...relayUrls,
       ...inputSanitizerService.normalizeReadableRelayUrls(loggedInContact?.relays)
     ]);
+  }
+
+  async function resolvePrivateMessageReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
+    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+
+    await contactsService.init();
+    const contacts = await contactsService.listContacts();
+    const groupRelayUrls = contacts
+      .filter((contact) => contact.type === 'group')
+      .flatMap((contact) => inputSanitizerService.normalizeReadableRelayUrls(contact.relays));
+
+    return normalizeRelayStatusUrls([...relayUrls, ...groupRelayUrls]);
   }
 
   async function resolveLoggedInPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
@@ -8601,7 +8661,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     try {
       await contactsService.init();
       await chatDataService.init();
-      const relayUrls = await resolveLoggedInReadRelayUrls();
+      const relayUrls = await resolvePrivateMessageReadRelayUrls();
       if (relayUrls.length === 0) {
         logSubscription('private-messages', 'skip', {
           reason: 'no-relays',
