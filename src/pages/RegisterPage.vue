@@ -212,7 +212,7 @@ async function handleLoginNow(): Promise<void> {
     }
 
     await handleBrowserNotificationsAfterLogin();
-    await router.push({ name: 'chats' });
+    await router.push({ name: 'settings-status' });
   } catch (error) {
     reportUiError('Failed to log in with generated account', error, 'Failed to log in.');
   } finally {

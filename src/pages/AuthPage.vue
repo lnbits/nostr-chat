@@ -238,7 +238,7 @@ async function handleKeyLogin(): Promise<void> {
 
 async function goToHome(): Promise<void> {
   try {
-    await router.push({ name: 'chats' });
+    await router.push({ name: 'settings-status' });
   } catch (error) {
     reportUiError('Failed to navigate after login', error);
   }

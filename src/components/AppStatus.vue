@@ -23,7 +23,17 @@
               :key="step.id"
               class="app-status__history-item"
             >
+              <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
+                <q-linear-progress
+                  indeterminate
+                  rounded
+                  color="primary"
+                  track-color="transparent"
+                  class="app-status__progress-bar"
+                />
+              </div>
               <q-icon
+                v-else
                 :name="startupStatusIcon(step.status)"
                 :class="startupStatusClass(step.status)"
                 size="16px"
@@ -242,6 +252,17 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   gap: 10px;
   align-items: start;
   min-height: var(--app-status-history-item-height);
+}
+
+.app-status__progress-track {
+  width: 26px;
+  padding-top: 7px;
+}
+
+.app-status__progress-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tg-border) 70%, transparent);
 }
 
 .app-status__history-copy {
