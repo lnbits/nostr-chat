@@ -425,6 +425,7 @@ const GROUP_IDENTITY_SECRET_TAG = 'group';
 const GROUP_IDENTITY_SECRET_VERSION = 1;
 const GROUP_PRIVATE_KEY_CONTACT_META_KEY = 'group_private_key_encrypted';
 const GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY = 'owner_public_key';
+const PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY = 'private_contact_list_member';
 const GROUP_EPOCH_KEYS_CHAT_META_KEY = 'group_epoch_keys';
 const GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY = 'current_epoch_public_key';
 const GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY = 'current_epoch_private_key_encrypted';
@@ -1590,6 +1591,115 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return readFirstTagValue(tags, 'p');
   }
 
+  function isContactListedInPrivateContactList(
+    contact: Pick<ContactRecord, 'meta'> | null | undefined
+  ): boolean {
+    return contact?.meta?.[PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY] === true;
+  }
+
+  async function ensureContactListedInPrivateContactList(
+    targetPubkeyHex: string,
+    options: {
+      fallbackName?: string;
+      type?: 'user' | 'group';
+    } = {}
+  ): Promise<{
+    contact: ContactRecord | null;
+    didChange: boolean;
+  }> {
+    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
+    if (!normalizedTargetPubkey) {
+      return {
+        contact: null,
+        didChange: false
+      };
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
+    const fallbackName =
+      options.fallbackName?.trim() ||
+      existingContact?.name?.trim() ||
+      normalizedTargetPubkey.slice(0, 16);
+
+    const nextMeta: ContactMetadata = {
+      ...(existingContact?.meta ?? {}),
+      [PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY]: true
+    };
+
+    if (!existingContact) {
+      const createdContact = await contactsService.createContact({
+        public_key: normalizedTargetPubkey,
+        ...(options.type ? { type: options.type } : {}),
+        name: fallbackName,
+        given_name: null,
+        meta: nextMeta,
+        relays: []
+      });
+      if (createdContact) {
+        bumpContactListVersion();
+      }
+      return {
+        contact: createdContact,
+        didChange: Boolean(createdContact)
+      };
+    }
+
+    const shouldUpdateType = options.type ? existingContact.type !== options.type : false;
+    const shouldUpdateMeta =
+      JSON.stringify(inputSanitizerService.normalizeContactMetadata(existingContact.meta ?? {})) !==
+      JSON.stringify(inputSanitizerService.normalizeContactMetadata(nextMeta));
+
+    if (!shouldUpdateType && !shouldUpdateMeta) {
+      return {
+        contact: existingContact,
+        didChange: false
+      };
+    }
+
+    const updatedContact = await contactsService.updateContact(existingContact.id, {
+      ...(shouldUpdateType ? { type: options.type } : {}),
+      ...(shouldUpdateMeta ? { meta: nextMeta } : {})
+    });
+    if (updatedContact) {
+      bumpContactListVersion();
+    }
+
+    return {
+      contact: updatedContact ?? existingContact,
+      didChange: Boolean(updatedContact)
+    };
+  }
+
+  async function reconcileAcceptedChatFromPrivateContactList(contactPublicKey: string): Promise<void> {
+    const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(contactPublicKey);
+    if (!normalizedContactPublicKey) {
+      return;
+    }
+
+    await Promise.all([chatDataService.init(), chatStore.init()]);
+    const existingChat = await chatDataService.getChatByPublicKey(normalizedContactPublicKey);
+    if (!existingChat) {
+      return;
+    }
+
+    const currentInboxState =
+      existingChat.meta && typeof existingChat.meta.inbox_state === 'string'
+        ? existingChat.meta.inbox_state.trim()
+        : '';
+    const acceptedAt =
+      existingChat.meta && typeof existingChat.meta.accepted_at === 'string'
+        ? existingChat.meta.accepted_at.trim()
+        : '';
+    if (currentInboxState === 'accepted' && acceptedAt) {
+      return;
+    }
+
+    await chatStore.acceptChat(normalizedContactPublicKey, {
+      acceptedAt: acceptedAt || new Date().toISOString()
+    });
+  }
+
   async function findGroupChatEpochContextByRecipientPubkey(epochPublicKey: string): Promise<{
     chat: ChatRow;
     epochEntry: ChatGroupEpochKey;
@@ -2343,6 +2453,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const initialName = fallbackName.trim() || resolveGroupDisplayName(normalizedTargetPubkey);
     await ensureContactStoredAsGroup(normalizedTargetPubkey, {
       fallbackName: initialName
+    });
+    await ensureContactListedInPrivateContactList(normalizedTargetPubkey, {
+      fallbackName: initialName,
+      type: 'group'
     });
 
     const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
@@ -6434,7 +6548,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   async function applyPrivateContactListPubkeys(pubkeys: string[]): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    await contactsService.init();
+    await Promise.all([contactsService.init(), chatDataService.init(), chatStore.init()]);
     const shouldTrackStartupSteps =
       isRestoringStartupState.value ||
       getStartupStepSnapshot('private-contact-list').status === 'in_progress';
@@ -6465,17 +6579,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     for (const pubkeyHex of nextPubkeys) {
       const existingContact = await contactsService.getContactByPublicKey(pubkeyHex);
-      if (!existingContact) {
-        await contactsService.createContact({
-          public_key: pubkeyHex,
-          name: pubkeyHex.slice(0, 16),
-          given_name: null,
-          meta: {},
-          relays: []
-        });
-      }
-
-      const fallbackName = existingContact?.name?.trim() || pubkeyHex.slice(0, 16);
+      const ensuredContactResult = await ensureContactListedInPrivateContactList(pubkeyHex, {
+        fallbackName: existingContact?.name?.trim() || pubkeyHex.slice(0, 16)
+      });
+      const fallbackName =
+        ensuredContactResult.contact?.name?.trim() ||
+        existingContact?.name?.trim() ||
+        pubkeyHex.slice(0, 16);
       try {
         await refreshContactByPublicKey(pubkeyHex, fallbackName, {
           onProfileFetchStart: () => {
@@ -6496,6 +6606,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relayTracker?.finishItem(error);
         console.warn('Failed to refresh private contact list profile', pubkeyHex, error);
       }
+
+      await reconcileAcceptedChatFromPrivateContactList(pubkeyHex);
     }
 
     profileTracker?.seal();
@@ -6936,19 +7048,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await contactsService.init();
     const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
-    if (existingContact) {
+    if (existingContact && isContactListedInPrivateContactList(existingContact)) {
       return;
     }
 
     const initialName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
-    const createdContact = await contactsService.createContact({
-      public_key: normalizedTargetPubkey,
-      name: initialName,
-      given_name: null,
-      meta: {},
-      relays: []
+    const ensureResult = await ensureContactListedInPrivateContactList(normalizedTargetPubkey, {
+      fallbackName: initialName
     });
-    if (!createdContact) {
+    if (!ensureResult.contact) {
       return;
     }
 
@@ -6960,12 +7068,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
       console.warn('Failed to refresh responded contact profile', normalizedTargetPubkey, error);
     }
 
-    bumpContactListVersion();
-
-    try {
-      await publishPrivateContactList(getAppRelayUrls());
-    } catch (error) {
-      console.warn('Failed to publish private contact list after adding responded contact', normalizedTargetPubkey, error);
+    if (ensureResult.didChange) {
+      try {
+        await publishPrivateContactList(getAppRelayUrls());
+      } catch (error) {
+        console.warn(
+          'Failed to publish private contact list after adding responded contact',
+          normalizedTargetPubkey,
+          error
+        );
+      }
     }
   }
 
@@ -8795,6 +8907,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
           ? existingGroupChat.meta.inbox_state.trim()
           : '';
       const wasAcceptedGroup =
+        isContactListedInPrivateContactList(senderContact) ||
         existingGroupInboxState === 'accepted' ||
         (typeof existingGroupChat?.meta?.accepted_at === 'string' &&
           existingGroupChat.meta.accepted_at.trim().length > 0) ||
@@ -8918,7 +9031,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
     }
 
+    const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
     const contact = await contactsService.getContactByPublicKey(chatPubkey);
+    const isAcceptedContact = isContactListedInPrivateContactList(contact);
     const existingChat = await chatDataService.getChatByPublicKey(chatPubkey);
     const createdChat =
       existingChat
@@ -8928,13 +9043,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
             ...(recipientContext.groupChatPublicKey ? { type: 'group' as const } : {}),
             name: deriveChatName(contact, chatPubkey),
             last_message: '',
-            last_message_at: toIsoTimestampFromUnix(rumorEvent.created_at),
+            last_message_at: createdAt,
             unread_count: 0,
             meta: {
-              ...(contact?.meta.picture ? { picture: contact.meta.picture } : {})
+              ...(contact?.meta.picture ? { picture: contact.meta.picture } : {}),
+              ...(isAcceptedContact
+                ? {
+                    inbox_state: 'accepted',
+                    accepted_at: createdAt
+                  }
+                : {})
             }
           });
-    const chat =
+    let chat =
       existingChat ??
       createdChat ??
       (await chatDataService.getChatByPublicKey(chatPubkey));
@@ -8955,7 +9076,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
+    if (isAcceptedContact) {
+      const currentInboxState =
+        chat.meta && typeof chat.meta.inbox_state === 'string' ? chat.meta.inbox_state.trim() : '';
+      const currentAcceptedAt =
+        chat.meta && typeof chat.meta.accepted_at === 'string' ? chat.meta.accepted_at.trim() : '';
+      if (currentInboxState !== 'accepted' || !currentAcceptedAt) {
+        await chatStore.acceptChat(chat.public_key, {
+          acceptedAt: currentAcceptedAt || createdAt
+        });
+        chat = (await chatDataService.getChatByPublicKey(chat.public_key)) ?? chat;
+      }
+    }
+
     const isBlockedChat = chat.meta?.inbox_state === 'blocked';
     const contactLastSeenIncomingActivityAt = normalizeTimestamp(
       isPlainRecord(contact?.meta) ? contact.meta.last_seen_incoming_activity_at : null
