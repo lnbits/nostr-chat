@@ -145,7 +145,7 @@ const filteredContacts = computed(() => {
   return buildFilteredContacts(identifierInput.value).slice(0, 3);
 });
 const showSuggestions = computed(() => {
-  return props.modelValue && (identifierInput.value.trim().length > 0 || contacts.value.length > 0);
+  return props.modelValue && identifierInput.value.trim().length > 0;
 });
 const canSubmit = computed(() => {
   return Boolean(selectedExistingContact.value || identifierInput.value.trim());
