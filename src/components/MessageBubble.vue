@@ -229,6 +229,7 @@
     v-if="hasRelayStatuses"
     v-model="isStatusDialogOpen"
     :title="statusDialogTitle"
+    plain
     max-width="460px"
   >
     <div v-if="statusSections.length === 0" class="bubble__status-empty">

@@ -7,7 +7,10 @@
   >
     <q-card
       class="app-dialog"
-      :class="{ 'app-dialog--sheet': isMobile && mobileSheet }"
+      :class="{
+        'app-dialog--sheet': isMobile && mobileSheet,
+        'app-dialog--plain': plain
+      }"
       :style="{ '--app-dialog-max-width': maxWidth }"
     >
       <div v-if="isMobile && mobileSheet" class="app-dialog__grabber" aria-hidden="true" />
@@ -61,6 +64,7 @@ interface Props {
   mobileSheet?: boolean;
   bodyClass?: string;
   actionsAlign?: 'left' | 'right' | 'center' | 'between' | 'around' | 'evenly';
+  plain?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -71,7 +75,8 @@ const props = withDefaults(defineProps<Props>(), {
   showClose: true,
   mobileSheet: true,
   bodyClass: '',
-  actionsAlign: 'right'
+  actionsAlign: 'right',
+  plain: false
 });
 
 const emit = defineEmits<{
@@ -130,6 +135,16 @@ function closeDialog(): void {
   width: min(100vw, var(--app-dialog-max-width, 440px));
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
+}
+
+.app-dialog--plain {
+  border-color: var(--tg-border);
+  background: var(--tg-panel-sidebar-bg);
+}
+
+.app-dialog--plain .app-dialog__header {
+  border-bottom-color: var(--tg-border);
+  background: var(--tg-panel-header-bg);
 }
 
 .app-dialog__grabber {
@@ -214,6 +229,16 @@ body.body--dark .app-dialog__header {
 body.body--dark .app-dialog__close {
   color: var(--tg-text-secondary);
   background: rgba(28, 42, 61, 0.7);
+}
+
+body.body--dark .app-dialog--plain {
+  border-color: var(--tg-border);
+  background: var(--tg-panel-sidebar-bg);
+}
+
+body.body--dark .app-dialog--plain .app-dialog__header {
+  border-bottom-color: var(--tg-border);
+  background: var(--tg-panel-header-bg);
 }
 
 body.body--dark .app-dialog__grabber {
