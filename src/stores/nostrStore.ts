@@ -123,6 +123,7 @@ export type AuthMethod = 'nsec' | 'nip07';
 interface SendGiftWrappedRumorOptions {
   localMessageId?: number;
   createdAt?: string;
+  publishSelfCopy?: boolean;
 }
 
 interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {
@@ -132,10 +133,12 @@ interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {
 interface SendDirectMessageReactionOptions {
   createdAt?: string;
   targetKind?: number;
+  publishSelfCopy?: boolean;
 }
 
 interface SendDirectMessageDeletionOptions {
   createdAt?: string;
+  publishSelfCopy?: boolean;
 }
 
 interface RelayPublishStatusesResult {
@@ -3848,6 +3851,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await ensureRelayConnections(relayUrls);
 
     const signer = await getOrCreateSigner();
+    const shouldPublishSelfCopy = options.publishSelfCopy !== false;
     const createdAt = toUnixTimestamp(options.createdAt);
     const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
     const recipientRumorEvent = createRumorEvent(
@@ -3859,7 +3863,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const rumorEventId = normalizeEventId(
       recipientRumorNostrEvent?.id ?? recipientRumorEvent.id
     );
-    const selfRelayUrls = await resolveLoggedInPublishRelayUrls();
+    const selfRelayUrls = shouldPublishSelfCopy ? await resolveLoggedInPublishRelayUrls() : [];
     const persistOutboundRelayStatuses = async (
       relayStatuses: MessageRelayStatus[]
     ): Promise<void> => {
@@ -9869,7 +9873,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         );
       },
       {
-        createdAt: options.createdAt
+        createdAt: options.createdAt,
+        publishSelfCopy: options.publishSelfCopy
       }
     );
     if (publishResult.rumorEvent) {
@@ -9913,7 +9918,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         );
       },
       {
-        createdAt: options.createdAt
+        createdAt: options.createdAt,
+        publishSelfCopy: options.publishSelfCopy
       }
     );
 

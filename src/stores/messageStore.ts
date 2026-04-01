@@ -577,7 +577,8 @@ export const useMessageStore = defineStore('messageStore', () => {
         {
           localMessageId: created.id,
           createdAt: created.created_at,
-          replyToEventId: replyTargetEventId
+          replyToEventId: replyTargetEventId,
+          publishSelfCopy: chat.type !== 'group'
         }
       );
     } catch (error) {
@@ -736,7 +737,8 @@ export const useMessageStore = defineStore('messageStore', () => {
       reactionRelayUrls,
       {
         createdAt,
-        targetKind: updatedMessage.nostrEvent?.event.kind
+        targetKind: updatedMessage.nostrEvent?.event.kind,
+        publishSelfCopy: chat?.type !== 'group'
       }
     );
 
@@ -832,7 +834,8 @@ export const useMessageStore = defineStore('messageStore', () => {
       7,
       reactionDeletionRelayUrls,
       {
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        publishSelfCopy: chat?.type !== 'group'
       }
     );
     await nostrEventDataService.deleteEventsByIds([reactionEventId]);
@@ -906,7 +909,8 @@ export const useMessageStore = defineStore('messageStore', () => {
       targetKind,
       deletionRelayUrls,
       {
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        publishSelfCopy: chat?.type !== 'group'
       }
     );
     const deleteEventId = normalizeEventId(deleteEvent?.id);
