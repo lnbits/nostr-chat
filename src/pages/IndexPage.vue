@@ -202,6 +202,12 @@
           </q-card-actions>
         </q-card>
       </q-dialog>
+
+      <ContactLookupDialog
+        v-model="isNewChatDialogOpen"
+        purpose="chat"
+        @resolved="handleResolvedContactForNewChat"
+      />
     </div>
   </q-page>
 </template>
@@ -218,8 +224,10 @@ import {
   useMessageStore
 } from 'src/stores/messageStore';
 import type { Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import type { ContactRecord } from 'src/types/contact';
 import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
 
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
 const ChatRequestsPage = defineAsyncComponent(() => import('src/components/ChatRequestsPage.vue'));
@@ -246,6 +254,7 @@ const {
   startSidebarResize,
   handleSidebarResizeKeydown
 } = useDesktopSidebarWidth(isMobile);
+const isNewChatDialogOpen = ref(false);
 const isCreateGroupDialogOpen = ref(false);
 const isCreatingGroup = ref(false);
 const newGroupName = ref('');
@@ -449,9 +458,35 @@ function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGrou
 
 function handleNewChat(): void {
   try {
-    void router.push({ name: 'contacts' });
+    isNewChatDialogOpen.value = true;
   } catch (error) {
     reportUiError('Failed to open new chat flow', error);
+  }
+}
+
+async function handleResolvedContactForNewChat(contact: ContactRecord): Promise<void> {
+  try {
+    const contactPubkey = contact.public_key.trim();
+    if (!contactPubkey) {
+      return;
+    }
+
+    await chatStore.init();
+    const fallbackName = contactPubkey.slice(0, 32);
+    const chatName =
+      contact.meta.display_name?.trim() ||
+      contact.given_name?.trim() ||
+      contact.name.trim() ||
+      fallbackName;
+    const chat = await chatStore.addContact(chatName, contactPubkey);
+    if (!chat) {
+      return;
+    }
+
+    chatStore.selectChat(chat.id);
+    void router.push({ name: 'chats', params: { pubkey: chat.publicKey } });
+  } catch (error) {
+    reportUiError('Failed to open chat for resolved contact', error);
   }
 }
 

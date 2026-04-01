@@ -26,6 +26,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   src: '',
   alt: 'Avatar',
+  fallback: 'NA',
   color: 'primary',
   textColor: 'white'
 });
@@ -55,12 +56,16 @@ function hashString(value: string): number {
   return hash;
 }
 
-const sourceUrl = computed(() => props.src.trim());
-const altText = computed(() => props.alt.trim() || 'Avatar');
-const fallbackText = computed(() => props.fallback.trim() || 'NA');
+function normalizeText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+const sourceUrl = computed(() => normalizeText(props.src));
+const altText = computed(() => normalizeText(props.alt) || 'Avatar');
+const fallbackText = computed(() => normalizeText(props.fallback) || 'NA');
 const resolvedSrc = useCachedImageUrl(sourceUrl);
 const fallbackSeed = computed(() => {
-  return props.alt.trim() || props.fallback.trim() || 'NA';
+  return normalizeText(props.alt) || normalizeText(props.fallback) || 'NA';
 });
 const fallbackBackgroundColor = computed(() => {
   const normalizedSeed = fallbackSeed.value.toLowerCase();

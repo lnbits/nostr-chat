@@ -183,60 +183,11 @@
       </section>
     </div>
 
-    <q-dialog v-model="isAddContactDialogOpen">
-      <q-card class="add-contact-dialog">
-        <q-card-section class="add-contact-dialog__header">
-          <div class="add-contact-dialog__title">Add Contact</div>
-        </q-card-section>
-
-        <q-card-section>
-          <q-input
-            v-model="newContactIdentifier"
-            class="tg-input"
-            dense
-            outlined
-            rounded
-            autofocus
-            label="Identfier or Public Key"
-            :error="Boolean(newContactIdentifierError)"
-            :error-message="newContactIdentifierError"
-            @update:model-value="clearPublicKeyError"
-            @keydown.enter.prevent="handleAddContact"
-          />
-
-          <q-input
-            v-model="newContactGivenName"
-            class="q-mt-sm tg-input"
-            dense
-            outlined
-            rounded
-            label="Given Name"
-            @keydown.enter.prevent="handleAddContact"
-          />
-        </q-card-section>
-
-        <q-card-actions align="right" class="add-contact-dialog__actions">
-          <q-btn
-            outline
-            color="primary"
-            no-caps
-            label="Cancel"
-            class="add-contact-dialog__action"
-            @click="closeAddContactDialog"
-          />
-          <q-btn
-            unelevated
-            color="primary"
-            no-caps
-            label="Add"
-            class="add-contact-dialog__action"
-            :disable="newContactIdentifier.trim().length === 0 || isCreatingContact"
-            :loading="isCreatingContact"
-            @click="handleAddContact"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+    <ContactLookupDialog
+      v-model="isAddContactDialogOpen"
+      purpose="contact"
+      @resolved="handleResolvedContactFromDialog"
+    />
   </q-page>
 </template>
 
@@ -248,6 +199,7 @@ import AppNavRail from 'src/components/AppNavRail.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
 import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
@@ -290,11 +242,7 @@ const contactQueryModel = computed({
 });
 const isAddContactDialogOpen = ref(false);
 const isLoadingContacts = ref(false);
-const isCreatingContact = ref(false);
 const isRefreshingContacts = ref(false);
-const newContactIdentifier = ref('');
-const newContactGivenName = ref('');
-const newContactIdentifierError = ref('');
 const selectedContactId = ref<number | null>(null);
 const selectedContactPubkey = ref('');
 const selectedContactProfile = ref(createEmptyContactProfileForm());
@@ -660,119 +608,14 @@ function openAddContactDialog(): void {
   }
 }
 
-function closeAddContactDialog(): void {
+async function handleResolvedContactFromDialog(contact: ContactRecord): Promise<void> {
   try {
-    isAddContactDialogOpen.value = false;
-    newContactIdentifier.value = '';
-    newContactGivenName.value = '';
-    newContactIdentifierError.value = '';
-  } catch (error) {
-    reportUiError('Failed to close add contact dialog', error);
-  }
-}
-
-function clearPublicKeyError(): void {
-  try {
-    if (newContactIdentifierError.value) {
-      newContactIdentifierError.value = '';
-    }
-  } catch (error) {
-    reportUiError('Failed to clear contact identifier error', error);
-  }
-}
-
-async function handleAddContact(): Promise<void> {
-  if (isCreatingContact.value) {
-    return;
-  }
-
-  isCreatingContact.value = true;
-
-  try {
-    const resolution = await nostrStore.resolveIdentifier(newContactIdentifier.value);
-    if (!resolution.isValid || !resolution.normalizedPubkey) {
-      if (resolution.identifierType === 'nip05') {
-        newContactIdentifierError.value =
-          resolution.error === 'nip05_unresolved'
-            ? 'NIP-05 could not be resolved. Please verify the identifier.'
-            : 'Enter a valid NIP-05 identifier (name@domain).';
-      } else {
-        newContactIdentifierError.value = 'Enter a valid hex pubkey, npub, or NIP-05 email.';
-      }
-
-      return;
-    }
-
-    newContactIdentifierError.value = '';
-    const normalizedPublicKey = resolution.normalizedPubkey;
-
-    const alreadyExists = await contactsService.publicKeyExists(normalizedPublicKey);
-    if (alreadyExists) {
-      newContactIdentifierError.value = 'This public key already exists.';
-      $q.notify({
-        type: 'warning',
-        message: 'Contact already exists',
-        caption: 'This public key is already in your contacts.',
-        position: 'top',
-        timeout: 2600
-      });
-      return;
-    }
-
-    const fallbackName = newContactIdentifier.value.trim().slice(0, 32) || normalizedPublicKey.slice(0, 32);
-    const resolvedName = resolution.resolvedName?.trim() || fallbackName;
-
-    const created = await contactsService.createContact({
-      public_key: normalizedPublicKey,
-      name: resolvedName,
-      given_name: newContactGivenName.value.trim() || null,
-      meta: {},
-      relays: resolution.relays.map((url) => ({
-        url,
-        read: true,
-        write: true
-      }))
-    });
-
-    if (!created) {
-      return;
-    }
-
-    let nextSelectedContact = created;
-
-    try {
-      await nostrStore.refreshContactByPublicKey(normalizedPublicKey, resolvedName);
-
-      const refreshedContact = await contactsService.getContactByPublicKey(normalizedPublicKey);
-      if (refreshedContact) {
-        nextSelectedContact = refreshedContact;
-      }
-    } catch (error) {
-      reportUiError(
-        'Failed to refresh new contact profile after create',
-        error,
-        'Contact added, but profile refresh failed.'
-      );
-    }
-
-    try {
-      await nostrStore.publishPrivateContactList(relayStore.relays);
-    } catch (error) {
-      reportUiError(
-        'Failed to publish private contact list after adding contact',
-        error,
-        'Contact added, but contact list sync failed.'
-      );
-    }
-
-    closeAddContactDialog();
     contactQuery.value = '';
     await loadContacts();
-    handleSelectContact(nextSelectedContact, true);
+    const nextSelectedContact = await contactsService.getContactByPublicKey(contact.public_key);
+    handleSelectContact(nextSelectedContact ?? contact, true);
   } catch (error) {
-    reportUiError('Failed to create contact', error, 'Failed to add contact.');
-  } finally {
-    isCreatingContact.value = false;
+    reportUiError('Failed to select resolved contact', error);
   }
 }
 
@@ -1330,36 +1173,6 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   padding: 20px;
   color: var(--tg-text-secondary);
   opacity: 1;
-}
-
-.add-contact-dialog {
-  width: min(92vw, 420px);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--tg-panel-sidebar-bg);
-  border: 1px solid var(--tg-border);
-  box-shadow: var(--tg-shadow-md);
-}
-
-.add-contact-dialog__header {
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
-  padding: 11px 14px;
-}
-
-.add-contact-dialog__title {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.add-contact-dialog__actions {
-  gap: 8px;
-}
-
-.add-contact-dialog__action {
-  border-radius: 999px;
-  min-width: 74px;
 }
 
 .contacts-sidebar__nav {
