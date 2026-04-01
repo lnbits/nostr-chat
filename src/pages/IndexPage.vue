@@ -978,6 +978,10 @@ onBeforeUnmount(() => {
   margin-left: 0;
 }
 
+body.body--dark .q-btn.sidebar-top__action {
+  color: var(--tg-text-secondary) !important;
+}
+
 .create-group-dialog {
   width: min(420px, calc(100vw - 32px));
   border-radius: 12px;

@@ -2232,7 +2232,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 }
 
 body.body--dark .mobile-nav__btn {
-  color: #a5b6c9;
+  color: var(--tg-text-secondary);
   border-color: color-mix(in srgb, var(--tg-border) 72%, transparent);
   background: color-mix(in srgb, var(--tg-sidebar) 90%, #102035 10%);
 }

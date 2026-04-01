@@ -1467,7 +1467,7 @@ body.body--dark .q-btn.thread-scroll-jump {
   background: var(--tg-panel-sidebar-bg) !important;
   border-color: var(--tg-border);
   box-shadow: none !important;
-  color: #9ed0ff;
+  color: var(--tg-text-secondary);
 }
 
 body.body--dark .q-btn.thread-scroll-jump:hover {

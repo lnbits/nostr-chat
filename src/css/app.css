@@ -124,6 +124,11 @@ body.body--dark {
   --tg-active-subtext: #dcecff;
 }
 
+body.body--dark .q-btn.q-btn--flat.q-btn--round:not(.text-negative):not(.text-positive):not(.text-warning):not(.text-info),
+body.body--dark .q-btn.q-btn--outline.q-btn--round:not(.text-negative):not(.text-positive):not(.text-warning):not(.text-info) {
+  color: var(--tg-text-secondary) !important;
+}
+
 body {
   font-family: var(--tg-title-font);
   color: var(--tg-text);

@@ -102,4 +102,9 @@ function goBack(): void {
   overflow-y: auto;
   padding: 18px;
 }
+
+body.body--dark .settings-detail-layout__icon {
+  color: var(--tg-text-secondary);
+  opacity: 1;
+}
 </style>

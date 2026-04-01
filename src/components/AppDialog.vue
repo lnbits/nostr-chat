@@ -212,7 +212,7 @@ body.body--dark .app-dialog__header {
 }
 
 body.body--dark .app-dialog__close {
-  color: #d8e5f6;
+  color: var(--tg-text-secondary);
   background: rgba(28, 42, 61, 0.7);
 }
 
