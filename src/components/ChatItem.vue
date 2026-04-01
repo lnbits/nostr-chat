@@ -16,13 +16,15 @@
     </q-item-section>
 
     <q-item-section class="chat-item__main">
-      <q-item-label class="chat-item__name" lines="1">{{ chatTitle }}</q-item-label>
+      <div class="chat-item__headline">
+        <q-item-label class="chat-item__name" lines="1">{{ chatTitle }}</q-item-label>
+        <q-item-label class="chat-item__time" caption>{{ formattedTime }}</q-item-label>
+      </div>
       <q-item-label class="chat-item__caption" caption lines="1">{{ chat.lastMessage }}</q-item-label>
     </q-item-section>
 
-    <q-item-section side top class="chat-item__meta">
-      <q-item-label caption>{{ formattedTime }}</q-item-label>
-      <div v-if="chat.unreadCount > 0 || unseenReactionCount > 0" class="chat-item__badges q-mt-xs">
+    <q-item-section v-if="hasMetaBadges" side class="chat-item__meta">
+      <div class="chat-item__badges">
         <div
           v-if="unseenReactionCount > 0"
           class="chat-item__reaction-badge"
@@ -167,6 +169,7 @@ const avatarImageUrl = computed(() => {
 
 const isMuted = computed(() => props.chat.meta.muted === true);
 const unseenReactionCount = computed(() => readMetaCount('unseen_reaction_count'));
+const hasMetaBadges = computed(() => props.chat.unreadCount > 0 || unseenReactionCount.value > 0);
 
 function formatReactionCount(value: number): string {
   return value > 99 ? '99+' : String(value);
@@ -253,6 +256,8 @@ function emitDeleteChat(): void {
 }
 
 .chat-item__name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   overflow: hidden;
@@ -271,9 +276,22 @@ function emitDeleteChat(): void {
   min-width: 0;
 }
 
+.chat-item__headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .chat-item__meta {
   flex: 0 0 auto;
+  justify-content: center;
   color: var(--tg-text-secondary);
+}
+
+.chat-item__time {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
 }
 
 .chat-item__badges {
