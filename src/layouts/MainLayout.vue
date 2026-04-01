@@ -71,8 +71,6 @@ import {
 } from 'src/router/pageLoaders';
 import { useChatStore } from 'src/stores/chatStore';
 import {
-  applyPanelOpacityPreference,
-  readPanelOpacityPreference,
   readDarkModePreference
 } from 'src/utils/themeStorage';
 import { reportUiError } from 'src/utils/uiErrorHandler';
@@ -82,7 +80,6 @@ const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const savedDarkMode = readDarkModePreference();
-const savedPanelOpacity = readPanelOpacityPreference();
 const isMobile = computed(() => $q.screen.lt.md);
 
 type NavigationSection = 'chats' | 'contacts' | 'settings';
@@ -164,8 +161,6 @@ let startupRestoreFrameId: number | null = null;
 if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
-
-applyPanelOpacityPreference(savedPanelOpacity);
 
 onMounted(() => {
   startupRestoreFrameId = window.requestAnimationFrame(() => {
