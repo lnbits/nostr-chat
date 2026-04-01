@@ -133,6 +133,19 @@
               <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
             </div>
 
+            <q-banner
+              v-if="showGroupProfileMarkerWarning"
+              dense
+              rounded
+              class="profile-warning-banner q-mt-md"
+            >
+              <template #avatar>
+                <q-icon name="warning_amber" color="warning" />
+              </template>
+              This identity is treated as a group, but its published profile is not marked as
+              `group`.
+            </q-banner>
+
             <q-list bordered separator class="profile-sections q-mt-md">
               <q-expansion-item
                 default-opened
@@ -844,6 +857,9 @@ const isOwnedGroupContact = computed(() => {
   }
 
   return (currentContact.value.meta.owner_public_key?.trim().toLowerCase() ?? '') === loggedInPubkey;
+});
+const showGroupProfileMarkerWarning = computed(() => {
+  return currentContact.value?.type === 'group' && currentContact.value.meta.group !== true;
 });
 const showTabSelection = computed(() => isGroupContact.value);
 const canAddMember = computed(() => newMemberIdentifier.value.trim().length > 0 && !isAddingMember.value);
@@ -1957,6 +1973,12 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
 .profile-content--with-header {
   padding: 12px;
+}
+
+.profile-warning-banner {
+  border: 1px solid color-mix(in srgb, var(--q-warning) 28%, var(--tg-border) 72%);
+  background: color-mix(in srgb, var(--q-warning) 10%, var(--tg-panel-thread-bg) 90%);
+  color: var(--tg-text);
 }
 
 .profile-tabs-shell {

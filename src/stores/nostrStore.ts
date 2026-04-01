@@ -542,6 +542,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let privateMessagesBackfillSignature = '';
   let privateMessagesBackfillDelayTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let privateMessagesBackfillDelayResolver: (() => void) | null = null;
+  const groupEpochHistoryRestorePromises = new Map<string, Promise<void>>();
+  const restoredGroupEpochHistoryKeys = new Set<string>();
   let privateMessagesWatchdogTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let privateMessagesWatchdogRunPromise: Promise<void> | null = null;
   let privateMessagesWatchdogLastRecoveryAt = 0;
@@ -1521,6 +1523,50 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
+  function resolveGroupChatEpochEntries(chat: Pick<ChatRow, 'meta' | 'type'>): ChatGroupEpochKey[] {
+    if (chat.type !== 'group') {
+      return [];
+    }
+
+    const entriesByEpoch = new Map<number, ChatGroupEpochKey>(
+      normalizeChatGroupEpochKeys(chat.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]).map((entry) => [
+        entry.epoch_number,
+        entry
+      ])
+    );
+    const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(
+      typeof chat.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
+        ? String(chat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
+        : ''
+    );
+    const currentEpochPrivateKeyEncrypted =
+      typeof chat.meta?.[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY] === 'string'
+        ? String(chat.meta[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]).trim()
+        : '';
+
+    if (
+      currentEpochPublicKey &&
+      currentEpochPrivateKeyEncrypted &&
+      !Array.from(entriesByEpoch.values()).some(
+        (entry) => entry.epoch_public_key === currentEpochPublicKey
+      )
+    ) {
+      const fallbackEpochNumber = Math.max(
+        0,
+        ...Array.from(entriesByEpoch.values(), (entry) => entry.epoch_number)
+      );
+      entriesByEpoch.set(fallbackEpochNumber, {
+        epoch_number: fallbackEpochNumber,
+        epoch_public_key: currentEpochPublicKey,
+        epoch_private_key_encrypted: currentEpochPrivateKeyEncrypted
+      });
+    }
+
+    return Array.from(entriesByEpoch.values()).sort(
+      (first, second) => second.epoch_number - first.epoch_number
+    );
+  }
+
   function derivePublicKeyFromPrivateKey(privateKey: string): string | null {
     const normalizedPrivateKey = inputSanitizerService.normalizeHexKey(privateKey);
     if (!normalizedPrivateKey) {
@@ -1541,7 +1587,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return readFirstTagValue(tags, 'p');
   }
 
-  async function findGroupChatByCurrentEpochPublicKey(epochPublicKey: string): Promise<ChatRow | null> {
+  async function findGroupChatEpochContextByRecipientPubkey(epochPublicKey: string): Promise<{
+    chat: ChatRow;
+    epochEntry: ChatGroupEpochKey;
+  } | null> {
     const normalizedEpochPublicKey = inputSanitizerService.normalizeHexKey(epochPublicKey);
     if (!normalizedEpochPublicKey) {
       return null;
@@ -1549,20 +1598,24 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await chatDataService.init();
     const chats = await chatDataService.listChats();
-    return (
-      chats.find((chat) => {
-        if (chat.type !== 'group') {
-          return false;
-        }
+    for (const chat of chats) {
+      if (chat.type !== 'group') {
+        continue;
+      }
 
-        const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(
-          typeof chat.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
-            ? String(chat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
-            : ''
-        );
-        return currentEpochPublicKey === normalizedEpochPublicKey;
-      }) ?? null
-    );
+      const epochEntry =
+        resolveGroupChatEpochEntries(chat).find(
+          (entry) => entry.epoch_public_key === normalizedEpochPublicKey
+        ) ?? null;
+      if (epochEntry) {
+        return {
+          chat,
+          epochEntry
+        };
+      }
+    }
+
+    return null;
   }
 
   async function listPrivateMessageRecipientPubkeys(): Promise<string[]> {
@@ -1588,13 +1641,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
         continue;
       }
 
-      const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(
-        typeof chat.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
-          ? String(chat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
-          : ''
-      );
-      if (currentEpochPublicKey) {
-        recipients.add(currentEpochPublicKey);
+      for (const entry of resolveGroupChatEpochEntries(chat)) {
+        if (entry.epoch_public_key) {
+          recipients.add(entry.epoch_public_key);
+        }
       }
     }
 
@@ -1859,6 +1909,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const existingGroupEpochKeys = normalizeChatGroupEpochKeys(
       existingChat?.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]
     );
+    const previousEpochSignature = JSON.stringify(existingGroupEpochKeys);
     const existingEpochEntry =
       existingGroupEpochKeys.find(
         (entry) =>
@@ -1881,6 +1932,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const nextGroupEpochKeys = Array.from(entriesByEpoch.values()).sort(
       (first, second) => second.epoch_number - first.epoch_number
     );
+    const nextEpochSignature = JSON.stringify(nextGroupEpochKeys);
+    const didChangeEpochSet = previousEpochSignature !== nextEpochSignature;
     const currentEpochEntry = nextGroupEpochKeys[0] ?? null;
     const previousCurrentEpochPublicKey = inputSanitizerService.normalizeHexKey(
       typeof existingChat?.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
@@ -1930,6 +1983,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
           error
         );
       }
+      void restoreGroupEpochHistory(normalizedGroupPublicKey, normalizedEpochPublicKey);
       return;
     }
 
@@ -1946,13 +2000,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...(shouldUpdateMeta ? { meta: nextMeta } : {})
     });
     await useChatStore().reload();
-    if (previousCurrentEpochPublicKey === nextCurrentEpochPublicKey) {
-      return;
+    if (didChangeEpochSet || previousCurrentEpochPublicKey !== nextCurrentEpochPublicKey) {
+      try {
+        await subscribePrivateMessagesForLoggedInUser(true);
+      } catch (error) {
+        console.warn('Failed to refresh private message subscription after epoch ticket update', error);
+      }
     }
-    try {
-      await subscribePrivateMessagesForLoggedInUser(true);
-    } catch (error) {
-      console.warn('Failed to refresh private message subscription after epoch ticket update', error);
+
+    if (didChangeEpochSet) {
+      void restoreGroupEpochHistory(normalizedGroupPublicKey, normalizedEpochPublicKey);
     }
   }
 
@@ -2281,38 +2338,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await Promise.all([contactsService.init(), chatDataService.init()]);
     const initialName = fallbackName.trim() || resolveGroupDisplayName(normalizedTargetPubkey);
-    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
-
-    if (existingContact) {
-      const nextMeta: ContactMetadata = {
-        ...(existingContact.meta ?? {}),
-        group: true
-      };
-      const shouldUpdateType = existingContact.type !== 'group';
-      const shouldUpdateName = Boolean(initialName) && existingContact.name !== initialName;
-      const shouldUpdateMeta =
-        JSON.stringify(inputSanitizerService.normalizeContactMetadata(existingContact.meta ?? {})) !==
-        JSON.stringify(inputSanitizerService.normalizeContactMetadata(nextMeta));
-
-      if (shouldUpdateType || shouldUpdateName || shouldUpdateMeta) {
-        await contactsService.updateContact(existingContact.id, {
-          type: 'group',
-          ...(shouldUpdateName ? { name: initialName } : {}),
-          ...(shouldUpdateMeta ? { meta: nextMeta } : {})
-        });
-      }
-    } else {
-      await contactsService.createContact({
-        public_key: normalizedTargetPubkey,
-        type: 'group',
-        name: initialName,
-        given_name: null,
-        meta: {
-          group: true
-        },
-        relays: []
-      });
-    }
+    await ensureContactStoredAsGroup(normalizedTargetPubkey, {
+      fallbackName: initialName
+    });
 
     const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
     if (existingChat) {
@@ -2347,7 +2375,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     try {
-      await refreshContactByPublicKey(normalizedTargetPubkey, initialName);
+      await refreshGroupContactByPublicKey(normalizedTargetPubkey, initialName);
     } catch (error) {
       console.warn('Failed to refresh accepted group invite profile', normalizedTargetPubkey, error);
       await useChatStore().syncContactProfile(normalizedTargetPubkey);
@@ -3219,21 +3247,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       };
     }
 
-    const groupChat = await findGroupChatByCurrentEpochPublicKey(wrappedRecipientPubkey);
-    if (!groupChat) {
+    const groupEpochContext = await findGroupChatEpochContextByRecipientPubkey(wrappedRecipientPubkey);
+    if (!groupEpochContext) {
       return null;
     }
 
-    const encryptedCurrentEpochPrivateKey =
-      typeof groupChat.meta?.[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY] === 'string'
-        ? String(groupChat.meta[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]).trim()
-        : '';
-    if (!encryptedCurrentEpochPrivateKey) {
+    if (!groupEpochContext.epochEntry.epoch_private_key_encrypted) {
       return null;
     }
 
     const decryptedCurrentEpochPrivateKey = await decryptPrivateStringContent(
-      encryptedCurrentEpochPrivateKey
+      groupEpochContext.epochEntry.epoch_private_key_encrypted
     );
     if (!decryptedCurrentEpochPrivateKey) {
       return null;
@@ -3247,7 +3271,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return {
       recipientPubkey: wrappedRecipientPubkey,
       unwrapSigner: new NDKPrivateKeySigner(decryptedCurrentEpochPrivateKey, ndk),
-      groupChatPublicKey: groupChat.public_key
+      groupChatPublicKey: groupEpochContext.chat.public_key
     };
   }
 
@@ -6659,6 +6683,86 @@ export const useNostrStore = defineStore('nostrStore', () => {
     bumpContactListVersion();
   }
 
+  async function ensureContactStoredAsGroup(
+    groupPublicKey: string,
+    options: {
+      fallbackName?: string;
+      relays?: ContactRelay[];
+    } = {}
+  ): Promise<ContactRecord | null> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPublicKey) {
+      return null;
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    const fallbackName =
+      options.fallbackName?.trim() ||
+      existingContact?.name?.trim() ||
+      resolveGroupDisplayName(normalizedGroupPublicKey);
+
+    if (!existingContact) {
+      const createdContact = await contactsService.createContact({
+        public_key: normalizedGroupPublicKey,
+        type: 'group',
+        name: fallbackName,
+        given_name: null,
+        ...(options.relays ? { relays: options.relays } : {})
+      });
+      if (createdContact) {
+        bumpContactListVersion();
+      }
+      return createdContact;
+    }
+
+    const shouldUpdateType = existingContact.type !== 'group';
+    const shouldUpdateName = existingContact.name !== fallbackName;
+    const shouldUpdateRelays =
+      options.relays !== undefined &&
+      !contactRelayListsEqual(existingContact.relays, options.relays);
+
+    if (!shouldUpdateType && !shouldUpdateName && !shouldUpdateRelays) {
+      return existingContact;
+    }
+
+    const updatedContact = await contactsService.updateContact(existingContact.id, {
+      ...(shouldUpdateType ? { type: 'group' as const } : {}),
+      ...(shouldUpdateName ? { name: fallbackName } : {}),
+      ...(shouldUpdateRelays ? { relays: options.relays } : {})
+    });
+    if (updatedContact) {
+      bumpContactListVersion();
+    }
+
+    return updatedContact ?? existingContact;
+  }
+
+  async function refreshGroupContactByPublicKey(
+    groupPublicKey: string,
+    fallbackName = ''
+  ): Promise<ContactRecord | null> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPublicKey) {
+      return null;
+    }
+
+    try {
+      await refreshContactByPublicKey(normalizedGroupPublicKey, fallbackName);
+    } catch (error) {
+      console.warn('Failed to refresh group contact profile', normalizedGroupPublicKey, error);
+    }
+
+    const contact = await ensureContactStoredAsGroup(normalizedGroupPublicKey, {
+      fallbackName
+    });
+    if (contact) {
+      await useChatStore().syncContactProfile(normalizedGroupPublicKey);
+    }
+
+    return contact;
+  }
+
   async function fetchContactPreviewByPublicKey(
     targetPubkeyHex: string,
     fallbackName = ''
@@ -8130,6 +8234,149 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  async function runGroupEpochHistoryRestoreWindow(options: {
+    loggedInPubkeyHex: string;
+    recipientPubkey: string;
+    relayUrls: string[];
+    since: number;
+    until: number;
+  }): Promise<void> {
+    if (options.since >= options.until || options.relayUrls.length === 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let didFinish = false;
+      let subscription: ReturnType<typeof ndk.subscribe> | null = null;
+
+      const finish = (error?: unknown) => {
+        if (didFinish) {
+          return;
+        }
+
+        didFinish = true;
+        if (subscription) {
+          subscription.stop();
+          subscription = null;
+        }
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      };
+
+      try {
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
+        subscription = ndk.subscribe(
+          {
+            kinds: [NDKKind.GiftWrap],
+            '#p': [options.recipientPubkey],
+            since: options.since,
+            until: options.until
+          },
+          {
+            relaySet,
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+            closeOnEose: true,
+            onEvent: (event) => {
+              const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+              updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
+              updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+              queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
+                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+              });
+            },
+            onEose: () => {
+              schedulePostPrivateMessagesEoseChecks();
+              flushPrivateMessagesUiRefreshNow();
+              finish();
+            },
+            onClose: () => {
+              finish();
+            }
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    await privateMessagesIngestQueue;
+  }
+
+  async function restoreGroupEpochHistory(
+    groupPublicKey: string,
+    epochPublicKey: string,
+    options: {
+      force?: boolean;
+    } = {}
+  ): Promise<void> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedEpochPublicKey = inputSanitizerService.normalizeHexKey(epochPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!normalizedGroupPublicKey || !normalizedEpochPublicKey || !loggedInPubkeyHex) {
+      return;
+    }
+
+    const restoreKey = `${normalizedGroupPublicKey}:${normalizedEpochPublicKey}`;
+    if (!options.force && restoredGroupEpochHistoryKeys.has(restoreKey)) {
+      return;
+    }
+
+    const existingRestore = groupEpochHistoryRestorePromises.get(restoreKey);
+    if (existingRestore) {
+      return existingRestore;
+    }
+
+    const restorePromise = (async () => {
+      await chatDataService.init();
+      const groupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+      if (!groupChat || groupChat.type !== 'group') {
+        return;
+      }
+
+      const hasEpoch = resolveGroupChatEpochEntries(groupChat).some(
+        (entry) => entry.epoch_public_key === normalizedEpochPublicKey
+      );
+      if (!hasEpoch) {
+        return;
+      }
+
+      const relayUrls = await resolvePrivateMessageReadRelayUrls();
+      if (relayUrls.length === 0) {
+        return;
+      }
+
+      await ensureRelayConnections(relayUrls);
+      const now = Math.floor(Date.now() / 1000);
+      await runGroupEpochHistoryRestoreWindow({
+        loggedInPubkeyHex,
+        recipientPubkey: normalizedEpochPublicKey,
+        relayUrls,
+        since: getPrivateMessagesStartupFloorSince(now),
+        until: now
+      });
+      restoredGroupEpochHistoryKeys.add(restoreKey);
+    })()
+      .catch((error) => {
+        console.warn(
+          'Failed to restore group epoch history',
+          normalizedGroupPublicKey,
+          normalizedEpochPublicKey,
+          error
+        );
+      })
+      .finally(() => {
+        groupEpochHistoryRestorePromises.delete(restoreKey);
+      });
+
+    groupEpochHistoryRestorePromises.set(restoreKey, restorePromise);
+    return restorePromise;
+  }
+
   function startPrivateMessagesStartupBackfill(
     loggedInPubkeyHex: string,
     recipientPubkeys: string[],
@@ -8424,9 +8671,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     let resolvedGroupChatPublicKey = recipientContext.groupChatPublicKey;
     if (!resolvedGroupChatPublicKey) {
       for (const recipientPubkey of recipients) {
-        const matchingGroupChat = await findGroupChatByCurrentEpochPublicKey(recipientPubkey);
-        if (matchingGroupChat) {
-          resolvedGroupChatPublicKey = matchingGroupChat.public_key;
+        const matchingGroupChatContext =
+          await findGroupChatEpochContextByRecipientPubkey(recipientPubkey);
+        if (matchingGroupChatContext) {
+          resolvedGroupChatPublicKey = matchingGroupChatContext.chat.public_key;
           break;
         }
       }
@@ -8535,27 +8783,46 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
 
       await contactsService.init();
+      await chatDataService.init();
       const senderContact = await contactsService.getContactByPublicKey(senderPubkeyHex);
-      let fallbackName =
+      const existingGroupChat = await chatDataService.getChatByPublicKey(senderPubkeyHex);
+      const existingGroupInboxState =
+        existingGroupChat?.meta && typeof existingGroupChat.meta.inbox_state === 'string'
+          ? existingGroupChat.meta.inbox_state.trim()
+          : '';
+      const wasAcceptedGroup =
+        existingGroupInboxState === 'accepted' ||
+        (typeof existingGroupChat?.meta?.accepted_at === 'string' &&
+          existingGroupChat.meta.accepted_at.trim().length > 0) ||
+        (typeof existingGroupChat?.meta?.last_outgoing_message_at === 'string' &&
+          existingGroupChat.meta.last_outgoing_message_at.trim().length > 0);
+      const fallbackGroupName =
         senderContact?.meta?.display_name?.trim() ||
         senderContact?.meta?.name?.trim() ||
         senderContact?.name?.trim() ||
+        existingGroupChat?.meta?.contact_name?.trim() ||
+        existingGroupChat?.name?.trim() ||
         resolveGroupDisplayName(senderPubkeyHex);
+      const refreshedGroupContact = await refreshGroupContactByPublicKey(
+        senderPubkeyHex,
+        fallbackGroupName
+      );
+      const fallbackName =
+        refreshedGroupContact?.meta?.display_name?.trim() ||
+        refreshedGroupContact?.meta?.name?.trim() ||
+        refreshedGroupContact?.name?.trim() ||
+        fallbackGroupName;
 
-      if (!senderContact) {
-        const groupPreview = await fetchContactPreviewByPublicKey(
-          senderPubkeyHex,
-          resolveGroupDisplayName(senderPubkeyHex)
-        );
-        fallbackName =
-          groupPreview?.meta?.display_name?.trim() ||
-          groupPreview?.meta?.name?.trim() ||
-          groupPreview?.name?.trim() ||
-          fallbackName;
+      if (!wasAcceptedGroup) {
         await upsertIncomingGroupInviteRequestChat(
           senderPubkeyHex,
           toIsoTimestampFromUnix(rumorEvent.created_at),
-          groupPreview
+          refreshedGroupContact
+            ? {
+                name: refreshedGroupContact.name,
+                meta: refreshedGroupContact.meta
+              }
+            : null
         );
       }
 
@@ -8565,7 +8832,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         verificationResult.epochPrivateKey ?? '',
         {
           fallbackName,
-          accepted: Boolean(senderContact)
+          accepted: wasAcceptedGroup
         }
       );
       return;
