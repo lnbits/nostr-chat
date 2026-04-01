@@ -443,6 +443,8 @@ const PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
 const PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS = 3000;
 const PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS = 1000;
 const PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS = 10 * 1000;
+const PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS = 10 * 1000;
+const PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS = 15 * 1000;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 2 * 60 * 60;
 const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
@@ -540,6 +542,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let privateMessagesBackfillSignature = '';
   let privateMessagesBackfillDelayTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let privateMessagesBackfillDelayResolver: (() => void) | null = null;
+  let privateMessagesWatchdogTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let privateMessagesWatchdogRunPromise: Promise<void> | null = null;
+  let privateMessagesWatchdogLastRecoveryAt = 0;
+  let privateMessagesSubscriptionShouldBeActive = false;
+  let hasPrivateMessagesWatchdogOnlineListener = false;
+  const privateMessagesWatchdogRelayConnectionStates = new Map<string, boolean>();
   let privateMessagesIngestQueue = Promise.resolve();
   let privateMessagesRestoreThrottleMs = 0;
   let privateMessagesUiRefreshQueue = Promise.resolve();
@@ -557,6 +565,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let startupDisplayShownAt = 0;
 
   relayStore.init();
+  ensurePrivateMessagesWatchdog();
 
   watch(
     () =>
@@ -5350,6 +5359,181 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function ensurePrivateMessagesWatchdog(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!hasPrivateMessagesWatchdogOnlineListener) {
+      window.addEventListener('online', handlePrivateMessagesWatchdogBrowserOnline);
+      hasPrivateMessagesWatchdogOnlineListener = true;
+    }
+
+    queuePrivateMessagesWatchdog(PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS);
+  }
+
+  function handlePrivateMessagesWatchdogBrowserOnline(): void {
+    if (!privateMessagesSubscriptionShouldBeActive) {
+      return;
+    }
+
+    logSubscription('private-messages', 'watchdog-browser-online');
+    queuePrivateMessagesWatchdog(0);
+  }
+
+  function queuePrivateMessagesWatchdog(delayMs = PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (privateMessagesWatchdogTimeoutId !== null) {
+      globalThis.clearTimeout(privateMessagesWatchdogTimeoutId);
+    }
+
+    privateMessagesWatchdogTimeoutId = globalThis.setTimeout(() => {
+      privateMessagesWatchdogTimeoutId = null;
+      void runPrivateMessagesWatchdog();
+    }, Math.max(0, Math.floor(delayMs)));
+  }
+
+  function syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls: string[]): void {
+    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
+    const nextRelayUrlSet = new Set(normalizedRelayUrls);
+
+    for (const relayUrl of privateMessagesWatchdogRelayConnectionStates.keys()) {
+      if (!nextRelayUrlSet.has(relayUrl)) {
+        privateMessagesWatchdogRelayConnectionStates.delete(relayUrl);
+      }
+    }
+
+    for (const relayUrl of normalizedRelayUrls) {
+      const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
+      privateMessagesWatchdogRelayConnectionStates.set(relayUrl, Boolean(relay?.connected));
+    }
+  }
+
+  function isBrowserOfflineForPrivateMessagesWatchdog(): boolean {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  }
+
+  async function recoverPrivateMessagesSubscriptionFromWatchdog(
+    reason: string,
+    details: Record<string, unknown> = {}
+  ): Promise<void> {
+    const now = Date.now();
+    if (now - privateMessagesWatchdogLastRecoveryAt < PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS) {
+      logSubscription('private-messages', 'watchdog-recover-skipped', {
+        reason,
+        cooldownMs: PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS,
+        ...details
+      });
+      return;
+    }
+
+    privateMessagesWatchdogLastRecoveryAt = now;
+    logSubscription('private-messages', 'watchdog-recover', {
+      reason,
+      ...details
+    });
+    await subscribePrivateMessagesForLoggedInUser(true, {
+      restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+    });
+  }
+
+  async function runPrivateMessagesWatchdog(): Promise<void> {
+    if (privateMessagesWatchdogRunPromise) {
+      return privateMessagesWatchdogRunPromise;
+    }
+
+    privateMessagesWatchdogRunPromise = (async () => {
+      try {
+        if (!privateMessagesSubscriptionShouldBeActive) {
+          privateMessagesWatchdogRelayConnectionStates.clear();
+          return;
+        }
+
+        if (isRestoringStartupState.value) {
+          return;
+        }
+
+        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+        const authMethod = getStoredAuthMethod();
+        if (!loggedInPubkeyHex || !authMethod) {
+          privateMessagesSubscriptionShouldBeActive = false;
+          privateMessagesWatchdogRelayConnectionStates.clear();
+          return;
+        }
+
+        const browserOffline = isBrowserOfflineForPrivateMessagesWatchdog();
+        const relayUrls = normalizeRelayStatusUrls(privateMessagesSubscriptionRelayUrls.value);
+        if (!privateMessagesSubscription || !privateMessagesSubscriptionSignature || relayUrls.length === 0) {
+          if (browserOffline) {
+            return;
+          }
+
+          await recoverPrivateMessagesSubscriptionFromWatchdog('subscription-missing', {
+            hasSubscription: Boolean(privateMessagesSubscription),
+            hasSignature: Boolean(privateMessagesSubscriptionSignature),
+            relayCount: relayUrls.length
+          });
+          return;
+        }
+
+        const relayStatesBefore = new Map<string, boolean>();
+        for (const relayUrl of relayUrls) {
+          const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
+          relayStatesBefore.set(relayUrl, Boolean(relay?.connected));
+        }
+
+        const disconnectedRelayUrls = relayUrls.filter((relayUrl) => !relayStatesBefore.get(relayUrl));
+        if (disconnectedRelayUrls.length > 0 && !browserOffline) {
+          const shouldLogReconnectAttempt = disconnectedRelayUrls.some(
+            (relayUrl) => privateMessagesWatchdogRelayConnectionStates.get(relayUrl) !== false
+          );
+          if (shouldLogReconnectAttempt) {
+            logSubscription('private-messages', 'watchdog-reconnect-relays', {
+              disconnectedRelayUrls,
+              ...buildSubscriptionRelayDetails(relayUrls)
+            });
+          }
+          await ensureRelayConnections(relayUrls);
+        }
+
+        const relayStatesAfter = new Map<string, boolean>();
+        for (const relayUrl of relayUrls) {
+          const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
+          relayStatesAfter.set(relayUrl, Boolean(relay?.connected));
+        }
+
+        const reconnectedRelayUrls = relayUrls.filter((relayUrl) => {
+          const before = relayStatesBefore.get(relayUrl) ?? false;
+          const after = relayStatesAfter.get(relayUrl) ?? false;
+          const previous = privateMessagesWatchdogRelayConnectionStates.get(relayUrl);
+          return after && ((!before && disconnectedRelayUrls.includes(relayUrl)) || previous === false);
+        });
+
+        syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
+
+        if (reconnectedRelayUrls.length > 0) {
+          await recoverPrivateMessagesSubscriptionFromWatchdog('relay-reconnected', {
+            reconnectedRelayUrls,
+            ...buildSubscriptionRelayDetails(relayUrls)
+          });
+        }
+      } catch (error) {
+        console.warn('Private messages watchdog failed', error);
+        logSubscription('private-messages', 'watchdog-error', {
+          error
+        });
+      } finally {
+        privateMessagesWatchdogRunPromise = null;
+        queuePrivateMessagesWatchdog(PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS);
+      }
+    })();
+
+    return privateMessagesWatchdogRunPromise;
+  }
+
   function queueTrackedContactSubscriptionsRefresh(
     seedRelayUrls: string[] = [],
     force = false
@@ -6774,6 +6958,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ndk.pool.on('relay:connect', (relay) => {
       bumpRelayStatusVersion();
       logRelayLifecycle('connect', relay);
+      if (privateMessagesSubscriptionRelayUrls.value.includes(relay.url)) {
+        queuePrivateMessagesWatchdog(0);
+      }
     });
     ndk.pool.on('relay:ready', (relay) => {
       bumpRelayStatusVersion();
@@ -6782,6 +6969,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ndk.pool.on('relay:disconnect', (relay) => {
       bumpRelayStatusVersion();
       logRelayLifecycle('disconnect', relay);
+      if (privateMessagesSubscriptionRelayUrls.value.includes(relay.url)) {
+        privateMessagesWatchdogRelayConnectionStates.set(relay.url, false);
+        queuePrivateMessagesWatchdog(0);
+      }
     });
     ndk.pool.on('relay:auth', (relay, challenge) => {
       bumpRelayStatusVersion();
@@ -8111,6 +8302,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       privateMessagesUiRefreshTimeoutId = null;
     }
 
+    privateMessagesWatchdogRelayConnectionStates.clear();
     privateMessagesSubscriptionSignature = '';
     privateMessagesRestoreThrottleMs = 0;
     shouldReloadChatsOnPrivateMessagesUiRefresh = false;
@@ -8673,6 +8865,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const authMethod = getStoredAuthMethod();
 
     if (!loggedInPubkeyHex || !authMethod) {
+      privateMessagesSubscriptionShouldBeActive = false;
       logSubscription('private-messages', 'skip', {
         reason: 'missing-login',
         pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
@@ -8686,10 +8879,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     try {
+      privateMessagesSubscriptionShouldBeActive = true;
       await contactsService.init();
       await chatDataService.init();
       const relayUrls = await resolvePrivateMessageReadRelayUrls();
       if (relayUrls.length === 0) {
+        privateMessagesSubscriptionShouldBeActive = false;
         logSubscription('private-messages', 'skip', {
           reason: 'no-relays',
           pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
@@ -8703,6 +8898,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
       const recipientPubkeys = await listPrivateMessageRecipientPubkeys();
       if (recipientPubkeys.length === 0) {
+        privateMessagesSubscriptionShouldBeActive = false;
         logSubscription('private-messages', 'skip', {
           reason: 'no-recipients',
           pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
@@ -8722,6 +8918,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
             ? getPrivateMessagesStartupLiveSince()
             : getFilterSince();
       if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
+        syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
         logSubscription('private-messages', 'skip', {
           reason: 'already-active',
           signature,
@@ -8863,6 +9060,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         }
       );
       privateMessagesSubscriptionSignature = signature;
+      syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
 
       logSubscription('private-messages', 'active', {
         signature,
@@ -9106,6 +9304,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     cachedSigner = null;
     cachedSignerSessionKey = null;
     ndk.signer = undefined;
+    privateMessagesWatchdogLastRecoveryAt = 0;
+    privateMessagesSubscriptionShouldBeActive = false;
+    privateMessagesWatchdogRelayConnectionStates.clear();
     resetStartupStepTracking();
     pendingIncomingReactions.clear();
     pendingIncomingDeletions.clear();
