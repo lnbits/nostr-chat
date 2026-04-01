@@ -26,6 +26,11 @@ const routes: RouteRecordRaw[] = [
         redirect: { name: 'chats' }
       },
       {
+        path: 'chats/requests',
+        name: 'chat-requests',
+        component: loadChatsPage
+      },
+      {
         path: 'chats/:pubkey?',
         name: 'chats',
         component: loadChatsPage

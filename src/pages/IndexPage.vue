@@ -130,28 +130,31 @@
         class="thread-panel"
         :class="{ 'thread-panel--mobile': isMobile }"
       >
-      <ChatThread
-        :chat="activeChat"
-        :messages="currentMessages"
-        :is-initializing="isThreadInitializing"
-        :show-back-button="isMobile"
-        @send="handleSend"
-        @back="handleBackToChatList"
-        @open-profile="handleOpenProfile"
-        @react="handleReactToMessage"
-        @delete-message="handleDeleteMessage"
-        @remove-reaction="handleRemoveReaction"
-      />
-      </section>
+        <ChatRequestsPage
+          v-if="isRequestsRoute"
+          :requests="requestChats"
+          :show-back-button="isMobile"
+          @back="handleBackToChatList"
+          @open="handleOpenRequestChat"
+          @accept="handleAcceptRequest"
+          @delete-chat="handleDeleteChat"
+          @block="handleBlockChat"
+        />
 
-      <ChatRequestsDialog
-        v-model="isRequestsDialogOpen"
-        :requests="requestChats"
-        @open="handleOpenRequestChat"
-        @accept="handleAcceptRequest"
-        @delete-chat="handleDeleteChat"
-        @block="handleBlockChat"
-      />
+        <ChatThread
+          v-else
+          :chat="activeChat"
+          :messages="currentMessages"
+          :is-initializing="isThreadInitializing"
+          :show-back-button="isMobile"
+          @send="handleSend"
+          @back="handleBackToChatList"
+          @open-profile="handleOpenProfile"
+          @react="handleReactToMessage"
+          @delete-message="handleDeleteMessage"
+          @remove-reaction="handleRemoveReaction"
+        />
+      </section>
 
       <q-dialog v-model="isCreateGroupDialogOpen" :persistent="isCreatingGroup">
         <q-card class="create-group-dialog">
@@ -219,7 +222,7 @@ import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
-const ChatRequestsDialog = defineAsyncComponent(() => import('src/components/ChatRequestsDialog.vue'));
+const ChatRequestsPage = defineAsyncComponent(() => import('src/components/ChatRequestsPage.vue'));
 const ChatThread = defineAsyncComponent(() => import('src/components/ChatThread.vue'));
 
 type NostrStoreModule = typeof import('src/stores/nostrStore');
@@ -243,7 +246,6 @@ const {
   startSidebarResize,
   handleSidebarResizeKeydown
 } = useDesktopSidebarWidth(isMobile);
-const isRequestsDialogOpen = ref(false);
 const isCreateGroupDialogOpen = ref(false);
 const isCreatingGroup = ref(false);
 const newGroupName = ref('');
@@ -286,6 +288,7 @@ const chatRefreshRangeOptions: ChatRefreshRangeOption[] = [
 ];
 
 const selectedChatRefreshRangeId = ref<ChatRefreshRangeId>('last-24-hours');
+const isRequestsRoute = computed(() => route.name === 'chat-requests');
 const activeChatId = computed(() => {
   const rawChatId = route.params.pubkey;
   if (Array.isArray(rawChatId)) {
@@ -299,15 +302,21 @@ const activeChat = computed(() => {
 });
 const sidebarChats = computed(() => chatStore.visibleChats);
 const requestChats = computed(() => chatStore.requestChats);
-const showRequestsRow = computed(() => chatStore.requestCount > 0);
+const showRequestsRow = computed(() => chatStore.requestCount > 0 || isRequestsRoute.value);
 const requestCount = computed(() => chatStore.requestCount);
 const requestsRowActive = computed(() => {
-  return isRequestsDialogOpen.value || chatStore.isRequestChat(activeChatId.value);
+  return isRequestsRoute.value || chatStore.isRequestChat(activeChatId.value);
 });
 const selectedChatId = computed(() => {
-  return chatStore.isRequestChat(activeChatId.value) ? null : activeChatId.value || null;
+  if (isRequestsRoute.value || chatStore.isRequestChat(activeChatId.value)) {
+    return null;
+  }
+
+  return activeChatId.value || null;
 });
-const isMobileThreadOpen = computed(() => isMobile.value && Boolean(activeChatId.value));
+const isMobileThreadOpen = computed(() => {
+  return isMobile.value && (isRequestsRoute.value || Boolean(activeChatId.value));
+});
 const chatIdSignature = computed(() => chatStore.chats.map((chat) => chat.id).join('|'));
 const isThreadInitializing = computed(() => {
   return !chatStore.isLoaded;
@@ -389,7 +398,11 @@ function handleSelectChat(chatId: string): void {
 }
 
 function handleOpenRequests(): void {
-  isRequestsDialogOpen.value = true;
+  try {
+    void router.push({ name: 'chat-requests' });
+  } catch (error) {
+    reportUiError('Failed to open requests page', error);
+  }
 }
 
 function formatRelayList(relayUrls: string[]): string {
@@ -507,8 +520,23 @@ function getFallbackSidebarChatId(): string {
   return chatStore.inboxChats[0]?.id ?? '';
 }
 
+function getFallbackChatsRoute(): { name: 'chats'; params?: { pubkey: string } } | { name: 'chat-requests' } {
+  const fallbackChatId = getFallbackSidebarChatId();
+  if (fallbackChatId) {
+    return {
+      name: 'chats',
+      params: { pubkey: fallbackChatId }
+    };
+  }
+
+  if (chatStore.requestChats.length > 0) {
+    return { name: 'chat-requests' };
+  }
+
+  return { name: 'chats' };
+}
+
 function handleOpenRequestChat(chatId: string): void {
-  isRequestsDialogOpen.value = false;
   handleSelectChat(chatId);
 }
 
@@ -726,7 +754,6 @@ async function handleAcceptRequest(chatId: string): Promise<void> {
   try {
     const chat = findChatById(chatId);
     await chatStore.acceptChat(chatId);
-    isRequestsDialogOpen.value = false;
     if (!chat) {
       return;
     }
@@ -774,9 +801,8 @@ async function handleDeleteChat(chatId: string): Promise<void> {
       messageStore.removeChatMessages(chatId);
 
       if (isActiveChat) {
-        const nextChatId = !isMobile.value ? getFallbackSidebarChatId() : '';
-        if (nextChatId) {
-          void router.replace({ name: 'chats', params: { pubkey: nextChatId } });
+        if (!isMobile.value) {
+          void router.replace(getFallbackChatsRoute());
         } else {
           void router.replace({ name: 'chats' });
         }
@@ -793,9 +819,8 @@ async function handleBlockChat(chatId: string): Promise<void> {
     await chatStore.blockChat(chatId);
 
     if (isActiveChat) {
-      const nextChatId = !isMobile.value ? getFallbackSidebarChatId() : '';
-      if (nextChatId) {
-        void router.replace({ name: 'chats', params: { pubkey: nextChatId } });
+      if (!isMobile.value) {
+        void router.replace(getFallbackChatsRoute());
       } else {
         void router.replace({ name: 'chats' });
       }
@@ -817,16 +842,17 @@ async function syncChatRoute(): Promise<void> {
   try {
     await chatStore.init();
 
+    if (isRequestsRoute.value) {
+      return;
+    }
+
     const chatId = activeChatId.value;
     if (!chatId) {
       if (isMobile.value) {
         return;
       }
 
-      const fallbackChatId = getFallbackSidebarChatId();
-      if (fallbackChatId) {
-        await router.replace({ name: 'chats', params: { pubkey: fallbackChatId } });
-      }
+      await router.replace(getFallbackChatsRoute());
       return;
     }
 
@@ -836,9 +862,8 @@ async function syncChatRoute(): Promise<void> {
       !chatStore.inboxChats.some((chat) => chat.id === chatId) &&
       !chatStore.requestChats.some((chat) => chat.id === chatId);
     if (!matchingChat || isBlockedChat) {
-      const fallbackChatId = !isMobile.value ? getFallbackSidebarChatId() : '';
-      if (fallbackChatId) {
-        await router.replace({ name: 'chats', params: { pubkey: fallbackChatId } });
+      if (!isMobile.value) {
+        await router.replace(getFallbackChatsRoute());
       } else {
         await router.replace({ name: 'chats' });
       }
@@ -856,7 +881,7 @@ async function syncChatRoute(): Promise<void> {
   }
 }
 
-watch([activeChatId, isMobile, chatIdSignature], () => {
+watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   void syncChatRoute();
 }, { immediate: true });
 
