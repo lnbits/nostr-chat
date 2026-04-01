@@ -19,6 +19,9 @@ export default configure(() => {
     },
 
     framework: {
+      config: {
+        dark: true
+      },
       plugins: ['Dark', 'Notify', 'Dialog']
     },
 

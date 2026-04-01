@@ -1,7 +1,7 @@
 <template>
-  <div class="register-page">
+  <div class="register-page auth-entry-page">
     <div class="register-shell">
-      <q-card flat bordered class="register-card">
+      <q-card flat bordered class="register-card register-card--light">
         <q-card-section class="register-card__header">
           <div class="register-card__title">Create Account</div>
           <div class="register-card__subtitle" v-if="isCreatingAccount">
@@ -242,10 +242,23 @@ async function handleLoginNow(): Promise<void> {
   backdrop-filter: blur(var(--tg-glass-blur));
 }
 
+.register-card--light {
+  border-color: rgba(208, 220, 235, 0.82);
+  background: rgba(239, 246, 251, 0.9);
+  color: #182236;
+  box-shadow: 0 18px 40px rgba(17, 40, 76, 0.16);
+  backdrop-filter: blur(18px);
+}
+
 .register-card__header {
   padding: 22px 22px 10px;
   background: var(--tg-panel-header-bg);
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+}
+
+.register-card--light .register-card__header {
+  background: rgba(255, 255, 255, 0.82);
+  border-bottom-color: rgba(208, 220, 235, 0.82);
 }
 
 .register-card__title {

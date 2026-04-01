@@ -1,7 +1,7 @@
 <template>
-  <div class="auth-page">
+  <div class="auth-page auth-entry-page">
     <div class="auth-shell">
-      <q-card v-if="loginStep === 'welcome'" flat bordered class="auth-card">
+      <q-card v-if="loginStep === 'welcome'" flat bordered class="auth-card auth-card--light">
         <q-card-section class="auth-card__header">
           <div class="auth-card__title">Welcome</div>
           <div class="auth-card__subtitle">Choose how you want to continue</div>
@@ -30,7 +30,7 @@
         </q-card-section>
       </q-card>
 
-      <q-card v-else-if="loginStep === 'methods'" flat bordered class="auth-card">
+      <q-card v-else-if="loginStep === 'methods'" flat bordered class="auth-card auth-card--light">
         <q-card-section class="auth-card__header">
           <div class="auth-card__title">Login</div>
           <div class="auth-card__subtitle">Choose a login method</div>
@@ -69,7 +69,7 @@
         </q-card-section>
       </q-card>
 
-      <q-card v-else flat bordered class="auth-card">
+      <q-card v-else flat bordered class="auth-card auth-card--light">
         <q-card-section class="auth-card__header">
           <div class="auth-card__title">Login with Key</div>
           <div class="auth-card__subtitle">Enter your nsec or hex private key to continue</div>
@@ -274,10 +274,23 @@ async function goToRegister(): Promise<void> {
   backdrop-filter: blur(var(--tg-glass-blur));
 }
 
+.auth-card--light {
+  border-color: rgba(208, 220, 235, 0.82);
+  background: rgba(239, 246, 251, 0.9);
+  color: #182236;
+  box-shadow: 0 18px 40px rgba(17, 40, 76, 0.16);
+  backdrop-filter: blur(18px);
+}
+
 .auth-card__header {
   padding: 22px 22px 10px;
   background: var(--tg-panel-header-bg);
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+}
+
+.auth-card--light .auth-card__header {
+  background: rgba(255, 255, 255, 0.82);
+  border-bottom-color: rgba(208, 220, 235, 0.82);
 }
 
 .auth-card__title {

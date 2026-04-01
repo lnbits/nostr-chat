@@ -84,16 +84,12 @@ import {
   loadSettingsPage
 } from 'src/router/pageLoaders';
 import { useChatStore } from 'src/stores/chatStore';
-import {
-  readDarkModePreference
-} from 'src/utils/themeStorage';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
-const savedDarkMode = readDarkModePreference();
 const isMobile = computed(() => $q.screen.lt.md);
 
 type NavigationSection = 'chats' | 'contacts' | 'settings';
@@ -171,10 +167,6 @@ const removeAfterEachHook = router.afterEach(() => {
 });
 let mobilePreloadTimeoutId: number | null = null;
 let startupRestoreFrameId: number | null = null;
-
-if (savedDarkMode !== null) {
-  $q.dark.set(savedDarkMode);
-}
 
 onMounted(() => {
   startupRestoreFrameId = window.requestAnimationFrame(() => {
