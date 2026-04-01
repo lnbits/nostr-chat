@@ -46,6 +46,11 @@ const routes: RouteRecordRaw[] = [
             component: () => import('pages/settings/ProfileSettingsPage.vue')
           },
           {
+            path: 'status',
+            name: 'settings-status',
+            component: () => import('pages/settings/StatusSettingsPage.vue')
+          },
+          {
             path: 'theme',
             name: 'settings-theme',
             component: () => import('pages/settings/ThemeSettingsPage.vue')

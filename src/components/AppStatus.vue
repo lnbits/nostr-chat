@@ -1,54 +1,43 @@
 <template>
-  <div class="app-status" :class="{ 'app-status--compact': props.compact }">
-    <q-expansion-item
-      switch-toggle-side
-      expand-separator
-      expand-icon="keyboard_arrow_right"
-      expanded-icon="keyboard_arrow_down"
-      class="app-status__expansion"
-    >
-      <template #header>
-        <q-item-section>
-          <div class="app-status__header-main">
-            <span class="app-status__summary">{{ statusHeadline }}</span>
-            <span class="app-status__badge" :class="`app-status__badge--${overallTone}`">
-              {{ overallLabel }}
-            </span>
-          </div>
-        </q-item-section>
-      </template>
+  <div class="app-status">
+    <section class="app-status__card">
+      <div class="app-status__card-header">
+        <div class="app-status__card-copy">
+          <div class="app-status__card-title">Startup History</div>
+          <div class="app-status__card-subtitle">{{ cardSubtitle }}</div>
+        </div>
+        <span v-if="hasHeaderActivity" class="app-status__badge app-status__badge--busy">
+          Syncing
+        </span>
+      </div>
 
       <div class="app-status__content">
-        <div class="app-status__details">
-          <div class="app-status__details-title">Startup history</div>
+        <div v-if="startupHistory.length === 0" class="app-status__details-copy">
+          No startup steps recorded yet.
+        </div>
 
-          <div v-if="startupHistory.length === 0" class="app-status__details-copy">
-            No startup steps recorded yet.
-          </div>
-
-          <div v-else class="app-status__history-scroll">
-            <div class="app-status__history-list">
-              <div
-                v-for="step in startupHistory"
-                :key="step.id"
-                class="app-status__history-item"
-              >
-                <q-icon
-                  :name="startupStatusIcon(step.status)"
-                  :class="startupStatusClass(step.status)"
-                  size="16px"
-                />
-                <div class="app-status__history-copy">
-                  <div class="app-status__history-label">{{ step.label }}</div>
-                  <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
-                </div>
-                <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
+        <div v-else class="app-status__history-scroll">
+          <div class="app-status__history-list">
+            <div
+              v-for="step in startupHistory"
+              :key="step.id"
+              class="app-status__history-item"
+            >
+              <q-icon
+                :name="startupStatusIcon(step.status)"
+                :class="startupStatusClass(step.status)"
+                size="16px"
+              />
+              <div class="app-status__history-copy">
+                <div class="app-status__history-label">{{ step.label }}</div>
+                <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
               </div>
+              <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
             </div>
           </div>
         </div>
       </div>
-    </q-expansion-item>
+    </section>
   </div>
 </template>
 
@@ -56,42 +45,10 @@
 import { computed } from 'vue';
 import type { StartupStepSnapshot, StartupStepStatus } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
-import { useRelayStore } from 'src/stores/relayStore';
-
-interface Props {
-  compact?: boolean;
-}
-
-const props = withDefaults(defineProps<Props>(), {
-  compact: false
-});
 
 const nostrStore = useNostrStore();
-const relayStore = useRelayStore();
-
-relayStore.init();
-
-const relayConnectionSnapshot = computed(() => {
-  void nostrStore.relayStatusVersion;
-
-  const relayUrls = relayStore.relays;
-  const connected = relayUrls.filter(
-    (relayUrl) => nostrStore.getRelayConnectionState(relayUrl) === 'connected'
-  );
-  const offline = relayUrls.filter(
-    (relayUrl) => nostrStore.getRelayConnectionState(relayUrl) !== 'connected'
-  );
-
-  return {
-    total: relayUrls.length,
-    connected,
-    offline
-  };
-});
 
 const startupSteps = computed(() => nostrStore.startupSteps);
-const totalRelayCount = computed(() => relayConnectionSnapshot.value.total);
-const connectedRelayCount = computed(() => relayConnectionSnapshot.value.connected.length);
 
 const displayedStartupStep = computed(() => {
   const displayStepId = nostrStore.startupDisplay.stepId;
@@ -125,72 +82,16 @@ const startupHistory = computed(() => {
   return [...inProgress, ...finished, ...pending];
 });
 
-const relaySummary = computed(() => {
-  if (totalRelayCount.value === 0) {
-    return 'No relays configured';
-  }
-
-  return `${connectedRelayCount.value}/${totalRelayCount.value} relays online`;
-});
-
 const hasHeaderActivity = computed(() => {
   return displayedStartupStep.value?.status === 'in_progress' || displayedStartupStep.value?.showProgress === true;
 });
 
-const relayHealthLabel = computed(() => {
-  if (totalRelayCount.value === 0) {
-    return 'No relays';
-  }
-
-  if (connectedRelayCount.value === totalRelayCount.value) {
-    return 'Healthy';
-  }
-
-  if (connectedRelayCount.value > 0) {
-    return 'Partial';
-  }
-
-  return 'Offline';
-});
-
-const relayHealthTone = computed(() => {
-  if (totalRelayCount.value === 0) {
-    return 'idle';
-  }
-
-  if (connectedRelayCount.value === totalRelayCount.value) {
-    return 'good';
-  }
-
-  if (connectedRelayCount.value > 0) {
-    return 'warn';
-  }
-
-  return 'issue';
-});
-
-const statusHeadline = computed(() => {
+const cardSubtitle = computed(() => {
   if (hasHeaderActivity.value && displayedStartupStep.value) {
     return displayedStartupStep.value.label;
   }
 
-  return relaySummary.value;
-});
-
-const overallLabel = computed(() => {
-  if (hasHeaderActivity.value) {
-    return 'Syncing';
-  }
-
-  return relayHealthLabel.value;
-});
-
-const overallTone = computed(() => {
-  if (hasHeaderActivity.value) {
-    return 'busy';
-  }
-
-  return relayHealthTone.value;
+  return 'Recent startup and sync activity.';
 });
 
 function startupStatusIcon(status: StartupStepStatus | null): string {
@@ -259,36 +160,47 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 <style scoped>
 .app-status {
   --app-status-history-item-height: 58px;
-  flex-shrink: 0;
-  border-top: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  height: 100%;
+  min-height: 0;
 }
 
-.app-status__expansion {
-  background: transparent;
-}
-
-.app-status__expansion :deep(.q-item) {
-  align-items: center;
-  min-height: 60px;
-  padding: 10px;
-}
-
-.app-status__expansion :deep(.q-item__section--side) {
-  color: var(--tg-text-secondary);
-  padding-left: 12px;
-}
-
-.app-status__expansion :deep(.q-expansion-item__content) {
-  background: var(--tg-surface-soft);
-}
-
-.app-status__header-main {
+.app-status__card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border-radius: 14px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+}
+
+.app-status__card-header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  min-height: 40px;
+  padding: 14px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, transparent);
+  background: color-mix(in srgb, var(--tg-panel-header-bg) 92%, rgba(255, 255, 255, 0.08));
+}
+
+.app-status__card-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.app-status__card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tg-text);
+}
+
+.app-status__card-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--tg-text-secondary);
 }
 
 .app-status__badge {
@@ -305,53 +217,17 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   white-space: nowrap;
 }
 
-.app-status__badge--good {
-  color: #0f5f43;
-  background: rgba(28, 166, 121, 0.16);
-}
-
-.app-status__badge--warn {
-  color: #9a5b00;
-  background: rgba(245, 158, 11, 0.16);
-}
-
-.app-status__badge--issue {
-  color: #b42318;
-  background: rgba(239, 68, 68, 0.14);
-}
-
-.app-status__badge--busy,
-.app-status__badge--idle {
+.app-status__badge--busy {
   color: #235e97;
   background: rgba(59, 130, 246, 0.14);
 }
 
-.app-status__summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--tg-text-secondary);
-}
-
 .app-status__content {
-  padding: 0 13px 13px;
-  display: grid;
-  gap: 12px;
-}
-
-.app-status__details {
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--tg-surface-soft-strong);
-}
-
-.app-status__details-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 8px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 16px;
 }
 
 .app-status__details-copy {
@@ -391,7 +267,8 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 }
 
 .app-status__history-scroll {
-  max-height: calc(var(--app-status-history-item-height) * 5);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -422,27 +299,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   color: #74839b;
 }
 
-body.body--dark .app-status__expansion :deep(.q-item__section--side) {
-  color: var(--tg-text-secondary);
-}
-
-body.body--dark .app-status__badge--good {
-  color: #79e0b2;
-  background: rgba(18, 122, 91, 0.34);
-}
-
-body.body--dark .app-status__badge--warn {
-  color: #ffd18a;
-  background: rgba(180, 118, 0, 0.26);
-}
-
-body.body--dark .app-status__badge--issue {
-  color: #ffb2a7;
-  background: rgba(185, 28, 28, 0.28);
-}
-
-body.body--dark .app-status__badge--busy,
-body.body--dark .app-status__badge--idle {
+body.body--dark .app-status__badge--busy {
   color: #a8d0ff;
   background: rgba(37, 99, 235, 0.24);
 }
@@ -460,37 +317,6 @@ body.body--dark .app-status__status-icon--pending {
   color: var(--tg-text-secondary);
 }
 
-.app-status--compact {
-  --app-status-history-item-height: 50px;
-}
-
-.app-status--compact .app-status__expansion :deep(.q-item) {
-  min-height: 48px;
-  padding: 8px 10px;
-}
-
-.app-status--compact .app-status__header-main {
-  min-height: 30px;
-}
-
-.app-status--compact .app-status__summary {
-  font-size: 12px;
-}
-
-.app-status--compact .app-status__badge {
-  min-height: 20px;
-  padding: 0 8px;
-  font-size: 10px;
-}
-
-.app-status--compact .app-status__content {
-  padding: 0 10px 10px;
-}
-
-.app-status--compact .app-status__details {
-  padding: 10px;
-}
-
 @media (max-width: 420px) {
   .app-status__history-item {
     grid-template-columns: auto minmax(0, 1fr);
@@ -506,67 +332,22 @@ body.body--dark .app-status__status-icon--pending {
     --app-status-history-item-height: 52px;
   }
 
-  .app-status__expansion :deep(.q-item) {
-    min-height: 50px;
-    padding: 7px 10px;
-  }
-
-  .app-status__expansion :deep(.q-item__section--side) {
-    padding-left: 8px;
-  }
-
-  .app-status__header-main {
-    gap: 10px;
-    min-height: 32px;
-  }
-
-  .app-status__summary {
-    font-size: 12px;
+  .app-status__card-header {
+    padding: 12px 14px;
   }
 
   .app-status__badge {
-    min-height: 20px;
-    padding: 0 8px;
+    min-height: 22px;
+    padding: 0 9px;
     font-size: 10px;
-    letter-spacing: 0.06em;
   }
 
   .app-status__content {
-    padding: 0 10px 10px;
-    gap: 10px;
-  }
-
-  .app-status__details {
-    padding: 10px;
-    border-radius: 10px;
-  }
-
-  .app-status__details-title {
-    font-size: 12px;
-    margin-bottom: 6px;
-  }
-
-  .app-status__details-copy,
-  .app-status__history-meta,
-  .app-status__history-duration {
-    font-size: 11px;
-  }
-
-  .app-status__history-label {
-    font-size: 12px;
-  }
-
-  .app-status__history-list {
-    gap: 8px;
+    padding: 12px 14px 14px;
   }
 
   .app-status__history-scroll {
-    max-height: calc(var(--app-status-history-item-height) * 4);
-    padding-right: 2px;
-  }
-
-  .app-status__history-item + .app-status__history-item {
-    padding-top: 8px;
+    min-height: 0;
   }
 }
 </style>

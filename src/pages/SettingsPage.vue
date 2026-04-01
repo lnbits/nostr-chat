@@ -8,7 +8,21 @@
     >
       <aside v-if="!isMobile || isSettingsListView" class="settings-sidebar">
         <div class="settings-sidebar__top">
-          <div class="settings-sidebar__title">Settings</div>
+          <div class="settings-sidebar__header">
+            <div class="settings-sidebar__title">Settings</div>
+            <div class="settings-sidebar__actions">
+              <q-btn
+                flat
+                dense
+                round
+                icon="fact_check"
+                aria-label="Open Status"
+                class="settings-sidebar__status-button"
+                :class="{ 'settings-sidebar__status-button--active': isStatusView }"
+                @click="goToSetting('settings-status')"
+              />
+            </div>
+          </div>
         </div>
 
         <q-list class="settings-menu">
@@ -31,7 +45,6 @@
             </q-item-section>
           </q-item>
         </q-list>
-        <AppStatus compact />
         <AppNavRail
           v-if="!isMobile"
           class="settings-sidebar__nav"
@@ -98,7 +111,6 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
-import AppStatus from 'src/components/AppStatus.vue';
 import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
@@ -124,6 +136,7 @@ const isLoggingOut = ref(false);
 
 type SettingsRouteName =
   | 'settings-profile'
+  | 'settings-status'
   | 'settings-theme'
   | 'settings-relays'
   | 'settings-language'
@@ -162,6 +175,7 @@ const activeSettingKey = computed(() => {
   const match = settingsItems.find((item) => item.routeName === route.name);
   return match?.key ?? null;
 });
+const isStatusView = computed(() => route.name === 'settings-status');
 
 watch(
   [isMobile, () => route.name],
@@ -282,10 +296,33 @@ async function handleConfirmLogout(): Promise<void> {
   background: var(--tg-panel-header-bg);
 }
 
+.settings-sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .settings-sidebar__title {
   font-size: 20px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.settings-sidebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.settings-sidebar__status-button {
+  flex-shrink: 0;
+}
+
+.settings-sidebar__status-button--active {
+  background: var(--tg-active);
+  color: var(--tg-active-text) !important;
 }
 
 .settings-menu {

@@ -125,7 +125,6 @@
             </div>
           </q-list>
         </q-scroll-area>
-        <AppStatus compact />
         <AppNavRail
           v-if="!isMobile"
           class="contacts-sidebar__nav"
@@ -245,7 +244,6 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
-import AppStatus from 'src/components/AppStatus.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';

@@ -105,7 +105,6 @@
           @mark-as-read="handleMarkChatAsRead"
           @delete-chat="handleDeleteChat"
         />
-        <AppStatus compact />
         <AppNavRail
           v-if="!isMobile"
           class="sidebar-nav"
@@ -221,7 +220,6 @@ import type { Message, MessageReaction, MessageReplyPreview } from 'src/types/ch
 import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
-const AppStatus = defineAsyncComponent(() => import('src/components/AppStatus.vue'));
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
 const ChatRequestsDialog = defineAsyncComponent(() => import('src/components/ChatRequestsDialog.vue'));
 const ChatThread = defineAsyncComponent(() => import('src/components/ChatThread.vue'));
