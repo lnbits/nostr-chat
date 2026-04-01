@@ -29,7 +29,6 @@
           round
           icon="badge"
           aria-label="Open Profile"
-          color="primary"
           class="thread-header__action"
           @click="handleOpenProfile"
         />
@@ -1362,7 +1361,10 @@ onBeforeUnmount(() => {
 }
 
 .thread-header__action {
-  color: var(--tg-text-secondary);
+}
+
+body.body--dark .thread-header__action {
+  color: var(--tg-text-secondary) !important;
 }
 
 .thread-body {

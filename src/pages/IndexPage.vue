@@ -27,7 +27,6 @@
                 dense
                 icon="refresh"
                 dropdown-icon="arrow_drop_down"
-                color="primary"
                 class="sidebar-top__action"
                 aria-label="Refresh Chats"
               >
@@ -57,7 +56,6 @@
                 dense
                 round
                 icon="group_add"
-                color="primary"
                 class="sidebar-top__action"
                 aria-label="Start New Chat"
                 :loading="isCreatingGroup"
@@ -968,7 +966,6 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-top__action {
-  color: var(--tg-text-secondary);
   flex-shrink: 0;
 }
 

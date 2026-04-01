@@ -22,7 +22,6 @@
         dense
         round
         icon="chat_bubble"
-        color="primary"
         aria-label="Open Chat"
         class="profile-header__action"
         :disable="!normalizedHeaderPubkey"
@@ -2012,7 +2011,10 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 }
 
 .profile-header__action {
-  color: var(--tg-text-secondary);
+}
+
+body.body--dark .profile-header__action {
+  color: var(--tg-text-secondary) !important;
 }
 
 .profile-tabs {
