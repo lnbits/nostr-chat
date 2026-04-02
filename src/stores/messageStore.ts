@@ -1,7 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
-import { chatDataService, type ChatRow } from 'src/services/chatDataService';
+import {
+  chatDataService,
+  type ChatRow,
+  type MessageCursor as PersistedMessageCursor
+} from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
@@ -23,6 +27,17 @@ import {
 } from 'src/utils/messageReactions';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
+const MESSAGE_PAGE_SIZE = 50;
+const INITIAL_UNREAD_MESSAGE_LIMIT = 50;
+
+interface ChatMessagePaginationState {
+  oldestCursor: PersistedMessageCursor | null;
+  newestCursor: PersistedMessageCursor | null;
+  hasOlder: boolean;
+  hasNewer: boolean;
+  isLoadingOlder: boolean;
+  isLoadingNewer: boolean;
+}
 
 interface RelaySendOptions {
   relayUrls?: string[];
@@ -133,11 +148,68 @@ function mapMessageRowToMessage(
   };
 }
 
+function buildMessageCursorFromRow(
+  row: Pick<MessageRow, 'id' | 'created_at'> | null | undefined
+): PersistedMessageCursor | null {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    created_at: row.created_at
+  };
+}
+
+function buildMessageCursorFromMessage(
+  message: Pick<Message, 'id' | 'sentAt'> | null | undefined
+): PersistedMessageCursor | null {
+  if (!message) {
+    return null;
+  }
+
+  const messageId = Number.parseInt(message.id, 10);
+  if (!Number.isInteger(messageId) || messageId <= 0) {
+    return null;
+  }
+
+  return {
+    id: messageId,
+    created_at: message.sentAt
+  };
+}
+
+function compareMessageCursors(
+  first: Pick<PersistedMessageCursor, 'id' | 'created_at'>,
+  second: Pick<PersistedMessageCursor, 'id' | 'created_at'>
+): number {
+  const byTime =
+    toComparableTimestamp(first.created_at) - toComparableTimestamp(second.created_at);
+  if (byTime !== 0) {
+    return byTime;
+  }
+
+  return first.id - second.id;
+}
+
+function buildDefaultChatMessagePaginationState(): ChatMessagePaginationState {
+  return {
+    oldestCursor: null,
+    newestCursor: null,
+    hasOlder: false,
+    hasNewer: false,
+    isLoadingOlder: false,
+    isLoadingNewer: false
+  };
+}
+
 export const useMessageStore = defineStore('messageStore', () => {
   const chatStore = useChatStore();
   const messagesByChat = ref<Record<string, Message[]>>({});
+  const paginationStateByChat = ref<Record<string, ChatMessagePaginationState>>({});
   const loadedChatIds = new Set<string>();
   const loadingChatPromises = new Map<string, Promise<void>>();
+  const paginationLoadPromises = new Map<string, Promise<void>>();
   const unseenReactionSyncPromises = new Map<string, Promise<number>>();
   let nostrStorePromise: Promise<NostrStore> | null = null;
   let relayStorePromise: Promise<RelayStore> | null = null;
@@ -170,6 +242,46 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     return messagesByChat.value[normalizedChatId] ?? [];
+  }
+
+  function getPaginationState(chatId: string | null): ChatMessagePaginationState {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return buildDefaultChatMessagePaginationState();
+    }
+
+    return paginationStateByChat.value[normalizedChatId] ?? buildDefaultChatMessagePaginationState();
+  }
+
+  function setPaginationState(
+    chatId: string,
+    nextState: Partial<ChatMessagePaginationState>
+  ): void {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    paginationStateByChat.value[normalizedChatId] = {
+      ...(paginationStateByChat.value[normalizedChatId] ?? buildDefaultChatMessagePaginationState()),
+      ...nextState
+    };
+  }
+
+  function mergeMessages(currentMessages: Message[], incomingMessages: Message[]): Message[] {
+    if (incomingMessages.length === 0) {
+      return currentMessages;
+    }
+
+    const mergedMessagesById = new Map<string, Message>();
+    currentMessages.forEach((message) => {
+      mergedMessagesById.set(message.id, message);
+    });
+    incomingMessages.forEach((message) => {
+      mergedMessagesById.set(message.id, message);
+    });
+
+    return Array.from(mergedMessagesById.values()).sort(compareMessages);
   }
 
   async function init(): Promise<void> {
@@ -445,7 +557,13 @@ export const useMessageStore = defineStore('messageStore', () => {
     return normalizeEventId(replyMessageRow?.event_id);
   }
 
-  function upsertMessageInState(chatId: string, message: Message): void {
+  function upsertMessageInState(
+    chatId: string,
+    message: Message,
+    options: {
+      allowOutsideLoadedWindow?: boolean;
+    } = {}
+  ): void {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
       return;
@@ -460,13 +578,59 @@ export const useMessageStore = defineStore('messageStore', () => {
       return;
     }
 
-    const lastMessage = existingMessages[existingMessages.length - 1] ?? null;
-    if (!lastMessage || compareMessages(lastMessage, message) <= 0) {
-      messagesByChat.value[normalizedChatId] = [...existingMessages, message];
+    const paginationState = paginationStateByChat.value[normalizedChatId];
+    const incomingCursor = buildMessageCursorFromMessage(message);
+    const firstLoadedCursor = buildMessageCursorFromMessage(existingMessages[0] ?? null);
+    const lastLoadedCursor = buildMessageCursorFromMessage(
+      existingMessages[existingMessages.length - 1] ?? null
+    );
+    const isBeforeLoadedRange =
+      incomingCursor !== null &&
+      firstLoadedCursor !== null &&
+      compareMessageCursors(incomingCursor, firstLoadedCursor) < 0;
+    const isAfterLoadedRange =
+      incomingCursor !== null &&
+      lastLoadedCursor !== null &&
+      compareMessageCursors(incomingCursor, lastLoadedCursor) > 0;
+
+    if (
+      !options.allowOutsideLoadedWindow &&
+      paginationState &&
+      ((isBeforeLoadedRange && paginationState.hasOlder) ||
+        (isAfterLoadedRange && paginationState.hasNewer))
+    ) {
       return;
     }
 
-    messagesByChat.value[normalizedChatId] = [...existingMessages, message].sort(compareMessages);
+    const nextMessages = mergeMessages(existingMessages, [message]);
+    messagesByChat.value[normalizedChatId] = nextMessages;
+
+    if (!incomingCursor) {
+      return;
+    }
+
+    const nextPaginationState = paginationState ?? buildDefaultChatMessagePaginationState();
+    const paginationPatch: Partial<ChatMessagePaginationState> = {};
+
+    if (
+      !nextPaginationState.oldestCursor ||
+      (!nextPaginationState.hasOlder &&
+        compareMessageCursors(incomingCursor, nextPaginationState.oldestCursor) < 0)
+    ) {
+      paginationPatch.oldestCursor = incomingCursor;
+    }
+
+    if (
+      !nextPaginationState.newestCursor ||
+      (!nextPaginationState.hasNewer &&
+        compareMessageCursors(incomingCursor, nextPaginationState.newestCursor) > 0)
+    ) {
+      paginationPatch.newestCursor = incomingCursor;
+    }
+
+    if (Object.keys(paginationPatch).length > 0) {
+      setPaginationState(normalizedChatId, paginationPatch);
+    }
   }
 
   function upsertPersistedMessage(
@@ -496,6 +660,63 @@ export const useMessageStore = defineStore('messageStore', () => {
     await upsertPersistedMessage(row);
   }
 
+  async function loadInitialMessageWindow(chatId: string): Promise<{
+    rows: MessageRow[];
+    hasOlder: boolean;
+    hasNewer: boolean;
+  }> {
+    const chat = await chatDataService.getChatByPublicKey(chatId);
+    if (!chat) {
+      return {
+        rows: [],
+        hasOlder: false,
+        hasNewer: false
+      };
+    }
+
+    const lastSeenReceivedActivityAt =
+      typeof chat.meta.last_seen_received_activity_at === 'string'
+        ? chat.meta.last_seen_received_activity_at.trim()
+        : '';
+    const unreadCount = Math.max(0, Number(chat.unread_count ?? 0));
+    const loggedInPublicKey = getLoggedInPublicKey();
+
+    if (unreadCount > 0 && lastSeenReceivedActivityAt && loggedInPublicKey) {
+      const firstUnreadRow = await chatDataService.findFirstIncomingMessageAfter(
+        chatId,
+        lastSeenReceivedActivityAt,
+        loggedInPublicKey
+      );
+
+      if (firstUnreadRow) {
+        const firstUnreadCursor = buildMessageCursorFromRow(firstUnreadRow);
+        if (firstUnreadCursor) {
+          const [olderBatch, unreadBatch] = await Promise.all([
+            chatDataService.listMessagesBefore(chatId, firstUnreadCursor, MESSAGE_PAGE_SIZE),
+            chatDataService.listMessagesAfter(
+              chatId,
+              firstUnreadCursor,
+              INITIAL_UNREAD_MESSAGE_LIMIT - 1
+            )
+          ]);
+
+          return {
+            rows: [...olderBatch.rows, firstUnreadRow, ...unreadBatch.rows],
+            hasOlder: olderBatch.has_more,
+            hasNewer: unreadBatch.has_more
+          };
+        }
+      }
+    }
+
+    const latestBatch = await chatDataService.listLatestMessages(chatId, MESSAGE_PAGE_SIZE);
+    return {
+      rows: latestBatch.rows,
+      hasOlder: latestBatch.has_more,
+      hasNewer: false
+    };
+  }
+
   async function loadMessages(chatId: string, force = false): Promise<void> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -514,8 +735,21 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const loadPromise = (async () => {
       try {
-        const rows = await chatDataService.listMessages(normalizedChatId);
-        messagesByChat.value[normalizedChatId] = await hydrateMessageRows(rows, normalizedChatId);
+        const initialWindow = await loadInitialMessageWindow(normalizedChatId);
+        messagesByChat.value[normalizedChatId] = await hydrateMessageRows(
+          initialWindow.rows,
+          normalizedChatId
+        );
+        setPaginationState(normalizedChatId, {
+          oldestCursor: buildMessageCursorFromRow(initialWindow.rows[0] ?? null),
+          newestCursor: buildMessageCursorFromRow(
+            initialWindow.rows[initialWindow.rows.length - 1] ?? null
+          ),
+          hasOlder: initialWindow.hasOlder,
+          hasNewer: initialWindow.hasNewer,
+          isLoadingOlder: false,
+          isLoadingNewer: false
+        });
         loadedChatIds.add(normalizedChatId);
       } catch (error) {
         console.error('Failed to load messages for chat', normalizedChatId, error);
@@ -537,6 +771,120 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     await Promise.all(chatIds.map((chatId) => loadMessages(chatId, true)));
+  }
+
+  async function loadOlderMessages(chatId: string): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    if (!loadedChatIds.has(normalizedChatId)) {
+      await loadMessages(normalizedChatId);
+    }
+
+    const paginationState = paginationStateByChat.value[normalizedChatId];
+    if (!paginationState?.hasOlder || !paginationState.oldestCursor) {
+      return;
+    }
+
+    const loadKey = `${normalizedChatId}:older`;
+    const existingLoad = paginationLoadPromises.get(loadKey);
+    if (existingLoad) {
+      await existingLoad;
+      return;
+    }
+
+    setPaginationState(normalizedChatId, { isLoadingOlder: true });
+    const loadPromise = (async () => {
+      try {
+        const batch = await chatDataService.listMessagesBefore(
+          normalizedChatId,
+          paginationState.oldestCursor as PersistedMessageCursor,
+          MESSAGE_PAGE_SIZE
+        );
+        if (batch.rows.length === 0) {
+          setPaginationState(normalizedChatId, { hasOlder: false });
+          return;
+        }
+
+        const hydratedMessages = await hydrateMessageRows(batch.rows, normalizedChatId);
+        messagesByChat.value[normalizedChatId] = mergeMessages(
+          messagesByChat.value[normalizedChatId] ?? [],
+          hydratedMessages
+        );
+        setPaginationState(normalizedChatId, {
+          oldestCursor: buildMessageCursorFromRow(batch.rows[0] ?? null),
+          hasOlder: batch.has_more
+        });
+      } finally {
+        setPaginationState(normalizedChatId, { isLoadingOlder: false });
+      }
+    })();
+
+    paginationLoadPromises.set(loadKey, loadPromise);
+    try {
+      await loadPromise;
+    } finally {
+      paginationLoadPromises.delete(loadKey);
+    }
+  }
+
+  async function loadNewerMessages(chatId: string): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    if (!loadedChatIds.has(normalizedChatId)) {
+      await loadMessages(normalizedChatId);
+    }
+
+    const paginationState = paginationStateByChat.value[normalizedChatId];
+    if (!paginationState?.hasNewer || !paginationState.newestCursor) {
+      return;
+    }
+
+    const loadKey = `${normalizedChatId}:newer`;
+    const existingLoad = paginationLoadPromises.get(loadKey);
+    if (existingLoad) {
+      await existingLoad;
+      return;
+    }
+
+    setPaginationState(normalizedChatId, { isLoadingNewer: true });
+    const loadPromise = (async () => {
+      try {
+        const batch = await chatDataService.listMessagesAfter(
+          normalizedChatId,
+          paginationState.newestCursor as PersistedMessageCursor,
+          MESSAGE_PAGE_SIZE
+        );
+        if (batch.rows.length === 0) {
+          setPaginationState(normalizedChatId, { hasNewer: false });
+          return;
+        }
+
+        const hydratedMessages = await hydrateMessageRows(batch.rows, normalizedChatId);
+        messagesByChat.value[normalizedChatId] = mergeMessages(
+          messagesByChat.value[normalizedChatId] ?? [],
+          hydratedMessages
+        );
+        setPaginationState(normalizedChatId, {
+          newestCursor: buildMessageCursorFromRow(batch.rows[batch.rows.length - 1] ?? null),
+          hasNewer: batch.has_more
+        });
+      } finally {
+        setPaginationState(normalizedChatId, { isLoadingNewer: false });
+      }
+    })();
+
+    paginationLoadPromises.set(loadKey, loadPromise);
+    try {
+      await loadPromise;
+    } finally {
+      paginationLoadPromises.delete(loadKey);
+    }
   }
 
   async function sendMessage(
@@ -590,12 +938,10 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const newMessage = mapMessageRowToMessage(created, normalizedChatId);
 
-    if (!messagesByChat.value[normalizedChatId]) {
-      messagesByChat.value[normalizedChatId] = [];
-    }
-
     loadedChatIds.add(normalizedChatId);
-    messagesByChat.value[normalizedChatId] = [...messagesByChat.value[normalizedChatId], newMessage];
+    upsertMessageInState(normalizedChatId, newMessage, {
+      allowOutsideLoadedWindow: true
+    });
     let sendError: unknown = null;
 
     try {
@@ -1243,8 +1589,11 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     delete messagesByChat.value[normalizedChatId];
+    delete paginationStateByChat.value[normalizedChatId];
     loadedChatIds.delete(normalizedChatId);
     loadingChatPromises.delete(normalizedChatId);
+    paginationLoadPromises.delete(`${normalizedChatId}:older`);
+    paginationLoadPromises.delete(`${normalizedChatId}:newer`);
   }
 
   void init().catch((error) => {
@@ -1253,10 +1602,14 @@ export const useMessageStore = defineStore('messageStore', () => {
 
   return {
     messagesByChat,
+    paginationStateByChat,
     init,
     loadMessages,
+    loadOlderMessages,
+    loadNewerMessages,
     reloadLoadedMessages,
     getMessages,
+    getPaginationState,
     sendMessage,
     addReaction,
     removeReaction,

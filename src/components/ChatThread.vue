@@ -38,6 +38,16 @@
         <div v-if="stickyDayLabel" class="thread-day-sticky" aria-hidden="true">
           <span class="thread-day-sticky__label">{{ stickyDayLabel }}</span>
         </div>
+        <div
+          v-if="isLoadingOlderMessages"
+          class="thread-loading-indicator thread-loading-indicator--top"
+          aria-live="polite"
+        >
+          <span class="thread-loading-indicator__label">
+            <q-spinner-dots size="16px" class="thread-loading-indicator__spinner" />
+            <span>Loading</span>
+          </span>
+        </div>
         <template v-for="item in threadItems" :key="item.key">
           <div v-if="item.type === 'separator'" class="thread-day-separator" aria-hidden="true">
             <span class="thread-day-separator__line" />
@@ -85,6 +95,16 @@
             />
           </div>
         </template>
+        <div
+          v-if="isLoadingNewerMessages"
+          class="thread-loading-indicator thread-loading-indicator--bottom"
+          aria-live="polite"
+        >
+          <span class="thread-loading-indicator__label">
+            <q-spinner-dots size="16px" class="thread-loading-indicator__spinner" />
+            <span>Loading</span>
+          </span>
+        </div>
       </div>
 
       <div class="thread-composer-anchor">
@@ -219,6 +239,15 @@ let highlightTimerId: number | null = null;
 let visibleReactionSyncFrameId: number | null = null;
 let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
 let pendingSentMessageReveal = false;
+let isScrollingToBottom = false;
+let pendingPaginationContext:
+  | {
+      direction: 'older' | 'newer';
+      previousScrollHeight: number;
+      previousScrollTop: number;
+      previousMessageCount: number;
+    }
+  | null = null;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 let selfAuthorIdentityRefreshToken = 0;
 let authorIdentityRefreshToken = 0;
@@ -316,8 +345,21 @@ const latestMessageId = computed(() => {
   return props.messages[props.messages.length - 1]?.id ?? null;
 });
 
+const currentPaginationState = computed(() => {
+  return messageStore.getPaginationState(props.chat?.id ?? null);
+});
+
+const hasOlderMessages = computed(() => currentPaginationState.value.hasOlder);
+const hasNewerMessages = computed(() => currentPaginationState.value.hasNewer);
+const isLoadingOlderMessages = computed(() => currentPaginationState.value.isLoadingOlder);
+const isLoadingNewerMessages = computed(() => currentPaginationState.value.isLoadingNewer);
+
 const showScrollJumpButton = computed(() => {
-  return Boolean(props.chat && props.messages.length > 0 && isThreadScrolledUp.value);
+  return Boolean(
+    props.chat &&
+      props.messages.length > 0 &&
+      (isThreadScrolledUp.value || hasNewerMessages.value)
+  );
 });
 
 const unseenReactionMessages = computed(() => {
@@ -688,43 +730,66 @@ async function refreshMessageAuthorIdentities(): Promise<void> {
 }
 
 async function scrollToBottom(): Promise<void> {
-  await nextTick();
+  if (isScrollingToBottom) {
+    return;
+  }
 
-  const revealLatestMessage = (): void => {
-    const threadBody = threadBodyRef.value;
-    if (!threadBody) {
-      return;
-    }
+  isScrollingToBottom = true;
+  try {
+    await loadAllNewerMessagesForCurrentChat();
+    await nextTick();
 
-    const latestMessage = latestMessageId.value;
-    const latestEntry = latestMessage ? findThreadMessageEntry(latestMessage) : null;
-    if (latestEntry) {
-      const latestEntryTop = latestEntry.offsetTop;
-      const latestEntryHeight = latestEntry.offsetHeight;
-      const targetScrollTop = Math.max(
-        0,
-        latestEntryTop + latestEntryHeight - threadBody.clientHeight + 16
-      );
-      threadBody.scrollTop = targetScrollTop;
-      return;
-    }
+    const revealLatestMessage = (): void => {
+      const threadBody = threadBodyRef.value;
+      if (!threadBody) {
+        return;
+      }
 
-    threadBody.scrollTop = threadBody.scrollHeight;
-  };
+      const latestMessage = latestMessageId.value;
+      const latestEntry = latestMessage ? findThreadMessageEntry(latestMessage) : null;
+      if (latestEntry) {
+        const latestEntryTop = latestEntry.offsetTop;
+        const latestEntryHeight = latestEntry.offsetHeight;
+        const targetScrollTop = Math.max(
+          0,
+          latestEntryTop + latestEntryHeight - threadBody.clientHeight + 16
+        );
+        threadBody.scrollTop = targetScrollTop;
+        return;
+      }
 
-  revealLatestMessage();
-  await new Promise<void>((resolve) => {
-    window.requestAnimationFrame(() => {
-      revealLatestMessage();
-      resolve();
+      threadBody.scrollTop = threadBody.scrollHeight;
+    };
+
+    revealLatestMessage();
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        revealLatestMessage();
+        resolve();
+      });
     });
-  });
 
-  isThreadScrolledUp.value = false;
-  lastReadMessageId.value = latestMessageId.value;
-  hasJumpedToLastReadMessage.value = false;
-  updateStickyDayLabel();
-  scheduleVisibleReactionViewSync();
+    isThreadScrolledUp.value = false;
+    lastReadMessageId.value = latestMessageId.value;
+    hasJumpedToLastReadMessage.value = false;
+    updateStickyDayLabel();
+    scheduleVisibleReactionViewSync();
+  } finally {
+    isScrollingToBottom = false;
+  }
+}
+
+async function loadAllNewerMessagesForCurrentChat(): Promise<void> {
+  const currentChatId = props.chat?.id ?? null;
+  if (!currentChatId) {
+    return;
+  }
+
+  let iterationCount = 0;
+  while (messageStore.getPaginationState(currentChatId).hasNewer && iterationCount < 100) {
+    iterationCount += 1;
+    await messageStore.loadNewerMessages(currentChatId);
+  }
 }
 
 function isThreadNearBottom(): boolean {
@@ -792,7 +857,103 @@ function handleThreadScroll(): void {
     updateStickyDayLabel();
     updateScrollJumpState();
     scheduleVisibleReactionViewSync();
+    maybeLoadMoreMessagesForVisibleRange();
   });
+}
+
+function maybeLoadMoreMessagesForVisibleRange(): void {
+  const threadBody = threadBodyRef.value;
+  const currentChatId = props.chat?.id ?? null;
+  if (!threadBody || !currentChatId || pendingPaginationContext !== null) {
+    return;
+  }
+
+  if (threadBody.scrollTop <= 72 && hasOlderMessages.value && !isLoadingOlderMessages.value) {
+    void loadOlderMessagesForCurrentChat();
+    return;
+  }
+
+  if (
+    threadBody.scrollHeight - (threadBody.scrollTop + threadBody.clientHeight) <= 72 &&
+    hasNewerMessages.value &&
+    !isLoadingNewerMessages.value
+  ) {
+    void loadNewerMessagesForCurrentChat();
+  }
+}
+
+async function loadOlderMessagesForCurrentChat(): Promise<void> {
+  const threadBody = threadBodyRef.value;
+  const currentChatId = props.chat?.id ?? null;
+  if (
+    !threadBody ||
+    !currentChatId ||
+    pendingPaginationContext !== null ||
+    isLoadingOlderMessages.value ||
+    !hasOlderMessages.value
+  ) {
+    return;
+  }
+
+  pendingPaginationContext = {
+    direction: 'older',
+    previousScrollHeight: threadBody.scrollHeight,
+    previousScrollTop: threadBody.scrollTop,
+    previousMessageCount: props.messages.length
+  };
+
+  try {
+    await messageStore.loadOlderMessages(currentChatId);
+  } catch (error) {
+    pendingPaginationContext = null;
+    reportUiError('Failed to load older chat messages', error);
+    return;
+  }
+
+  if (
+    pendingPaginationContext &&
+    pendingPaginationContext.direction === 'older' &&
+    props.messages.length === pendingPaginationContext.previousMessageCount
+  ) {
+    pendingPaginationContext = null;
+  }
+}
+
+async function loadNewerMessagesForCurrentChat(): Promise<void> {
+  const threadBody = threadBodyRef.value;
+  const currentChatId = props.chat?.id ?? null;
+  if (
+    !threadBody ||
+    !currentChatId ||
+    pendingPaginationContext !== null ||
+    isLoadingNewerMessages.value ||
+    !hasNewerMessages.value
+  ) {
+    return;
+  }
+
+  pendingPaginationContext = {
+    direction: 'newer',
+    previousScrollHeight: threadBody.scrollHeight,
+    previousScrollTop: threadBody.scrollTop,
+    previousMessageCount: props.messages.length
+  };
+
+  try {
+    await messageStore.loadNewerMessages(currentChatId);
+  } catch (error) {
+    pendingPaginationContext = null;
+    reportUiError('Failed to load newer chat messages', error);
+    return;
+  }
+
+  if (
+    pendingPaginationContext &&
+    pendingPaginationContext.direction === 'newer' &&
+    props.messages.length === pendingPaginationContext.previousMessageCount
+  ) {
+    pendingPaginationContext = null;
+  }
 }
 
 function handleBack(): void {
@@ -1235,6 +1396,7 @@ watch(
     activeReply.value = null;
     clearReplyTargetHighlight();
     pendingSentMessageReveal = false;
+    pendingPaginationContext = null;
     pendingInitialPositionChatId.value = chatId;
     openedUnreadBoundaryAt.value =
       chatId && props.chat
@@ -1261,6 +1423,30 @@ watch(
 watch(
   () => props.messages.length,
   (nextLength, previousLength) => {
+    if (pendingPaginationContext) {
+      const paginationContext = pendingPaginationContext;
+      pendingPaginationContext = null;
+
+      void nextTick(() => {
+        const threadBody = threadBodyRef.value;
+        if (!threadBody) {
+          return;
+        }
+
+        if (paginationContext.direction === 'older') {
+          const addedHeight = threadBody.scrollHeight - paginationContext.previousScrollHeight;
+          threadBody.scrollTop = paginationContext.previousScrollTop + Math.max(0, addedHeight);
+        } else {
+          threadBody.scrollTop = paginationContext.previousScrollTop;
+        }
+
+        updateStickyDayLabel();
+        updateScrollJumpState();
+        scheduleVisibleReactionViewSync();
+      });
+      return;
+    }
+
     if (pendingInitialPositionChatId.value === (props.chat?.id ?? null)) {
       void initializeThreadPosition();
       return;
@@ -1307,6 +1493,7 @@ onBeforeUnmount(() => {
   if (visibleReactionSyncFrameId !== null) {
     cancelAnimationFrame(visibleReactionSyncFrameId);
   }
+  pendingPaginationContext = null;
 });
 </script>
 
@@ -1376,6 +1563,46 @@ body.body--dark .thread-header__action {
   padding: 12px 16px;
   position: relative;
   background: var(--tg-thread-bg);
+  overflow-anchor: none;
+}
+
+.thread-loading-indicator {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.thread-loading-indicator--top {
+  top: 44px;
+}
+
+.thread-loading-indicator--bottom {
+  bottom: 12px;
+}
+
+.thread-loading-indicator__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--tg-sticky-bg);
+  border: 1px solid var(--tg-border);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--tg-text-secondary);
+  white-space: nowrap;
+}
+
+.thread-loading-indicator__spinner {
+  color: var(--q-primary);
 }
 
 .thread-composer-anchor {

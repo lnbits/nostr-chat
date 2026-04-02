@@ -22,6 +22,16 @@ export interface MessageRow {
   meta: Record<string, unknown>;
 }
 
+export interface MessageCursor {
+  id: number;
+  created_at: string;
+}
+
+export interface MessageBatchResult {
+  rows: MessageRow[];
+  has_more: boolean;
+}
+
 export interface CreateChatInput {
   public_key: string;
   type?: ChatType;
@@ -68,7 +78,7 @@ interface MessageRecord {
 }
 
 const CHAT_DATA_DB_NAME = 'chat-data-indexeddb-v2';
-const CHAT_DATA_DB_VERSION = 1;
+const CHAT_DATA_DB_VERSION = 2;
 
 const CHATS_STORE = 'chats';
 const MESSAGES_STORE = 'messages';
@@ -77,6 +87,7 @@ const CHATS_PUBLIC_KEY_KEY = 'public_key';
 const CHATS_LAST_MESSAGE_AT_INDEX = 'last_message_at';
 
 const MESSAGES_CHAT_PUBLIC_KEY_INDEX = 'chat_public_key';
+const MESSAGES_CHAT_CREATED_AT_INDEX = 'chat_public_key_created_at';
 const MESSAGES_EVENT_ID_INDEX = 'event_id';
 
 function canUseIndexedDb(): boolean {
@@ -210,6 +221,37 @@ function sortMessagesByCreated(first: MessageRecord, second: MessageRecord): num
   }
 
   return first.id - second.id;
+}
+
+function compareMessageCursor(
+  first: Pick<MessageRecord, 'created_at' | 'id'>,
+  second: Pick<MessageCursor, 'created_at' | 'id'>
+): number {
+  const byTime =
+    toComparableTimestamp(first.created_at) - toComparableTimestamp(second.created_at);
+  if (byTime !== 0) {
+    return byTime;
+  }
+
+  return first.id - second.id;
+}
+
+function createChatCreatedAtRange(chatPublicKey: string): IDBKeyRange {
+  return IDBKeyRange.bound([chatPublicKey, ''], [chatPublicKey, '\uffff']);
+}
+
+function createChatCreatedAtRangeFromCursor(
+  chatPublicKey: string,
+  cursor: MessageCursor | undefined,
+  direction: IDBCursorDirection
+): IDBKeyRange {
+  if (!cursor) {
+    return createChatCreatedAtRange(chatPublicKey);
+  }
+
+  return direction === 'next'
+    ? IDBKeyRange.lowerBound([chatPublicKey, cursor.created_at], false)
+    : IDBKeyRange.upperBound([chatPublicKey, cursor.created_at], false);
 }
 
 function toChatRow(record: ChatRecord): ChatRow {
@@ -560,6 +602,84 @@ class ChatDataService {
     return records.sort(sortMessagesByCreated).map((record) => toMessageRow(record));
   }
 
+  async listLatestMessages(chatPublicKey: string, limit: number): Promise<MessageBatchResult> {
+    return this.collectMessagesByCursor(chatPublicKey, {
+      direction: 'prev',
+      limit
+    });
+  }
+
+  async listMessagesBefore(
+    chatPublicKey: string,
+    cursor: MessageCursor,
+    limit: number
+  ): Promise<MessageBatchResult> {
+    return this.collectMessagesByCursor(chatPublicKey, {
+      direction: 'prev',
+      limit,
+      cursor
+    });
+  }
+
+  async listMessagesAfter(
+    chatPublicKey: string,
+    cursor: MessageCursor,
+    limit: number
+  ): Promise<MessageBatchResult> {
+    return this.collectMessagesByCursor(chatPublicKey, {
+      direction: 'next',
+      limit,
+      cursor
+    });
+  }
+
+  async findFirstIncomingMessageAfter(
+    chatPublicKey: string,
+    afterTimestamp: string,
+    loggedInPublicKey: string
+  ): Promise<MessageRow | null> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    const normalizedLoggedInPublicKey = normalizePublicKeyValue(loggedInPublicKey);
+    const trimmedAfterTimestamp = String(afterTimestamp ?? '').trim();
+    if (!normalizedPublicKey || !normalizedLoggedInPublicKey || !trimmedAfterTimestamp) {
+      return null;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const index = store.index(MESSAGES_CHAT_CREATED_AT_INDEX);
+    const request = index.openCursor(
+      IDBKeyRange.lowerBound([normalizedPublicKey, trimmedAfterTimestamp], true),
+      'next'
+    );
+
+    const matchingRow = await new Promise<MessageRow | null>((resolve, reject) => {
+      request.onsuccess = () => {
+        const cursorValue = request.result;
+        if (!cursorValue) {
+          resolve(null);
+          return;
+        }
+
+        const record = cursorValue.value as MessageRecord;
+        if (normalizePublicKeyValue(record.author_public_key) !== normalizedLoggedInPublicKey) {
+          resolve(toMessageRow(record));
+          return;
+        }
+
+        cursorValue.continue();
+      };
+
+      request.onerror = () => {
+        reject(request.error ?? new Error('Failed to iterate paged message cursor.'));
+      };
+    });
+
+    await waitForTransaction(transaction);
+    return matchingRow;
+  }
+
   async listAllMessages(): Promise<MessageRow[]> {
     const db = await this.getDatabase();
     const transaction = db.transaction(MESSAGES_STORE, 'readonly');
@@ -812,6 +932,15 @@ class ChatDataService {
             unique: false
           });
         }
+        if (!messagesStore.indexNames.contains(MESSAGES_CHAT_CREATED_AT_INDEX)) {
+          messagesStore.createIndex(
+            MESSAGES_CHAT_CREATED_AT_INDEX,
+            [MESSAGES_CHAT_PUBLIC_KEY_INDEX, 'created_at'],
+            {
+              unique: false
+            }
+          );
+        }
         if (!messagesStore.indexNames.contains(MESSAGES_EVENT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_EVENT_ID_INDEX, MESSAGES_EVENT_ID_INDEX, {
             unique: true
@@ -835,6 +964,85 @@ class ChatDataService {
         console.error('IndexedDB chat database open request is blocked by another tab.');
       };
     });
+  }
+
+  private async collectMessagesByCursor(
+    chatPublicKey: string,
+    options: {
+      direction: IDBCursorDirection;
+      limit: number;
+      cursor?: MessageCursor;
+    }
+  ): Promise<MessageBatchResult> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    const normalizedLimit = Math.max(0, Math.floor(Number(options.limit) || 0));
+    if (!normalizedPublicKey || normalizedLimit <= 0) {
+      return {
+        rows: [],
+        has_more: false
+      };
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const index = store.index(MESSAGES_CHAT_CREATED_AT_INDEX);
+    const request = index.openCursor(
+      createChatCreatedAtRangeFromCursor(normalizedPublicKey, options.cursor, options.direction),
+      options.direction
+    );
+
+    const batchResult = await new Promise<MessageBatchResult>((resolve, reject) => {
+      const rows: MessageRow[] = [];
+      let hasMore = false;
+
+      request.onsuccess = () => {
+        const cursorValue = request.result;
+        if (!cursorValue) {
+          resolve({
+            rows: options.direction === 'prev' ? rows.reverse() : rows,
+            has_more: hasMore
+          });
+          return;
+        }
+
+        const record = cursorValue.value as MessageRecord;
+        if (normalizePublicKeyValue(record.chat_public_key) !== normalizedPublicKey) {
+          cursorValue.continue();
+          return;
+        }
+
+        if (options.cursor) {
+          const comparison = compareMessageCursor(record, options.cursor);
+          const shouldInclude =
+            options.direction === 'next' ? comparison > 0 : comparison < 0;
+
+          if (!shouldInclude) {
+            cursorValue.continue();
+            return;
+          }
+        }
+
+        if (rows.length >= normalizedLimit) {
+          hasMore = true;
+          resolve({
+            rows: options.direction === 'prev' ? rows.reverse() : rows,
+            has_more: hasMore
+          });
+          return;
+        }
+
+        rows.push(toMessageRow(record));
+        cursorValue.continue();
+      };
+
+      request.onerror = () => {
+        reject(request.error ?? new Error('Failed to iterate paged message cursor.'));
+      };
+    });
+
+    await waitForTransaction(transaction);
+    return batchResult;
   }
 }
 
