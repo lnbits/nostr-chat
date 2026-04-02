@@ -76,6 +76,7 @@
               v-model="isEmojiMenuOpen"
               anchor="top right"
               self="bottom right"
+              class="tg-pop-menu"
               @show="handleEmojiMenuShow"
               @hide="handleEmojiMenuHide"
             >

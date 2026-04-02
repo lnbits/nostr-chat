@@ -121,13 +121,7 @@ function closeDialog(): void {
   border-radius: 24px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--tg-border) 82%, #8ea4c0 18%);
-  background:
-    radial-gradient(circle at 12% 12%, rgba(98, 154, 255, 0.16), transparent 34%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 88%, #f3f8ff 12%),
-      color-mix(in srgb, var(--tg-sidebar) 96%, #f3f8ff 4%)
-    );
+  background: var(--tg-panel-sidebar-bg);
   box-shadow: var(--tg-shadow-md);
 }
 
@@ -161,12 +155,7 @@ function closeDialog(): void {
   gap: 12px;
   padding: 14px 16px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 86%, #dbe9ff 14%),
-      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
-    );
+  background: var(--tg-panel-header-bg);
 }
 
 .app-dialog__header-copy {
@@ -207,23 +196,12 @@ function closeDialog(): void {
 
 body.body--dark .app-dialog {
   border-color: color-mix(in srgb, var(--tg-border) 86%, #6b86a8 14%);
-  background:
-    radial-gradient(circle at 14% 14%, rgba(72, 126, 219, 0.24), transparent 36%),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 90%, #22324b 10%),
-      color-mix(in srgb, var(--tg-sidebar) 98%, #22324b 2%)
-    );
+  background: var(--tg-panel-sidebar-bg);
 }
 
 body.body--dark .app-dialog__header {
   border-bottom-color: color-mix(in srgb, var(--tg-border) 88%, #617c9d 12%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 88%, #223652 12%),
-      color-mix(in srgb, var(--tg-sidebar) 98%, #223652 2%)
-    );
+  background: var(--tg-panel-header-bg);
 }
 
 body.body--dark .app-dialog__close {

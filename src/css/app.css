@@ -365,6 +365,7 @@ body.body--dark .text-grey-9 {
   overflow: hidden;
   border: 1px solid var(--tg-border);
   background: var(--tg-menu-bg);
+  background-image: none;
   box-shadow: var(--tg-shadow-md);
   backdrop-filter: none;
 }
@@ -390,6 +391,7 @@ body.body--dark .text-grey-9 {
 body.body--dark .tg-pop-menu {
   border-color: var(--tg-border);
   background: var(--tg-menu-bg);
+  background-image: none;
   box-shadow: var(--tg-shadow-md);
 }
 
