@@ -646,6 +646,7 @@ defineExpose({
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__control) {
     min-height: 34px !important;
+    padding-left: 4px !important;
     border-radius: 999px !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -653,6 +654,7 @@ defineExpose({
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__control-container) {
     min-height: 34px;
+    padding-left: 8px !important;
     padding-top: 0 !important;
     padding-bottom: 0 !important;
     display: flex;
@@ -693,6 +695,7 @@ defineExpose({
   .composer__input :deep(.q-field__prepend) {
     padding-left: 0;
     padding-right: 2px;
+    margin-left: 0;
   }
 
   .composer__emoji-trigger {
