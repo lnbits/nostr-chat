@@ -2410,10 +2410,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Decrypted group private key does not match the group public key.');
     }
 
-    const relayUrls = await resolveGiftWrapRecipientRelayUrls(
-      normalizedMemberPublicKey,
-      seedRelayUrls
-    );
+    const relayUrls = await resolveGiftWrapRecipientRelayUrls(normalizedMemberPublicKey, [
+      ...seedRelayUrls,
+      ...getAppRelayUrls(),
+      ...inputSanitizerService.normalizeReadableRelayUrls(groupContact.relays)
+    ]);
     if (relayUrls.length === 0) {
       throw new Error('Cannot send epoch ticket without at least one relay.');
     }
