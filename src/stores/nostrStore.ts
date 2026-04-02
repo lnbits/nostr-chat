@@ -160,13 +160,16 @@ export interface CreateGroupChatResult {
   contactListSyncError: string | null;
 }
 
-export interface RotateGroupEpochResult {
+export interface PublishGroupMemberChangesResult {
   epochNumber: number;
+  createdNewEpoch: boolean;
   attemptedMemberCount: number;
   deliveredMemberCount: number;
   failedMemberPubkeys: string[];
   publishedRelayUrls: string[];
 }
+
+export type RotateGroupEpochResult = PublishGroupMemberChangesResult;
 
 interface CreateGroupChatInput {
   name?: string;
@@ -2126,11 +2129,32 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  async function rotateGroupEpochAndSendTickets(
+  function normalizeUniqueMemberPublicKeys(
+    memberPublicKeys: string[],
+    excludedPublicKeys: string[] = []
+  ): string[] {
+    const excludedPubkeySet = new Set(
+      excludedPublicKeys
+        .map((publicKey) => inputSanitizerService.normalizeHexKey(publicKey))
+        .filter((publicKey): publicKey is string => Boolean(publicKey))
+    );
+
+    return Array.from(new Set(
+      memberPublicKeys
+        .map((memberPublicKey) => inputSanitizerService.normalizeHexKey(memberPublicKey))
+        .filter((memberPublicKey): memberPublicKey is string => Boolean(memberPublicKey))
+        .filter((memberPublicKey) => !excludedPubkeySet.has(memberPublicKey))
+    ));
+  }
+
+  async function publishGroupEpochTickets(
     groupPublicKey: string,
     memberPublicKeys: string[],
-    seedRelayUrls: string[] = []
-  ): Promise<RotateGroupEpochResult> {
+    options: {
+      rotateEpoch?: boolean;
+      seedRelayUrls?: string[];
+    } = {}
+  ): Promise<PublishGroupMemberChangesResult> {
     const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
@@ -2151,65 +2175,73 @@ export const useNostrStore = defineStore('nostrStore', () => {
       groupContact.meta.owner_public_key ?? ''
     );
     if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
-      throw new Error('Only the owner can publish a new group epoch.');
+      throw new Error('Only the owner can publish group membership changes.');
     }
 
+    const seedRelayUrls = Array.isArray(options.seedRelayUrls) ? options.seedRelayUrls : [];
+    const shouldRotateEpoch = options.rotateEpoch === true;
     const { contact: currentGroupContact, secret } = await ensureGroupIdentitySecretEpochState(
       groupContact,
       seedRelayUrls
     );
-    const nextEpochSigner = NDKPrivateKeySigner.generate();
-    const nextEpochNumber = Math.floor(Number(secret.epoch_number ?? -1)) + 1;
-    if (!Number.isInteger(nextEpochNumber) || nextEpochNumber < 0) {
-      throw new Error('Failed to generate the next group epoch.');
+    let epochNumber = Math.floor(Number(secret.epoch_number ?? -1));
+    if (!Number.isInteger(epochNumber) || epochNumber < 0) {
+      throw new Error('Missing current epoch state for this group.');
     }
-
-    const nextSecret: GroupIdentitySecretContent = {
-      ...secret,
-      epoch_number: nextEpochNumber,
-      epoch_privkey: nextEpochSigner.privateKey
-    };
-    const nextEncryptedSecret = await encryptGroupIdentitySecretContent(nextSecret);
-    const updatedGroupContact = await contactsService.updateContact(currentGroupContact.id, {
-      meta: {
-        ...(currentGroupContact.meta ?? {}),
-        [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: nextEncryptedSecret
-      }
-    });
-    if (!updatedGroupContact) {
-      throw new Error('Failed to persist the new group epoch.');
-    }
-
-    await persistIncomingGroupEpochTicket(
-      normalizedGroupPublicKey,
-      nextEpochNumber,
-      nextEpochSigner.privateKey,
-      {
-        fallbackName: updatedGroupContact.name,
-        accepted: true
-      }
-    );
 
     const publishedRelayUrls = new Set<string>();
-    try {
-      const groupSecretSave = await publishGroupIdentitySecret(
-        normalizedGroupPublicKey,
-        nextEncryptedSecret,
-        seedRelayUrls
-      );
-      for (const relayUrl of groupSecretSave.publishedRelayUrls) {
-        publishedRelayUrls.add(relayUrl);
+    if (shouldRotateEpoch) {
+      const nextEpochSigner = NDKPrivateKeySigner.generate();
+      const nextEpochNumber = epochNumber + 1;
+      if (!Number.isInteger(nextEpochNumber) || nextEpochNumber < 0) {
+        throw new Error('Failed to generate the next group epoch.');
       }
-    } catch (error) {
-      console.warn('Failed to publish updated group identity secret after epoch rotation', error);
+
+      const nextSecret: GroupIdentitySecretContent = {
+        ...secret,
+        epoch_number: nextEpochNumber,
+        epoch_privkey: nextEpochSigner.privateKey
+      };
+      const nextEncryptedSecret = await encryptGroupIdentitySecretContent(nextSecret);
+      const updatedGroupContact = await contactsService.updateContact(currentGroupContact.id, {
+        meta: {
+          ...(currentGroupContact.meta ?? {}),
+          [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: nextEncryptedSecret
+        }
+      });
+      if (!updatedGroupContact) {
+        throw new Error('Failed to persist the new group epoch.');
+      }
+
+      await persistIncomingGroupEpochTicket(
+        normalizedGroupPublicKey,
+        nextEpochNumber,
+        nextEpochSigner.privateKey,
+        {
+          fallbackName: updatedGroupContact.name,
+          accepted: true
+        }
+      );
+
+      try {
+        const groupSecretSave = await publishGroupIdentitySecret(
+          normalizedGroupPublicKey,
+          nextEncryptedSecret,
+          seedRelayUrls
+        );
+        for (const relayUrl of groupSecretSave.publishedRelayUrls) {
+          publishedRelayUrls.add(relayUrl);
+        }
+      } catch (error) {
+        console.warn('Failed to publish updated group identity secret after epoch rotation', error);
+      }
+
+      epochNumber = nextEpochNumber;
     }
 
-    const normalizedMemberPubkeys = Array.from(new Set(
-      memberPublicKeys
-        .map((memberPublicKey) => inputSanitizerService.normalizeHexKey(memberPublicKey))
-        .filter((memberPublicKey): memberPublicKey is string => Boolean(memberPublicKey))
-        .filter((memberPublicKey) => memberPublicKey !== loggedInPubkeyHex)
-    ));
+    const normalizedMemberPubkeys = normalizeUniqueMemberPublicKeys(memberPublicKeys, [
+      normalizedOwnerPublicKey
+    ]);
 
     const failedMemberPubkeys: string[] = [];
     for (const memberPublicKey of normalizedMemberPubkeys) {
@@ -2224,7 +2256,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         }
       } catch (error) {
         failedMemberPubkeys.push(memberPublicKey);
-        console.warn('Failed to publish rotated group epoch ticket', {
+        console.warn('Failed to publish group epoch ticket', {
           groupPublicKey: normalizedGroupPublicKey,
           memberPublicKey,
           error
@@ -2233,12 +2265,70 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return {
-      epochNumber: nextEpochNumber,
+      epochNumber,
+      createdNewEpoch: shouldRotateEpoch,
       attemptedMemberCount: normalizedMemberPubkeys.length,
       deliveredMemberCount: normalizedMemberPubkeys.length - failedMemberPubkeys.length,
       failedMemberPubkeys,
       publishedRelayUrls: Array.from(publishedRelayUrls.values())
     };
+  }
+
+  async function rotateGroupEpochAndSendTickets(
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls: string[] = []
+  ): Promise<RotateGroupEpochResult> {
+    return publishGroupEpochTickets(groupPublicKey, memberPublicKeys, {
+      rotateEpoch: true,
+      seedRelayUrls
+    });
+  }
+
+  async function publishGroupMemberChanges(
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls: string[] = []
+  ): Promise<PublishGroupMemberChangesResult> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await contactsService.init();
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can publish group membership changes.');
+    }
+
+    const currentMemberPubkeys = normalizeUniqueMemberPublicKeys(
+      (groupContact.meta.group_members ?? []).map((member) => member.public_key),
+      [normalizedOwnerPublicKey]
+    );
+    const nextMemberPubkeys = normalizeUniqueMemberPublicKeys(memberPublicKeys, [
+      normalizedOwnerPublicKey
+    ]);
+    const nextMemberPubkeySet = new Set(nextMemberPubkeys);
+    const hasRemovedMembers = currentMemberPubkeys.some(
+      (memberPublicKey) => !nextMemberPubkeySet.has(memberPublicKey)
+    );
+
+    return publishGroupEpochTickets(normalizedGroupPublicKey, nextMemberPubkeys, {
+      rotateEpoch: hasRemovedMembers,
+      seedRelayUrls
+    });
   }
 
   async function resolveGiftWrapRecipientRelayUrls(
@@ -10628,6 +10718,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     publishPrivateContactList,
     publishGroupRelayList,
     publishGroupMetadata,
+    publishGroupMemberChanges,
     publishUserMetadata,
     publishMyRelayList,
     relayStatusVersion,

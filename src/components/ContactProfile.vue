@@ -451,13 +451,13 @@
                   color="primary"
                   label="Publish"
                   class="profile-tab-actions__button"
-                  :disable="!normalizedHeaderPubkey"
+                  :disable="!normalizedHeaderPubkey || !hasPendingGroupMemberChanges"
                   :loading="isPublishingMembersEpoch"
                   @click="handleMembersPublish"
                 />
               </div>
 
-              <div class="profile-members-toolbar">
+              <div v-if="canEditGroupMembers" class="profile-members-toolbar">
                 <q-input
                   v-model="newMemberIdentifier"
                   class="tg-input profile-members-toolbar__input"
@@ -488,18 +488,81 @@
                 </q-input>
               </div>
 
-              <div
-                v-if="groupMembers.length === 0"
-                class="profile-members-state"
-                :class="{ 'q-mt-md': true }"
-              >
-                <div class="profile-members-state__title">Members</div>
-                <div class="text-body2">No members added yet.</div>
+              <div v-if="hasPendingGroupMemberChanges" class="profile-members-pending q-mt-md">
+                <q-banner dense rounded class="profile-warning-banner">
+                  <template #avatar>
+                    <q-icon name="warning_amber" color="warning" />
+                  </template>
+                  You must publish these changes for them to take effect
+                </q-banner>
+
+                <div class="profile-members-section-title">Pending</div>
+
+                <q-list bordered separator class="profile-members-list">
+                  <q-item
+                    v-for="change in pendingGroupMemberChanges"
+                    :key="`${change.action}:${change.member.public_key}`"
+                    class="profile-members-list__item"
+                  >
+                    <q-item-section avatar>
+                      <CachedAvatar
+                        :src="memberPictureUrl(change.member)"
+                        :alt="memberListTitle(change.member)"
+                        :fallback="memberAvatar(change.member)"
+                      />
+                    </q-item-section>
+
+                    <q-item-section>
+                      <div class="profile-members-list__headline">
+                        <div class="profile-members-list__name">
+                          {{ memberListTitle(change.member) }}
+                        </div>
+                        <q-badge
+                          rounded
+                          :color="pendingMemberBadgeColor(change.action)"
+                          class="profile-members-list__badge"
+                        >
+                          {{ pendingMemberBadgeLabel(change.action) }}
+                        </q-badge>
+                      </div>
+                      <q-item-label
+                        v-if="memberListCaption(change.member)"
+                        caption
+                        class="profile-members-list__caption"
+                        lines="1"
+                      >
+                        {{ memberListCaption(change.member) }}
+                      </q-item-label>
+                    </q-item-section>
+
+                    <q-item-section side top class="profile-members-list__actions">
+                      <q-btn
+                        flat
+                        round
+                        dense
+                        icon="undo"
+                        color="primary"
+                        aria-label="Undo pending member change"
+                        @click="handleUndoPendingMember(change.member.public_key)"
+                      />
+                    </q-item-section>
+                  </q-item>
+                </q-list>
               </div>
 
-              <q-list v-else bordered separator class="profile-members-list q-mt-md">
+              <div class="profile-members-section-title q-mt-md">Members</div>
+
+              <div
+                v-if="visibleGroupMembers.length === 0"
+                class="profile-members-state"
+                :class="{ 'q-mt-sm': true }"
+              >
+                <div class="text-body2">No published members yet.</div>
+              </div>
+
+              <q-list v-else bordered separator class="profile-members-list q-mt-sm">
                 <q-item
-                  v-for="(member, index) in groupMembers"
+                  v-for="member in visibleGroupMembers"
                   :key="member.public_key"
                   class="profile-members-list__item"
                 >
@@ -534,16 +597,17 @@
                       color="primary"
                       aria-label="Refresh member"
                       :loading="isMemberRefreshing(member.public_key)"
-                      @click="handleRefreshMember(index)"
+                      @click="handleRefreshMember(member.public_key)"
                     />
                     <q-btn
+                      v-if="canEditGroupMembers"
                       flat
                       round
                       dense
                       icon="delete"
                       color="negative"
                       aria-label="Remove member"
-                      @click="handleRemoveMember(index)"
+                      @click="handleRemoveMember(member.public_key)"
                     />
                   </q-item-section>
                 </q-item>
@@ -756,7 +820,13 @@ type RelayTogglePayload = {
 };
 
 type GroupMemberDraft = ContactGroupMember;
+type PendingGroupMemberChangeAction = 'add' | 'remove';
 type PubkeyDisplayFormat = 'hex' | 'npub';
+
+interface PendingGroupMemberChange {
+  action: PendingGroupMemberChangeAction;
+  member: GroupMemberDraft;
+}
 
 interface Props {
   modelValue: ContactProfileForm;
@@ -812,6 +882,7 @@ const newGroupRelay = ref('');
 const isRefreshingGroupRelays = ref(false);
 const isPublishingGroupRelays = ref(false);
 const groupMembers = ref<GroupMemberDraft[]>([]);
+const pendingGroupMemberChanges = ref<PendingGroupMemberChange[]>([]);
 const groupRelayEntries = ref<ContactRelay[]>([]);
 const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 let lookupRequestId = 0;
@@ -862,7 +933,10 @@ const showGroupProfileMarkerWarning = computed(() => {
   return currentContact.value?.type === 'group' && currentContact.value.meta.group !== true;
 });
 const showTabSelection = computed(() => isGroupContact.value);
-const canAddMember = computed(() => newMemberIdentifier.value.trim().length > 0 && !isAddingMember.value);
+const canEditGroupMembers = computed(() => isOwnedGroupContact.value && !props.readOnly);
+const canAddMember = computed(() => {
+  return canEditGroupMembers.value && newMemberIdentifier.value.trim().length > 0 && !isAddingMember.value;
+});
 const groupRelayUrls = computed(() => groupRelayEntries.value.map((entry) => entry.url));
 const groupRelayValidationError = computed(() => validateGroupRelayUrl(newGroupRelay.value.trim()));
 const canAddGroupRelay = computed(() => {
@@ -886,6 +960,27 @@ const mobileNavGridStyle = computed(() => ({
 const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
 const showMembersTabActions = computed(() => props.showHeader || props.showPublishAction);
 const showRelaysTabActions = computed(() => props.showHeader || props.showPublishAction);
+const hasPendingGroupMemberChanges = computed(() => pendingGroupMemberChanges.value.length > 0);
+const pendingRemovedGroupMemberPubkeys = computed(() => new Set(
+  pendingGroupMemberChanges.value
+    .filter((change) => change.action === 'remove')
+    .map((change) => change.member.public_key)
+));
+const visibleGroupMembers = computed(() => {
+  const pendingRemovedMemberPubkeys = pendingRemovedGroupMemberPubkeys.value;
+  return groupMembers.value.filter((member) => !pendingRemovedMemberPubkeys.has(member.public_key));
+});
+const nextPublishedGroupMembers = computed(() => {
+  const pendingRemovedMemberPubkeys = pendingRemovedGroupMemberPubkeys.value;
+  const remainingMembers = groupMembers.value
+    .filter((member) => !pendingRemovedMemberPubkeys.has(member.public_key))
+    .map((member) => cloneGroupMember(member));
+  const pendingAddedMembers = pendingGroupMemberChanges.value
+    .filter((change) => change.action === 'add')
+    .map((change) => cloneGroupMember(change.member));
+
+  return [...remainingMembers, ...pendingAddedMembers];
+});
 const allKnownRelays = computed(() => uniqueRelays([...relayList.value, ...groupRelayUrls.value]));
 const groupEpochRows = computed(() => normalizeGroupEpochRows(currentGroupChat.value?.meta?.group_epoch_keys));
 const currentEpochPublicKey = computed(() => {
@@ -1282,8 +1377,40 @@ function memberIdentifierErrorMessage(resolution: {
   return 'Enter a valid hex pubkey, npub, or NIP-05 email.';
 }
 
+function applyStoredContactToCurrentContact(updatedContact: ContactRecord): void {
+  const contact = currentContact.value;
+  if (!contact || contact.id !== updatedContact.id) {
+    return;
+  }
+
+  contact.public_key = updatedContact.public_key;
+  contact.type = updatedContact.type;
+  contact.name = updatedContact.name;
+  contact.given_name = updatedContact.given_name;
+  contact.meta = {
+    ...(updatedContact.meta ?? {})
+  };
+  contact.relays = updatedContact.relays ? updatedContact.relays.map((relay) => ({ ...relay })) : [];
+  contact.sendMessagesToAppRelays = updatedContact.sendMessagesToAppRelays;
+}
+
+function findPendingGroupMemberChangeIndex(memberPublicKey: string): number {
+  const normalizedPublicKey = memberPublicKey.trim().toLowerCase();
+  return pendingGroupMemberChanges.value.findIndex(
+    (change) => change.member.public_key === normalizedPublicKey
+  );
+}
+
+function pendingMemberBadgeColor(action: PendingGroupMemberChangeAction): string {
+  return action === 'add' ? 'positive' : 'negative';
+}
+
+function pendingMemberBadgeLabel(action: PendingGroupMemberChangeAction): string {
+  return action === 'add' ? 'Adding' : 'Removing';
+}
+
 async function handleAddMember(): Promise<void> {
-  if (isAddingMember.value) {
+  if (!canEditGroupMembers.value || isAddingMember.value) {
     return;
   }
 
@@ -1303,6 +1430,28 @@ async function handleAddMember(): Promise<void> {
     }
 
     const normalizedPublicKey = resolution.normalizedPubkey;
+    const ownerPublicKey = currentContact.value?.meta.owner_public_key?.trim().toLowerCase() ?? '';
+    if (ownerPublicKey && normalizedPublicKey === ownerPublicKey) {
+      newMemberIdentifierError.value = 'The group owner does not need to be added as a member.';
+      return;
+    }
+
+    const pendingChangeIndex = findPendingGroupMemberChangeIndex(normalizedPublicKey);
+    if (pendingChangeIndex >= 0) {
+      const pendingChange = pendingGroupMemberChanges.value[pendingChangeIndex];
+      if (pendingChange?.action === 'add') {
+        newMemberIdentifierError.value = 'This member is already pending.';
+        return;
+      }
+
+      pendingGroupMemberChanges.value = pendingGroupMemberChanges.value.filter(
+        (change) => change.member.public_key !== normalizedPublicKey
+      );
+      newMemberIdentifier.value = '';
+      newMemberIdentifierError.value = '';
+      return;
+    }
+
     if (groupMembers.value.some((member) => member.public_key === normalizedPublicKey)) {
       newMemberIdentifierError.value = 'This member is already in the list.';
       return;
@@ -1321,32 +1470,18 @@ async function handleAddMember(): Promise<void> {
       };
 
     const trimmedIdentifier = identifier.trim();
-    await persistGroupMembers([
-      ...groupMembers.value,
-      buildStoredGroupMember(
-        memberPreview,
-        resolution.identifierType,
-        trimmedIdentifier.startsWith('nprofile1') ? trimmedIdentifier : null,
-        resolution.identifierType === 'nip05' ? trimmedIdentifier : null
-      )
-    ]);
-
-    const groupPublicKey = currentContact.value?.public_key?.trim() ?? '';
-    if (groupPublicKey) {
-      try {
-        await nostrStore.sendGroupEpochTicket(
-          groupPublicKey,
-          normalizedPublicKey,
-          resolution.relays
-        );
-      } catch (error) {
-        reportUiError(
-          'Failed to send group epoch ticket',
-          error,
-          'Member added, but the epoch ticket could not be sent.'
-        );
+    pendingGroupMemberChanges.value = [
+      ...pendingGroupMemberChanges.value,
+      {
+        action: 'add',
+        member: buildStoredGroupMember(
+          memberPreview,
+          resolution.identifierType,
+          trimmedIdentifier.startsWith('nprofile1') ? trimmedIdentifier : null,
+          resolution.identifierType === 'nip05' ? trimmedIdentifier : null
+        )
       }
-    }
+    ];
 
     newMemberIdentifier.value = '';
     newMemberIdentifierError.value = '';
@@ -1357,17 +1492,44 @@ async function handleAddMember(): Promise<void> {
   }
 }
 
-async function handleRemoveMember(index: number): Promise<void> {
+function handleUndoPendingMember(memberPublicKey: string): void {
   try {
-    const nextMembers = groupMembers.value.filter((_, memberIndex) => memberIndex !== index);
-    await persistGroupMembers(nextMembers);
+    pendingGroupMemberChanges.value = pendingGroupMemberChanges.value.filter(
+      (change) => change.member.public_key !== memberPublicKey
+    );
+  } catch (error) {
+    reportUiError('Failed to undo pending group member change', error, 'Failed to undo member change.');
+  }
+}
+
+function handleRemoveMember(memberPublicKey: string): void {
+  if (!canEditGroupMembers.value) {
+    return;
+  }
+
+  try {
+    const member = groupMembers.value.find((entry) => entry.public_key === memberPublicKey);
+    if (!member || findPendingGroupMemberChangeIndex(memberPublicKey) >= 0) {
+      return;
+    }
+
+    pendingGroupMemberChanges.value = [
+      ...pendingGroupMemberChanges.value,
+      {
+        action: 'remove',
+        member: cloneGroupMember(member)
+      }
+    ];
   } catch (error) {
     reportUiError('Failed to remove group member', error, 'Failed to remove member.');
   }
 }
 
-async function handleRefreshMember(index: number): Promise<void> {
-  const member = groupMembers.value[index];
+async function handleRefreshMember(memberPublicKey: string): Promise<void> {
+  const targetMemberIndex = groupMembers.value.findIndex(
+    (entry) => entry.public_key === memberPublicKey
+  );
+  const member = targetMemberIndex >= 0 ? groupMembers.value[targetMemberIndex] : null;
   if (!member) {
     return;
   }
@@ -1386,7 +1548,7 @@ async function handleRefreshMember(index: number): Promise<void> {
     const refreshedMember =
       (await nostrStore.fetchContactPreviewByPublicKey(memberPubkey, member.name)) ?? member;
     await persistGroupMembers(groupMembers.value.map((entry, memberIndex) =>
-      memberIndex === index
+      memberIndex === targetMemberIndex
         ? buildStoredGroupMember(refreshedMember, null, entry.nprofile ?? null, entry.nip05 ?? null)
         : entry
     ));
@@ -1403,18 +1565,26 @@ async function handleRefreshMember(index: number): Promise<void> {
 
 async function handleMembersPublish(): Promise<void> {
   const groupPublicKey = currentContact.value?.public_key?.trim() ?? '';
-  if (!groupPublicKey || isPublishingMembersEpoch.value) {
+  if (
+    !groupPublicKey ||
+    !canEditGroupMembers.value ||
+    !hasPendingGroupMemberChanges.value ||
+    isPublishingMembersEpoch.value
+  ) {
     return;
   }
 
   isPublishingMembersEpoch.value = true;
 
   try {
-    const publishResult = await nostrStore.rotateGroupEpochAndSendTickets(
+    const nextMembers = nextPublishedGroupMembers.value.map((member) => cloneGroupMember(member));
+    const publishResult = await nostrStore.publishGroupMemberChanges(
       groupPublicKey,
-      groupMembers.value.map((member) => member.public_key)
+      nextMembers.map((member) => member.public_key)
     );
 
+    await persistGroupMembers(nextMembers);
+    pendingGroupMemberChanges.value = [];
     await loadContactFromPubkey(groupPublicKey);
 
     if (publishResult.failedMemberPubkeys.length === 0) {
@@ -1422,8 +1592,12 @@ async function handleMembersPublish(): Promise<void> {
         type: 'positive',
         message:
           publishResult.attemptedMemberCount > 0
-            ? `Epoch ${publishResult.epochNumber} published to ${publishResult.deliveredMemberCount} member${publishResult.deliveredMemberCount === 1 ? '' : 's'}.`
-            : `Epoch ${publishResult.epochNumber} created locally. No members to notify.`,
+            ? publishResult.createdNewEpoch
+              ? `Epoch ${publishResult.epochNumber} published to ${publishResult.deliveredMemberCount} member${publishResult.deliveredMemberCount === 1 ? '' : 's'}.`
+              : `Invitations for epoch ${publishResult.epochNumber} sent to ${publishResult.deliveredMemberCount} member${publishResult.deliveredMemberCount === 1 ? '' : 's'}.`
+            : publishResult.createdNewEpoch
+              ? `Epoch ${publishResult.epochNumber} created locally. No members to notify.`
+              : `No members to notify for epoch ${publishResult.epochNumber}.`,
         caption: `Published to ${publishResult.publishedRelayUrls.length} relay${publishResult.publishedRelayUrls.length === 1 ? '' : 's'}.`,
         position: 'top-right'
       });
@@ -1431,17 +1605,19 @@ async function handleMembersPublish(): Promise<void> {
     }
 
     $q.notify({
-      type: 'warning',
-      message: `Epoch ${publishResult.epochNumber} published with partial delivery.`,
+      type: publishResult.deliveredMemberCount > 0 ? 'warning' : 'negative',
+      message: publishResult.createdNewEpoch
+        ? `Epoch ${publishResult.epochNumber} published with partial delivery.`
+        : `Invitations for epoch ${publishResult.epochNumber} were sent with partial delivery.`,
       caption: `${publishResult.deliveredMemberCount} delivered, ${publishResult.failedMemberPubkeys.length} failed, ${publishResult.publishedRelayUrls.length} relay${publishResult.publishedRelayUrls.length === 1 ? '' : 's'}.`,
       position: 'top-right',
       timeout: 6000
     });
   } catch (error) {
     reportUiError(
-      'Failed to publish group epoch to members',
+      'Failed to publish group member changes',
       error,
-      'Failed to publish group epoch.'
+      'Failed to publish group members.'
     );
   } finally {
     isPublishingMembersEpoch.value = false;
@@ -1580,7 +1756,7 @@ async function handlePublishGroupRelays(): Promise<void> {
       throw new Error('Failed to persist group relay list.');
     }
 
-    currentContact.value = updatedContact;
+    applyStoredContactToCurrentContact(updatedContact);
     groupRelayEntries.value = cloneGroupRelayEntries(updatedContact.relays ?? []);
     localProfile.relays = (updatedContact.relays ?? []).map((relay) => relay.url);
 
@@ -1623,6 +1799,7 @@ function resetMembersEditor(): void {
   newMemberIdentifier.value = '';
   newMemberIdentifierError.value = '';
   groupMembers.value = [];
+  pendingGroupMemberChanges.value = [];
   refreshingMemberPubkeys.value = {};
 }
 
@@ -1705,7 +1882,7 @@ async function persistGroupMembers(nextMembers: GroupMemberDraft[]): Promise<voi
     throw new Error('Failed to persist group members.');
   }
 
-  currentContact.value = updatedContact;
+  applyStoredContactToCurrentContact(updatedContact);
   groupMembers.value = cloneGroupMembers(updatedContact.meta.group_members);
 }
 
@@ -2182,6 +2359,12 @@ body.body--dark .profile-header__action {
   color: var(--tg-text);
 }
 
+.profile-members-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--tg-text);
+}
+
 .profile-members {
   display: flex;
   flex-direction: column;
@@ -2213,6 +2396,11 @@ body.body--dark .profile-header__action {
   min-width: 0;
 }
 
+.profile-members-pending {
+  display: grid;
+  gap: 10px;
+}
+
 .profile-members-list {
   border-radius: 14px;
   background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
@@ -2222,9 +2410,21 @@ body.body--dark .profile-header__action {
   min-height: 64px;
 }
 
+.profile-members-list__headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .profile-members-list__name {
   font-weight: 600;
   color: var(--tg-text);
+}
+
+.profile-members-list__badge {
+  flex-shrink: 0;
 }
 
 .profile-members-list__caption {
