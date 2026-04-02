@@ -639,7 +639,7 @@ defineExpose({
   }
 
   .composer__row {
-    align-items: center;
+    align-items: flex-end;
     gap: 5px;
     padding: 4px;
     border: 1px solid color-mix(in srgb, var(--tg-border) 92%, #c5d1dc 8%);
@@ -697,9 +697,13 @@ defineExpose({
   }
 
   .composer__input :deep(.q-field__prepend) {
+    align-self: flex-end;
+    display: flex;
+    align-items: flex-end;
     padding-left: 0;
     padding-right: 2px;
     margin-left: 0;
+    padding-bottom: 2px;
   }
 
   .composer__emoji-trigger {
@@ -722,6 +726,7 @@ defineExpose({
   }
 
   .composer__send {
+    align-self: flex-end;
     width: 36px;
     min-width: 36px;
     height: 36px;
