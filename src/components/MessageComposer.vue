@@ -66,10 +66,10 @@
         <template #prepend>
           <q-btn
             flat
-            round
             dense
             icon="sentiment_satisfied"
             aria-label="Add emoji"
+           
             @click="rememberSelection"
           >
             <q-menu
@@ -605,6 +605,10 @@ defineExpose({
   flex: 1;
 }
 
+.composer__emoji-trigger {
+  color: var(--tg-text-secondary);
+}
+
 .composer__send {
   border-radius: 999px;
   min-width: 42px;
@@ -612,5 +616,141 @@ defineExpose({
   height: 42px;
   padding: 0;
   box-shadow: none !important;
+}
+
+@media (max-width: 1023px) {
+  .composer {
+    gap: 5px;
+    padding: 3px 10px calc(6px + env(safe-area-inset-bottom));
+    border-top: 0;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .composer__reply {
+    border-radius: 16px;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--tg-panel-header-bg) 94%, transparent);
+    box-shadow: 0 8px 24px rgba(23, 35, 52, 0.08);
+  }
+
+  .composer__row {
+    align-items: center;
+    gap: 5px;
+    padding: 4px;
+    border: 1px solid color-mix(in srgb, var(--tg-border) 92%, #c5d1dc 8%);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--tg-panel-header-bg) 99%, rgba(255, 255, 255, 0.96) 1%);
+    box-shadow: 0 8px 20px rgba(23, 35, 52, 0.1);
+  }
+
+  .composer__input.q-textarea.q-field--dense :deep(.q-field__control) {
+    min-height: 34px !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .composer__input.q-textarea.q-field--dense :deep(.q-field__control-container) {
+    min-height: 34px;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    display: flex;
+    align-items: center;
+  }
+
+  .composer__input.q-field--outlined :deep(.q-field__control)::before,
+  .composer__input.q-field--outlined :deep(.q-field__control)::after,
+  .composer__input.q-field--focused :deep(.q-field__control)::before,
+  .composer__input.q-field--focused :deep(.q-field__control)::after {
+    border-color: transparent !important;
+  }
+
+  .composer__input.q-field--focused :deep(.q-field__control) {
+    box-shadow: none !important;
+  }
+
+  .composer__input.q-textarea.q-field--dense :deep(.q-field__native),
+  .composer__input.q-textarea.q-field--dense :deep(.q-field__input) {
+    min-height: 18px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    font-size: 13px;
+    line-height: 18px !important;
+    display: block;
+  }
+
+  .composer__input.q-textarea.q-field--dense :deep(.q-field__native::placeholder),
+  .composer__input.q-textarea.q-field--dense :deep(.q-field__input::placeholder) {
+    color: #98a4af;
+    opacity: 1;
+  }
+
+  .composer__input.q-textarea.q-field--dense :deep(textarea.q-field__native) {
+    max-height: 132px;
+  }
+
+  .composer__input :deep(.q-field__prepend) {
+    padding-left: 0;
+    padding-right: 2px;
+  }
+
+  .composer__emoji-trigger {
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid #e1e5e9;
+    border-radius: 999px;
+    color: #7c8793 !important;
+    background: #f4f6f7 !important;
+  }
+
+  .composer__emoji-trigger :deep(.q-btn__content) {
+    justify-content: center;
+  }
+
+  .composer__emoji-trigger :deep(.q-icon) {
+    font-size: 18px;
+  }
+
+  .composer__send {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    margin-bottom: 0;
+    border: 0;
+    box-shadow: none !important;
+  }
+
+  .composer__send :deep(.q-icon) {
+    font-size: 16px;
+  }
+}
+
+body.body--dark .composer__reply {
+  box-shadow: none;
+}
+
+@media (max-width: 1023px) {
+  body.body--dark .composer {
+    background: transparent;
+  }
+
+  body.body--dark .composer__row {
+    border-color: color-mix(in srgb, var(--tg-border) 90%, #5b738b 10%);
+    background: color-mix(in srgb, var(--tg-panel-header-bg) 96%, rgba(13, 20, 27, 0.78) 4%);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  }
+
+  body.body--dark .composer__reply {
+    background: color-mix(in srgb, var(--tg-panel-header-bg) 94%, transparent);
+  }
+
+  body.body--dark .composer__emoji-trigger {
+    border-color: #516173;
+    background: color-mix(in srgb, var(--tg-panel-header-bg) 94%, #263341 6%) !important;
+    color: #a9b8c8 !important;
+  }
 }
 </style>

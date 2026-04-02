@@ -1711,6 +1711,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .thread-root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1906,6 +1907,34 @@ body.body--dark .thread-header__action {
 .thread-scroll-jump-leave-to {
   opacity: 0;
   transform: translateY(6px);
+}
+
+@media (max-width: 1023px) {
+  .thread-body {
+    padding: 12px 10px calc(78px + env(safe-area-inset-bottom));
+  }
+
+  .thread-more {
+    left: 10px;
+    right: 10px;
+  }
+
+  .thread-more--bottom {
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .thread-composer-anchor {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .thread-jump-buttons {
+    right: 14px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
 }
 
 body.body--dark .q-btn.thread-scroll-jump {

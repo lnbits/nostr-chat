@@ -375,7 +375,8 @@ async function getRelayStore(): Promise<RelayStore> {
 }
 
 function homePageStyleFn(offset: number, height: number): Record<string, string> {
-  const pageHeight = Math.max((visibleViewportHeight.value ?? height) - offset, 0);
+  const effectiveOffset = isMobile.value ? 0 : offset;
+  const pageHeight = Math.max((visibleViewportHeight.value ?? height) - effectiveOffset, 0);
 
   return {
     height: `${pageHeight}px`,

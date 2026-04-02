@@ -188,7 +188,8 @@ watch(
 );
 
 function settingsPageStyleFn(offset: number, height: number): Record<string, string> {
-  const pageHeight = Math.max(height - offset, 0);
+  const effectiveOffset = isMobile.value ? 0 : offset;
+  const pageHeight = Math.max(height - effectiveOffset, 0);
 
   return {
     height: `${pageHeight}px`,

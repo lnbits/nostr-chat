@@ -1,6 +1,9 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-page-container class="main-layout__page-container">
+    <q-page-container
+      class="main-layout__page-container"
+      :class="{ 'main-layout__page-container--mobile-overlay-nav': showMobileNav }"
+    >
       <router-view />
       <div
         v-if="showMobileNavigationMask"
@@ -9,13 +12,10 @@
       />
     </q-page-container>
 
-    <q-footer v-if="showMobileNav" bordered class="mobile-nav">
+    <q-footer v-if="showMobileNav" class="mobile-nav">
       <div class="mobile-nav__inner">
         <q-btn
-          :flat="activeSection !== 'chats'"
-          :unelevated="activeSection === 'chats'"
-          :color="activeSection === 'chats' ? 'primary' : undefined"
-          :text-color="activeSection === 'chats' ? 'white' : undefined"
+          flat
           no-caps
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeSection === 'chats' }"
@@ -36,10 +36,7 @@
           </span>
         </q-btn>
         <q-btn
-          :flat="activeSection !== 'contacts'"
-          :unelevated="activeSection === 'contacts'"
-          :color="activeSection === 'contacts' ? 'primary' : undefined"
-          :text-color="activeSection === 'contacts' ? 'white' : undefined"
+          flat
           no-caps
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeSection === 'contacts' }"
@@ -53,10 +50,7 @@
           </span>
         </q-btn>
         <q-btn
-          :flat="activeSection !== 'settings'"
-          :unelevated="activeSection === 'settings'"
-          :color="activeSection === 'settings' ? 'primary' : undefined"
-          :text-color="activeSection === 'settings' ? 'white' : undefined"
+          flat
           no-caps
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeSection === 'settings' }"
@@ -134,7 +128,7 @@ const showMobileNav = computed(() => {
     return !(typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0);
   }
 
-  if (route.name === 'settings') {
+  if (route.name === 'settings' || String(route.name ?? '').startsWith('settings-')) {
     return true;
   }
 
@@ -222,7 +216,10 @@ async function preloadMobileSections(): Promise<void> {
   }
 }
 
-function navigateToSection(section: NavigationSection, routeName: NavigationSection): void {
+function navigateToSection(
+  section: NavigationSection,
+  routeName: 'chats' | 'contacts' | 'settings'
+): void {
   if (isMobile.value && section !== activeSection.value) {
     pendingMobileSection.value = section;
   }
@@ -251,7 +248,7 @@ function goToSection(section: NavigationSection): void {
     return;
   }
 
-  if (route.name !== 'settings' && !String(route.name ?? '').startsWith('settings-')) {
+  if (route.name !== 'settings' || String(route.name ?? '').startsWith('settings-')) {
     navigateToSection('settings', 'settings');
   }
 }
@@ -260,6 +257,10 @@ function goToSection(section: NavigationSection): void {
 <style scoped>
 .main-layout__page-container {
   position: relative;
+}
+
+.main-layout__page-container--mobile-overlay-nav {
+  padding-bottom: 0 !important;
 }
 
 .main-layout__mobile-nav-mask {
@@ -271,26 +272,52 @@ function goToSection(section: NavigationSection): void {
 }
 
 .mobile-nav {
-  background: var(--tg-panel-sidebar-bg);
-  border-top: 1px solid var(--tg-border);
-  padding-bottom: env(safe-area-inset-bottom);
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding: 0 18px max(12px, env(safe-area-inset-bottom));
+  background: transparent;
+  border-top: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.mobile-nav::before {
+  content: '';
+  display: none;
+  position: absolute;
+  pointer-events: none;
 }
 
 .mobile-nav__inner {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  gap: 2px;
-  padding: 6px 8px 8px;
+  gap: 4px;
+  width: min(326px, 100%);
+  margin: 0 auto;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #bdcad7 12%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tg-panel-header-bg) 96%, rgba(255, 255, 255, 0.9) 4%);
+  box-shadow:
+    0 8px 22px rgba(27, 45, 66, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.72) inset;
+  backdrop-filter: saturate(170%) blur(16px);
+  pointer-events: auto;
 }
 
 .mobile-nav__btn {
   color: var(--tg-text-secondary);
-  border-radius: 10px;
-  min-height: 46px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  background: transparent;
+  border-radius: 999px;
+  min-height: 44px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent !important;
+  box-shadow: none !important;
   transition:
     background-color 0.2s ease,
     color 0.2s ease;
@@ -309,14 +336,17 @@ function goToSection(section: NavigationSection): void {
   font-weight: 700;
   position: absolute;
   top: -7px;
-  left: calc(100% - 2px);
+  left: calc(100% - 4px);
   z-index: 1;
 }
 
 .mobile-nav__content {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
 }
 
 .mobile-nav__icon-shell {
@@ -324,42 +354,58 @@ function goToSection(section: NavigationSection): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  min-width: 20px;
+  width: 22px;
+  min-width: 22px;
+  min-height: 22px;
 }
 
 .mobile-nav__icon {
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .mobile-nav__label {
   min-width: 0;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .mobile-nav__btn :deep(.q-btn__content) {
   justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
   width: 100%;
 }
 
 .mobile-nav__btn:hover {
-  background: var(--tg-hover);
+  background: transparent !important;
 }
 
 .mobile-nav__btn--active {
-  background: var(--tg-active);
-  color: var(--tg-active-text);
+  background: #eaf6ff !important;
+  color: var(--q-primary) !important;
 }
 
 body.body--dark .mobile-nav__btn {
   color: var(--tg-text-secondary);
+  background: transparent !important;
+}
+
+body.body--dark .mobile-nav {
   background: transparent;
 }
 
+body.body--dark .mobile-nav__inner {
+  border-color: color-mix(in srgb, var(--tg-border) 88%, #62798f 12%);
+  background: color-mix(in srgb, var(--tg-panel-header-bg) 95%, rgba(13, 20, 27, 0.78) 5%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
 body.body--dark .mobile-nav__btn--active {
-  background: var(--tg-active);
-  color: var(--tg-active-text);
+  background: rgba(100, 181, 246, 0.16) !important;
+  color: #8ed3ff !important;
 }
 </style>
