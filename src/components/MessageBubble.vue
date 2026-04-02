@@ -42,12 +42,6 @@
               </q-item-section>
               <q-item-section>Reply</q-item-section>
             </q-item>
-            <q-item clickable v-close-popup @click="handleForward">
-              <q-item-section avatar>
-                <q-icon name="forward" />
-              </q-item-section>
-              <q-item-section>Forward</q-item-section>
-            </q-item>
             <q-item clickable v-close-popup @click="handleCopy">
               <q-item-section avatar>
                 <q-icon name="content_copy" />
@@ -64,7 +58,7 @@
               <q-item-section avatar>
                 <q-icon name="info" />
               </q-item-section>
-              <q-item-section>Info</q-item-section>
+              <q-item-section>Nostr Info</q-item-section>
             </q-item>
             <q-item v-if="canDeleteMessage" clickable v-close-popup @click="handleDelete">
               <q-item-section avatar>
@@ -275,10 +269,25 @@
 
   <AppDialog
     v-model="isInfoDialogOpen"
-    title="Message Info"
     max-width="460px"
   >
-    <div class="bubble__info">
+    <template #title>
+      <div class="bubble__info-dialog-title">
+        <q-btn
+          v-if="isEventJsonViewOpen"
+          flat
+          dense
+          no-caps
+          icon="arrow_back"
+          label="Back"
+          class="bubble__info-back"
+          @click="handleBackToInfo"
+        />
+        <div class="bubble__info-dialog-title-text">Nostr Info</div>
+      </div>
+    </template>
+
+    <div v-if="!isEventJsonViewOpen" class="bubble__info">
       <div class="bubble__info-row">
         <div class="bubble__info-label">Sent</div>
         <div class="bubble__info-value">{{ formattedInfoTime }}</div>
@@ -301,6 +310,19 @@
         <div class="bubble__info-label">Message</div>
         <div class="bubble__info-value">{{ baseVisibleMessageText }}</div>
       </div>
+      <q-btn
+        flat
+        no-caps
+        color="primary"
+        label="Show Event Json"
+        class="bubble__info-json-button"
+        @click="handleShowEventJson"
+      />
+    </div>
+
+    <div v-else class="bubble__event-json-panel">
+      <pre v-if="formattedEventJson" class="bubble__event-json">{{ formattedEventJson }}</pre>
+      <div v-else class="bubble__event-json-empty">Event JSON is not available for this message.</div>
     </div>
   </AppDialog>
 
@@ -362,6 +384,7 @@ const emojiPickerMenuRef = ref<{ show: (evt?: Event) => void } | null>(null);
 const isActionMenuOpen = ref(false);
 const isEmojiPickerMenuOpen = ref(false);
 const isInfoDialogOpen = ref(false);
+const isEventJsonViewOpen = ref(false);
 const isDeletedMessageDialogOpen = ref(false);
 const shouldOpenEmojiPickerAfterActionMenu = ref(false);
 const lastActionMenuClickPosition = ref<{ left: number; top: number } | null>(null);
@@ -1129,10 +1152,6 @@ function handleRemoveReaction(reaction: MessageReaction): void {
   }
 }
 
-function handleForward(): void {
-  notifyUnimplemented('Forward');
-}
-
 async function handleCopy(): Promise<void> {
   try {
     await copyText(baseVisibleMessageText.value);
@@ -1152,7 +1171,16 @@ function handlePin(): void {
 }
 
 function handleInfo(): void {
+  isEventJsonViewOpen.value = false;
   isInfoDialogOpen.value = true;
+}
+
+function handleShowEventJson(): void {
+  isEventJsonViewOpen.value = true;
+}
+
+function handleBackToInfo(): void {
+  isEventJsonViewOpen.value = false;
 }
 
 function handleDelete(): void {
@@ -1215,6 +1243,19 @@ const formattedInfoTime = computed(() => {
   }).format(new Date(props.message.sentAt));
 });
 
+const formattedEventJson = computed(() => {
+  const event = props.message.nostrEvent?.event;
+  if (!event) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(event, null, 2);
+  } catch {
+    return '';
+  }
+});
+
 watch(
   () => messageReactionItems.value.map((item) => item.key),
   (nextKeys, previousKeys) => {
@@ -1238,6 +1279,12 @@ watch(
     isMessageExpanded.value = false;
   }
 );
+
+watch(isInfoDialogOpen, (isOpen) => {
+  if (!isOpen) {
+    isEventJsonViewOpen.value = false;
+  }
+});
 
 onBeforeUnmount(() => {
   freshReactionTimers.forEach((timerId) => {
@@ -1874,6 +1921,27 @@ onBeforeUnmount(() => {
   color: var(--tg-text-secondary);
 }
 
+.bubble__info-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bubble__info-dialog-title-text {
+  min-width: 0;
+  font-family: var(--tg-title-font);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: var(--tg-text);
+}
+
+.bubble__info-back {
+  flex: 0 0 auto;
+}
+
 .bubble__info {
   display: grid;
   gap: 12px;
@@ -1902,6 +1970,36 @@ onBeforeUnmount(() => {
 .bubble__info-value--mono {
   font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
   font-size: 12px;
+}
+
+.bubble__info-json-button {
+  justify-self: start;
+  align-self: start;
+}
+
+.bubble__event-json-panel {
+  display: grid;
+}
+
+.bubble__event-json {
+  margin: 0;
+  padding: 12px;
+  border-radius: 16px;
+  overflow: auto;
+  max-height: min(56vh, 460px);
+  background: var(--tg-surface-soft-strong);
+  border: 1px solid var(--tg-border);
+  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble__event-json-empty {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--tg-text-secondary);
 }
 
 @media (hover: none) {

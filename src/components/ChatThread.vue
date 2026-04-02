@@ -46,17 +46,7 @@
         <div v-if="stickyDayLabel" class="thread-day-sticky" aria-hidden="true">
           <span class="thread-day-sticky__label">{{ stickyDayLabel }}</span>
         </div>
-        <div
-          v-if="isLoadingOlderMessages"
-          class="thread-loading-indicator thread-loading-indicator--top"
-          aria-live="polite"
-        >
-          <span class="thread-loading-indicator__label">
-            <q-spinner-dots size="16px" class="thread-loading-indicator__spinner" />
-            <span>Loading</span>
-          </span>
-        </div>
-        <div v-else-if="hasOlderMessages" class="thread-more thread-more--top">
+        <div v-if="hasOlderMessages" class="thread-more thread-more--top">
           <q-btn
             flat
             dense
@@ -64,6 +54,7 @@
             icon="keyboard_arrow_up"
             label="More"
             class="thread-more__button"
+            :disable="isLoadingOlderMessages"
             @mousedown.prevent
             @click="handleLoadOlderMessages"
           />
@@ -115,17 +106,7 @@
             />
           </div>
         </template>
-        <div
-          v-if="isLoadingNewerMessages"
-          class="thread-loading-indicator thread-loading-indicator--bottom"
-          aria-live="polite"
-        >
-          <span class="thread-loading-indicator__label">
-            <q-spinner-dots size="16px" class="thread-loading-indicator__spinner" />
-            <span>Loading</span>
-          </span>
-        </div>
-        <div v-else-if="hasNewerMessages" class="thread-more thread-more--bottom">
+        <div v-if="hasNewerMessages" class="thread-more thread-more--bottom">
           <q-btn
             flat
             dense
@@ -133,6 +114,7 @@
             icon-right="keyboard_arrow_down"
             label="More"
             class="thread-more__button"
+            :disable="isLoadingNewerMessages"
             @mousedown.prevent
             @click="handleLoadNewerMessages"
           />
@@ -1799,45 +1781,6 @@ body.body--dark .thread-header__action {
 .thread-body--scroll-locked {
   overscroll-behavior: contain;
   touch-action: none;
-}
-
-.thread-loading-indicator {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  z-index: 4;
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.thread-loading-indicator--top {
-  top: 44px;
-}
-
-.thread-loading-indicator--bottom {
-  bottom: 12px;
-}
-
-.thread-loading-indicator__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: var(--tg-sticky-bg);
-  border: 1px solid var(--tg-border);
-  box-shadow: none;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0;
-  color: var(--tg-text-secondary);
-  white-space: nowrap;
-}
-
-.thread-loading-indicator__spinner {
-  color: var(--q-primary);
 }
 
 .thread-more {
