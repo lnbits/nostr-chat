@@ -352,6 +352,10 @@ function handleEnterKey(event: KeyboardEvent): void {
     return;
   }
 
+  if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
+    return;
+  }
+
   event.preventDefault();
   submitDraft();
 }
