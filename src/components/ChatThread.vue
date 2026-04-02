@@ -776,6 +776,14 @@ function setAutomaticBottomScrollEnabled(enabled: boolean): void {
   isAutomaticBottomScrollEnabled.value = enabled;
 }
 
+function shouldPinMobileThreadToAbsoluteBottom(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.matchMedia('(max-width: 1023px)').matches;
+}
+
 async function scrollToBottom(mode: 'auto' | 'explicit' = 'auto'): Promise<void> {
   logThreadScrollTrace('SCROLL_TO_BOTTOM_CALL', { mode });
 
@@ -814,6 +822,11 @@ async function scrollToBottom(mode: 'auto' | 'explicit' = 'auto'): Promise<void>
 
       const threadBody = threadBodyRef.value;
       if (!threadBody) {
+        return;
+      }
+
+      if (mode === 'explicit' && shouldPinMobileThreadToAbsoluteBottom()) {
+        threadBody.scrollTop = Math.max(0, threadBody.scrollHeight - threadBody.clientHeight);
         return;
       }
 
