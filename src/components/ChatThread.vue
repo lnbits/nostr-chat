@@ -281,17 +281,8 @@ let selfAuthorIdentityRefreshToken = 0;
 let authorIdentityRefreshToken = 0;
 
 function logThreadScrollTrace(label: string, extra: Record<string, unknown> = {}): void {
-  console.log(`[[[THREAD_SCROLL_TRACE:${label}]]]`, {
-    chatId: props.chat?.id ?? null,
-    messageCount: props.messages.length,
-    isAutomaticBottomScrollEnabled: isAutomaticBottomScrollEnabled.value,
-    isScrollingToBottom,
-    pendingInitialPositionChatId: pendingInitialPositionChatId.value,
-    pendingSentMessageReveal,
-    hasOlderMessages: hasOlderMessages.value,
-    hasNewerMessages: hasNewerMessages.value,
-    ...extra
-  });
+  void label;
+  void extra;
 }
 
 function buildAvatar(identifier: string): string {

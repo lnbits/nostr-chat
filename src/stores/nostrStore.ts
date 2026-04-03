@@ -6,7 +6,6 @@ import NDK, {
   NDKNip07Signer,
   NDKPublishError,
   NDKPrivateKeySigner,
-  NDKRelayAuthPolicies,
   type NDKRelay,
   type NDKRelayConnectionStats,
   NDKRelayList,
@@ -19,7 +18,6 @@ import NDK, {
   NDKUser,
   giftUnwrap,
   giftWrap,
-  getRelayListForUser,
   isValidNip05,
   isValidPubkey,
   nip19,
@@ -405,6 +403,7 @@ export interface StartupDisplaySnapshot {
 }
 
 interface ContactRefreshLifecycle {
+  refreshRelayList?: boolean;
   onProfileFetchStart?: () => void;
   onProfileFetchEnd?: (error: unknown | null) => void;
   onRelayFetchStart?: () => void;
@@ -480,7 +479,6 @@ type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[numbe
 
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
-  ndk.relayAuthDefaultPolicy = NDKRelayAuthPolicies.signIn({ ndk });
   const chatStore = useChatStore();
   const relayStore = useRelayStore();
   const INITIAL_CONNECT_TIMEOUT_MS = 3000;
@@ -565,9 +563,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
   let chatChecksQueue = Promise.resolve();
   let postPrivateMessagesEoseChecksQueue = Promise.resolve();
+  let postPrivateMessagesEoseChecksTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let shouldRunPostPrivateMessagesEoseChecks = false;
   let chatChecksTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let shouldRunChatChecksForAllChats = false;
   const pendingChatCheckChatIds = new Set<string>();
+  const authenticatedRelayUrls = new Set<string>();
   let pendingEventSinceUpdate = 0;
   let startupDisplayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   let startupDisplayToken = 0;
@@ -2130,7 +2131,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...(shouldUpdateMeta ? { meta: nextMeta } : {})
     });
     await useChatStore().reload();
-    if (didChangeEpochSet || previousCurrentEpochPublicKey !== nextCurrentEpochPublicKey) {
+    if (previousCurrentEpochPublicKey !== nextCurrentEpochPublicKey) {
       try {
         await subscribePrivateMessagesForLoggedInUser(true);
       } catch (error) {
@@ -2346,39 +2347,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
-  async function resolveGiftWrapRecipientRelayUrls(
-    recipientPubkey: string,
-    seedRelayUrls: string[] = []
-  ): Promise<string[]> {
-    const normalizedRecipientPubkey = inputSanitizerService.normalizeHexKey(recipientPubkey);
-    if (!normalizedRecipientPubkey) {
-      return resolveLoggedInPublishRelayUrls(seedRelayUrls);
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedRecipientPubkey);
-
-    let fetchedRelayEntries: ContactRelay[] = [];
-    try {
-      const relayList = await fetchContactRelayList(normalizedRecipientPubkey);
-      fetchedRelayEntries = relayList?.relayEntries ?? [];
-    } catch (error) {
-      console.warn('Failed to fetch relay list for gift wrap recipient', normalizedRecipientPubkey, error);
-    }
-
-    const relayUrls = normalizeRelayStatusUrls([
-      ...inputSanitizerService.normalizeStringArray(seedRelayUrls),
-      ...inputSanitizerService.normalizeReadableRelayUrls(existingContact?.relays),
-      ...inputSanitizerService.normalizeReadableRelayUrls(fetchedRelayEntries)
-    ]);
-
-    if (relayUrls.length > 0) {
-      return relayUrls;
-    }
-
-    return resolveLoggedInPublishRelayUrls(seedRelayUrls);
-  }
-
   async function sendGroupEpochTicket(
     groupPublicKey: string,
     memberPublicKey: string,
@@ -2425,13 +2393,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Decrypted group private key does not match the group public key.');
     }
 
-    const relayUrls = await resolveGiftWrapRecipientRelayUrls(normalizedMemberPublicKey, [
-      ...seedRelayUrls,
-      ...getAppRelayUrls(),
-      ...inputSanitizerService.normalizeReadableRelayUrls(groupContact.relays)
-    ]);
+    const relayUrls = resolveGroupPublishRelayUrls(updatedGroupContact.relays, seedRelayUrls);
     if (relayUrls.length === 0) {
-      throw new Error('Cannot send epoch ticket without at least one relay.');
+      throw new Error('Cannot send epoch ticket without at least one group relay.');
     }
 
     await ensureRelayConnections(relayUrls);
@@ -2743,10 +2707,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
         return;
       }
 
-      console.log('Starting chat checks', {
-        chatCount: chatIds.length
-      });
-
       await chatStore.reload();
       const { useMessageStore } = await import('src/stores/messageStore');
       const messageStore = useMessageStore();
@@ -2789,30 +2749,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   function schedulePostPrivateMessagesEoseChecks(): void {
-    postPrivateMessagesEoseChecksQueue = postPrivateMessagesEoseChecksQueue
-      .then(async () => {
-        try {
-          await privateMessagesIngestQueue.catch((error) => {
-            console.error('Failed while draining private message ingest queue before EOSE checks', error);
-          });
+    shouldRunPostPrivateMessagesEoseChecks = true;
+    if (postPrivateMessagesEoseChecksTimeoutId !== null) {
+      return;
+    }
 
-          const summary = await refreshDeveloperPendingQueues();
-          console.log('Checked pending queues after DM EOSE', summary);
-          const { useMessageStore } = await import('src/stores/messageStore');
-          console.log('Starting seen boundary sync after DM EOSE');
-          const seenBoundarySummary = await useMessageStore().syncChatsReadStateFromSeenBoundary();
-          console.log(
-            'Checked seen boundary after DM EOSE',
-            seenBoundarySummary
-          );
-          scheduleChatChecks([], { allChats: true });
-        } catch (error) {
-          console.error('Failed to run post-DM EOSE checks', error);
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to enqueue post-DM EOSE checks', error);
-      });
+    postPrivateMessagesEoseChecksTimeoutId = globalThis.setTimeout(() => {
+      postPrivateMessagesEoseChecksTimeoutId = null;
+      if (!shouldRunPostPrivateMessagesEoseChecks) {
+        return;
+      }
+
+      shouldRunPostPrivateMessagesEoseChecks = false;
+      postPrivateMessagesEoseChecksQueue = postPrivateMessagesEoseChecksQueue
+        .then(async () => {
+          try {
+            await privateMessagesIngestQueue.catch((error) => {
+              console.error('Failed while draining private message ingest queue before EOSE checks', error);
+            });
+
+            await refreshDeveloperPendingQueues();
+            const { useMessageStore } = await import('src/stores/messageStore');
+            await useMessageStore().syncChatsReadStateFromSeenBoundary();
+            scheduleChatChecks([], { allChats: true });
+          } catch (error) {
+            console.error('Failed to run post-DM EOSE checks', error);
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to enqueue post-DM EOSE checks', error);
+        });
+    }, 0);
   }
 
   async function resolveStalePendingOutboundMessageRelayStatuses(): Promise<void> {
@@ -5177,11 +5144,43 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
-  async function fetchContactRelayList(pubkeyHex: string): Promise<ContactRelayListFetchResult | null> {
-    const relayList = await getRelayListForUser(pubkeyHex, ndk);
-    if (!relayList) {
+  async function fetchContactRelayList(
+    pubkeyHex: string,
+    seedRelayUrls: string[] = []
+  ): Promise<ContactRelayListFetchResult | null> {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    if (!normalizedPubkey) {
       return null;
     }
+
+    const relayUrls = await resolveContactRelayListReadRelayUrls(normalizedPubkey, seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return null;
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relayListEvent = await ndk.fetchEvent(
+      {
+        kinds: [NDKKind.RelayList],
+        authors: [normalizedPubkey],
+        since: getFilterSince()
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+      },
+      relaySet
+    );
+    if (!relayListEvent) {
+      return null;
+    }
+
+    updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
+
+    const relayList = NDKRelayList.from(
+      relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent)
+    );
 
     return {
       createdAt: Number(relayList.created_at ?? 0),
@@ -5331,6 +5330,40 @@ export const useNostrStore = defineStore('nostrStore', () => {
       .flatMap((contact) => inputSanitizerService.normalizeReadableRelayUrls(contact.relays));
 
     return normalizeRelayStatusUrls([...relayUrls, ...groupRelayUrls]);
+  }
+
+  async function resolveTrackedContactReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
+    return resolvePrivateMessageReadRelayUrls(seedRelayUrls);
+  }
+
+  async function resolveContactRelayListReadRelayUrls(
+    pubkeyHex: string,
+    seedRelayUrls: string[] = []
+  ): Promise<string[]> {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    if (!normalizedPubkey) {
+      return [];
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
+
+    return normalizeRelayStatusUrls([
+      ...(await resolveLoggedInReadRelayUrls(seedRelayUrls)),
+      ...(existingContact?.type === 'group'
+        ? inputSanitizerService.normalizeReadableRelayUrls(existingContact.relays)
+        : [])
+    ]);
+  }
+
+  function resolveGroupPublishRelayUrls(
+    relays: ContactRelay[] | undefined,
+    seedRelayUrls: string[] = []
+  ): string[] {
+    return normalizeRelayStatusUrls([
+      ...inputSanitizerService.normalizeStringArray(seedRelayUrls),
+      ...normalizeWritableRelayUrls(relays)
+    ]);
   }
 
   async function resolveLoggedInPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
@@ -6833,14 +6866,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     let explicitRelayList: ContactRelayListFetchResult | null = null;
     let relayError: unknown | null = null;
-    lifecycle.onRelayFetchStart?.();
-    try {
-      explicitRelayList = await fetchContactRelayList(normalizedTargetPubkey);
-    } catch (error) {
-      relayError = error;
-      console.warn('Failed to fetch relay list for contact', normalizedTargetPubkey, error);
-    } finally {
-      lifecycle.onRelayFetchEnd?.(relayError);
+    if (lifecycle.refreshRelayList) {
+      lifecycle.onRelayFetchStart?.();
+      try {
+        explicitRelayList = await fetchContactRelayList(normalizedTargetPubkey);
+      } catch (error) {
+        relayError = error;
+        console.warn('Failed to fetch relay list for contact', normalizedTargetPubkey, error);
+      } finally {
+        lifecycle.onRelayFetchEnd?.(relayError);
+      }
     }
     const fallbackRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
       resolvedUser.relayUrls ?? []
@@ -6980,6 +7015,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const contact = await ensureContactStoredAsGroup(normalizedGroupPublicKey, {
       fallbackName
     });
+    try {
+      await refreshContactRelayList(normalizedGroupPublicKey);
+    } catch (error) {
+      console.warn('Failed to refresh group contact relay list', normalizedGroupPublicKey, error);
+    }
     if (contact) {
       await useChatStore().syncContactProfile(normalizedGroupPublicKey);
     }
@@ -7274,16 +7314,53 @@ export const useNostrStore = defineStore('nostrStore', () => {
     logDeveloperTrace(level, 'message-relays', phase, details);
   }
 
+  function setRelayConnectivityStatus(
+    relay: NDKRelay,
+    status: NDKRelayStatus
+  ): void {
+    const connectivity = relay.connectivity as unknown as {
+      _status?: NDKRelayStatus;
+    };
+    connectivity._status = status;
+  }
+
+  ndk.relayAuthDefaultPolicy = async (relay, challenge) => {
+    if (authenticatedRelayUrls.has(relay.url)) {
+      setRelayConnectivityStatus(relay, NDKRelayStatus.AUTHENTICATED);
+      logDeveloperTrace('info', 'relay', 'auth-skip-already-authenticated', {
+        ...buildRelaySnapshot(relay),
+        challengeLength: challenge.length
+      });
+      relay.emit('authed');
+      return false;
+    }
+
+    try {
+      await getOrCreateSigner();
+      return true;
+    } catch (error) {
+      logDeveloperTrace('warn', 'relay', 'auth-skip-missing-signer', {
+        ...buildRelaySnapshot(relay),
+        challengeLength: challenge.length,
+        error
+      });
+      relay.disconnect();
+      return false;
+    }
+  };
+
   function ensureRelayStatusListeners(): void {
     if (hasRelayStatusListeners) {
       return;
     }
 
     ndk.pool.on('relay:connecting', (relay) => {
+      authenticatedRelayUrls.delete(relay.url);
       bumpRelayStatusVersion();
       logRelayLifecycle('connecting', relay);
     });
     ndk.pool.on('relay:connect', (relay) => {
+      authenticatedRelayUrls.delete(relay.url);
       bumpRelayStatusVersion();
       logRelayLifecycle('connect', relay);
       if (privateMessagesSubscriptionRelayUrls.value.includes(relay.url)) {
@@ -7295,6 +7372,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       logRelayLifecycle('ready', relay);
     });
     ndk.pool.on('relay:disconnect', (relay) => {
+      authenticatedRelayUrls.delete(relay.url);
       bumpRelayStatusVersion();
       logRelayLifecycle('disconnect', relay);
       if (privateMessagesSubscriptionRelayUrls.value.includes(relay.url)) {
@@ -7310,6 +7388,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
     });
     ndk.pool.on('relay:authed', (relay) => {
+      authenticatedRelayUrls.add(relay.url);
       bumpRelayStatusVersion();
       logDeveloperTrace('info', 'relay', 'authed', buildRelaySnapshot(relay));
     });
@@ -7326,6 +7405,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     relay.on('auth:failed', (error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error ?? '');
+      if (errorMessage.toLowerCase().includes('already authenticated')) {
+        authenticatedRelayUrls.add(relay.url);
+        setRelayConnectivityStatus(relay, NDKRelayStatus.AUTHENTICATED);
+        bumpRelayStatusVersion();
+        logDeveloperTrace('info', 'relay', 'auth-failed-already-authenticated', {
+          ...buildRelaySnapshot(relay),
+          error: errorMessage
+        });
+        relay.emit('authed');
+        return;
+      }
+
+      authenticatedRelayUrls.delete(relay.url);
       bumpRelayStatusVersion();
       logDeveloperTrace('warn', 'relay', 'auth-failed', {
         ...buildRelaySnapshot(relay),
@@ -7532,9 +7625,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Failed to decrypt the group private key.');
     }
 
-    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
+    const relayUrls = resolveGroupPublishRelayUrls(groupContact.relays, seedRelayUrls);
     if (relayUrls.length === 0) {
-      throw new Error('Cannot publish group profile without at least one relay.');
+      throw new Error('Cannot publish group profile without at least one group relay.');
     }
 
     await ensureRelayConnections(relayUrls);
@@ -7642,12 +7735,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
-    const relayUrls = await resolveLoggedInPublishRelayUrls([
-      ...publishRelayUrls,
+    const relayUrls = normalizeRelayStatusUrls([
+      ...inputSanitizerService.normalizeStringArray(publishRelayUrls),
       ...normalizedRelayEntries.map((relay) => relay.url)
     ]);
     if (relayUrls.length === 0) {
-      throw new Error('Cannot publish group relay list without at least one publish relay.');
+      throw new Error('Cannot publish group relay list without at least one group relay.');
     }
 
     await ensureRelayConnections(relayUrls);
@@ -8128,7 +8221,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+    const relayUrls = await resolveTrackedContactReadRelayUrls(seedRelayUrls);
     if (relayUrls.length === 0) {
       stopContactProfileSubscription('no-relays');
       return;
@@ -8236,7 +8329,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+    const relayUrls = await resolveTrackedContactReadRelayUrls(seedRelayUrls);
     if (relayUrls.length === 0) {
       stopContactRelayListSubscription('no-relays');
       return;
@@ -8992,16 +9085,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (rumorEvent.kind === 1014) {
       const loggedEvent = rumorNostrEvent ?? (await toStoredNostrEvent(rumorEvent)) ?? rumorEvent;
       const loggedSealEvent = await unwrapGiftWrapSealEvent(wrappedEvent);
-      console.log('Received kind:1014 event', loggedEvent);
-      if (loggedSealEvent) {
-        console.log('Received kind:1014 seal event', loggedSealEvent);
-      }
 
       const verificationResult = await verifyIncomingGroupEpochTicket(rumorEvent, loggedSealEvent);
-      console.log('Received kind:1014 signature verification', {
-        isValid: verificationResult.isValid,
-        event: verificationResult.signedEvent ?? loggedEvent
-      });
       if (!verificationResult.isValid) {
         return;
       }
@@ -9525,14 +9610,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relaySnapshots,
         ...buildSubscriptionRelayDetails(relayUrls)
       });
-      console.log('Starting private messages live subscription', {
-        signature,
-        since: filterSince,
-        sinceIso: toOptionalIsoTimestampFromUnix(filterSince),
-        recipientCount: recipientPubkeys.length,
-        relayCount: relayUrls.length
-      });
-
       privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
       privateMessagesSubscriptionSince.value = filterSince;
       privateMessagesSubscriptionStartedAt.value = new Date().toISOString();
@@ -9883,8 +9960,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
       globalThis.clearTimeout(chatChecksTimeoutId);
       chatChecksTimeoutId = null;
     }
+    if (postPrivateMessagesEoseChecksTimeoutId !== null) {
+      globalThis.clearTimeout(postPrivateMessagesEoseChecksTimeoutId);
+      postPrivateMessagesEoseChecksTimeoutId = null;
+    }
     shouldRunChatChecksForAllChats = false;
+    shouldRunPostPrivateMessagesEoseChecks = false;
     pendingChatCheckChatIds.clear();
+    authenticatedRelayUrls.clear();
     contactProfileApplyQueue = Promise.resolve();
     contactRelayListApplyQueue = Promise.resolve();
     chatChecksQueue = Promise.resolve();
