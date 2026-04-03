@@ -2260,8 +2260,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ]);
     const normalizedTicketRecipientPubkeys = shouldRotateEpoch
       ? normalizeUniqueMemberPublicKeys([
-          ...normalizedMemberPubkeys,
-          normalizedOwnerPublicKey
+          normalizedOwnerPublicKey,
+          ...normalizedMemberPubkeys
         ])
       : normalizedMemberPubkeys;
 
@@ -9131,27 +9131,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
           invitationCreatedAt: toIsoTimestampFromUnix(rumorEvent.created_at)
         }
       );
-
-      const refreshedGroupContact = await refreshGroupContactByPublicKey(
-        senderPubkeyHex,
-        fallbackGroupName
-      );
-      const fallbackName =
-        refreshedGroupContact?.meta?.display_name?.trim() ||
-        refreshedGroupContact?.meta?.name?.trim() ||
-        refreshedGroupContact?.name?.trim() ||
-        fallbackGroupName;
+      void refreshGroupContactByPublicKey(senderPubkeyHex, fallbackGroupName).catch((error) => {
+        console.warn('Failed to refresh group contact after epoch ticket', senderPubkeyHex, error);
+      });
 
       if (!wasAcceptedGroup) {
         await upsertIncomingGroupInviteRequestChat(
           senderPubkeyHex,
           toIsoTimestampFromUnix(rumorEvent.created_at),
-          refreshedGroupContact
+          senderContact
             ? {
-                name: refreshedGroupContact.name,
-                meta: refreshedGroupContact.meta
+                name: senderContact.name,
+                meta: senderContact.meta
               }
-            : null
+            : {
+                name: fallbackGroupName,
+                meta: {}
+              }
         );
       }
 
