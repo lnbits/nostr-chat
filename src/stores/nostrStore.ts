@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import NDK, {
   NDKEvent,
+  type NDKFilter,
   NDKKind,
   NDKNip07Signer,
   NDKPublishError,
@@ -15,6 +16,7 @@ import NDK, {
   type NDKRelayInformation,
   NDKRelayStatus,
   NDKRelaySet,
+  type NDKSubscriptionOptions,
   NDKUser,
   giftUnwrap,
   giftWrap,
@@ -184,6 +186,7 @@ interface GiftWrappedRumorPublishResult {
 
 interface SubscribePrivateMessagesOptions {
   restoreThrottleMs?: number;
+  seedRelayUrls?: string[];
   sinceOverride?: number;
   startupTrackStep?: boolean;
 }
@@ -506,6 +509,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
   let developerTraceCounter = 0;
+  let nostrSubscriptionRequestCounter = 0;
   const configuredRelayUrls = new Set<string>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
@@ -866,12 +870,54 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return normalized;
   }
 
+  function shouldEchoDeveloperTraceToConsole(scope: string, phase: string): boolean {
+    if (scope.startsWith('subscription:')) {
+      return (
+        phase === 'start' ||
+        phase === 'backfill-window-subscribe' ||
+        phase === 'epoch-history-subscribe'
+      );
+    }
+
+    return (
+      scope === 'inbound' &&
+      (phase === 'epoch-ticket-received' ||
+        phase === 'group-message-received' ||
+        phase === 'private-message-received')
+    );
+  }
+
+  function echoDeveloperTraceToConsole(
+    level: DeveloperTraceLevel,
+    scope: string,
+    phase: string,
+    details: Record<string, unknown>
+  ): void {
+    const label = `[${scope}] ${phase}`;
+    if (level === 'error') {
+      console.error(label, details);
+      return;
+    }
+
+    if (level === 'warn') {
+      console.warn(label, details);
+      return;
+    }
+
+    console.info(label, details);
+  }
+
   function logDeveloperTrace(
     level: DeveloperTraceLevel,
     scope: string,
     phase: string,
     details: Record<string, unknown> = {}
   ): void {
+    const normalizedDetails = normalizeDeveloperTraceDetails(details);
+    if (shouldEchoDeveloperTraceToConsole(scope, phase)) {
+      echoDeveloperTraceToConsole(level, scope, phase, normalizedDetails);
+    }
+
     if (!developerDiagnosticsEnabled.value) {
       return;
     }
@@ -883,7 +929,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       level,
       scope,
       phase,
-      details: normalizeDeveloperTraceDetails(details)
+      details: normalizedDetails
     };
 
     void developerTraceDataService
@@ -1069,6 +1115,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
       getPrivateMessagesStartupFloorSince(normalizedNow),
       anchorCreatedAt - PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS
     );
+  }
+
+  function getPrivateMessagesEpochSwitchSince(
+    baseUnixTime = Math.floor(Date.now() / 1000)
+  ): number {
+    return Math.min(getFilterSince(), getPrivateMessagesStartupLiveSince(baseUnixTime));
   }
 
   function createInitialPrivateMessagesBackfillState(
@@ -1580,6 +1632,30 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
+  function resolveCurrentGroupChatEpochEntry(
+    chat: Pick<ChatRow, 'meta' | 'type'>
+  ): ChatGroupEpochKey | null {
+    const epochEntries = resolveGroupChatEpochEntries(chat);
+    if (epochEntries.length === 0) {
+      return null;
+    }
+
+    const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(
+      typeof chat.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
+        ? String(chat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
+        : ''
+    );
+    if (!currentEpochPublicKey) {
+      return epochEntries[0] ?? null;
+    }
+
+    return (
+      epochEntries.find((entry) => entry.epoch_public_key === currentEpochPublicKey) ??
+      epochEntries[0] ??
+      null
+    );
+  }
+
   function derivePublicKeyFromPrivateKey(privateKey: string): string | null {
     const normalizedPrivateKey = inputSanitizerService.normalizeHexKey(privateKey);
     if (!normalizedPrivateKey) {
@@ -1746,27 +1822,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return [];
     }
 
-    await Promise.all([contactsService.init(), chatDataService.init()]);
-    const contacts = await contactsService.listContacts();
-    const groupContactPubkeys = new Set(
-      contacts
-        .filter((contact) => contact.type === 'group')
-        .map((contact) => inputSanitizerService.normalizeHexKey(contact.public_key))
-        .filter((pubkey): pubkey is string => Boolean(pubkey))
-    );
-
+    await chatDataService.init();
     const recipients = new Set<string>([loggedInPubkeyHex]);
     const chats = await chatDataService.listChats();
     for (const chat of chats) {
-      const normalizedChatPublicKey = inputSanitizerService.normalizeHexKey(chat.public_key);
-      if (!normalizedChatPublicKey || !groupContactPubkeys.has(normalizedChatPublicKey)) {
+      if (chat.type !== 'group') {
         continue;
       }
 
-      for (const entry of resolveGroupChatEpochEntries(chat)) {
-        if (entry.epoch_public_key) {
-          recipients.add(entry.epoch_public_key);
-        }
+      const currentEpochEntry = resolveCurrentGroupChatEpochEntry(chat);
+      if (currentEpochEntry?.epoch_public_key) {
+        recipients.add(currentEpochEntry.epoch_public_key);
       }
     }
 
@@ -2011,6 +2077,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       fallbackName?: string;
       accepted?: boolean;
       invitationCreatedAt?: string;
+      seedRelayUrls?: string[];
     } = {}
   ): Promise<void> {
     const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
@@ -2106,7 +2173,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
         }
       });
       try {
-        await subscribePrivateMessagesForLoggedInUser(true);
+        await subscribePrivateMessagesForLoggedInUser(true, {
+          seedRelayUrls: options.seedRelayUrls,
+          sinceOverride: getPrivateMessagesEpochSwitchSince()
+        });
       } catch (error) {
         console.warn(
           'Failed to refresh private message subscription after creating group epoch state',
@@ -2132,7 +2202,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
     if (previousCurrentEpochPublicKey !== nextCurrentEpochPublicKey) {
       try {
-        await subscribePrivateMessagesForLoggedInUser(true);
+        await subscribePrivateMessagesForLoggedInUser(true, {
+          seedRelayUrls: options.seedRelayUrls,
+          sinceOverride: getPrivateMessagesEpochSwitchSince()
+        });
       } catch (error) {
         console.warn('Failed to refresh private message subscription after epoch ticket update', error);
       }
@@ -2965,6 +3038,199 @@ export const useNostrStore = defineStore('nostrStore', () => {
       createdAt: event.created_at ?? null,
       author: formatSubscriptionLogValue(event.pubkey)
     };
+  }
+
+  function buildLoggedNostrEvent(
+    event: Pick<NDKEvent, 'id' | 'kind' | 'created_at' | 'pubkey' | 'content' | 'tags'>,
+    storedEvent: NostrEvent | null | undefined = null
+  ): Record<string, unknown> {
+    if (storedEvent) {
+      return JSON.parse(JSON.stringify(storedEvent)) as Record<string, unknown>;
+    }
+
+    return {
+      id: normalizeEventId(event.id ?? null) ?? event.id ?? null,
+      kind: event.kind ?? null,
+      created_at: Number.isInteger(event.created_at) ? Number(event.created_at) : null,
+      pubkey: inputSanitizerService.normalizeHexKey(event.pubkey ?? '') ?? event.pubkey ?? null,
+      content: typeof event.content === 'string' ? event.content : '',
+      tags: Array.isArray(event.tags)
+        ? event.tags
+            .filter((tag): tag is string[] => Array.isArray(tag))
+            .map((tag) => tag.map((value) => String(value ?? '')))
+        : []
+    };
+  }
+
+  async function buildTrackedContactSubscriptionTargetDetails(
+    contactPubkeys: string[]
+  ): Promise<Record<string, unknown>> {
+    const normalizedContactPubkeys = Array.from(
+      new Set(
+        contactPubkeys
+          .map((pubkey) => inputSanitizerService.normalizeHexKey(pubkey))
+          .filter((pubkey): pubkey is string => Boolean(pubkey))
+      )
+    );
+    if (normalizedContactPubkeys.length === 0) {
+      return {
+        userTargetCount: 0,
+        groupTargetCount: 0,
+        userTargetPubkeys: [],
+        groupTargetPubkeys: []
+      };
+    }
+
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+    const groupChatPubkeys = new Set(
+      (await chatDataService.listChats())
+        .filter((chat) => chat.type === 'group')
+        .map((chat) => inputSanitizerService.normalizeHexKey(chat.public_key))
+        .filter((pubkey): pubkey is string => Boolean(pubkey))
+    );
+    const contactsByPubkey = new Map(
+      (await contactsService.listContacts())
+        .map((contact) => {
+          const normalizedPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
+          return normalizedPubkey ? ([normalizedPubkey, contact] as const) : null;
+        })
+        .filter((entry): entry is readonly [string, ContactRecord] => Boolean(entry))
+    );
+
+    const userTargetPubkeys: string[] = [];
+    const groupTargetPubkeys: string[] = [];
+
+    for (const pubkey of normalizedContactPubkeys) {
+      const formattedPubkey = formatSubscriptionLogValue(pubkey) ?? pubkey;
+      if (groupChatPubkeys.has(pubkey) || contactsByPubkey.get(pubkey)?.type === 'group') {
+        groupTargetPubkeys.push(formattedPubkey);
+        continue;
+      }
+
+      userTargetPubkeys.push(formattedPubkey);
+    }
+
+    return {
+      userTargetCount: userTargetPubkeys.length,
+      groupTargetCount: groupTargetPubkeys.length,
+      userTargetPubkeys,
+      groupTargetPubkeys
+    };
+  }
+
+  async function buildPrivateMessageSubscriptionTargetDetails(
+    recipientPubkeys: string[],
+    loggedInPubkeyHex: string | null
+  ): Promise<Record<string, unknown>> {
+    const normalizedLoggedInPubkey = inputSanitizerService.normalizeHexKey(loggedInPubkeyHex ?? '');
+    const normalizedRecipientPubkeys = Array.from(
+      new Set(
+        recipientPubkeys
+          .map((pubkey) => inputSanitizerService.normalizeHexKey(pubkey))
+          .filter((pubkey): pubkey is string => Boolean(pubkey))
+      )
+    );
+    const recipientSet = new Set(normalizedRecipientPubkeys);
+
+    await chatDataService.init();
+    const userRecipientPubkeys =
+      normalizedLoggedInPubkey && recipientSet.has(normalizedLoggedInPubkey)
+        ? [formatSubscriptionLogValue(normalizedLoggedInPubkey) ?? normalizedLoggedInPubkey]
+        : [];
+    const matchedEpochRecipientPubkeys = new Set<string>();
+    const groupChatPubkeys = new Set<string>();
+    const epochRecipients: Array<{
+      groupChatPubkey: string;
+      epochRecipientPubkey: string;
+      epochNumber: number;
+    }> = [];
+
+    const chats = await chatDataService.listChats();
+    for (const chat of chats) {
+      if (chat.type !== 'group') {
+        continue;
+      }
+
+      const normalizedGroupChatPubkey = inputSanitizerService.normalizeHexKey(chat.public_key);
+      if (!normalizedGroupChatPubkey) {
+        continue;
+      }
+
+      for (const entry of resolveGroupChatEpochEntries(chat)) {
+        const normalizedEpochPubkey = inputSanitizerService.normalizeHexKey(entry.epoch_public_key);
+        if (!normalizedEpochPubkey || !recipientSet.has(normalizedEpochPubkey)) {
+          continue;
+        }
+
+        matchedEpochRecipientPubkeys.add(normalizedEpochPubkey);
+        groupChatPubkeys.add(formatSubscriptionLogValue(normalizedGroupChatPubkey) ?? normalizedGroupChatPubkey);
+        epochRecipients.push({
+          groupChatPubkey: formatSubscriptionLogValue(normalizedGroupChatPubkey) ?? normalizedGroupChatPubkey,
+          epochRecipientPubkey: formatSubscriptionLogValue(normalizedEpochPubkey) ?? normalizedEpochPubkey,
+          epochNumber: entry.epoch_number
+        });
+      }
+    }
+
+    const unclassifiedRecipientPubkeys = normalizedRecipientPubkeys
+      .filter(
+        (pubkey) =>
+          pubkey !== normalizedLoggedInPubkey && !matchedEpochRecipientPubkeys.has(pubkey)
+      )
+      .map((pubkey) => formatSubscriptionLogValue(pubkey) ?? pubkey);
+
+    return {
+      userRecipientCount: userRecipientPubkeys.length,
+      groupChatCount: groupChatPubkeys.size,
+      epochRecipientCount: epochRecipients.length,
+      unclassifiedRecipientCount: unclassifiedRecipientPubkeys.length,
+      userRecipientPubkeys,
+      groupChatPubkeys: Array.from(groupChatPubkeys),
+      epochRecipients,
+      unclassifiedRecipientPubkeys
+    };
+  }
+
+  function buildNostrReqFrame(
+    subId: string,
+    filters: NDKFilter | NDKFilter[]
+  ): unknown[] {
+    const normalizedFilters = Array.isArray(filters) ? filters : [filters];
+    const serializedFilters = normalizedFilters.map((filter) =>
+      JSON.parse(JSON.stringify(filter)) as Record<string, unknown>
+    );
+
+    return ['REQ', subId, ...serializedFilters];
+  }
+
+  function createLoggedSubscriptionSubId(label: string): string {
+    nostrSubscriptionRequestCounter += 1;
+    const normalizedLabel = label.trim().replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '') || 'subscription';
+    return `${normalizedLabel}-${nostrSubscriptionRequestCounter.toString(36)}`;
+  }
+
+  function subscribeWithReqLogging(
+    name: SubscriptionLogName,
+    label: string,
+    filters: NDKFilter | NDKFilter[],
+    options: NDKSubscriptionOptions,
+    details: Record<string, unknown> = {}
+  ): ReturnType<typeof ndk.subscribe> {
+    const subId = createLoggedSubscriptionSubId(label);
+    const subscription = ndk.subscribe(filters, {
+      ...options,
+      subId
+    });
+    const reqFrame = buildNostrReqFrame(subId, subscription.filters);
+
+    console.info(JSON.stringify(reqFrame));
+    logDeveloperTrace('info', `subscription:${name}`, 'req', {
+      subId,
+      reqFrame,
+      ...details
+    });
+
+    return subscription;
   }
 
   function logSubscription(
@@ -5310,8 +5576,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   async function resolveLoggedInReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
     const appRelayUrls = getAppRelayUrls();
-    const relayUrls =
-      appRelayUrls.length > 0 ? appRelayUrls : normalizeRelayStatusUrls(seedRelayUrls);
+    const relayUrls = normalizeRelayStatusUrls([
+      ...appRelayUrls,
+      ...inputSanitizerService.normalizeStringArray(seedRelayUrls)
+    ]);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
       return relayUrls;
@@ -5329,11 +5597,27 @@ export const useNostrStore = defineStore('nostrStore', () => {
   async function resolvePrivateMessageReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
     const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
 
-    await contactsService.init();
-    const contacts = await contactsService.listContacts();
-    const groupRelayUrls = contacts
-      .filter((contact) => contact.type === 'group')
-      .flatMap((contact) => inputSanitizerService.normalizeReadableRelayUrls(contact.relays));
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+    const contactsByPubkey = new Map(
+      (await contactsService.listContacts())
+        .map((contact) => {
+          const normalizedPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
+          return normalizedPubkey ? ([normalizedPubkey, contact] as const) : null;
+        })
+        .filter((entry): entry is readonly [string, ContactRecord] => Boolean(entry))
+    );
+    const groupRelayUrls = (await chatDataService.listChats())
+      .filter((chat) => chat.type === 'group')
+      .flatMap((chat) => {
+        const normalizedChatPublicKey = inputSanitizerService.normalizeHexKey(chat.public_key);
+        if (!normalizedChatPublicKey) {
+          return [];
+        }
+
+        return inputSanitizerService.normalizeReadableRelayUrls(
+          contactsByPubkey.get(normalizedChatPublicKey)?.relays
+        );
+      });
 
     return normalizeRelayStatusUrls([...relayUrls, ...groupRelayUrls]);
   }
@@ -7956,18 +8240,24 @@ export const useNostrStore = defineStore('nostrStore', () => {
       force,
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      subscriptionTargetType: 'user',
+      userTargetCount: 1,
+      userTargetPubkeys: [formatSubscriptionLogValue(loggedInPubkeyHex)],
       since: getFilterSince(),
       ...buildSubscriptionRelayDetails(relayUrls),
       relaySnapshots: getRelaySnapshots(relayUrls)
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    myRelayListSubscription = ndk.subscribe(
-      {
-        kinds: [NDKKind.RelayList],
-        authors: [loggedInPubkeyHex],
-        since: getFilterSince()
-      },
+    const myRelayListFilters: NDKFilter = {
+      kinds: [NDKKind.RelayList],
+      authors: [loggedInPubkeyHex],
+      since: getFilterSince()
+    };
+    myRelayListSubscription = subscribeWithReqLogging(
+      'my-relay-list',
+      'my-relay-list',
+      myRelayListFilters,
       {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -7993,6 +8283,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
             signature
           });
         }
+      },
+      {
+        signature,
+        ...buildSubscriptionRelayDetails(relayUrls)
       }
     );
     myRelayListSubscriptionSignature = signature;
@@ -8162,18 +8456,24 @@ export const useNostrStore = defineStore('nostrStore', () => {
       force,
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      subscriptionTargetType: 'user',
+      userTargetCount: 1,
+      userTargetPubkeys: [formatSubscriptionLogValue(loggedInPubkeyHex)],
       since: getFilterSince(),
       ...buildSubscriptionRelayDetails(relayUrls)
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    privateContactListSubscription = ndk.subscribe(
-      {
-        kinds: [NDKKind.FollowSet],
-        authors: [loggedInPubkeyHex],
-        '#d': [PRIVATE_CONTACT_LIST_D_TAG],
-        since: getFilterSince()
-      },
+    const privateContactListFilters: NDKFilter = {
+      kinds: [NDKKind.FollowSet],
+      authors: [loggedInPubkeyHex],
+      '#d': [PRIVATE_CONTACT_LIST_D_TAG],
+      since: getFilterSince()
+    };
+    privateContactListSubscription = subscribeWithReqLogging(
+      'private-contact-list',
+      'private-contact-list',
+      privateContactListFilters,
       {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -8192,6 +8492,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
             signature
           });
         }
+      },
+      {
+        signature,
+        ...buildSubscriptionRelayDetails(relayUrls)
       }
     );
     privateContactListSubscriptionSignature = signature;
@@ -8264,6 +8568,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await ensureRelayConnections(relayUrls);
     await getLoggedInSignerUser();
     stopContactProfileSubscription();
+    const contactProfileTargetDetails = await buildTrackedContactSubscriptionTargetDetails(contactPubkeys);
 
     logSubscription('contact-profile', 'start', {
       force,
@@ -8271,16 +8576,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
       since: getFilterSince(),
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
-      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
+      ...contactProfileTargetDetails
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    contactProfileSubscription = ndk.subscribe(
-      {
-        kinds: [NDKKind.Metadata],
-        authors: contactPubkeys,
-        since: getFilterSince()
-      },
+    const contactProfileFilters: NDKFilter = {
+      kinds: [NDKKind.Metadata],
+      authors: contactPubkeys,
+      since: getFilterSince()
+    };
+    contactProfileSubscription = subscribeWithReqLogging(
+      'contact-profile',
+      'contact-profile',
+      contactProfileFilters,
       {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -8299,6 +8608,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
             signature
           });
         }
+      },
+      {
+        signature,
+        ...buildSubscriptionRelayDetails(relayUrls)
       }
     );
     contactProfileSubscriptionSignature = signature;
@@ -8372,6 +8685,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await ensureRelayConnections(relayUrls);
     await getLoggedInSignerUser();
     stopContactRelayListSubscription();
+    const contactRelayTargetDetails = await buildTrackedContactSubscriptionTargetDetails(contactPubkeys);
 
     logSubscription('contact-relay-list', 'start', {
       force,
@@ -8379,16 +8693,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
       since: getFilterSince(),
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
-      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
+      ...contactRelayTargetDetails
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    contactRelayListSubscription = ndk.subscribe(
-      {
-        kinds: [NDKKind.RelayList],
-        authors: contactPubkeys,
-        since: getFilterSince()
-      },
+    const contactRelayListFilters: NDKFilter = {
+      kinds: [NDKKind.RelayList],
+      authors: contactPubkeys,
+      since: getFilterSince()
+    };
+    contactRelayListSubscription = subscribeWithReqLogging(
+      'contact-relay-list',
+      'contact-relay-list',
+      contactRelayListFilters,
       {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -8407,6 +8725,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
             signature
           });
         }
+      },
+      {
+        signature,
+        ...buildSubscriptionRelayDetails(relayUrls)
       }
     );
     contactRelayListSubscriptionSignature = signature;
@@ -8482,6 +8804,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     until: number;
     signature: string;
   }): Promise<number> {
+    const privateMessageTargetDetails = await buildPrivateMessageSubscriptionTargetDetails(
+      options.recipientPubkeys,
+      options.loggedInPubkeyHex
+    );
+
     return new Promise<number>((resolve, reject) => {
       let didFinish = false;
       let eventCount = 0;
@@ -8507,19 +8834,25 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       try {
         const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
-        console.log('Starting private messages backfill subscription window', {
+        logSubscription('private-messages', 'backfill-window-subscribe', {
           signature: options.signature,
-          since: options.since,
-          until: options.until,
-          relayCount: options.relayUrls.length
+          ...buildFilterSinceDetails(options.since),
+          ...buildFilterUntilDetails(options.until),
+          ...buildSubscriptionRelayDetails(options.relayUrls),
+          recipientCount: options.recipientPubkeys.length,
+          recipients: options.recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
+          ...privateMessageTargetDetails
         });
-        subscription = ndk.subscribe(
-          {
-            kinds: [NDKKind.GiftWrap],
-            '#p': options.recipientPubkeys,
-            since: options.since,
-            until: options.until
-          },
+        const privateMessagesBackfillFilters: NDKFilter = {
+          kinds: [NDKKind.GiftWrap],
+          '#p': options.recipientPubkeys,
+          since: options.since,
+          until: options.until
+        };
+        subscription = subscribeWithReqLogging(
+          'private-messages',
+          'private-messages-backfill',
+          privateMessagesBackfillFilters,
           {
             relaySet,
             cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -8547,6 +8880,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
             onClose: () => {
               finish();
             }
+          },
+          {
+            signature: options.signature,
+            ...buildFilterSinceDetails(options.since),
+            ...buildFilterUntilDetails(options.until),
+            ...buildSubscriptionRelayDetails(options.relayUrls)
           }
         );
 
@@ -8559,6 +8898,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   async function runGroupEpochHistoryRestoreWindow(options: {
     loggedInPubkeyHex: string;
+    groupPublicKey: string;
     recipientPubkey: string;
     relayUrls: string[];
     since: number;
@@ -8593,13 +8933,32 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       try {
         const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
-        subscription = ndk.subscribe(
-          {
-            kinds: [NDKKind.GiftWrap],
-            '#p': [options.recipientPubkey],
-            since: options.since,
-            until: options.until
-          },
+        logSubscription('private-messages', 'epoch-history-subscribe', {
+          subscriptionTargetType: 'epoch',
+          groupChatPubkeys: [formatSubscriptionLogValue(options.groupPublicKey)],
+          epochRecipientCount: 1,
+          epochRecipients: [
+            {
+              groupChatPubkey:
+                formatSubscriptionLogValue(options.groupPublicKey) ?? options.groupPublicKey,
+              epochRecipientPubkey:
+                formatSubscriptionLogValue(options.recipientPubkey) ?? options.recipientPubkey
+            }
+          ],
+          ...buildFilterSinceDetails(options.since),
+          ...buildFilterUntilDetails(options.until),
+          ...buildSubscriptionRelayDetails(options.relayUrls)
+        });
+        const groupEpochHistoryFilters: NDKFilter = {
+          kinds: [NDKKind.GiftWrap],
+          '#p': [options.recipientPubkey],
+          since: options.since,
+          until: options.until
+        };
+        subscription = subscribeWithReqLogging(
+          'private-messages',
+          'private-messages-epoch-history',
+          groupEpochHistoryFilters,
           {
             relaySet,
             cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -8620,6 +8979,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
             onClose: () => {
               finish();
             }
+          },
+          {
+            groupPublicKey: formatSubscriptionLogValue(options.groupPublicKey),
+            epochRecipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
+            ...buildFilterSinceDetails(options.since),
+            ...buildFilterUntilDetails(options.until),
+            ...buildSubscriptionRelayDetails(options.relayUrls)
           }
         );
       } catch (error) {
@@ -8668,7 +9034,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         return;
       }
 
-      const relayUrls = await resolvePrivateMessageReadRelayUrls();
+      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
       if (relayUrls.length === 0) {
         return;
       }
@@ -8677,6 +9043,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       const now = Math.floor(Date.now() / 1000);
       await runGroupEpochHistoryRestoreWindow({
         loggedInPubkeyHex,
+        groupPublicKey: normalizedGroupPublicKey,
         recipientPubkey: normalizedEpochPublicKey,
         relayUrls,
         since: getPrivateMessagesStartupFloorSince(now),
@@ -8991,12 +9358,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    let resolvedGroupChatPublicKey = recipientContext.groupChatPublicKey;
+    let resolvedGroupEpochContext: Awaited<ReturnType<typeof findGroupChatEpochContextByRecipientPubkey>> =
+      recipientContext.groupChatPublicKey
+        ? await findGroupChatEpochContextByRecipientPubkey(recipientContext.recipientPubkey)
+        : null;
+    let resolvedGroupChatPublicKey =
+      resolvedGroupEpochContext?.chat.public_key ?? recipientContext.groupChatPublicKey;
     if (!resolvedGroupChatPublicKey) {
       for (const recipientPubkey of recipients) {
         const matchingGroupChatContext =
           await findGroupChatEpochContextByRecipientPubkey(recipientPubkey);
         if (matchingGroupChatContext) {
+          resolvedGroupEpochContext = matchingGroupChatContext;
           resolvedGroupChatPublicKey = matchingGroupChatContext.chat.public_key;
           break;
         }
@@ -9028,6 +9401,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
 
     const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
+    const loggedRumorEvent = buildLoggedNostrEvent(rumorEvent, rumorNostrEvent);
     const receivedRelayStatuses = buildInboundRelayStatuses(wrappedRelayUrls);
     const direction: NostrEventDirection = isSelfSentMessage ? 'out' : 'in';
     const replyTargetEventId = readReplyTargetEventId(rumorEvent);
@@ -9120,6 +9494,26 @@ export const useNostrStore = defineStore('nostrStore', () => {
         existingGroupChat?.meta?.contact_name?.trim() ||
         existingGroupChat?.name?.trim() ||
         resolveGroupDisplayName(senderPubkeyHex);
+      const epochPublicKey = derivePublicKeyFromPrivateKey(verificationResult.epochPrivateKey ?? '');
+
+      logInboundEvent('epoch-ticket-received', {
+        direction,
+        epochNumber,
+        epochPublicKey: formatSubscriptionLogValue(epochPublicKey),
+        acceptedGroup: wasAcceptedGroup,
+        groupName: fallbackGroupName,
+        deliveryRecipientPubkey: formatSubscriptionLogValue(recipientContext.recipientPubkey),
+        signedEventId: formatSubscriptionLogValue(verificationResult.signedEvent?.id ?? loggedEvent.id ?? null),
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey: senderPubkeyHex,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
 
       await persistIncomingGroupEpochTicket(
         senderPubkeyHex,
@@ -9128,7 +9522,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         {
           fallbackName: fallbackGroupName,
           accepted: wasAcceptedGroup,
-          invitationCreatedAt: toIsoTimestampFromUnix(rumorEvent.created_at)
+          invitationCreatedAt: toIsoTimestampFromUnix(rumorEvent.created_at),
+          seedRelayUrls: wrappedRelayUrls
         }
       );
       void refreshGroupContactByPublicKey(senderPubkeyHex, fallbackGroupName).catch((error) => {
@@ -9405,6 +9800,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
           : currentUnreadCount;
     const shouldUpdateChatPreview =
       toComparableTimestamp(createdAt) >= toComparableTimestamp(chat.last_message_at);
+    const currentGroupEpochEntry = resolvedGroupChatPublicKey
+      ? resolveCurrentGroupChatEpochEntry(chat)
+      : null;
+    const hasValidInvitation = Boolean(resolvedGroupEpochContext?.epochEntry);
+    const invitationCreatedAt = resolvedGroupEpochContext?.epochEntry?.invitation_created_at ?? null;
+    const isCurrentEpochRecipient =
+      Boolean(currentGroupEpochEntry?.epoch_public_key) &&
+      currentGroupEpochEntry?.epoch_public_key === resolvedGroupEpochContext?.epochEntry?.epoch_public_key;
 
     if (shouldUpdateChatPreview) {
       await chatDataService.updateChatPreview(
@@ -9416,6 +9819,32 @@ export const useNostrStore = defineStore('nostrStore', () => {
     } else if (nextUnreadCount !== currentUnreadCount) {
       await chatDataService.updateChatUnreadCount(chat.public_key, nextUnreadCount);
     }
+
+    logInboundEvent('private-message-received', {
+      direction,
+      messageId: createdMessage.id,
+      messageLength: messageText.length,
+      isGroupMessage: Boolean(resolvedGroupChatPublicKey),
+      rumor: loggedRumorEvent,
+      ...(resolvedGroupChatPublicKey
+        ? {
+            groupChatPubkey: formatSubscriptionLogValue(resolvedGroupChatPublicKey),
+            epochRecipientPubkey: formatSubscriptionLogValue(recipientContext.recipientPubkey),
+            hasValidInvitation,
+            invitationCreatedAt,
+            isCurrentEpochRecipient
+          }
+        : {}),
+      ...buildInboundTraceDetails({
+        wrappedEvent,
+        rumorEvent,
+        loggedInPubkeyHex,
+        senderPubkeyHex,
+        chatPubkey,
+        relayUrls: wrappedRelayUrls,
+        recipients
+      })
+    });
 
     logInboundEvent('message-persisted', {
       persistence: 'created',
@@ -9436,6 +9865,30 @@ export const useNostrStore = defineStore('nostrStore', () => {
         recipients
       })
     });
+
+    if (resolvedGroupChatPublicKey) {
+      logInboundEvent('group-message-received', {
+        direction,
+        messageId: nextMessageRow.id,
+        messageLength: messageText.length,
+        groupChatPubkey: formatSubscriptionLogValue(resolvedGroupChatPublicKey),
+        epochRecipientPubkey: formatSubscriptionLogValue(recipientContext.recipientPubkey),
+        authorPubkey: formatSubscriptionLogValue(senderPubkeyHex),
+        hasValidInvitation,
+        invitationCreatedAt,
+        isCurrentEpochRecipient,
+        rumor: loggedRumorEvent,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey: resolvedGroupChatPublicKey,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
+    }
 
     if (
       !isSelfSentMessage &&
@@ -9591,6 +10044,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
         const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
         return !relay || !relay.connected;
       });
+      const privateMessageTargetDetails = await buildPrivateMessageSubscriptionTargetDetails(
+        recipientPubkeys,
+        loggedInPubkeyHex
+      );
 
       if (disconnectedRelayUrls.length > 0) {
         logSubscription('private-messages', 'relay-health', {
@@ -9611,7 +10068,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         ...buildFilterSinceDetails(filterSince),
         restoreThrottleMs: privateMessagesRestoreThrottleMs,
         relaySnapshots,
-        ...buildSubscriptionRelayDetails(relayUrls)
+        ...buildSubscriptionRelayDetails(relayUrls),
+        ...privateMessageTargetDetails
       });
       privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
       privateMessagesSubscriptionSince.value = filterSince;
@@ -9620,12 +10078,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
       bumpDeveloperDiagnosticsVersion();
 
       const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-      privateMessagesSubscription = ndk.subscribe(
-        {
-          kinds: [NDKKind.GiftWrap],
-          '#p': recipientPubkeys,
-          since: filterSince
-        },
+      const privateMessagesFilters: NDKFilter = {
+        kinds: [NDKKind.GiftWrap],
+        '#p': recipientPubkeys,
+        since: filterSince
+      };
+      privateMessagesSubscription = subscribeWithReqLogging(
+        'private-messages',
+        'private-messages-live',
+        privateMessagesFilters,
         {
           relaySet,
           cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -9684,6 +10145,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
               })();
             }
           }
+        },
+        {
+          signature,
+          ...buildFilterSinceDetails(filterSince),
+          ...buildSubscriptionRelayDetails(relayUrls),
+          ...privateMessageTargetDetails
         }
       );
       privateMessagesSubscriptionSignature = signature;
