@@ -2105,7 +2105,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
           ...nextMeta
         }
       });
-      await useChatStore().reload();
       try {
         await subscribePrivateMessagesForLoggedInUser(true);
       } catch (error) {
@@ -2114,6 +2113,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
           error
         );
       }
+      await useChatStore().reload();
       void restoreGroupEpochHistory(normalizedGroupPublicKey, normalizedEpochPublicKey);
       return;
     }
@@ -2130,7 +2130,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...(shouldUpdateName ? { name: fallbackName } : {}),
       ...(shouldUpdateMeta ? { meta: nextMeta } : {})
     });
-    await useChatStore().reload();
     if (previousCurrentEpochPublicKey !== nextCurrentEpochPublicKey) {
       try {
         await subscribePrivateMessagesForLoggedInUser(true);
@@ -2138,6 +2137,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         console.warn('Failed to refresh private message subscription after epoch ticket update', error);
       }
     }
+    await useChatStore().reload();
 
     if (didChangeEpochSet) {
       void restoreGroupEpochHistory(normalizedGroupPublicKey, normalizedEpochPublicKey);
@@ -9114,6 +9114,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
         existingGroupChat?.meta?.contact_name?.trim() ||
         existingGroupChat?.name?.trim() ||
         resolveGroupDisplayName(senderPubkeyHex);
+
+      await persistIncomingGroupEpochTicket(
+        senderPubkeyHex,
+        epochNumber,
+        verificationResult.epochPrivateKey ?? '',
+        {
+          fallbackName: fallbackGroupName,
+          accepted: wasAcceptedGroup,
+          invitationCreatedAt: toIsoTimestampFromUnix(rumorEvent.created_at)
+        }
+      );
+
       const refreshedGroupContact = await refreshGroupContactByPublicKey(
         senderPubkeyHex,
         fallbackGroupName
@@ -9136,17 +9148,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
             : null
         );
       }
-
-      await persistIncomingGroupEpochTicket(
-        senderPubkeyHex,
-        epochNumber,
-        verificationResult.epochPrivateKey ?? '',
-        {
-          fallbackName,
-          accepted: wasAcceptedGroup,
-          invitationCreatedAt: toIsoTimestampFromUnix(rumorEvent.created_at)
-        }
-      );
 
       const epochNoticeMessage = await chatDataService.createMessage({
         chat_public_key: senderPubkeyHex,
