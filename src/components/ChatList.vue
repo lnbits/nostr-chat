@@ -5,6 +5,7 @@
         v-if="showRequestsRow"
         clickable
         class="requests-row"
+        data-testid="requests-row"
         :active="requestsActive"
         active-class="requests-row--active"
         @click="$emit('open-requests')"

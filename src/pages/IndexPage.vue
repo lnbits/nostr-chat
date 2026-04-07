@@ -57,12 +57,18 @@
                 round
                 icon="group_add"
                 class="sidebar-top__action"
+                data-testid="start-new-chat-button"
                 aria-label="Start New Chat"
                 :loading="isCreatingGroup"
               >
                 <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
                   <q-list dense class="tg-pop-menu__list">
-                    <q-item clickable v-close-popup @click="handleNewChat">
+                    <q-item
+                      clickable
+                      v-close-popup
+                      data-testid="start-new-chat-menu-item"
+                      @click="handleNewChat"
+                    >
                       <q-item-section>New Chat</q-item-section>
                     </q-item>
                     <q-item clickable v-close-popup @click="handleNewGroup">

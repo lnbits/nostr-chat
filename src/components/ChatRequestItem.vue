@@ -1,5 +1,5 @@
 <template>
-  <q-card flat bordered class="request-item">
+  <q-card flat bordered class="request-item" data-testid="chat-request-item">
     <q-item clickable class="request-item__content" @click="handleOpen">
       <q-item-section avatar>
         <CachedAvatar
@@ -33,6 +33,7 @@
         color="primary"
         label="Accept"
         class="request-item__action request-item__action--primary"
+        data-testid="chat-request-accept-button"
         @click.stop="handleAccept"
       />
       <q-btn

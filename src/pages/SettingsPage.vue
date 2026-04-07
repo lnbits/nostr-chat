@@ -31,6 +31,7 @@
             :key="item.key"
             clickable
             class="settings-menu__item"
+            :data-testid="item.action === 'logout' ? 'settings-logout-item' : undefined"
             :class="{ 'settings-menu__item--danger': item.action === 'logout' }"
             :active="item.routeName ? activeSettingKey === item.key : false"
             active-class="settings-menu__item--active"
@@ -97,6 +98,7 @@
           no-caps
           color="negative"
           label="Log Out"
+          data-testid="settings-logout-confirm"
           :loading="isLoggingOut"
           @click="handleConfirmLogout"
         />

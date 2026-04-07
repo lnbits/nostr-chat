@@ -47,6 +47,7 @@
         ref="inputRef"
         v-model="draft"
         class="composer__input tg-input"
+        data-testid="message-composer-input"
         dense
         outlined
         rounded
@@ -98,6 +99,8 @@
         color="primary"
         icon="send"
         class="composer__send"
+        data-testid="message-composer-send"
+        aria-label="Send message"
         @touchstart.prevent.stop="handleSendTouchStart"
         @click="handleSendClick"
       />

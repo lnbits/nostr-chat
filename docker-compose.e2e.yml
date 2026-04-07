@@ -1,0 +1,10 @@
+services:
+  relay:
+    image: scsibug/nostr-rs-relay:latest
+    ports:
+      - '7000:8080'
+    volumes:
+      - relay-data:/usr/src/app/db
+
+volumes:
+  relay-data:

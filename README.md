@@ -37,6 +37,18 @@ npm run dev
 
 This runs `quasar dev` via the npm script.
 
+## End-to-end tests
+
+Core DM e2e coverage uses Playwright plus a local `nostr-rs-relay` Docker container.
+
+Run the suite locally:
+
+```bash
+npm run test:e2e:local
+```
+
+This resets the relay volume before and after the run so each local run starts clean.
+
 ## Project Structure
 
 ```text

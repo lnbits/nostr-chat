@@ -5424,6 +5424,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
+  function shouldPreserveExistingGroupRelays(
+    contact: Pick<ContactRecord, 'type' | 'public_key' | 'relays'> | null | undefined,
+    nextRelayEntries: ContactRelay[] | undefined
+  ): boolean {
+    return (
+      contact?.type === 'group' &&
+      Array.isArray(contact.relays) &&
+      contact.relays.length > 0 &&
+      (!Array.isArray(nextRelayEntries) || nextRelayEntries.length === 0)
+    );
+  }
+
   async function fetchContactRelayList(
     pubkeyHex: string,
     seedRelayUrls: string[] = []
@@ -5482,7 +5494,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const relayList = await fetchContactRelayList(normalizedPubkey);
-    const nextRelayEntries = relayList?.relayEntries ?? [];
+    if (!relayList) {
+      return existingContact.relays ?? [];
+    }
+
+    const nextRelayEntries = relayList.relayEntries;
+    if (shouldPreserveExistingGroupRelays(existingContact, nextRelayEntries)) {
+      console.warn('Preserving existing group relays after empty relay list refresh', {
+        pubkey: normalizedPubkey,
+        existingRelayCount: existingContact.relays.length
+      });
+      return existingContact.relays ?? [];
+    }
 
     if (contactRelayListsEqual(existingContact.relays, nextRelayEntries)) {
       return nextRelayEntries;
@@ -6200,6 +6223,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await contactsService.init();
     const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
     if (!existingContact) {
+      markContactRelayListEventApplied(normalizedPubkey, nextEventState);
+      return;
+    }
+
+    if (shouldPreserveExistingGroupRelays(existingContact, nextRelayEntries)) {
+      console.warn('Ignoring empty group relay list event to preserve stored relays', {
+        pubkey: normalizedPubkey,
+        eventId: event.id ?? null,
+        existingRelayCount: existingContact.relays.length
+      });
       markContactRelayListEventApplied(normalizedPubkey, nextEventState);
       return;
     }
@@ -7184,19 +7217,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
         : fallbackRelayEntries.length > 0
           ? fallbackRelayEntries
           : existingContact?.relays ?? [];
+    const effectiveNextRelays =
+      shouldPreserveExistingGroupRelays(existingContact, nextRelays)
+        ? existingContact?.relays ?? []
+        : nextRelays;
 
     const didChangeContact =
       !existingContact ||
       existingContact.name !== nextName ||
       !contactMetadataEqual(existingContact.meta, nextMeta) ||
-      !contactRelayListsEqual(existingContact.relays, nextRelays);
+      !contactRelayListsEqual(existingContact.relays, effectiveNextRelays);
 
     const chatStore = useChatStore();
     if (existingContact) {
       const updatedContact = await contactsService.updateContact(existingContact.id, {
         name: nextName,
         meta: nextMeta,
-        relays: nextRelays
+        relays: effectiveNextRelays
       });
       if (!updatedContact) {
         return;

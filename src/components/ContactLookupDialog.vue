@@ -9,6 +9,7 @@
     <q-input
       v-model="identifierInput"
       class="tg-input"
+      data-testid="contact-lookup-identifier"
       dense
       outlined
       rounded
@@ -66,6 +67,7 @@
       v-show="!selectedExistingContact"
       v-model="givenName"
       class="q-mt-sm tg-input"
+      data-testid="contact-lookup-given-name"
       dense
       outlined
       rounded
@@ -86,6 +88,7 @@
         unelevated
         color="primary"
         no-caps
+        data-testid="contact-lookup-submit"
         :label="submitLabel"
         :disable="!canSubmit || isSubmitting"
         :loading="isSubmitting"
