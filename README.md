@@ -48,6 +48,7 @@ npm run test:e2e:local
 ```
 
 This resets the relay volume before and after the run so each local run starts clean.
+Playwright now keeps traces, screenshots, and video for passing runs too. You can inspect them in `test-results/` and open the HTML summary from `playwright-report/`.
 
 ## Project Structure
 

@@ -24,9 +24,9 @@ export default defineConfig({
       height: 960
     },
     testIdAttribute: 'data-testid',
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure'
+    trace: 'on',
+    screenshot: 'on',
+    video: 'on'
   },
   webServer: {
     command: 'npm run dev:e2e',
