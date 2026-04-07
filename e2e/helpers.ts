@@ -34,6 +34,18 @@ export const TEST_ACCOUNTS = {
   actionsBob: {
     privateKey: 'c25694028321c053f174245104441935f681ce5117a89b27e4263e4360d05433',
     displayName: 'Bob Actions'
+  },
+  groupAlice: {
+    privateKey: 'eeb0542ecef525deee036b1865dc872bcda25df86016403ef25a730f330115b2',
+    displayName: 'Alice Group'
+  },
+  groupBob: {
+    privateKey: '31eecc51589b4de8f72f07b36cd888c95f339e1caf4f868f88c8ab8cf9f69587',
+    displayName: 'Bob Group'
+  },
+  groupCharlie: {
+    privateKey: '55a9153bb5fc61f56063c7984c7e5cdc29aaf157c294a1f495de673b4b74b07f',
+    displayName: 'Charlie Group'
   }
 } as const;
 
@@ -132,6 +144,29 @@ export async function openDirectChatFromIdentifier(
   await expect(composerInput(page)).toBeVisible();
 }
 
+export async function createGroup(
+  page: Page,
+  options: {
+    name: string;
+    about: string;
+  }
+): Promise<string> {
+  await page.getByTestId('start-new-chat-button').click();
+  await page.getByTestId('start-new-group-menu-item').click();
+  await expect(page.getByTestId('create-group-dialog')).toBeVisible();
+  await page.getByLabel('Name', { exact: true }).fill(options.name);
+  await page.getByLabel('About', { exact: true }).fill(options.about);
+  await page.getByRole('button', { name: 'OK', exact: true }).click();
+  await page.waitForURL(/#\/contacts\/([0-9a-f]{64})/, { timeout: 20_000 });
+
+  const match = page.url().match(/#\/contacts\/([0-9a-f]{64})/);
+  if (!match?.[1]) {
+    throw new Error('Failed to read the created group public key from the URL.');
+  }
+
+  return match[1];
+}
+
 export async function acceptAppRelayFallbackIfVisible(page: Page): Promise<boolean> {
   try {
     await page.getByText('Use App Relays', { exact: true }).waitFor({
@@ -181,17 +216,17 @@ export async function sendMessage(
 }
 
 export async function openRequests(page: Page): Promise<void> {
-  const requestsRow = page.getByTestId('requests-row');
+  const requestItem = page.getByTestId('chat-request-item');
+  await page.goto('/#/chats/requests');
 
   try {
-    await expect(requestsRow).toBeVisible({ timeout: 12_000 });
+    await expect(requestItem).toBeVisible({ timeout: 12_000 });
   } catch {
     await refreshSession(page);
+    await page.goto('/#/chats/requests');
   }
 
-  await expect(requestsRow).toBeVisible({ timeout: 12_000 });
-  await requestsRow.click();
-  await expect(page.getByTestId('chat-request-item')).toBeVisible();
+  await expect(requestItem).toBeVisible({ timeout: 12_000 });
 }
 
 export async function acceptFirstRequest(page: Page): Promise<void> {
@@ -261,6 +296,21 @@ export async function logoutFromSettings(page: Page): Promise<void> {
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(/#\/(auth|login)/);
   await expect(page.getByText('Welcome')).toBeVisible({ timeout: 30_000 });
+}
+
+export async function addGroupMemberAndPublish(
+  page: Page,
+  memberPublicKey: string
+): Promise<void> {
+  await page.getByTestId('contact-profile-members-tab').click();
+  const memberInput = page.getByLabel('Member', { exact: true });
+  await expect(memberInput).toBeVisible();
+  await memberInput.fill(memberPublicKey);
+  await page.getByTestId('group-member-add-button').click();
+  await expect(page.getByText('You must publish these changes for them to take effect')).toBeVisible();
+  await page.getByTestId('group-members-publish-button').click();
+  await expect(page.getByText('You must publish these changes for them to take effect')).toHaveCount(0);
+  await expect(page.getByText(memberPublicKey.slice(0, 32))).toBeVisible();
 }
 
 export async function establishAcceptedDirectChat(

@@ -41,7 +41,14 @@
           class="profile-tabs"
         >
           <q-tab name="profile" label="Profile" no-caps class="profile-tab" />
-          <q-tab v-if="isGroupContact" name="members" label="Members" no-caps class="profile-tab" />
+          <q-tab
+            v-if="isGroupContact"
+            name="members"
+            label="Members"
+            no-caps
+            class="profile-tab"
+            data-testid="contact-profile-members-tab"
+          />
           <q-tab
             v-if="isOwnedGroupContact"
             name="relays"
@@ -450,6 +457,7 @@
                   unelevated
                   color="primary"
                   label="Publish"
+                  data-testid="group-members-publish-button"
                   class="profile-tab-actions__button"
                   :disable="!normalizedHeaderPubkey || !hasPendingGroupMemberChanges"
                   :loading="isPublishingMembersEpoch"
@@ -461,6 +469,7 @@
                 <q-input
                   v-model="newMemberIdentifier"
                   class="tg-input profile-members-toolbar__input"
+                  data-testid="group-member-identifier-input"
                   outlined
                   dense
                   rounded
@@ -479,6 +488,7 @@
                       color="primary"
                       icon="add"
                       size="sm"
+                      data-testid="group-member-add-button"
                       aria-label="Add member"
                       :disable="!canAddMember"
                       :loading="isAddingMember"

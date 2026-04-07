@@ -2266,7 +2266,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Only the owner can publish group membership changes.');
     }
 
-    const seedRelayUrls = Array.isArray(options.seedRelayUrls) ? options.seedRelayUrls : [];
+    const seedRelayUrls = normalizeRelayStatusUrls([
+      ...inputSanitizerService.normalizeStringArray(options.seedRelayUrls ?? []),
+      ...getAppRelayUrls()
+    ]);
     const shouldRotateEpoch = options.rotateEpoch === true;
     const { contact: currentGroupContact, secret } = await ensureGroupIdentitySecretEpochState(
       groupContact,
@@ -6583,6 +6586,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   async function createGroupChat(options: CreateGroupChatInput = {}): Promise<CreateGroupChatResult> {
     const relayUrls = Array.isArray(options.relayUrls) ? options.relayUrls : [];
+    const relayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(relayUrls);
     const groupSigner = NDKPrivateKeySigner.generate();
     const initialEpochState = createInitialGroupEpochSecretState();
     const groupPublicKey = inputSanitizerService.normalizeHexKey(groupSigner.pubkey);
@@ -6622,6 +6626,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
       await chatStore.reload();
     }
 
+    if (relayEntries.length > 0) {
+      await contactsService.init();
+      const groupContact = await contactsService.getContactByPublicKey(groupPublicKey);
+      if (groupContact && !contactRelayListsEqual(groupContact.relays, relayEntries)) {
+        const updatedGroupContact = await contactsService.updateContact(groupContact.id, {
+          relays: relayEntries
+        });
+        if (updatedGroupContact) {
+          bumpContactListVersion();
+        }
+      }
+    }
+
     let groupSecretSave: RelaySaveStatus;
     try {
       groupSecretSave = await publishGroupIdentitySecret(
@@ -6636,6 +6653,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
         failedRelayUrls: [],
         errorMessage: error instanceof Error ? error.message : 'Failed to publish group identity secret.'
       };
+    }
+
+    if (relayEntries.length > 0) {
+      try {
+        await publishGroupRelayList(groupPublicKey, relayEntries, relayUrls);
+      } catch (error) {
+        console.warn('Failed to publish group relay list during group creation', error);
+      }
     }
 
     let contactListSyncError: string | null = null;
@@ -9593,7 +9618,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       const epochNoticeMessage = await chatDataService.createMessage({
         chat_public_key: senderPubkeyHex,
-        author_public_key: loggedInPubkeyHex,
+        author_public_key: senderPubkeyHex,
         message: `Epoch ${epochNumber}`,
         created_at: toIsoTimestampFromUnix(rumorEvent.created_at),
         event_id: verificationResult.signedEvent?.id ?? loggedEvent.id ?? null,

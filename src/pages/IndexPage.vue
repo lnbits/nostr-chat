@@ -71,7 +71,12 @@
                     >
                       <q-item-section>New Chat</q-item-section>
                     </q-item>
-                    <q-item clickable v-close-popup @click="handleNewGroup">
+                    <q-item
+                      clickable
+                      v-close-popup
+                      data-testid="start-new-group-menu-item"
+                      @click="handleNewGroup"
+                    >
                       <q-item-section>New Group</q-item-section>
                     </q-item>
                   </q-list>
@@ -163,7 +168,7 @@
       </section>
 
       <q-dialog v-model="isCreateGroupDialogOpen" :persistent="isCreatingGroup">
-        <q-card class="create-group-dialog">
+        <q-card class="create-group-dialog" data-testid="create-group-dialog">
           <q-card-section class="create-group-dialog__header">
             <div class="create-group-dialog__title">New Group</div>
           </q-card-section>
@@ -172,6 +177,7 @@
             <q-input
               v-model="newGroupName"
               class="tg-input"
+              data-testid="create-group-name-input"
               dense
               outlined
               rounded
@@ -183,6 +189,7 @@
             <q-input
               v-model="newGroupAbout"
               class="q-mt-sm tg-input"
+              data-testid="create-group-about-input"
               dense
               outlined
               rounded
@@ -202,6 +209,7 @@
               unelevated
               label="OK"
               color="primary"
+              data-testid="create-group-submit"
               :loading="isCreatingGroup"
               @click="handleConfirmNewGroup"
             />

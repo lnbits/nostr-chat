@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 import {
   TEST_ACCOUNTS,
   acceptFirstRequest,
+  addGroupMemberAndPublish,
   bootstrapUser,
+  createGroup,
   deleteMessage,
   disposeUsers,
   establishAcceptedDirectChat,
@@ -48,6 +50,41 @@ test('first-contact DM becomes a request, can be accepted, and supports reply', 
     });
     await waitForThreadMessage(alice.page, replyMessage, {
       chatId: bob.session.publicKey
+    });
+  } finally {
+    await disposeUsers(alice, bob);
+  }
+});
+
+test('group owner can create a group, invite a member, and receive the first message', async ({
+  browser
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupAlice);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupBob);
+
+  try {
+    const groupName = `Group ${Date.now()}`;
+    const groupAbout = 'Relay-backed group e2e';
+    const bobGroupMessage = `group-hello-from-bob-${Date.now()}`;
+
+    const groupPublicKey = await createGroup(alice.page, {
+      name: groupName,
+      about: groupAbout
+    });
+
+    await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
+
+    await openRequests(bob.page);
+    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page);
+
+    await navigateToChat(bob.page, groupPublicKey);
+    await sendMessage(bob.page, bobGroupMessage, {
+      chatId: groupPublicKey
+    });
+    await navigateToChat(alice.page, groupPublicKey);
+    await waitForThreadMessage(alice.page, bobGroupMessage, {
+      chatId: groupPublicKey
     });
   } finally {
     await disposeUsers(alice, bob);
