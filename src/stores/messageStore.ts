@@ -276,6 +276,19 @@ function countOwnUnseenReactions(
   }, 0);
 }
 
+function areReactionListsEqualValue(
+  currentReactions: MessageReaction[],
+  nextReactions: MessageReaction[]
+): boolean {
+  return (
+    currentReactions.length === nextReactions.length &&
+    currentReactions.every((reaction, index) => {
+      const nextReaction = nextReactions[index];
+      return nextReaction ? areMessageReactionsEqual(reaction, nextReaction) : false;
+    })
+  );
+}
+
 function mergeMessagesById(currentMessages: Message[], incomingMessages: Message[]): Message[] {
   if (incomingMessages.length === 0) {
     return currentMessages;
@@ -436,6 +449,7 @@ function applyMessageUpsert(
 
 export const __messageStoreTestUtils = {
   applyMessageUpsert,
+  areReactionListsEqual: areReactionListsEqualValue,
   buildChatMetaWithUnseenReactionCount: buildChatMetaWithUnseenReactionCountValue,
   buildDeletedMessageMeta,
   buildInitialMessageWindowFromUnreadAnchor,

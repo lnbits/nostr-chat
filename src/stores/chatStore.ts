@@ -497,12 +497,16 @@ function buildUpdatedChatPreview(
 }
 
 export const __chatStoreTestUtils = {
+  buildChatSearchText,
   buildAcceptedChatMeta,
   buildBlockedChatMeta,
   buildChatActivitySnapshotByPublicKey,
   buildUpdatedChatPreview,
+  chatMatchesSearch,
   countUnreadMessagesAfter,
+  mapChatRowToChat,
   resolveChatCategory,
+  resolveDefaultSelectedChatId,
   syncChatActivityMeta
 };
 

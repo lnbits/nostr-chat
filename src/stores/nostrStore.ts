@@ -851,15 +851,219 @@ function buildGroupInviteRequestPlanValue(options: {
   };
 }
 
+function readProfileFieldValue(
+  profile: NDKUserProfile | null,
+  keys: string[],
+  fallback = ''
+): string | undefined {
+  for (const key of keys) {
+    const rawValue = profile?.[key];
+    if (typeof rawValue !== 'string') {
+      continue;
+    }
+
+    const normalized = rawValue.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  const normalizedFallback = fallback.trim();
+  return normalizedFallback || undefined;
+}
+
+function buildUpdatedContactMetaValue(
+  existingMeta: ContactMetadata | undefined,
+  profile: NDKUserProfile | null,
+  resolvedNpub: string | null,
+  resolvedNprofile: string | null
+): ContactMetadata {
+  const meta: ContactMetadata = {
+    ...(existingMeta ?? {})
+  };
+
+  const nextName = readProfileFieldValue(profile, ['name'], meta.name ?? '');
+  const nextAbout = readProfileFieldValue(profile, ['about', 'bio'], meta.about ?? '');
+  const nextPicture = readProfileFieldValue(profile, ['picture', 'image'], meta.picture ?? '');
+  const nextNip05 = readProfileFieldValue(profile, ['nip05'], meta.nip05 ?? '');
+  const nextLud06 = readProfileFieldValue(profile, ['lud06'], meta.lud06 ?? '');
+  const nextLud16 = readProfileFieldValue(profile, ['lud16'], meta.lud16 ?? '');
+  const nextDisplayName = readProfileFieldValue(
+    profile,
+    ['displayName', 'display_name'],
+    meta.display_name ?? ''
+  );
+  const nextWebsite = readProfileFieldValue(profile, ['website'], meta.website ?? '');
+  const nextBanner = readProfileFieldValue(profile, ['banner'], meta.banner ?? '');
+
+  if (nextName) {
+    meta.name = nextName;
+  }
+
+  if (nextAbout) {
+    meta.about = nextAbout;
+  }
+
+  if (nextPicture) {
+    meta.picture = nextPicture;
+  }
+
+  if (nextNip05) {
+    meta.nip05 = nextNip05;
+  }
+
+  if (nextLud06) {
+    meta.lud06 = nextLud06;
+  }
+
+  if (nextLud16) {
+    meta.lud16 = nextLud16;
+  }
+
+  if (nextDisplayName) {
+    meta.display_name = nextDisplayName;
+  }
+
+  if (nextWebsite) {
+    meta.website = nextWebsite;
+  }
+
+  if (nextBanner) {
+    meta.banner = nextBanner;
+  }
+
+  if (typeof profile?.bot === 'boolean') {
+    meta.bot = profile.bot;
+  }
+
+  if (typeof profile?.group === 'boolean') {
+    meta.group = profile.group;
+  }
+
+  if (resolvedNpub?.trim()) {
+    meta.npub = resolvedNpub.trim();
+  }
+
+  if (resolvedNprofile?.trim()) {
+    meta.nprofile = resolvedNprofile.trim();
+  }
+
+  return meta;
+}
+
+function encodeNpubValue(pubkeyHex: string): string | null {
+  try {
+    return nip19.npubEncode(pubkeyHex);
+  } catch {
+    return null;
+  }
+}
+
+function encodeNprofileValue(pubkeyHex: string): string | null {
+  try {
+    return nip19.nprofileEncode({
+      pubkey: pubkeyHex
+    });
+  } catch {
+    return null;
+  }
+}
+
+function buildIdentifierFallbacksValue(
+  pubkeyHex: string,
+  existingMeta?: ContactMetadata
+): string[] {
+  const nip05Identifier = existingMeta?.nip05?.trim() ?? '';
+  const nprofileIdentifier =
+    existingMeta?.nprofile?.trim() || encodeNprofileValue(pubkeyHex) || '';
+  const npubIdentifier = existingMeta?.npub?.trim() || encodeNpubValue(pubkeyHex) || '';
+  const hexIdentifier = pubkeyHex;
+
+  return [nip05Identifier, npubIdentifier, hexIdentifier, nprofileIdentifier]
+    .map((identifier) => identifier.trim())
+    .filter(
+      (identifier, index, list) => identifier.length > 0 && list.indexOf(identifier) === index
+    );
+}
+
+function relayEntriesFromRelayListValue(
+  relayList: Pick<NDKRelayList, 'readRelayUrls' | 'writeRelayUrls' | 'bothRelayUrls'> | null | undefined
+): ContactRelay[] {
+  if (!relayList) {
+    return [];
+  }
+
+  return inputSanitizerService.normalizeRelayListMetadataEntries([
+    ...Array.from(relayList.readRelayUrls ?? [], (relay) => ({
+      url: String(relay),
+      read: true,
+      write: false
+    })),
+    ...Array.from(relayList.writeRelayUrls ?? [], (relay) => ({
+      url: String(relay),
+      read: false,
+      write: true
+    })),
+    ...Array.from(relayList.bothRelayUrls ?? [], (relay) => ({
+      url: String(relay),
+      read: true,
+      write: true
+    }))
+  ]);
+}
+
+function contactRelayListsEqualValue(
+  first: ContactRelay[] | undefined,
+  second: ContactRelay[] | undefined
+): boolean {
+  return (
+    JSON.stringify(inputSanitizerService.normalizeRelayListMetadataEntries(first ?? [])) ===
+    JSON.stringify(inputSanitizerService.normalizeRelayListMetadataEntries(second ?? []))
+  );
+}
+
+function contactMetadataEqualValue(
+  first: ContactMetadata | undefined,
+  second: ContactMetadata | undefined
+): boolean {
+  return (
+    JSON.stringify(inputSanitizerService.normalizeContactMetadata(first ?? {})) ===
+    JSON.stringify(inputSanitizerService.normalizeContactMetadata(second ?? {}))
+  );
+}
+
+function shouldPreserveExistingGroupRelaysValue(
+  contact: Pick<ContactRecord, 'type' | 'public_key' | 'relays'> | null | undefined,
+  nextRelayEntries: ContactRelay[] | undefined
+): boolean {
+  return (
+    contact?.type === 'group' &&
+    Array.isArray(contact.relays) &&
+    contact.relays.length > 0 &&
+    (!Array.isArray(nextRelayEntries) || nextRelayEntries.length === 0)
+  );
+}
+
 export const __nostrStoreTestUtils = {
+  buildAvatarFallback: buildAvatarFallbackValue,
+  buildIdentifierFallbacks: buildIdentifierFallbacksValue,
+  buildUpdatedContactMeta: buildUpdatedContactMetaValue,
   buildGroupInviteRequestPlan: buildGroupInviteRequestPlanValue,
+  contactMetadataEqual: contactMetadataEqualValue,
+  contactRelayListsEqual: contactRelayListsEqualValue,
+  createInitialStartupStepSnapshots,
   findConflictingKnownGroupEpochNumber: findConflictingKnownGroupEpochNumberValue,
   findHigherKnownGroupEpochConflict: findHigherKnownGroupEpochConflictValue,
   normalizeChatGroupEpochKeys: normalizeChatGroupEpochKeysValue,
+  normalizeRelayStatusUrls: normalizeRelayStatusUrlsValue,
+  normalizeWritableRelayUrls: normalizeWritableRelayUrlsValue,
+  relayEntriesFromRelayList: relayEntriesFromRelayListValue,
+  resolveGroupDisplayName: resolveGroupDisplayNameValue,
   resolveGroupPublishRelayUrls: resolveGroupPublishRelayUrlsValue,
   resolveCurrentGroupChatEpochEntry: resolveCurrentGroupChatEpochEntryValue,
   resolveGroupChatEpochEntries: resolveGroupChatEpochEntriesValue,
-  resolveIncomingChatInboxState: resolveIncomingChatInboxStateValue
+  resolveIncomingChatInboxState: resolveIncomingChatInboxStateValue,
+  shouldPreserveExistingGroupRelays: shouldPreserveExistingGroupRelaysValue
 };
 
 export const useNostrStore = defineStore('nostrStore', () => {

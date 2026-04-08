@@ -3,6 +3,7 @@ import { __messageStoreTestUtils } from 'src/stores/messageStore';
 
 const {
   applyMessageUpsert,
+  areReactionListsEqual,
   buildChatMetaWithUnseenReactionCount,
   buildDeletedMessageMeta,
   buildInitialMessageWindowFromUnreadAnchor,
@@ -148,12 +149,26 @@ describe('messageStore logic', () => {
     ).toBe('abcd');
 
     expect(
+      resolveChatRecipientPublicKey({
+        public_key: 'group-chat',
+        type: 'group',
+        meta: {}
+      } as never)
+    ).toBe('');
+
+    expect(
       buildDeletedMessageMeta('author', 5, '2026-01-02T00:00:00.000Z', 'ABC123')
     ).toEqual({
       deletedAt: '2026-01-02T00:00:00.000Z',
       deletedByPublicKey: 'author',
       deletedEventKind: 5,
       deleteEventId: 'abc123'
+    });
+
+    expect(buildDeletedMessageMeta('author', 5, '2026-01-02T00:00:00.000Z', '   ')).toEqual({
+      deletedAt: '2026-01-02T00:00:00.000Z',
+      deletedByPublicKey: 'author',
+      deletedEventKind: 5
     });
 
     expect(
@@ -204,6 +219,71 @@ describe('messageStore logic', () => {
         'me'
       )
     ).toBe(1);
+  });
+
+  it('treats viewed reactions as seen and recognizes no-op reaction lists', () => {
+    expect(
+      countOwnUnseenReactions(
+        [
+          {
+            author_public_key: 'me',
+            meta: {
+              reactions: [
+                {
+                  emoji: '👍',
+                  name: 'thumbs up',
+                  reactorPublicKey: 'other-user',
+                  viewedByAuthorAt: '2026-01-03T00:00:00.000Z'
+                }
+              ]
+            }
+          }
+        ] as never,
+        'me'
+      )
+    ).toBe(0);
+
+    expect(
+      areReactionListsEqual(
+        [
+          {
+            emoji: '👍',
+            name: 'thumbs up',
+            reactorPublicKey: 'alice',
+            eventId: 'abc'
+          }
+        ] as never,
+        [
+          {
+            emoji: '👍',
+            name: 'thumbs up',
+            reactorPublicKey: 'alice',
+            eventId: 'abc'
+          }
+        ] as never
+      )
+    ).toBe(true);
+
+    expect(
+      areReactionListsEqual(
+        [
+          {
+            emoji: '👍',
+            name: 'thumbs up',
+            reactorPublicKey: 'alice',
+            eventId: 'abc'
+          }
+        ] as never,
+        [
+          {
+            emoji: '🔥',
+            name: 'fire',
+            reactorPublicKey: 'alice',
+            eventId: 'abc'
+          }
+        ] as never
+      )
+    ).toBe(false);
   });
 
   it('builds the initial unread message window around the first unread anchor', () => {
@@ -334,6 +414,62 @@ describe('messageStore logic', () => {
     expect(result.paginationState.newestCursor).toEqual({
       id: 3,
       created_at: '2026-01-03T00:00:00.000Z'
+    });
+  });
+
+  it('replaces an existing loaded message without disturbing pagination cursors', () => {
+    const result = applyMessageUpsert(
+      [
+        {
+          id: '2',
+          chatId: 'chat',
+          text: 'middle',
+          sender: 'them',
+          sentAt: '2026-01-02T00:00:00.000Z',
+          authorPublicKey: 'b',
+          eventId: null,
+          nostrEvent: null,
+          meta: {}
+        }
+      ] as never,
+      {
+        oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        newestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        hasOlder: false,
+        hasNewer: false,
+        isLoadingOlder: false,
+        isLoadingNewer: false
+      },
+      {
+        id: '2',
+        chatId: 'chat',
+        text: 'middle edited',
+        sender: 'them',
+        sentAt: '2026-01-02T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {
+          edited: true
+        }
+      },
+      {
+        allowOutsideLoadedWindow: false
+      }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toMatchObject({
+      id: '2',
+      text: 'middle edited',
+      meta: {
+        edited: true
+      }
+    });
+    expect(result.paginationState).toMatchObject({
+      oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+      newestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' }
     });
   });
 });

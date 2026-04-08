@@ -2,14 +2,25 @@ import { describe, expect, it } from 'vitest';
 import { __nostrStoreTestUtils } from 'src/stores/nostrStore';
 
 const {
+  buildAvatarFallback,
+  buildIdentifierFallbacks,
+  buildUpdatedContactMeta,
   buildGroupInviteRequestPlan,
+  contactMetadataEqual,
+  contactRelayListsEqual,
+  createInitialStartupStepSnapshots,
   findConflictingKnownGroupEpochNumber,
   findHigherKnownGroupEpochConflict,
   normalizeChatGroupEpochKeys,
+  normalizeRelayStatusUrls,
+  normalizeWritableRelayUrls,
+  relayEntriesFromRelayList,
+  resolveGroupDisplayName,
   resolveGroupPublishRelayUrls,
   resolveCurrentGroupChatEpochEntry,
   resolveGroupChatEpochEntries,
-  resolveIncomingChatInboxState
+  resolveIncomingChatInboxState,
+  shouldPreserveExistingGroupRelays
 } = __nostrStoreTestUtils;
 
 const EPOCH_KEY_A = 'a'.repeat(64);
@@ -17,6 +28,23 @@ const EPOCH_KEY_B = 'b'.repeat(64);
 const EPOCH_KEY_C = 'c'.repeat(64);
 
 describe('nostrStore logic', () => {
+  it('creates pending startup-step snapshots in stable order for restore flows', () => {
+    const steps = createInitialStartupStepSnapshots();
+
+    expect(steps).toHaveLength(12);
+    expect(steps[0]).toMatchObject({
+      id: 'logged-in-profile',
+      order: 1,
+      status: 'pending'
+    });
+    expect(steps[steps.length - 1]).toMatchObject({
+      id: 'recent-chat-relays',
+      order: 12,
+      status: 'pending'
+    });
+    expect(steps.every((step) => step.startedAt === null && step.completedAt === null)).toBe(true);
+  });
+
   it('normalizes group epoch entries, filters invalid rows, and sorts descending', () => {
     expect(
       normalizeChatGroupEpochKeys([
@@ -85,6 +113,28 @@ describe('nostrStore logic', () => {
       epoch_number: 1,
       epoch_public_key: EPOCH_KEY_B
     });
+  });
+
+  it('normalizes startup relay urls and writable relay entries for relay restore/edit flows', () => {
+    expect(
+      normalizeRelayStatusUrls([
+        ' ws://relay.example ',
+        'ws://relay.example/',
+        '',
+        'not-a-relay'
+      ])
+    ).toEqual([
+      'ws://relay.example/',
+      'http://not-a-relay/'
+    ]);
+
+    expect(
+      normalizeWritableRelayUrls([
+        { url: 'wss://write.example', read: true, write: true },
+        { url: 'wss://read-only.example', read: true, write: false },
+        { url: 'invalid relay', read: true, write: true }
+      ] as never)
+    ).toEqual(['wss://write.example/']);
   });
 
   it('synthesizes a fallback current epoch entry when the current key is missing from history', () => {
@@ -192,6 +242,103 @@ describe('nostrStore logic', () => {
     ).toBeNull();
   });
 
+  it('builds contact metadata from refreshed profile fields while preserving existing values', () => {
+    expect(
+      buildUpdatedContactMeta(
+        {
+          picture: 'https://example.com/old.png',
+          lud16: 'alice@old.example'
+        } as never,
+        {
+          name: 'Alice',
+          about: 'Updated bio',
+          picture: 'https://example.com/new.png',
+          display_name: 'Alice Cooper',
+          bot: true
+        } as never,
+        'npub1alice',
+        'nprofile1alice'
+      )
+    ).toEqual({
+      name: 'Alice',
+      about: 'Updated bio',
+      picture: 'https://example.com/new.png',
+      display_name: 'Alice Cooper',
+      lud16: 'alice@old.example',
+      bot: true,
+      npub: 'npub1alice',
+      nprofile: 'nprofile1alice'
+    });
+  });
+
+  it('builds unique contact identifiers and compares normalized contact state', () => {
+    expect(
+      buildIdentifierFallbacks('f'.repeat(64), {
+        nip05: 'alice@example.com',
+        npub: 'npub1alice',
+        nprofile: 'nprofile1alice'
+      } as never)
+    ).toEqual([
+      'alice@example.com',
+      'npub1alice',
+      'f'.repeat(64),
+      'nprofile1alice'
+    ]);
+
+    expect(
+      contactRelayListsEqual(
+        [
+          { url: 'wss://relay.example', read: true, write: false },
+          { url: 'wss://relay.example/', read: false, write: true }
+        ] as never,
+        [
+          { url: 'wss://relay.example/', read: true, write: true }
+        ] as never
+      )
+    ).toBe(true);
+
+    expect(
+      contactMetadataEqual(
+        {
+          name: ' Alice ',
+          owner_public_key: 'A'.repeat(64)
+        } as never,
+        {
+          name: 'Alice',
+          owner_public_key: 'a'.repeat(64)
+        } as never
+      )
+    ).toBe(true);
+  });
+
+  it('preserves existing group relays when a refresh yields no new relays', () => {
+    expect(
+      shouldPreserveExistingGroupRelays(
+        {
+          type: 'group',
+          public_key: 'group',
+          relays: [
+            { url: 'wss://relay.example/', read: true, write: true }
+          ]
+        } as never,
+        []
+      )
+    ).toBe(true);
+
+    expect(
+      shouldPreserveExistingGroupRelays(
+        {
+          type: 'user',
+          public_key: 'user',
+          relays: [
+            { url: 'wss://relay.example/', read: true, write: true }
+          ]
+        } as never,
+        []
+      )
+    ).toBe(false);
+  });
+
   it('keeps blocked first-contact chats blocked forever unless the chat is explicitly accepted', () => {
     expect(
       resolveIncomingChatInboxState({
@@ -292,5 +439,23 @@ describe('nostrStore logic', () => {
       'wss://seed.example/',
       'wss://group-write.example/'
     ]);
+  });
+
+  it('builds relay-list entries and group previews for contact refresh and invite flows', () => {
+    expect(
+      relayEntriesFromRelayList({
+        readRelayUrls: new Set(['wss://read.example']),
+        writeRelayUrls: new Set(['wss://write.example']),
+        bothRelayUrls: new Set(['wss://both.example'])
+      } as never)
+    ).toEqual([
+      { url: 'wss://read.example/', read: true, write: false },
+      { url: 'wss://write.example/', read: false, write: true },
+      { url: 'wss://both.example/', read: true, write: true }
+    ]);
+
+    expect(buildAvatarFallback('Alice Cooper')).toBe('AC');
+    expect(buildAvatarFallback('group')).toBe('GR');
+    expect(resolveGroupDisplayName(EPOCH_KEY_A)).toBe(`Group ${EPOCH_KEY_A.slice(0, 8)}`);
   });
 });

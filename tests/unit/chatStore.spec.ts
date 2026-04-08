@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { __chatStoreTestUtils } from 'src/stores/chatStore';
 
 const {
+  buildChatSearchText,
   buildAcceptedChatMeta,
   buildBlockedChatMeta,
   buildChatActivitySnapshotByPublicKey,
   buildUpdatedChatPreview,
+  chatMatchesSearch,
   countUnreadMessagesAfter,
+  mapChatRowToChat,
   resolveChatCategory,
+  resolveDefaultSelectedChatId,
   syncChatActivityMeta
 } = __chatStoreTestUtils;
 
@@ -190,5 +194,140 @@ describe('chatStore logic', () => {
         false
       ).unreadCount
     ).toBe(3);
+  });
+
+  it('picks the first accepted chat as the default selection during chat loading', () => {
+    expect(
+      resolveDefaultSelectedChatId([
+        {
+          id: 'request-chat',
+          publicKey: 'request-chat',
+          epochPublicKey: null,
+          type: 'user',
+          name: 'Request',
+          avatar: 'RQ',
+          lastMessage: 'request',
+          lastMessageAt: '2026-01-03T00:00:00.000Z',
+          unreadCount: 1,
+          meta: {
+            last_incoming_message_at: '2026-01-03T00:00:00.000Z'
+          }
+        },
+        {
+          id: 'accepted-chat',
+          publicKey: 'accepted-chat',
+          epochPublicKey: null,
+          type: 'user',
+          name: 'Accepted',
+          avatar: 'AC',
+          lastMessage: 'accepted',
+          lastMessageAt: '2026-01-02T00:00:00.000Z',
+          unreadCount: 0,
+          meta: {
+            inbox_state: 'accepted',
+            accepted_at: '2026-01-02T00:00:00.000Z'
+          }
+        },
+        {
+          id: 'blocked-chat',
+          publicKey: 'blocked-chat',
+          epochPublicKey: null,
+          type: 'user',
+          name: 'Blocked',
+          avatar: 'BL',
+          lastMessage: 'blocked',
+          lastMessageAt: '2026-01-01T00:00:00.000Z',
+          unreadCount: 0,
+          meta: {
+            inbox_state: 'blocked'
+          }
+        }
+      ] as never)
+    ).toBe('accepted-chat');
+
+    expect(
+      resolveDefaultSelectedChatId([
+        {
+          id: 'only-request',
+          publicKey: 'only-request',
+          epochPublicKey: null,
+          type: 'user',
+          name: 'Only Request',
+          avatar: 'OR',
+          lastMessage: 'request',
+          lastMessageAt: '2026-01-03T00:00:00.000Z',
+          unreadCount: 1,
+          meta: {
+            last_incoming_message_at: '2026-01-03T00:00:00.000Z'
+          }
+        }
+      ] as never)
+    ).toBeNull();
+  });
+
+  it('builds chat search text and matches queries from names, keys, and previews', () => {
+    const chat = {
+      id: 'chat-a',
+      publicKey: 'abcdef1234567890',
+      epochPublicKey: null,
+      type: 'user',
+      name: 'Alice Contact',
+      avatar: 'AC',
+      lastMessage: 'Latest preview text',
+      lastMessageAt: '2026-01-05T00:00:00.000Z',
+      unreadCount: 0,
+      meta: {
+        given_name: 'Ali',
+        contact_name: 'Alice Cooper'
+      }
+    };
+
+    expect(buildChatSearchText(chat as never)).toContain('alice contact');
+    expect(buildChatSearchText(chat as never)).toContain('abcdef1234567890');
+    expect(chatMatchesSearch(chat as never, 'cooper')).toBe(true);
+    expect(chatMatchesSearch(chat as never, 'latest preview')).toBe(true);
+    expect(chatMatchesSearch(chat as never, 'missing')).toBe(false);
+  });
+
+  it('maps chat rows using refreshed contact context during chat loading', () => {
+    expect(
+      mapChatRowToChat(
+        {
+          public_key: 'group-chat',
+          type: 'group',
+          name: 'Fallback Group',
+          last_message: 'hello',
+          last_message_at: '2026-01-05T00:00:00.000Z',
+          unread_count: 2,
+          meta: {
+            current_epoch_public_key: 'epoch-key'
+          }
+        } as never,
+        {
+          picture: 'https://example.com/group.png',
+          givenName: 'Alpha Team',
+          contactName: 'Alpha Group',
+          lastSeenIncomingActivityAt: '2026-01-04T00:00:00.000Z'
+        }
+      )
+    ).toMatchObject({
+      id: 'group-chat',
+      publicKey: 'group-chat',
+      epochPublicKey: 'epoch-key',
+      type: 'group',
+      name: 'Alpha Group',
+      avatar: 'AT',
+      lastMessage: 'hello',
+      lastMessageAt: '2026-01-05T00:00:00.000Z',
+      unreadCount: 2,
+      meta: {
+        picture: 'https://example.com/group.png',
+        given_name: 'Alpha Team',
+        contact_name: 'Alpha Group',
+        last_seen_received_activity_at: '2026-01-04T00:00:00.000Z',
+        avatar: 'AT',
+        current_epoch_public_key: 'epoch-key'
+      }
+    });
   });
 });
