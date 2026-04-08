@@ -56,7 +56,14 @@
             no-caps
             class="profile-tab"
           />
-          <q-tab v-if="isGroupContact" name="epochs" label="Epochs" no-caps class="profile-tab" />
+          <q-tab
+            v-if="isGroupContact"
+            name="epochs"
+            label="Epochs"
+            no-caps
+            class="profile-tab"
+            data-testid="contact-profile-epochs-tab"
+          />
         </q-tabs>
 
         <q-tab-panels

@@ -46,6 +46,26 @@ export const TEST_ACCOUNTS = {
   groupCharlie: {
     privateKey: '55a9153bb5fc61f56063c7984c7e5cdc29aaf157c294a1f495de673b4b74b07f',
     displayName: 'Charlie Group'
+  },
+  groupRemovalOwner: {
+    privateKey: '93b14eb63c3a5da797dc6aa64cade4398866def096f7ae83835024986127c7ce',
+    displayName: 'Owner Removal'
+  },
+  groupRemovalBob: {
+    privateKey: '7330a002e102edae7539020f26b90cef6e0f45fff3a50d402f8bcf461d1cd7ad',
+    displayName: 'Bob Removal'
+  },
+  groupRemovalCharlie: {
+    privateKey: '68f656c523ca35f7364365d78888e4e64ea8ea92cb1c2ff095ffd697f9914155',
+    displayName: 'Charlie Removal'
+  },
+  groupRestartAlice: {
+    privateKey: 'd0648961ad953ab6ff4eb540df0be00016dff25823907f4194a5cd8a1253ed21',
+    displayName: 'Alice Restart'
+  },
+  groupRestartBob: {
+    privateKey: 'dab1a69c14f05653be2fcf725d04068cd85214f9dbe09c2ac0fadbd1f9545d4c',
+    displayName: 'Bob Restart'
   }
 } as const;
 
@@ -61,8 +81,19 @@ function contactLookupGivenNameInput(page: Page) {
   return page.getByLabel('Given Name');
 }
 
+function threadMessages(page: Page, text: string) {
+  return page.locator('.thread-message-entry').filter({ hasText: text });
+}
+
+function groupMemberListItem(page: Page, memberPublicKey: string) {
+  return page
+    .locator('.profile-members-list .q-item')
+    .filter({ hasText: memberPublicKey.slice(0, 32) })
+    .first();
+}
+
 export function threadMessage(page: Page, text: string) {
-  return page.locator('.thread-message-entry').filter({ hasText: text }).last();
+  return threadMessages(page, text).last();
 }
 
 export async function bootstrapUser(
@@ -165,6 +196,11 @@ export async function createGroup(
   }
 
   return match[1];
+}
+
+export async function openGroupContact(page: Page, groupPublicKey: string): Promise<void> {
+  await page.goto(`/#/contacts/${groupPublicKey}`);
+  await expect(page.getByTestId('contact-profile-epochs-tab')).toBeVisible();
 }
 
 export async function acceptAppRelayFallbackIfVisible(page: Page): Promise<boolean> {
@@ -289,9 +325,14 @@ export async function waitForDeletedMessageState(
 }
 
 export async function logoutFromSettings(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Settings' }).click();
-  await page.getByText('Log Out', { exact: true }).click();
-  await page.getByRole('button', { name: 'Log Out', exact: true }).click();
+  await page.evaluate(async () => {
+    const bridge = window.__appE2E__;
+    if (!bridge) {
+      throw new Error('E2E bridge is not available.');
+    }
+
+    await bridge.logout();
+  });
   await expect
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(/#\/(auth|login)/);
@@ -302,15 +343,101 @@ export async function addGroupMemberAndPublish(
   page: Page,
   memberPublicKey: string
 ): Promise<void> {
+  await addGroupMembersAndPublish(page, [memberPublicKey]);
+}
+
+export async function addGroupMembersAndPublish(
+  page: Page,
+  memberPublicKeys: string[]
+): Promise<void> {
   await page.getByTestId('contact-profile-members-tab').click();
   const memberInput = page.getByLabel('Member', { exact: true });
+  const addButton = page.getByTestId('group-member-add-button');
   await expect(memberInput).toBeVisible();
-  await memberInput.fill(memberPublicKey);
-  await page.getByTestId('group-member-add-button').click();
-  await expect(page.getByText('You must publish these changes for them to take effect')).toBeVisible();
+
+  for (const memberPublicKey of memberPublicKeys) {
+    await memberInput.fill(memberPublicKey);
+    await expect(addButton).toBeEnabled();
+    await addButton.click();
+    await expect(memberInput).toHaveValue('', { timeout: 12_000 });
+  }
+
+  await expect(
+    page.getByText('You must publish these changes for them to take effect')
+  ).toBeVisible();
   await page.getByTestId('group-members-publish-button').click();
-  await expect(page.getByText('You must publish these changes for them to take effect')).toHaveCount(0);
-  await expect(page.getByText(memberPublicKey.slice(0, 32))).toBeVisible();
+  await expect(
+    page.getByText('You must publish these changes for them to take effect')
+  ).toHaveCount(0);
+
+  for (const memberPublicKey of memberPublicKeys) {
+    await expect(page.getByText(memberPublicKey.slice(0, 32))).toBeVisible();
+  }
+}
+
+export async function removeGroupMemberAndPublish(
+  page: Page,
+  memberPublicKey: string
+): Promise<void> {
+  await page.getByTestId('contact-profile-members-tab').click();
+  await expect(groupMemberListItem(page, memberPublicKey)).toBeVisible();
+  await groupMemberListItem(page, memberPublicKey).getByLabel('Remove member').click();
+  await expect(
+    page.getByText('You must publish these changes for them to take effect')
+  ).toBeVisible();
+  await page.getByTestId('group-members-publish-button').click();
+  await expect(
+    page.getByText('You must publish these changes for them to take effect')
+  ).toHaveCount(0);
+  await expect(groupMemberListItem(page, memberPublicKey)).toHaveCount(0);
+}
+
+export async function openGroupEpochsTab(page: Page): Promise<void> {
+  await page.getByTestId('contact-profile-epochs-tab').click();
+  await expect(page.locator('.profile-epochs')).toBeVisible();
+}
+
+export async function readGroupEpochNumbers(page: Page): Promise<number[]> {
+  const epochCells = page.locator('.profile-epochs-table tbody tr td:first-child');
+  const count = await epochCells.count();
+  if (count === 0) {
+    return [];
+  }
+
+  const epochNumbers: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const value = Number((await epochCells.nth(index).textContent())?.trim() ?? Number.NaN);
+    if (Number.isInteger(value) && value >= 0) {
+      epochNumbers.push(value);
+    }
+  }
+
+  return epochNumbers;
+}
+
+export async function waitForNoThreadMessage(
+  page: Page,
+  text: string,
+  options: {
+    chatId?: string;
+    timeoutMs?: number;
+    refresh?: boolean;
+  } = {}
+): Promise<void> {
+  const messageLocator = threadMessages(page, text);
+  const timeoutMs =
+    typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+      ? Math.max(1_000, Math.floor(options.timeoutMs))
+      : 4_000;
+
+  await expect(messageLocator).toHaveCount(0, { timeout: timeoutMs });
+
+  if (options.refresh === false) {
+    return;
+  }
+
+  await refreshSession(page, options.chatId);
+  await expect(messageLocator).toHaveCount(0, { timeout: timeoutMs });
 }
 
 export async function establishAcceptedDirectChat(

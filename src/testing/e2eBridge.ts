@@ -20,6 +20,7 @@ export interface AppE2ESessionSnapshot {
 export interface AppE2EBridge {
   bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot>;
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
+  logout(): Promise<void>;
 }
 
 const WINDOW_BRIDGE_KEY = '__appE2E__';
@@ -135,6 +136,16 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
   await messageStore.reloadLoadedMessages();
 }
 
+async function logout(): Promise<void> {
+  const [{ useNostrStore }] = await Promise.all([
+    import('src/stores/nostrStore')
+  ]);
+
+  const nostrStore = useNostrStore();
+  await nostrStore.logout();
+  window.location.hash = '/auth';
+}
+
 export function installAppE2EBridge(): void {
   if (typeof window === 'undefined') {
     return;
@@ -142,7 +153,8 @@ export function installAppE2EBridge(): void {
 
   const bridge: AppE2EBridge = {
     bootstrapSession,
-    refreshSession
+    refreshSession,
+    logout
   };
 
   Object.defineProperty(window, WINDOW_BRIDGE_KEY, {
