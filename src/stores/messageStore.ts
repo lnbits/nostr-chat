@@ -235,6 +235,87 @@ function buildDefaultChatMessagePaginationState(): ChatMessagePaginationState {
   };
 }
 
+function compareMessagesBySentAt(first: Message, second: Message): number {
+  const firstTimestamp = new Date(first.sentAt).getTime();
+  const secondTimestamp = new Date(second.sentAt).getTime();
+
+  if (firstTimestamp !== secondTimestamp) {
+    return firstTimestamp - secondTimestamp;
+  }
+
+  const firstId = Number.parseInt(first.id, 10);
+  const secondId = Number.parseInt(second.id, 10);
+  if (Number.isInteger(firstId) && Number.isInteger(secondId) && firstId !== secondId) {
+    return firstId - secondId;
+  }
+
+  return first.id.localeCompare(second.id);
+}
+
+function mergeMessagesById(currentMessages: Message[], incomingMessages: Message[]): Message[] {
+  if (incomingMessages.length === 0) {
+    return currentMessages;
+  }
+
+  const mergedMessagesById = new Map<string, Message>();
+  currentMessages.forEach((message) => {
+    mergedMessagesById.set(message.id, message);
+  });
+  incomingMessages.forEach((message) => {
+    mergedMessagesById.set(message.id, message);
+  });
+
+  return Array.from(mergedMessagesById.values()).sort(compareMessagesBySentAt);
+}
+
+function readUnseenReactionCountFromMetaValue(meta: Record<string, unknown>): number {
+  const rawValue = meta.unseen_reaction_count;
+  const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(numericValue));
+}
+
+function buildChatMetaWithUnseenReactionCountValue(
+  meta: Record<string, unknown>,
+  unseenReactionCount: number
+): Record<string, unknown> {
+  const normalizedCount = Math.max(0, Math.floor(Number(unseenReactionCount) || 0));
+  const nextMeta = { ...meta };
+
+  if (normalizedCount > 0) {
+    nextMeta.unseen_reaction_count = normalizedCount;
+    return nextMeta;
+  }
+
+  delete nextMeta.unseen_reaction_count;
+  return nextMeta;
+}
+
+function resolveChatRecipientPublicKeyFromRow(
+  chat: Pick<ChatRow, 'public_key' | 'type' | 'meta'>
+): string {
+  return chat.type === 'group'
+    ? (typeof chat.meta.current_epoch_public_key === 'string'
+        ? chat.meta.current_epoch_public_key.trim().toLowerCase()
+        : '')
+    : chat.public_key;
+}
+
+export const __messageStoreTestUtils = {
+  buildChatMetaWithUnseenReactionCount: buildChatMetaWithUnseenReactionCountValue,
+  buildDeletedMessageMeta,
+  buildMessageCursorFromMessage,
+  compareMessageCursors,
+  mergeMessagesById,
+  readUnseenReactionCountFromMeta: readUnseenReactionCountFromMetaValue,
+  resolveChatRecipientPublicKey: resolveChatRecipientPublicKeyFromRow,
+  takeLeadingRowsWithAuthor,
+  takeTrailingRowsWithAuthor
+};
+
 export const useMessageStore = defineStore('messageStore', () => {
   const chatStore = useChatStore();
   const messagesByChat = ref<Record<string, Message[]>>({});
@@ -245,23 +326,6 @@ export const useMessageStore = defineStore('messageStore', () => {
   const unseenReactionSyncPromises = new Map<string, Promise<number>>();
   let nostrStorePromise: Promise<NostrStore> | null = null;
   let relayStorePromise: Promise<RelayStore> | null = null;
-
-  function compareMessages(first: Message, second: Message): number {
-    const firstTimestamp = new Date(first.sentAt).getTime();
-    const secondTimestamp = new Date(second.sentAt).getTime();
-
-    if (firstTimestamp !== secondTimestamp) {
-      return firstTimestamp - secondTimestamp;
-    }
-
-    const firstId = Number.parseInt(first.id, 10);
-    const secondId = Number.parseInt(second.id, 10);
-    if (Number.isInteger(firstId) && Number.isInteger(secondId) && firstId !== secondId) {
-      return firstId - secondId;
-    }
-
-    return first.id.localeCompare(second.id);
-  }
 
   function getMessages(chatId: string | null): Message[] {
     const normalizedChatId = normalizeChatIdentifier(chatId);
@@ -298,22 +362,6 @@ export const useMessageStore = defineStore('messageStore', () => {
       ...(paginationStateByChat.value[normalizedChatId] ?? buildDefaultChatMessagePaginationState()),
       ...nextState
     };
-  }
-
-  function mergeMessages(currentMessages: Message[], incomingMessages: Message[]): Message[] {
-    if (incomingMessages.length === 0) {
-      return currentMessages;
-    }
-
-    const mergedMessagesById = new Map<string, Message>();
-    currentMessages.forEach((message) => {
-      mergedMessagesById.set(message.id, message);
-    });
-    incomingMessages.forEach((message) => {
-      mergedMessagesById.set(message.id, message);
-    });
-
-    return Array.from(mergedMessagesById.values()).sort(compareMessages);
   }
 
   async function init(): Promise<void> {
@@ -408,35 +456,9 @@ export const useMessageStore = defineStore('messageStore', () => {
     );
   }
 
-  function readUnseenReactionCountFromMeta(meta: Record<string, unknown>): number {
-    const rawValue = meta.unseen_reaction_count;
-    const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue);
-    if (!Number.isFinite(numericValue)) {
-      return 0;
-    }
-
-    return Math.max(0, Math.floor(numericValue));
-  }
-
   function readMetaString(meta: Record<string, unknown>, key: string): string {
     const value = meta[key];
     return typeof value === 'string' ? value.trim() : '';
-  }
-
-  function buildChatMetaWithUnseenReactionCount(
-    meta: Record<string, unknown>,
-    unseenReactionCount: number
-  ): Record<string, unknown> {
-    const normalizedCount = Math.max(0, Math.floor(Number(unseenReactionCount) || 0));
-    const nextMeta = { ...meta };
-
-    if (normalizedCount > 0) {
-      nextMeta.unseen_reaction_count = normalizedCount;
-      return nextMeta;
-    }
-
-    delete nextMeta.unseen_reaction_count;
-    return nextMeta;
   }
 
   async function performSyncChatUnseenReactionCount(chatId: string): Promise<number> {
@@ -469,11 +491,11 @@ export const useMessageStore = defineStore('messageStore', () => {
       : 0;
 
     if (chatRow) {
-      const currentCount = readUnseenReactionCountFromMeta(chatRow.meta);
+      const currentCount = readUnseenReactionCountFromMetaValue(chatRow.meta);
       if (currentCount !== nextUnseenReactionCount) {
         await chatDataService.updateChatMeta(
           normalizedChatId,
-          buildChatMetaWithUnseenReactionCount(chatRow.meta, nextUnseenReactionCount)
+          buildChatMetaWithUnseenReactionCountValue(chatRow.meta, nextUnseenReactionCount)
         );
       }
     }
@@ -536,14 +558,6 @@ export const useMessageStore = defineStore('messageStore', () => {
     return normalizedRelayUrls;
   }
 
-  function resolveChatRecipientPublicKey(chat: ChatRow): string {
-    return chat.type === 'group'
-      ? (typeof chat.meta.current_epoch_public_key === 'string'
-          ? chat.meta.current_epoch_public_key.trim().toLowerCase()
-          : '')
-      : chat.public_key;
-  }
-
   async function resolveChatDeliveryTarget(
     chatPublicKey: string,
     relayUrls: string[] | undefined
@@ -558,7 +572,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const recipientPublicKey = resolveChatRecipientPublicKey(chat);
+    const recipientPublicKey = resolveChatRecipientPublicKeyFromRow(chat);
     if (!recipientPublicKey) {
       throw new Error('Group chat is missing the current epoch public key.');
     }
@@ -634,7 +648,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return;
     }
 
-    const nextMessages = mergeMessages(existingMessages, [message]);
+    const nextMessages = mergeMessagesById(existingMessages, [message]);
     messagesByChat.value[normalizedChatId] = nextMessages;
 
     if (!incomingCursor) {

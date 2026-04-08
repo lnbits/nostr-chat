@@ -6,6 +6,7 @@
     "dev": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar dev",
     "dev:e2e": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar dev --port 4100 --hostname 127.0.0.1",
     "build": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar build",
+    "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:local": "node ./scripts/run-e2e-local.cjs"
   },
@@ -21,7 +22,8 @@
     "@playwright/test": "^1.59.1",
     "@quasar/app-vite": "2.1.0",
     "@types/node": "^20.17.0",
-    "typescript": "~5.7.2"
+    "typescript": "~5.7.2",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=18",

@@ -449,6 +449,13 @@ function mapChatRowToChat(
   };
 }
 
+export const __chatStoreTestUtils = {
+  buildChatActivitySnapshotByPublicKey,
+  countUnreadMessagesAfter,
+  resolveChatCategory,
+  syncChatActivityMeta
+};
+
 export const useChatStore = defineStore('chatStore', () => {
   const chats = ref<Chat[]>([]);
   const selectedChatId = ref<string | null>(null);
