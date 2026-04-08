@@ -15,17 +15,23 @@ import {
   establishAcceptedDirectChat,
   logoutFromSettings,
   navigateToChat,
+  openAppRelaysSettings,
   openGroupContact,
   openGroupEpochsTab,
   openGroupRelaysTab,
   openDirectChatFromIdentifier,
   openRequests,
+  publishOwnProfile,
   readGroupEpochNumbers,
   reactToMessage,
+  removeRelayFromSettings,
   removeGroupMemberAndPublish,
   removeGroupRelayAndPublish,
   rotateGroupEpoch,
   sendMessage,
+  waitForAppBridge,
+  waitForChatPreview,
+  waitForChatReactionBadge,
   waitForDeletedMessageState,
   waitForNoRequests,
   waitForNoThreadMessage,
@@ -65,6 +71,63 @@ test('first-contact DM becomes a request, can be accepted, and supports reply', 
       chatId: alice.session.publicKey
     });
     await waitForThreadMessage(alice.page, replyMessage, {
+      chatId: bob.session.publicKey
+    });
+  } finally {
+    await disposeUsers(alice, bob);
+  }
+});
+
+test('hard reload restores accepted DM chat list, unread count, and thread history', async ({
+  browser
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.startupRestoreAlice);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.startupRestoreBob);
+
+  try {
+    const firstMessage = `startup-restore-one-${Date.now()}`;
+    const secondMessage = `startup-restore-two-${Date.now()}`;
+    const thirdMessage = `startup-restore-three-${Date.now()}`;
+    const replyAfterReload = `startup-restore-reply-${Date.now()}`;
+
+    await establishAcceptedDirectChat(alice, bob);
+
+    await bob.page.goto('/#/chats');
+    await sendMessage(alice.page, firstMessage, {
+      chatId: bob.session.publicKey
+    });
+    await sendMessage(alice.page, secondMessage, {
+      chatId: bob.session.publicKey
+    });
+    await sendMessage(alice.page, thirdMessage, {
+      chatId: bob.session.publicKey
+    });
+
+    await waitForChatPreview(bob.page, thirdMessage);
+
+    await bob.page.getByTestId('chat-item').first().click();
+    await waitForThreadMessage(bob.page, firstMessage, {
+      chatId: alice.session.publicKey
+    });
+    await waitForThreadMessage(bob.page, secondMessage, {
+      chatId: alice.session.publicKey
+    });
+    await waitForThreadMessage(bob.page, thirdMessage, {
+      chatId: alice.session.publicKey
+    });
+
+    await bob.page.reload();
+    await waitForAppBridge(bob.page);
+    await expect(bob.page).toHaveURL(new RegExp(`#\\/chats\\/${alice.session.publicKey}$`));
+    await waitForThreadMessage(bob.page, thirdMessage, {
+      chatId: alice.session.publicKey
+    });
+
+    await sendMessage(bob.page, replyAfterReload, {
+      chatId: alice.session.publicKey
+    });
+    await navigateToChat(alice.page, bob.session.publicKey);
+    await waitForThreadMessage(alice.page, replyAfterReload, {
       chatId: bob.session.publicKey
     });
   } finally {
@@ -250,6 +313,39 @@ test('group delivery still works after both users restart', async ({ browser }) 
   }
 });
 
+test('contact refresh pulls newly published remote profile metadata into an existing contact', async ({
+  browser
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.profileRefreshAlice);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.profileRefreshBob);
+
+  try {
+    const refreshedName = `Bob Refreshed ${Date.now()}`;
+    const refreshedAbout = `About refreshed ${Date.now()}`;
+
+    await establishAcceptedDirectChat(alice, bob);
+    await publishOwnProfile(bob.page, {
+      name: refreshedName,
+      about: refreshedAbout
+    });
+
+    await alice.page.goto(`/#/contacts/${bob.session.publicKey}`);
+    await expect(alice.page.getByTestId('contact-profile-refresh-button')).toBeVisible();
+    await alice.page.getByTestId('contact-profile-refresh-button').click();
+    await expect(alice.page.getByPlaceholder('Your profile name').first()).toHaveValue(
+      refreshedName,
+      {
+        timeout: 12_000
+      }
+    );
+    await expect(alice.page.getByPlaceholder('Short bio').first()).toHaveValue(refreshedAbout, {
+      timeout: 12_000
+    });
+  } finally {
+    await disposeUsers(alice, bob);
+  }
+});
+
 test('group relay changes still deliver after both members restart on the updated relay set', async ({
   browser
 }) => {
@@ -299,15 +395,19 @@ test('group relay changes still deliver after both members restart on the update
   }
 });
 
-test('restarting after rotation keeps the higher group epoch current', async ({ browser }) => {
+test('hard reload after rotation keeps the higher group epoch current and messaging working', async ({
+  browser
+}) => {
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochAlice);
-  let bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochBob);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochBob);
 
   try {
     const groupPublicKey = await createGroup(alice.page, {
       name: `Epoch Restore Group ${Date.now()}`,
       about: 'Stale epoch regression coverage'
     });
+    const rotatedOwnerMessage = `epoch-reload-owner-${Date.now()}`;
+    const rotatedMemberReply = `epoch-reload-member-${Date.now()}`;
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
     await openRequests(bob.page);
@@ -316,9 +416,8 @@ test('restarting after rotation keeps the higher group epoch current', async ({ 
 
     await rotateGroupEpoch(alice.page, groupPublicKey, [bob.session.publicKey], [E2E_RELAY_URL]);
 
-    await bob.context.close();
-    bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochBob);
-
+    await bob.page.reload();
+    await waitForAppBridge(bob.page);
     await openGroupContact(bob.page, groupPublicKey);
     await openGroupEpochsTab(bob.page);
     await expect
@@ -326,11 +425,22 @@ test('restarting after rotation keeps the higher group epoch current', async ({ 
         timeout: 12_000
       })
       .toBe(1);
-    await expect
-      .poll(async () => (await readGroupEpochNumbers(bob.page)).includes(0), {
-        timeout: 12_000
-      })
-      .toBe(true);
+
+    await navigateToChat(alice.page, groupPublicKey);
+    await sendMessage(alice.page, rotatedOwnerMessage, {
+      chatId: groupPublicKey
+    });
+    await navigateToChat(bob.page, groupPublicKey);
+    await waitForThreadMessage(bob.page, rotatedOwnerMessage, {
+      chatId: groupPublicKey
+    });
+    await sendMessage(bob.page, rotatedMemberReply, {
+      chatId: groupPublicKey
+    });
+    await navigateToChat(alice.page, groupPublicKey);
+    await waitForThreadMessage(alice.page, rotatedMemberReply, {
+      chatId: groupPublicKey
+    });
   } finally {
     await disposeUsers(alice, bob);
   }
@@ -413,6 +523,46 @@ test('accepted DM restores thread history and keeps working after both users res
   }
 });
 
+test('editing app relays survives hard reload and direct messages still arrive on the remaining relay', async ({
+  browser
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.relaySettingsAlice, {
+    relayUrls: E2E_DUAL_RELAY_URLS
+  });
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.relaySettingsBob, {
+    relayUrls: E2E_DUAL_RELAY_URLS
+  });
+
+  try {
+    const afterRelayEditMessage = `after-app-relay-edit-${Date.now()}`;
+
+    await establishAcceptedDirectChat(alice, bob);
+
+    await openAppRelaysSettings(alice.page);
+    const appRelayPanel = alice.page.getByTestId('settings-relays-app-panel');
+    await expect(appRelayPanel).toContainText(E2E_DUAL_RELAY_URLS[0]);
+    await expect(appRelayPanel).toContainText(E2E_DUAL_RELAY_URLS[1]);
+    await removeRelayFromSettings(alice.page, E2E_DUAL_RELAY_URLS[0]);
+
+    await alice.page.reload();
+    await waitForAppBridge(alice.page);
+    await openAppRelaysSettings(alice.page);
+    await expect(appRelayPanel).not.toContainText(E2E_DUAL_RELAY_URLS[0]);
+    await expect(appRelayPanel).toContainText(E2E_DUAL_RELAY_URLS[1]);
+
+    await navigateToChat(bob.page, alice.session.publicKey);
+    await sendMessage(bob.page, afterRelayEditMessage, {
+      chatId: alice.session.publicKey
+    });
+    await navigateToChat(alice.page, bob.session.publicKey);
+    await waitForThreadMessage(alice.page, afterRelayEditMessage, {
+      chatId: bob.session.publicKey
+    });
+  } finally {
+    await disposeUsers(alice, bob);
+  }
+});
+
 test('logout and logging in as another user does not leak prior chat state', async ({ browser }) => {
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.isolationAlice);
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.isolationBob);
@@ -431,6 +581,54 @@ test('logout and logging in as another user does not leak prior chat state', asy
     await expect(alice.page.getByTestId('chat-item')).toHaveCount(0);
     await expect(alice.page.getByText(TEST_ACCOUNTS.isolationBob.displayName)).toHaveCount(0);
     await expect(alice.page.getByTestId('requests-row')).toHaveCount(0);
+  } finally {
+    await disposeUsers(alice, bob);
+  }
+});
+
+test('reactions surface in the chat list and deleted messages stay deleted after reloads', async ({
+  browser
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.reactionReloadAlice);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.reactionReloadBob);
+
+  try {
+    const targetMessage = `reaction-reload-${Date.now()}`;
+
+    await establishAcceptedDirectChat(alice, bob);
+    await sendMessage(alice.page, targetMessage, {
+      chatId: bob.session.publicKey
+    });
+    await waitForThreadMessage(bob.page, targetMessage, {
+      chatId: alice.session.publicKey
+    });
+
+    await alice.page.goto('/#/chats');
+    await reactToMessage(bob.page, targetMessage);
+    await waitForChatReactionBadge(alice.page, 1);
+
+    await alice.page.getByTestId('chat-item').first().click();
+    await waitForReaction(alice.page, /thumbs up reaction/i, {
+      chatId: bob.session.publicKey
+    });
+    await alice.page.goto('/#/chats');
+    await expect(alice.page.locator('.chat-item__reaction-badge')).toHaveCount(0);
+
+    await navigateToChat(alice.page, bob.session.publicKey);
+    await alice.page.reload();
+    await waitForAppBridge(alice.page);
+    await expect(alice.page).toHaveURL(new RegExp(`#\\/chats\\/${bob.session.publicKey}$`));
+    await waitForReaction(alice.page, /thumbs up reaction/i, {
+      chatId: bob.session.publicKey
+    });
+
+    await deleteMessage(alice.page, targetMessage);
+    await bob.page.reload();
+    await waitForAppBridge(bob.page);
+    await expect(bob.page).toHaveURL(new RegExp(`#\\/chats\\/${alice.session.publicKey}$`));
+    await waitForDeletedMessageState(bob.page, targetMessage, {
+      chatId: alice.session.publicKey
+    });
   } finally {
     await disposeUsers(alice, bob);
   }

@@ -25,6 +25,14 @@ export const E2E_RELAY_URL_TWO = process.env.E2E_RELAY_URL_TWO ?? 'ws://127.0.0.
 export const E2E_DUAL_RELAY_URLS = [E2E_RELAY_URL, E2E_RELAY_URL_TWO];
 
 export const TEST_ACCOUNTS = {
+  startupRestoreAlice: {
+    privateKey: '17109060832c2b13b1280c20c929e17a8b013e1dcb770b9d83ca511d9626e5cb',
+    displayName: 'Alice Startup'
+  },
+  startupRestoreBob: {
+    privateKey: 'cefa6999263a9310fa7facb77ef6cfcbc0301e9388fc2316c5158a38ef14f0dc',
+    displayName: 'Bob Startup'
+  },
   requestAlice: {
     privateKey: 'e0e3310b05ea1dd89ed2ce5bfaf1fdb95a646e45d5812e670c3fa4e98b2f3d47',
     displayName: 'Alice Request'
@@ -40,6 +48,30 @@ export const TEST_ACCOUNTS = {
   actionsBob: {
     privateKey: 'c25694028321c053f174245104441935f681ce5117a89b27e4263e4360d05433',
     displayName: 'Bob Actions'
+  },
+  reactionReloadAlice: {
+    privateKey: 'ed0d7a4610d16dd4ffb0a14fe92cfad11ad2bd575f53dcfc0bbfd799a098ce8e',
+    displayName: 'Alice Reactions Reload'
+  },
+  reactionReloadBob: {
+    privateKey: '84fd8f703d01d4f3d724861dd092f6c9c0d9301c56bfda7051be388d6c183ff8',
+    displayName: 'Bob Reactions Reload'
+  },
+  profileRefreshAlice: {
+    privateKey: 'efe5f8abdf1e13ca96afd16c73bf39c518a98bb4215903b4c64e29ccde36f37c',
+    displayName: 'Alice Contact Refresh'
+  },
+  profileRefreshBob: {
+    privateKey: '0d13b78191d3023697245897ff5ca68a7d0616e0d28f44e19122a81722750cd6',
+    displayName: 'Bob Contact Refresh'
+  },
+  relaySettingsAlice: {
+    privateKey: 'f0c9fa56ec5c7f9170c5dbf4f3ded6f2f24b02885e8f5e71b95d6a3c5954176f',
+    displayName: 'Alice Relay Settings'
+  },
+  relaySettingsBob: {
+    privateKey: '68da0a59c381ef5c80e64a5cbca770c90c06fdd57b39b75c80fc17a4a217de99',
+    displayName: 'Bob Relay Settings'
   },
   groupAlice: {
     privateKey: 'eeb0542ecef525deee036b1865dc872bcda25df86016403ef25a730f330115b2',
@@ -151,6 +183,15 @@ function threadMessages(page: Page, text: string) {
   return page.locator('.thread-message-entry').filter({ hasText: text });
 }
 
+function resolveChatItem(page: Page, match?: string | RegExp) {
+  const chatItems = page.getByTestId('chat-item');
+  if (typeof match === 'undefined') {
+    return chatItems.first();
+  }
+
+  return chatItems.filter({ hasText: match }).first();
+}
+
 function groupMemberListItem(page: Page, memberPublicKey: string) {
   return page
     .locator('.profile-members-list .q-item')
@@ -225,6 +266,12 @@ export async function disposeUsers(...users: BootstrappedUser[]): Promise<void> 
       }
     })
   );
+}
+
+export async function waitForAppBridge(page: Page): Promise<void> {
+  await page.waitForFunction(() => Boolean(window.__appE2E__), undefined, {
+    timeout: 30_000
+  });
 }
 
 export async function refreshSession(page: Page, chatId?: string): Promise<void> {
@@ -353,6 +400,47 @@ export async function acceptFirstRequest(page: Page): Promise<void> {
 export async function navigateToChat(page: Page, publicKey: string): Promise<void> {
   await page.goto(`/#/chats/${publicKey}`);
   await expect(composerInput(page)).toBeVisible();
+}
+
+export async function waitForChatPreview(
+  page: Page,
+  previewText: string,
+  match?: string | RegExp
+): Promise<void> {
+  await expect(resolveChatItem(page, match)).toContainText(previewText, {
+    timeout: 12_000
+  });
+}
+
+export async function waitForChatUnreadCount(
+  page: Page,
+  count: number,
+  match?: string | RegExp
+): Promise<void> {
+  await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toHaveText(
+    String(count),
+    {
+      timeout: 12_000
+    }
+  );
+}
+
+export async function waitForChatReactionBadge(
+  page: Page,
+  count: number,
+  match?: string | RegExp
+): Promise<void> {
+  await expect(resolveChatItem(page, match).locator('.chat-item__reaction-badge')).toHaveAttribute(
+    'aria-label',
+    `${count} unseen reactions`,
+    {
+      timeout: 12_000
+    }
+  );
+}
+
+export async function openChatActions(page: Page, match?: string | RegExp): Promise<void> {
+  await resolveChatItem(page, match).getByTestId('chat-item-actions-button').click();
 }
 
 export async function reactToMessage(
@@ -490,6 +578,48 @@ export async function openGroupEpochsTab(page: Page): Promise<void> {
 export async function openGroupRelaysTab(page: Page): Promise<void> {
   await page.getByTestId('contact-profile-relays-tab').click();
   await expect(page.locator('.profile-group-relays')).toBeVisible();
+}
+
+export async function openAppRelaysSettings(page: Page): Promise<void> {
+  await page.goto('/#/settings/relays');
+  await expect(page.getByTestId('settings-relays-app-tab')).toBeVisible();
+  await page.getByTestId('settings-relays-app-tab').click();
+  await expect(
+    page.getByTestId('settings-relays-app-panel').getByTestId('relay-editor-new-relay-input').first()
+  ).toBeVisible();
+}
+
+export async function removeRelayFromSettings(page: Page, relayUrl: string): Promise<void> {
+  const relayItem = page
+    .getByTestId('settings-relays-app-panel')
+    .locator('.relay-expansion-item')
+    .filter({ hasText: relayUrl })
+    .first();
+  await expect(relayItem).toBeVisible();
+  await relayItem.getByTestId('relay-editor-delete-relay-button').click();
+  await expect(relayItem).toHaveCount(0);
+}
+
+export async function publishOwnProfile(
+  page: Page,
+  options: {
+    name: string;
+    about?: string;
+  }
+): Promise<void> {
+  await page.goto('/#/settings/profile');
+  const nameInput = page.getByPlaceholder('Your profile name').first();
+  await expect(nameInput).toBeVisible();
+  await nameInput.fill(options.name);
+
+  if (typeof options.about === 'string') {
+    await page.getByPlaceholder('Short bio').first().fill(options.about);
+  }
+
+  await page.getByTestId('contact-profile-publish-button').click();
+  await expect(page.getByText('Profile metadata published.', { exact: true })).toBeVisible({
+    timeout: 12_000
+  });
 }
 
 export async function readGroupEpochNumbers(page: Page): Promise<number[]> {

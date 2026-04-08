@@ -9,9 +9,24 @@
         indicator-color="primary"
         class="relays-tabs"
       >
-        <q-tab name="my" label="My Relays (NIP-65)" class="relays-tab" />
-        <q-tab name="app" label="App Relays" class="relays-tab" />
-        <q-tab name="contacts" label="Contacts Relays" class="relays-tab" />
+        <q-tab
+          name="my"
+          label="My Relays (NIP-65)"
+          class="relays-tab"
+          data-testid="settings-relays-my-tab"
+        />
+        <q-tab
+          name="app"
+          label="App Relays"
+          class="relays-tab"
+          data-testid="settings-relays-app-tab"
+        />
+        <q-tab
+          name="contacts"
+          label="Contacts Relays"
+          class="relays-tab"
+          data-testid="settings-relays-contacts-tab"
+        />
       </q-tabs>
 
       <q-tab-panels v-model="activeTab" animated class="relays-panels">
@@ -43,7 +58,11 @@
           />
         </q-tab-panel>
 
-        <q-tab-panel name="app" class="relays-panel">
+        <q-tab-panel
+          name="app"
+          class="relays-panel"
+          data-testid="settings-relays-app-panel"
+        >
           <RelayEditorPanel
             v-model:new-relay="appNewRelay"
             :relays="relayStore.relays"

@@ -51,6 +51,7 @@
         icon="more_vert"
         class="chat-item__more"
         aria-label="Chat actions"
+        data-testid="chat-item-actions-button"
         @click.stop
       >
         <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">

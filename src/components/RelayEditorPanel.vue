@@ -9,6 +9,7 @@
         rounded
         label="Relay URL"
         placeholder="wss://example-relay.io"
+        data-testid="relay-editor-new-relay-input"
         :error="Boolean(relayValidationError)"
         :error-message="relayValidationError"
         @update:model-value="emitNewRelayUpdate"
@@ -23,6 +24,7 @@
             icon="add"
             size="sm"
             aria-label="Add relay"
+            data-testid="relay-editor-add-relay-button"
             :disable="!canAddRelay"
             @click="emitAddRelay"
           />
@@ -131,6 +133,7 @@
               icon="delete"
               color="negative"
               aria-label="Delete relay"
+              data-testid="relay-editor-delete-relay-button"
               @click.stop="emitRemoveRelay(index)"
             />
           </q-item-section>
