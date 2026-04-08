@@ -75,9 +75,7 @@ import {
   INITIAL_CONNECT_TIMEOUT_MS,
   INVITATION_PROOF_TAG,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
-  PRIVATE_CONTACT_LIST_D_TAG,
   PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
-  PRIVATE_CONTACT_LIST_TITLE,
   PRIVATE_KEY_STORAGE_KEY,
   PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS,
   PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS,
@@ -107,6 +105,7 @@ import { createDeveloperDiagnosticsRuntime } from 'src/stores/nostr/developerDia
 import { createContactProfileRuntime } from 'src/stores/nostr/contactProfileRuntime';
 import { createContactRelayRuntime } from 'src/stores/nostr/contactRelayRuntime';
 import { createMyRelayListRuntime } from 'src/stores/nostr/myRelayListRuntime';
+import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
 import { hasStorage, isPlainRecord } from 'src/stores/nostr/shared';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
 import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
@@ -275,7 +274,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const relayAuthFailureListenerUrls = new Set<string>();
   let restoreStartupStatePromise: Promise<void> | null = null;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
-  let restorePrivateContactListPromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
   const groupContactRefreshPromises = new Map<string, Promise<ContactRecord | null>>();
   const backgroundGroupContactRefreshStartedAt = new Map<string, number>();
@@ -294,9 +292,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let contactRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let contactRelayListSubscriptionSignature = '';
   let contactRelayListApplyQueue = Promise.resolve();
-  let privateContactListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
-  let privateContactListSubscriptionSignature = '';
-  let privateContactListApplyQueue = Promise.resolve();
   let privateMessagesSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let privateMessagesSubscriptionSignature = '';
   let privateMessagesBackfillSubscription: ReturnType<typeof ndk.subscribe> | null = null;
@@ -4871,6 +4866,55 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
   }
 
+  let refreshContactByPublicKeyRuntime: (
+    pubkeyHex: string,
+    fallbackName?: string,
+    lifecycle?: Record<string, unknown>
+  ) => Promise<unknown> = async () => {
+    throw new Error('Contact profile runtime is not initialized.');
+  };
+
+  const {
+    publishPrivateContactList,
+    resetPrivateContactListRuntimeState,
+    restorePrivateContactList,
+    subscribePrivateContactListUpdates
+  } = createPrivateContactListRuntime({
+    beginStartupStep,
+    bumpContactListVersion,
+    buildPrivateContactListTags,
+    buildSubscriptionEventDetails,
+    buildSubscriptionRelayDetails,
+    chatStore,
+    completeStartupStep,
+    createStartupBatchTracker,
+    decryptPrivateContactListContent,
+    encryptPrivateContactListTags,
+    ensureContactListedInPrivateContactList,
+    ensureRelayConnections,
+    extractRelayUrlsFromEvent,
+    failStartupStep,
+    formatSubscriptionLogValue,
+    getFilterSince,
+    getLoggedInPublicKeyHex,
+    getLoggedInSignerUser,
+    getStartupStepSnapshot,
+    isRestoringStartupState,
+    logSubscription,
+    markPrivateContactListEventApplied,
+    ndk,
+    queueTrackedContactSubscriptionsRefresh,
+    reconcileAcceptedChatFromPrivateContactList,
+    refreshContactByPublicKey: (pubkeyHex, fallbackName, lifecycle) =>
+      refreshContactByPublicKeyRuntime(pubkeyHex, fallbackName, lifecycle),
+    relaySignature,
+    resolvePrivateContactListPublishRelayUrls,
+    resolvePrivateContactListReadRelayUrls,
+    shouldApplyPrivateContactListEvent,
+    subscribeWithReqLogging,
+    updateStoredEventSinceFromCreatedAt
+  });
+
   const {
     ensureContactStoredAsGroup,
     ensureRespondedPubkeyIsContact,
@@ -4902,6 +4946,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resolveGroupDisplayName,
     shouldPreserveExistingGroupRelays
   });
+  refreshContactByPublicKeyRuntime = refreshContactByPublicKey;
 
   const {
     applyContactCursorStateToContact,
@@ -4969,95 +5014,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStoredEventSinceFromCreatedAt,
     writePrivatePreferencesToStorage
   });
-
-  async function applyPrivateContactListPubkeys(pubkeys: string[]): Promise<void> {
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    await Promise.all([contactsService.init(), chatDataService.init(), chatStore.init()]);
-    const shouldTrackStartupSteps =
-      isRestoringStartupState.value ||
-      getStartupStepSnapshot('private-contact-list').status === 'in_progress';
-    const profileTracker = shouldTrackStartupSteps
-      ? createStartupBatchTracker('private-contact-profiles')
-      : null;
-    const relayTracker = shouldTrackStartupSteps
-      ? createStartupBatchTracker('private-contact-relays')
-      : null;
-
-    const nextPubkeys = new Set(
-      pubkeys.filter((pubkey) => !loggedInPubkeyHex || pubkey !== loggedInPubkeyHex)
-    );
-    const existingContacts = await contactsService.listContacts();
-
-    for (const contact of existingContacts) {
-      const normalizedPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
-      if (!normalizedPubkey || normalizedPubkey === loggedInPubkeyHex) {
-        continue;
-      }
-
-      if (nextPubkeys.has(normalizedPubkey)) {
-        continue;
-      }
-
-      await contactsService.deleteContact(contact.id);
-    }
-
-    for (const pubkeyHex of nextPubkeys) {
-      const existingContact = await contactsService.getContactByPublicKey(pubkeyHex);
-      const ensuredContactResult = await ensureContactListedInPrivateContactList(pubkeyHex, {
-        fallbackName: existingContact?.name?.trim() || pubkeyHex.slice(0, 16)
-      });
-      const fallbackName =
-        ensuredContactResult.contact?.name?.trim() ||
-        existingContact?.name?.trim() ||
-        pubkeyHex.slice(0, 16);
-      try {
-        await refreshContactByPublicKey(pubkeyHex, fallbackName, {
-          onProfileFetchStart: () => {
-            profileTracker?.beginItem();
-          },
-          onProfileFetchEnd: (error) => {
-            profileTracker?.finishItem(error ?? undefined);
-          },
-          onRelayFetchStart: () => {
-            relayTracker?.beginItem();
-          },
-          onRelayFetchEnd: (error) => {
-            relayTracker?.finishItem(error ?? undefined);
-          }
-        });
-      } catch (error) {
-        profileTracker?.finishItem(error);
-        relayTracker?.finishItem(error);
-        console.warn('Failed to refresh private contact list profile', pubkeyHex, error);
-      }
-
-      await reconcileAcceptedChatFromPrivateContactList(pubkeyHex);
-    }
-
-    profileTracker?.seal();
-    relayTracker?.seal();
-
-    bumpContactListVersion();
-    queueTrackedContactSubscriptionsRefresh();
-  }
-
-  async function applyPrivateContactListEvent(event: NDKEvent): Promise<void> {
-    if (!shouldApplyPrivateContactListEvent(event)) {
-      return;
-    }
-
-    const pubkeys = await decryptPrivateContactListContent(event.content);
-    await applyPrivateContactListPubkeys(pubkeys);
-    markPrivateContactListEventApplied(event);
-  }
-
-  function queuePrivateContactListEventApplication(event: NDKEvent): void {
-    privateContactListApplyQueue = privateContactListApplyQueue
-      .then(() => applyPrivateContactListEvent(event))
-      .catch((error) => {
-        console.error('Failed to process private contact list event', error);
-      });
-  }
 
   async function refreshAllStoredContacts(): Promise<{
     totalCount: number;
@@ -5701,214 +5657,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return relaySaveStatus;
-  }
-
-  async function publishPrivateContactList(seedRelayUrls: string[] = []): Promise<void> {
-    try {
-      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-      if (!loggedInPubkeyHex) {
-        throw new Error('Missing public key in localStorage. Login is required.');
-      }
-
-      const relayUrls = await resolvePrivateContactListPublishRelayUrls(seedRelayUrls);
-      if (relayUrls.length === 0) {
-        throw new Error('Cannot publish private contact list without at least one relay.');
-      }
-
-      await ensureRelayConnections(relayUrls);
-
-      await contactsService.init();
-      const contacts = await contactsService.listContacts();
-      const pubkeys = contacts
-        .map((contact) => inputSanitizerService.normalizeHexKey(contact.public_key))
-        .filter(
-          (pubkey): pubkey is string => Boolean(pubkey) && pubkey !== loggedInPubkeyHex
-        );
-      const user = await getLoggedInSignerUser();
-
-      const listEvent = new NDKEvent(ndk, {
-        kind: NDKKind.FollowSet,
-        created_at: Math.floor(Date.now() / 1000),
-        pubkey: user.pubkey,
-        content: await encryptPrivateContactListTags(buildPrivateContactListTags(pubkeys)),
-        tags: [
-          ['d', PRIVATE_CONTACT_LIST_D_TAG],
-          ['title', PRIVATE_CONTACT_LIST_TITLE]
-        ]
-      });
-
-      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-      await listEvent.publishReplaceable(relaySet);
-      updateStoredEventSinceFromCreatedAt(listEvent.created_at);
-      markPrivateContactListEventApplied(listEvent);
-    } finally {
-      queueTrackedContactSubscriptionsRefresh(seedRelayUrls);
-    }
-  }
-
-  async function restorePrivateContactList(seedRelayUrls: string[] = []): Promise<void> {
-    if (restorePrivateContactListPromise) {
-      return restorePrivateContactListPromise;
-    }
-
-    beginStartupStep('private-contact-list');
-    restorePrivateContactListPromise = (async () => {
-      try {
-        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-        if (!loggedInPubkeyHex) {
-          completeStartupStep('private-contact-list');
-          return;
-        }
-
-        const relayUrls = await resolvePrivateContactListReadRelayUrls(seedRelayUrls);
-        if (relayUrls.length === 0) {
-          completeStartupStep('private-contact-list');
-          return;
-        }
-
-        await ensureRelayConnections(relayUrls);
-        await getLoggedInSignerUser();
-
-        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-        const listEvent = await ndk.fetchEvent(
-          {
-            kinds: [NDKKind.FollowSet],
-            authors: [loggedInPubkeyHex],
-            '#d': [PRIVATE_CONTACT_LIST_D_TAG],
-            since: getFilterSince()
-          },
-          {
-            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-          },
-          relaySet
-        );
-        if (!listEvent) {
-          completeStartupStep('private-contact-list');
-          return;
-        }
-
-        updateStoredEventSinceFromCreatedAt(listEvent.created_at);
-
-        await applyPrivateContactListEvent(
-          listEvent instanceof NDKEvent ? listEvent : new NDKEvent(ndk, listEvent)
-        );
-        completeStartupStep('private-contact-list');
-      } catch (error) {
-        failStartupStep('private-contact-list', error);
-        throw error;
-      }
-    })().finally(() => {
-      restorePrivateContactListPromise = null;
-    });
-
-    return restorePrivateContactListPromise;
-  }
-
-  function stopPrivateContactListSubscription(reason = 'replace'): void {
-    if (privateContactListSubscription) {
-      logSubscription('private-contact-list', 'stop', {
-        reason,
-        signature: privateContactListSubscriptionSignature || null
-      });
-      privateContactListSubscription.stop();
-      privateContactListSubscription = null;
-    }
-
-    privateContactListSubscriptionSignature = '';
-  }
-
-  async function subscribePrivateContactListUpdates(
-    seedRelayUrls: string[] = [],
-    force = false
-  ): Promise<void> {
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      stopPrivateContactListSubscription('missing-login');
-      return;
-    }
-
-    const relayUrls = await resolvePrivateContactListReadRelayUrls(seedRelayUrls);
-    if (relayUrls.length === 0) {
-      stopPrivateContactListSubscription('no-relays');
-      return;
-    }
-
-    const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
-    if (!force && privateContactListSubscription && privateContactListSubscriptionSignature === signature) {
-      logSubscription('private-contact-list', 'skip', {
-        reason: 'already-active',
-        signature,
-        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        ...buildSubscriptionRelayDetails(relayUrls)
-      });
-      return;
-    }
-
-    logSubscription('private-contact-list', 'prepare', {
-      force,
-      signature,
-      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      since: getFilterSince(),
-      ...buildSubscriptionRelayDetails(relayUrls)
-    });
-
-    await ensureRelayConnections(relayUrls);
-    await getLoggedInSignerUser();
-    stopPrivateContactListSubscription();
-
-    logSubscription('private-contact-list', 'start', {
-      force,
-      signature,
-      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      subscriptionTargetType: 'user',
-      userTargetCount: 1,
-      userTargetPubkeys: [formatSubscriptionLogValue(loggedInPubkeyHex)],
-      since: getFilterSince(),
-      ...buildSubscriptionRelayDetails(relayUrls)
-    });
-
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    const privateContactListFilters: NDKFilter = {
-      kinds: [NDKKind.FollowSet],
-      authors: [loggedInPubkeyHex],
-      '#d': [PRIVATE_CONTACT_LIST_D_TAG],
-      since: getFilterSince()
-    };
-    privateContactListSubscription = subscribeWithReqLogging(
-      'private-contact-list',
-      'private-contact-list',
-      privateContactListFilters,
-      {
-        relaySet,
-        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
-        onEvent: (event) => {
-          const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
-          logSubscription('private-contact-list', 'event', {
-            signature,
-            ...buildSubscriptionEventDetails(wrappedEvent),
-            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
-          });
-          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
-          queuePrivateContactListEventApplication(wrappedEvent);
-        },
-        onEose: () => {
-          logSubscription('private-contact-list', 'eose', {
-            signature
-          });
-        }
-      },
-      {
-        signature,
-        ...buildSubscriptionRelayDetails(relayUrls)
-      }
-    );
-    privateContactListSubscriptionSignature = signature;
-
-    logSubscription('private-contact-list', 'active', {
-      signature,
-      pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      ...buildSubscriptionRelayDetails(relayUrls)
-    });
   }
 
   function stopContactProfileSubscription(reason = 'replace'): void {
@@ -7911,7 +7659,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     stopContactProfileSubscription();
     stopContactRelayListSubscription();
     resetMyRelayListRuntimeState('clear-private-key');
-    stopPrivateContactListSubscription();
+    resetPrivateContactListRuntimeState('clear-private-key');
     stopPrivateMessagesSubscription();
     if (privateMessagesEpochSubscriptionRefreshTimerId !== null) {
       globalThis.clearTimeout(privateMessagesEpochSubscriptionRefreshTimerId);
@@ -7958,14 +7706,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     isRestoringStartupState.value = false;
     restoreStartupStatePromise = null;
     syncLoggedInContactProfilePromise = null;
-    restorePrivateContactListPromise = null;
     restoreRuntimeState.restorePrivatePreferencesPromise = null;
     restoreRuntimeState.restoreGroupIdentitySecretsPromise = null;
     restoreRuntimeState.restoreContactCursorStatePromise = null;
     syncRecentChatContactsPromise = null;
     contactProfileApplyQueue = Promise.resolve();
     contactRelayListApplyQueue = Promise.resolve();
-    privateContactListApplyQueue = Promise.resolve();
     privateMessagesIngestQueue = Promise.resolve();
     privateMessagesUiRefreshQueue = Promise.resolve();
     configuredRelayUrls.clear();
