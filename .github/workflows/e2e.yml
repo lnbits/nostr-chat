@@ -25,7 +25,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Start local relay
-        run: docker compose -f docker-compose.e2e.yml up -d relay
+        run: docker compose -f docker-compose.e2e.yml up -d
 
       - name: Run core DM e2e tests
         run: npm run test:e2e

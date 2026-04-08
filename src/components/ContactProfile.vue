@@ -55,6 +55,7 @@
             label="Relays"
             no-caps
             class="profile-tab"
+            data-testid="contact-profile-relays-tab"
           />
           <q-tab
             v-if="isGroupContact"

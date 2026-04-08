@@ -16,7 +16,13 @@ export interface BootstrappedUser {
   };
 }
 
+export interface BootstrapUserOptions {
+  relayUrls?: string[];
+}
+
 export const E2E_RELAY_URL = process.env.E2E_RELAY_URL ?? 'ws://127.0.0.1:7000';
+export const E2E_RELAY_URL_TWO = process.env.E2E_RELAY_URL_TWO ?? 'ws://127.0.0.1:7001';
+export const E2E_DUAL_RELAY_URLS = [E2E_RELAY_URL, E2E_RELAY_URL_TWO];
 
 export const TEST_ACCOUNTS = {
   requestAlice: {
@@ -66,6 +72,66 @@ export const TEST_ACCOUNTS = {
   groupRestartBob: {
     privateKey: 'dab1a69c14f05653be2fcf725d04068cd85214f9dbe09c2ac0fadbd1f9545d4c',
     displayName: 'Bob Restart'
+  },
+  groupRelayAlice: {
+    privateKey: '2483f2c5443f2a4992e6ada11e76d603fbcf52fa97633b315e4c3e3d53ede5bc',
+    displayName: 'Alice Relay'
+  },
+  groupRelayBob: {
+    privateKey: '4ace9d0cf7d76251894bfc88418367135d12b3ed9c78b4cd191f04ac17fcec20',
+    displayName: 'Bob Relay'
+  },
+  groupEpochAlice: {
+    privateKey: 'f540818766397792222a9722e94b73b780ea7f746aaf2ac763509663246530d4',
+    displayName: 'Alice Epoch'
+  },
+  groupEpochBob: {
+    privateKey: 'b646572a31e22409692be6f6d7840812687525e71f4b2abb8673889f9a8507ba',
+    displayName: 'Bob Epoch'
+  },
+  groupRotateAlice: {
+    privateKey: '5b31c34552ff63d834cf3159bd69b42177f6b8e164baec19c4c2aff641bb468a',
+    displayName: 'Alice Rotate'
+  },
+  groupRotateBob: {
+    privateKey: 'a225a891658fe37b69b13ea988a098a3687b73760d8bb401e2475e5536613367',
+    displayName: 'Bob Rotate'
+  },
+  dmRestartAlice: {
+    privateKey: '6d6a6c562ef4c89ff66e8964e9c424ebb3a3ac59b130cdf118c3caab8a456272',
+    displayName: 'Alice DM Restart'
+  },
+  dmRestartBob: {
+    privateKey: '431f4956e15695984eb56874ec8454ddb35260d09c6b3d1857c36b55467f2c7a',
+    displayName: 'Bob DM Restart'
+  },
+  isolationAlice: {
+    privateKey: '558033f49171bc9bbc4654b411ad5228b5ba3da15326ed16691824a9db03b628',
+    displayName: 'Alice Isolation'
+  },
+  isolationBob: {
+    privateKey: '60a6bba9ddf6eaa5ce72df047678d754f43bce4b7f85b412ed3e787e5855fdce',
+    displayName: 'Bob Isolation'
+  },
+  isolationCharlie: {
+    privateKey: '600318cd43cd7c80ce7b366dec6b61b1f4c89379adf553d0989d1536797d358d',
+    displayName: 'Charlie Isolation'
+  },
+  blockAlice: {
+    privateKey: '732cc8f4c9bb1542b025b94aa494a706c9991bbf2dd23ce589cf51f99b0652ff',
+    displayName: 'Alice Block'
+  },
+  blockBob: {
+    privateKey: '4d517870c8adca0a6dd678a15ef2c715c55e976a580bac9254e1ffd742141a32',
+    displayName: 'Bob Block'
+  },
+  catchupAlice: {
+    privateKey: 'd1994d3490b9bfb6a34196038311697a903150169d67b5bd9fd34bfe21ee2738',
+    displayName: 'Alice Catchup'
+  },
+  catchupBob: {
+    privateKey: 'e537a186c1bd3971a314c0d89d3a584cdc451c0649bb8e9152e8ef1707c4bc9b',
+    displayName: 'Bob Catchup'
   }
 } as const;
 
@@ -96,12 +162,14 @@ export function threadMessage(page: Page, text: string) {
   return threadMessages(page, text).last();
 }
 
-export async function bootstrapUser(
-  browser: Browser,
-  account: TestAccount
-): Promise<BootstrappedUser> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
+export async function bootstrapSessionOnPage(
+  page: Page,
+  account: TestAccount,
+  options: BootstrapUserOptions = {}
+): Promise<BootstrappedUser['session']> {
+  const relayUrls = Array.isArray(options.relayUrls) && options.relayUrls.length > 0
+    ? options.relayUrls
+    : [E2E_RELAY_URL];
 
   await page.goto('/#/login');
   await page.waitForFunction(() => Boolean(window.__appE2E__));
@@ -120,12 +188,24 @@ export async function bootstrapUser(
     },
     {
       privateKey: account.privateKey,
-      relayUrls: [E2E_RELAY_URL]
+      relayUrls
     }
   );
 
   await page.goto('/#/chats');
   await expect(page.getByTestId('start-new-chat-button')).toBeVisible();
+
+  return session;
+}
+
+export async function bootstrapUser(
+  browser: Browser,
+  account: TestAccount,
+  options: BootstrapUserOptions = {}
+): Promise<BootstrappedUser> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const session = await bootstrapSessionOnPage(page, account, options);
 
   return {
     account,
@@ -339,6 +419,16 @@ export async function logoutFromSettings(page: Page): Promise<void> {
   await expect(page.getByText('Welcome')).toBeVisible({ timeout: 30_000 });
 }
 
+export async function blockFirstRequest(page: Page): Promise<void> {
+  await page.getByTestId('chat-request-block-button').first().click();
+  await expect(page.getByTestId('chat-request-item')).toHaveCount(0);
+}
+
+export async function deleteFirstRequest(page: Page): Promise<void> {
+  await page.getByTestId('chat-request-delete-button').first().click();
+  await expect(page.getByTestId('chat-request-item')).toHaveCount(0);
+}
+
 export async function addGroupMemberAndPublish(
   page: Page,
   memberPublicKey: string
@@ -397,6 +487,11 @@ export async function openGroupEpochsTab(page: Page): Promise<void> {
   await expect(page.locator('.profile-epochs')).toBeVisible();
 }
 
+export async function openGroupRelaysTab(page: Page): Promise<void> {
+  await page.getByTestId('contact-profile-relays-tab').click();
+  await expect(page.locator('.profile-group-relays')).toBeVisible();
+}
+
 export async function readGroupEpochNumbers(page: Page): Promise<number[]> {
   const epochCells = page.locator('.profile-epochs-table tbody tr td:first-child');
   const count = await epochCells.count();
@@ -438,6 +533,79 @@ export async function waitForNoThreadMessage(
 
   await refreshSession(page, options.chatId);
   await expect(messageLocator).toHaveCount(0, { timeout: timeoutMs });
+}
+
+export async function waitForThreadMessageCount(
+  page: Page,
+  text: string,
+  count: number,
+  options: {
+    chatId?: string;
+  } = {}
+): Promise<void> {
+  await waitForThreadMessage(page, text, options);
+  await expect(threadMessages(page, text)).toHaveCount(count);
+}
+
+export async function removeGroupRelayAndPublish(
+  page: Page,
+  relayUrl: string
+): Promise<void> {
+  await openGroupRelaysTab(page);
+  const relayItem = page
+    .locator('.relay-expansion-item')
+    .filter({ hasText: relayUrl })
+    .first();
+  await expect(relayItem).toBeVisible();
+  await relayItem.getByLabel('Delete relay').click();
+  await expect(relayItem).toHaveCount(0);
+  await page
+    .locator('.profile-group-relays')
+    .getByRole('button', { name: 'Publish', exact: true })
+    .click();
+}
+
+export async function rotateGroupEpoch(
+  page: Page,
+  groupPublicKey: string,
+  memberPublicKeys: string[],
+  relayUrls: string[] = [E2E_RELAY_URL]
+): Promise<void> {
+  await page.evaluate(
+    async ({ nextGroupPublicKey, nextMemberPublicKeys, nextRelayUrls }) => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      await bridge.rotateGroupEpoch({
+        groupPublicKey: nextGroupPublicKey,
+        memberPublicKeys: nextMemberPublicKeys,
+        relayUrls: nextRelayUrls
+      });
+    },
+    {
+      nextGroupPublicKey: groupPublicKey,
+      nextMemberPublicKeys: memberPublicKeys,
+      nextRelayUrls: relayUrls
+    }
+  );
+}
+
+export async function waitForNoRequests(page: Page): Promise<void> {
+  await page.goto('/#/chats/requests');
+
+  try {
+    await expect(page.getByText('No pending requests', { exact: true })).toBeVisible({
+      timeout: 12_000
+    });
+  } catch {
+    await refreshSession(page);
+    await page.goto('/#/chats/requests');
+  }
+
+  await expect(page.getByTestId('chat-request-item')).toHaveCount(0);
+  await expect(page.getByText('No pending requests', { exact: true })).toBeVisible();
 }
 
 export async function establishAcceptedDirectChat(

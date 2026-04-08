@@ -2,6 +2,7 @@
   <q-item
     clickable
     class="chat-item"
+    data-testid="chat-item"
     :active="active"
     active-class="chat-item--active"
     @click="handleSelectChat"

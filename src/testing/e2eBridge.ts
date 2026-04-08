@@ -11,6 +11,12 @@ export interface AppE2ERefreshOptions {
   chatId?: string | null;
 }
 
+export interface AppE2ERotateGroupEpochOptions {
+  groupPublicKey: string;
+  memberPublicKeys: string[];
+  relayUrls?: string[];
+}
+
 export interface AppE2ESessionSnapshot {
   publicKey: string;
   npub: string | null;
@@ -21,6 +27,7 @@ export interface AppE2EBridge {
   bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot>;
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
   logout(): Promise<void>;
+  rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
 }
 
 const WINDOW_BRIDGE_KEY = '__appE2E__';
@@ -146,6 +153,29 @@ async function logout(): Promise<void> {
   window.location.hash = '/auth';
 }
 
+async function rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void> {
+  const normalizedGroupPublicKey = options.groupPublicKey.trim();
+  const normalizedMemberPublicKeys = options.memberPublicKeys
+    .map((publicKey) => publicKey.trim())
+    .filter((publicKey) => publicKey.length > 0);
+  const relayUrls = normalizeRelayUrls(Array.isArray(options.relayUrls) ? options.relayUrls : []);
+
+  if (!normalizedGroupPublicKey) {
+    throw new Error('A group public key is required for e2e rotation.');
+  }
+
+  const [{ useNostrStore }] = await Promise.all([
+    import('src/stores/nostrStore')
+  ]);
+
+  const nostrStore = useNostrStore();
+  await nostrStore.rotateGroupEpochAndSendTickets(
+    normalizedGroupPublicKey,
+    normalizedMemberPublicKeys,
+    relayUrls
+  );
+}
+
 export function installAppE2EBridge(): void {
   if (typeof window === 'undefined') {
     return;
@@ -154,7 +184,8 @@ export function installAppE2EBridge(): void {
   const bridge: AppE2EBridge = {
     bootstrapSession,
     refreshSession,
-    logout
+    logout,
+    rotateGroupEpoch
   };
 
   Object.defineProperty(window, WINDOW_BRIDGE_KEY, {

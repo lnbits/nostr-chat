@@ -64,10 +64,11 @@ async function main() {
   await runCommand(dockerCommand, [...composeArgs, 'down', '-v', '--remove-orphans'], {
     allowFailure: true
   });
-  await runCommand(dockerCommand, [...composeArgs, 'up', '-d', 'relay']);
+  await runCommand(dockerCommand, [...composeArgs, 'up', '-d']);
 
   try {
     await waitForTcpPort('127.0.0.1', 7000, 30_000);
+    await waitForTcpPort('127.0.0.1', 7001, 30_000);
     await runCommand(npmCommand, ['run', 'test:e2e', '--', ...playwrightArgs]);
   } finally {
     await runCommand(dockerCommand, [...composeArgs, 'down', '-v', '--remove-orphans'], {

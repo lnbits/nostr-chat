@@ -42,6 +42,7 @@
         color="grey-8"
         label="Delete"
         class="request-item__action"
+        data-testid="chat-request-delete-button"
         @click.stop="handleDelete"
       />
       <q-btn
@@ -50,6 +51,7 @@
         color="negative"
         label="Block"
         class="request-item__action"
+        data-testid="chat-request-block-button"
         @click.stop="handleBlock"
       />
     </div>
