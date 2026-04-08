@@ -9,6 +9,22 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/unit/**/*.spec.ts']
+    include: ['tests/unit/**/*.spec.ts'],
+    coverage: {
+      all: false,
+      provider: 'v8',
+      reportsDirectory: './coverage/unit',
+      reporter: ['text', 'html', 'json-summary'],
+      exclude: [
+        'coverage/**',
+        'dist/**',
+        'e2e/**',
+        'node_modules/**',
+        'playwright-report/**',
+        'scripts/**',
+        'test-results/**',
+        'tests/**'
+      ]
+    }
   }
 });
