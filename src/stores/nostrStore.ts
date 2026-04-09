@@ -1,11 +1,8 @@
 import NDK, {
   type NDKEvent,
   NDKPrivateKeySigner,
-  type NDKRelayInformation,
-  type NDKRelayList,
   type NDKSigner,
   type NDKUser,
-  type NDKUserProfile,
   type NostrEvent,
   nip19,
   normalizeRelayUrl,
@@ -73,20 +70,14 @@ import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContac
 import type {
   AuthMethod,
   ContactCursorState,
-  GiftWrappedRumorPublishResult,
   GroupIdentitySecretContent,
   MessageRow,
   PendingIncomingDeletion,
   PendingIncomingReaction,
   PrivatePreferences,
   PublishGroupMemberChangesResult,
-  PublishUserMetadataInput,
-  RelayConnectionState,
-  RelayListMetadataEntry,
-  RelayPublishStatusesResult,
   RelaySaveStatus,
   RotateGroupEpochResult,
-  SendGiftWrappedRumorOptions,
   SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
 import { createUserActions } from 'src/stores/nostr/userActions';
@@ -116,7 +107,7 @@ import type {
   MessageReplyPreview,
   NostrEventDirection,
 } from 'src/types/chat';
-import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
+import type { ContactMetadata, ContactRecord } from 'src/types/contact';
 import {
   areBrowserNotificationsEnabled,
   clearBrowserNotificationsPreference,
@@ -462,19 +453,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return Math.floor(epochNumber);
   }
 
-  function normalizeChatGroupEpochKeys(value: unknown): ChatGroupEpochKey[] {
-    return normalizeChatGroupEpochKeysValue(value);
-  }
-
-  function resolveGroupChatEpochEntries(chat: Pick<ChatRow, 'meta' | 'type'>): ChatGroupEpochKey[] {
-    return resolveGroupChatEpochEntriesValue(chat);
-  }
-
-  function resolveCurrentGroupChatEpochEntry(
-    chat: Pick<ChatRow, 'meta' | 'type'>
-  ): ChatGroupEpochKey | null {
-    return resolveCurrentGroupChatEpochEntryValue(chat);
-  }
+  const normalizeChatGroupEpochKeys = normalizeChatGroupEpochKeysValue;
+  const resolveGroupChatEpochEntries = resolveGroupChatEpochEntriesValue;
+  const resolveCurrentGroupChatEpochEntry = resolveCurrentGroupChatEpochEntryValue;
 
   async function appendRelayStatusesToGroupMemberTicketEvent(
     groupPublicKey: string,
@@ -497,28 +478,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
-  function findHigherKnownGroupEpochConflict(
-    chat: Pick<ChatRow, 'meta' | 'type'> | null | undefined,
-    incomingEpochNumber: number,
-    incomingCreatedAt: string | null = null
-  ): {
-    higherEpochEntry: ChatGroupEpochKey;
-    olderHigherEpochEntry: ChatGroupEpochKey | null;
-  } | null {
-    return findHigherKnownGroupEpochConflictValue(chat, incomingEpochNumber, incomingCreatedAt);
-  }
-
-  function findConflictingKnownGroupEpochNumber(
-    chat: Pick<ChatRow, 'meta' | 'type'> | null | undefined,
-    incomingEpochNumber: number,
-    incomingEpochPublicKey: string | null | undefined
-  ): ChatGroupEpochKey | null {
-    return findConflictingKnownGroupEpochNumberValue(
-      chat,
-      incomingEpochNumber,
-      incomingEpochPublicKey
-    );
-  }
+  const findHigherKnownGroupEpochConflict = findHigherKnownGroupEpochConflictValue;
+  const findConflictingKnownGroupEpochNumber = findConflictingKnownGroupEpochNumberValue;
 
   function logInvalidIncomingEpochNumber(
     groupPublicKey: string,
@@ -604,11 +565,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  function isContactListedInPrivateContactList(
-    contact: Pick<ContactRecord, 'meta'> | null | undefined
-  ): boolean {
-    return isContactListedInPrivateContactListValue(contact);
-  }
+  const isContactListedInPrivateContactList = isContactListedInPrivateContactListValue;
 
   async function ensureContactListedInPrivateContactList(
     targetPubkeyHex: string,
@@ -765,9 +722,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return firstId.localeCompare(secondId);
   }
 
-  function resolveGroupDisplayName(groupPublicKey: string): string {
-    return resolveGroupDisplayNameValue(groupPublicKey);
-  }
+  const resolveGroupDisplayName = resolveGroupDisplayNameValue;
 
   async function ensureGroupContactAndChat(
     groupPublicKey: string,
@@ -911,23 +866,22 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }),
   });
   const {
-    createDirectMessageRumorEvent: createDirectMessageRumorEventRuntime,
-    createEventDeletionRumorEvent: createEventDeletionRumorEventRuntime,
-    createReactionRumorEvent: createReactionRumorEventRuntime,
-    createStoredDirectMessageRumorEvent: createStoredDirectMessageRumorEventRuntime,
-    createStoredSignedEvent: createStoredSignedEventRuntime,
-    giftWrapSignedEvent: giftWrapSignedEventRuntime,
+    createDirectMessageRumorEvent,
+    createEventDeletionRumorEvent,
+    createReactionRumorEvent,
+    createStoredDirectMessageRumorEvent,
+    createStoredSignedEvent,
+    giftWrapSignedEvent,
     normalizeEventId: normalizeEventIdRuntime,
-    readDeletionTargetEntries: readDeletionTargetEntriesRuntime,
-    readDirectMessageRecipientPubkey: readDirectMessageRecipientPubkeyRuntime,
-    readReactionTargetAuthorPubkey: readReactionTargetAuthorPubkeyRuntime,
-    readReactionTargetEventId: readReactionTargetEventIdRuntime,
-    readReplyTargetEventId: readReplyTargetEventIdRuntime,
-    resolveIncomingPrivateMessageRecipientContext:
-      resolveIncomingPrivateMessageRecipientContextRuntime,
-    toStoredNostrEvent: toStoredNostrEventRuntime,
-    unwrapGiftWrapSealEvent: unwrapGiftWrapSealEventRuntime,
-    verifyIncomingGroupEpochTicket: verifyIncomingGroupEpochTicketRuntime,
+    readDeletionTargetEntries,
+    readDirectMessageRecipientPubkey,
+    readReactionTargetAuthorPubkey,
+    readReactionTargetEventId,
+    readReplyTargetEventId,
+    resolveIncomingPrivateMessageRecipientContext,
+    toStoredNostrEvent,
+    unwrapGiftWrapSealEvent,
+    verifyIncomingGroupEpochTicket,
   } = createMessageEventRuntime({
     decryptPrivateStringContent,
     derivePublicKeyFromPrivateKey,
@@ -938,8 +892,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     readFirstTagValue,
   });
   const {
-    appendRelayStatusesToMessageEvent: appendRelayStatusesToMessageEventRuntime,
-    buildInboundRelayStatuses: buildInboundRelayStatusesRuntime,
+    appendRelayStatusesToMessageEvent,
+    buildInboundRelayStatuses,
     consumePendingIncomingDeletions: consumePendingIncomingDeletionsRuntime,
     consumePendingIncomingReactions: consumePendingIncomingReactionsRuntime,
     queuePendingIncomingDeletion: queuePendingIncomingDeletionRuntime,
@@ -1031,18 +985,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   const {
-    buildFilterSinceDetails: buildFilterSinceDetailsRuntime,
-    buildFilterUntilDetails: buildFilterUntilDetailsRuntime,
-    buildLoggedNostrEvent: buildLoggedNostrEventRuntime,
-    buildPrivateMessageSubscriptionTargetDetails:
-      buildPrivateMessageSubscriptionTargetDetailsRuntime,
-    buildSubscriptionEventDetails: buildSubscriptionEventDetailsRuntime,
-    buildSubscriptionRelayDetails: buildSubscriptionRelayDetailsRuntime,
-    buildTrackedContactSubscriptionTargetDetails:
-      buildTrackedContactSubscriptionTargetDetailsRuntime,
+    buildFilterSinceDetails,
+    buildFilterUntilDetails,
+    buildLoggedNostrEvent,
+    buildPrivateMessageSubscriptionTargetDetails,
+    buildSubscriptionEventDetails,
+    buildSubscriptionRelayDetails,
+    buildTrackedContactSubscriptionTargetDetails,
     formatSubscriptionLogValue: formatSubscriptionLogValueRuntime,
-    relaySignature: relaySignatureRuntime,
-    subscribeWithReqLogging: subscribeWithReqLoggingRuntime,
+    relaySignature,
+    subscribeWithReqLogging,
   } = createSubscriptionLoggingRuntime({
     logDeveloperTrace,
     ndk,
@@ -1050,48 +1002,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resolveGroupChatEpochEntries,
   });
 
-  function relaySignature(relays: string[]): string {
-    return relaySignatureRuntime(relays);
-  }
-
   function formatSubscriptionLogValue(value: string | null | undefined): string | null {
     return formatSubscriptionLogValueRuntime(value);
-  }
-
-  function buildSubscriptionRelayDetails(relayUrls: string[]): Record<string, unknown> {
-    return buildSubscriptionRelayDetailsRuntime(relayUrls);
-  }
-
-  function buildSubscriptionEventDetails(
-    event: Pick<NDKEvent, 'id' | 'kind' | 'created_at' | 'pubkey'>
-  ): Record<string, unknown> {
-    return buildSubscriptionEventDetailsRuntime(event);
-  }
-
-  function buildLoggedNostrEvent(
-    event: Pick<NDKEvent, 'id' | 'kind' | 'created_at' | 'pubkey' | 'content' | 'tags'>,
-    storedEvent: NostrEvent | null | undefined = null
-  ): Record<string, unknown> {
-    return buildLoggedNostrEventRuntime(event, storedEvent);
-  }
-
-  async function buildTrackedContactSubscriptionTargetDetails(
-    contactPubkeys: string[]
-  ): Promise<Record<string, unknown>> {
-    return buildTrackedContactSubscriptionTargetDetailsRuntime(contactPubkeys);
-  }
-
-  async function buildPrivateMessageSubscriptionTargetDetails(
-    recipientPubkeys: string[],
-    loggedInPubkeyHex: string | null
-  ): Promise<Record<string, unknown>> {
-    return buildPrivateMessageSubscriptionTargetDetailsRuntime(recipientPubkeys, loggedInPubkeyHex);
-  }
-
-  function subscribeWithReqLogging(
-    ...args: Parameters<typeof subscribeWithReqLoggingRuntime>
-  ): ReturnType<typeof subscribeWithReqLoggingRuntime> {
-    return subscribeWithReqLoggingRuntime(...args);
   }
 
   function logSubscription(
@@ -1100,14 +1012,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     details: Record<string, unknown> = {}
   ): void {
     logDeveloperTrace('info', `subscription:${name}`, phase, details);
-  }
-
-  function buildFilterSinceDetails(since: number | undefined): Record<string, unknown> {
-    return buildFilterSinceDetailsRuntime(since);
-  }
-
-  function buildFilterUntilDetails(until: number | undefined): Record<string, unknown> {
-    return buildFilterUntilDetailsRuntime(until);
   }
 
   function buildInboundTraceDetails(
@@ -1342,123 +1246,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  function createDirectMessageRumorEvent(
-    senderPubkey: string,
-    recipientPubkey: string,
-    message: string,
-    createdAt: number,
-    replyToEventId?: string | null
-  ): NDKEvent {
-    return createDirectMessageRumorEventRuntime(
-      senderPubkey,
-      recipientPubkey,
-      message,
-      createdAt,
-      replyToEventId
-    );
-  }
-
-  function createReactionRumorEvent(
-    senderPubkey: string,
-    recipientPubkey: string,
-    emoji: string,
-    targetEventId: string,
-    targetAuthorPubkey: string,
-    targetKind: number,
-    createdAt: number
-  ): NDKEvent {
-    return createReactionRumorEventRuntime(
-      senderPubkey,
-      recipientPubkey,
-      emoji,
-      targetEventId,
-      targetAuthorPubkey,
-      targetKind,
-      createdAt
-    );
-  }
-
-  function createEventDeletionRumorEvent(
-    senderPubkey: string,
-    recipientPubkey: string,
-    targetEventId: string,
-    targetKind: number,
-    createdAt: number
-  ): NDKEvent {
-    return createEventDeletionRumorEventRuntime(
-      senderPubkey,
-      recipientPubkey,
-      targetEventId,
-      targetKind,
-      createdAt
-    );
-  }
-
-  function createStoredSignedEvent(event: NostrEvent): NDKEvent | null {
-    return createStoredSignedEventRuntime(event);
-  }
-
-  function createStoredDirectMessageRumorEvent(event: NostrEvent): NDKEvent | null {
-    return createStoredDirectMessageRumorEventRuntime(event);
-  }
-
-  async function giftWrapSignedEvent(
-    event: NDKEvent,
-    recipient: NDKUser,
-    signer: NDKSigner
-  ): Promise<NDKEvent> {
-    return giftWrapSignedEventRuntime(event, recipient, signer);
-  }
-
-  async function unwrapGiftWrapSealEvent(wrappedEvent: NDKEvent): Promise<NostrEvent | null> {
-    return unwrapGiftWrapSealEventRuntime(wrappedEvent);
-  }
-
-  async function verifyIncomingGroupEpochTicket(
-    rumorEvent: NDKEvent,
-    sealEvent: NostrEvent | null
-  ): Promise<{
-    isValid: boolean;
-    signedEvent: NostrEvent | null;
-    epochNumber: number | null;
-    epochPrivateKey: string | null;
-  }> {
-    return verifyIncomingGroupEpochTicketRuntime(rumorEvent, sealEvent);
-  }
-
-  async function resolveIncomingPrivateMessageRecipientContext(
-    wrappedEvent: NDKEvent,
-    loggedInPubkeyHex: string
-  ): Promise<{
-    recipientPubkey: string;
-    unwrapSigner: NDKSigner;
-    groupChatPublicKey: string | null;
-  } | null> {
-    return resolveIncomingPrivateMessageRecipientContextRuntime(wrappedEvent, loggedInPubkeyHex);
-  }
-
-  function readDirectMessageRecipientPubkey(event: NostrEvent): string | null {
-    return readDirectMessageRecipientPubkeyRuntime(event);
-  }
-
-  function readReactionTargetEventId(event: NDKEvent): string | null {
-    return readReactionTargetEventIdRuntime(event);
-  }
-
-  function readReplyTargetEventId(event: NDKEvent): string | null {
-    return readReplyTargetEventIdRuntime(event);
-  }
-
-  function readReactionTargetAuthorPubkey(event: NDKEvent): string | null {
-    return readReactionTargetAuthorPubkeyRuntime(event);
-  }
-
-  function readDeletionTargetEntries(
-    event: NDKEvent
-  ): Array<{ eventId: string; kind: number | null }> {
-    return readDeletionTargetEntriesRuntime(event);
-  }
-
   function normalizeRelayStatusUrl(value: string): string | null {
     const normalized = value.trim();
     if (!normalized) {
@@ -1485,82 +1272,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function normalizeEventId(value: unknown): string | null {
     return normalizeEventIdRuntime(value);
-  }
-
-  async function toStoredNostrEvent(event: NDKEvent): Promise<NostrEvent | null> {
-    return toStoredNostrEventRuntime(event);
-  }
-
-  async function appendRelayStatusesToMessageEvent(
-    messageId: number,
-    relayStatuses: MessageRelayStatus[],
-    options: {
-      event?: NostrEvent;
-      direction?: NostrEventDirection;
-      eventId?: string;
-      uiThrottleMs?: number;
-    } = {}
-  ): Promise<void> {
-    return appendRelayStatusesToMessageEventRuntime(messageId, relayStatuses, options);
-  }
-
-  function buildInboundRelayStatuses(relayUrls: string[]): MessageRelayStatus[] {
-    return buildInboundRelayStatusesRuntime(relayUrls);
-  }
-
-  function buildPendingOutboundRelayStatuses(
-    relayUrls: string[],
-    scope: 'recipient' | 'self'
-  ): MessageRelayStatus[] {
-    return buildPendingOutboundRelayStatusesRuntime(relayUrls, scope);
-  }
-
-  function buildFailedOutboundRelayStatuses(
-    relayUrls: string[],
-    scope: 'recipient' | 'self',
-    detail: string
-  ): MessageRelayStatus[] {
-    return buildFailedOutboundRelayStatusesRuntime(relayUrls, scope, detail);
-  }
-
-  function extractRelayUrlsFromEvent(event: NDKEvent): string[] {
-    return extractRelayUrlsFromEventRuntime(event);
-  }
-
-  async function publishEventWithRelayStatuses(
-    event: NDKEvent,
-    relayUrls: string[],
-    scope: 'recipient' | 'self'
-  ): Promise<RelayPublishStatusesResult> {
-    return publishEventWithRelayStatusesRuntime(event, relayUrls, scope);
-  }
-
-  async function publishReplaceableEventWithRelayStatuses(
-    event: NDKEvent,
-    relayUrls: string[],
-    scope: 'recipient' | 'self'
-  ): Promise<RelayPublishStatusesResult> {
-    return publishReplaceableEventWithRelayStatusesRuntime(event, relayUrls, scope);
-  }
-
-  async function sendGiftWrappedRumor(
-    recipientPublicKey: string,
-    relays: string[],
-    rumorKind: number,
-    createRumorEvent: (
-      senderPubkey: string,
-      recipientPubkey: string,
-      createdAt: number
-    ) => NDKEvent,
-    options: SendGiftWrappedRumorOptions = {}
-  ): Promise<GiftWrappedRumorPublishResult> {
-    return sendGiftWrappedRumorRuntime(
-      recipientPublicKey,
-      relays,
-      rumorKind,
-      createRumorEvent,
-      options
-    );
   }
 
   async function applyPendingIncomingReactionsForMessage(
@@ -1638,49 +1349,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return processIncomingDeletionRumorEventRuntime(rumorEvent, senderPubkeyHex, options);
   }
 
-  function buildUpdatedContactMeta(
-    existingMeta: ContactMetadata | undefined,
-    profile: NDKUserProfile | null,
-    resolvedNpub: string | null,
-    resolvedNprofile: string | null
-  ): ContactMetadata {
-    return buildUpdatedContactMetaValue(existingMeta, profile, resolvedNpub, resolvedNprofile);
-  }
-
-  function buildIdentifierFallbacks(pubkeyHex: string, existingMeta?: ContactMetadata): string[] {
-    return buildIdentifierFallbacksValue(pubkeyHex, existingMeta);
-  }
-
-  function relayEntriesFromRelayList(relayList: NDKRelayList | null | undefined): ContactRelay[] {
-    return relayEntriesFromRelayListValue(relayList);
-  }
-
-  function contactRelayListsEqual(
-    first: ContactRelay[] | undefined,
-    second: ContactRelay[] | undefined
-  ): boolean {
-    return contactRelayListsEqualValue(first, second);
-  }
-
-  function contactMetadataEqual(
-    first: ContactMetadata | undefined,
-    second: ContactMetadata | undefined
-  ): boolean {
-    return contactMetadataEqualValue(first, second);
-  }
-
-  function shouldPreserveExistingGroupRelays(
-    contact: Pick<ContactRecord, 'type' | 'public_key' | 'relays'> | null | undefined,
-    nextRelayEntries: ContactRelay[] | undefined
-  ): boolean {
-    return shouldPreserveExistingGroupRelaysValue(contact, nextRelayEntries);
-  }
+  const buildUpdatedContactMeta = buildUpdatedContactMetaValue;
+  const buildIdentifierFallbacks = buildIdentifierFallbacksValue;
+  const relayEntriesFromRelayList = relayEntriesFromRelayListValue;
+  const contactRelayListsEqual = contactRelayListsEqualValue;
+  const contactMetadataEqual = contactMetadataEqualValue;
+  const shouldPreserveExistingGroupRelays = shouldPreserveExistingGroupRelaysValue;
 
   const {
-    ensureRelayConnections: ensureRelayConnectionsRuntime,
-    fetchRelayNip11Info: fetchRelayNip11InfoRuntime,
+    ensureRelayConnections,
+    fetchRelayNip11Info,
     getOrCreateSigner: getOrCreateSignerRuntime,
-    getRelayConnectionState: getRelayConnectionStateRuntime,
+    getRelayConnectionState,
   } = createRelayConnectionRuntime({
     authenticatedRelayUrls,
     buildRelaySnapshot,
@@ -1727,6 +1407,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       hasRelayStatusListeners = value;
     },
   });
+
+  async function getOrCreateSigner(): Promise<NDKSigner> {
+    return getOrCreateSignerRuntime();
+  }
   const {
     buildPrivateContactListTags,
     decryptPrivateContactListContent,
@@ -1765,15 +1449,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
 
   const {
-    buildFailedOutboundRelayStatuses: buildFailedOutboundRelayStatusesRuntime,
-    buildPendingOutboundRelayStatuses: buildPendingOutboundRelayStatusesRuntime,
-    extractRelayUrlsFromEvent: extractRelayUrlsFromEventRuntime,
-    publishEventWithRelayStatuses: publishEventWithRelayStatusesRuntime,
-    publishGroupMetadata: publishGroupMetadataRuntime,
-    publishGroupRelayList: publishGroupRelayListRuntime,
-    publishReplaceableEventWithRelayStatuses: publishReplaceableEventWithRelayStatusesRuntime,
-    publishUserMetadata: publishUserMetadataRuntime,
-    sendGiftWrappedRumor: sendGiftWrappedRumorRuntime,
+    buildFailedOutboundRelayStatuses,
+    buildPendingOutboundRelayStatuses,
+    extractRelayUrlsFromEvent,
+    publishEventWithRelayStatuses,
+    publishGroupMetadata,
+    publishGroupRelayList,
+    publishReplaceableEventWithRelayStatuses,
+    publishUserMetadata,
+    sendGiftWrappedRumor,
   } = createRelayPublishRuntime({
     appendRelayStatusesToMessageEvent,
     buildRelaySaveStatus,
@@ -1793,7 +1477,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
 
   const {
-    fetchMyRelayListEntries,
+    fetchMyRelayList,
     publishMyRelayList,
     resetMyRelayListRuntimeState,
     restoreMyRelayList,
@@ -2445,48 +2129,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStatusVersion.value += 1;
   }
 
-  async function getOrCreateSigner(): Promise<NDKSigner> {
-    return getOrCreateSignerRuntime();
-  }
-
-  async function ensureRelayConnections(relayUrls: string[]): Promise<void> {
-    return ensureRelayConnectionsRuntime(relayUrls);
-  }
-
-  function getRelayConnectionState(relayUrl: string): RelayConnectionState {
-    return getRelayConnectionStateRuntime(relayUrl);
-  }
-
-  async function fetchRelayNip11Info(
-    relayUrl: string,
-    force = false
-  ): Promise<NDKRelayInformation> {
-    return fetchRelayNip11InfoRuntime(relayUrl, force);
-  }
-
-  async function publishUserMetadata(
-    metadata: PublishUserMetadataInput,
-    relayUrls: string[]
-  ): Promise<void> {
-    return publishUserMetadataRuntime(metadata, relayUrls);
-  }
-
-  async function publishGroupMetadata(
-    groupPublicKey: string,
-    metadata: PublishUserMetadataInput,
-    seedRelayUrls: string[] = []
-  ): Promise<void> {
-    return publishGroupMetadataRuntime(groupPublicKey, metadata, seedRelayUrls);
-  }
-
-  async function publishGroupRelayList(
-    groupPublicKey: string,
-    relayEntries: RelayListMetadataEntry[],
-    publishRelayUrls: string[] = []
-  ): Promise<RelaySaveStatus> {
-    return publishGroupRelayListRuntime(groupPublicKey, relayEntries, publishRelayUrls);
-  }
-
   function stopPrivateMessagesBackfill(reason = 'replace'): void {
     stopPrivateMessagesBackfillRuntime(reason);
   }
@@ -2504,15 +2146,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     } = {}
   ): void {
     queuePrivateMessageIngestionRuntime(wrappedEvent, loggedInPubkeyHex, options);
-  }
-
-  async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
-    const relayEntries = await fetchMyRelayListEntries(relayUrls);
-    if (relayEntries === null) {
-      return [];
-    }
-
-    return relayEntries.map((relay) => relay.url);
   }
 
   async function restoreStartupState(seedRelayUrls: string[] = []): Promise<void> {
@@ -2537,21 +2170,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     authenticatedRelayUrls,
     backgroundGroupContactRefreshStartedAt,
     bumpDeveloperDiagnosticsVersion,
-    chatStoreClearAllComposerDrafts: () => {
-      chatStore.clearAllComposerDrafts();
-    },
+    chatStoreClearAllComposerDrafts: chatStore.clearAllComposerDrafts,
     clearBrowserNotificationsPreference,
     clearDarkModePreference,
     clearDeveloperTraceEntries,
-    clearNip65RelayStoreState: () => {
-      nip65RelayStore.clear();
-    },
+    clearNip65RelayStoreState: nip65RelayStore.clear,
     clearPanelOpacityPreference,
     clearPrivateMessagesBackfillState,
     clearPrivatePreferencesStorage,
-    clearRelayStoreState: () => {
-      relayStore.clear();
-    },
+    clearRelayStoreState: relayStore.clear,
     clearStoredPrivateMessagesLastReceivedCreatedAt,
     configuredRelayUrls,
     contactListVersion,

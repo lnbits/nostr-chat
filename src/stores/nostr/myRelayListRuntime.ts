@@ -195,6 +195,15 @@ export function createMyRelayListRuntime({
     return relayEntriesFromRelayList(parsedRelayList);
   }
 
+  async function fetchMyRelayList(seedRelayUrls: string[] = []): Promise<string[]> {
+    const relayEntries = await fetchMyRelayListEntries(seedRelayUrls);
+    if (relayEntries === null) {
+      return [];
+    }
+
+    return relayEntries.map((relay) => relay.url);
+  }
+
   async function applyMyRelayListEntries(relayEntries: RelayListMetadataEntry[]): Promise<void> {
     const normalizedRelayEntries =
       inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
@@ -355,6 +364,7 @@ export function createMyRelayListRuntime({
 
   return {
     applyMyRelayListEntries,
+    fetchMyRelayList,
     fetchMyRelayListEntries,
     publishMyRelayList,
     resetMyRelayListRuntimeState,
