@@ -1,0 +1,391 @@
+import type { NDKEvent } from '@nostr-dev-kit/ndk';
+import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
+import type { MessageRelayStatus } from 'src/types/chat';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
+
+const ndkMocks = vi.hoisted(() => {
+  const groupPubkey = 'a'.repeat(64);
+  const publishReplaceable = vi.fn().mockResolvedValue(undefined);
+  const relaySetFromRelayUrls = vi.fn((relayUrls: string[]) => ({
+    relayUrls,
+  }));
+
+  class MockNDKEvent {
+    id?: string;
+    kind?: number;
+    created_at?: number;
+    pubkey?: string;
+    content = '';
+    tags: string[][] = [];
+
+    constructor(_ndk: unknown, event: Partial<NDKEvent>) {
+      Object.assign(this, event);
+    }
+
+    getMatchingTags(tagName: string): string[][] {
+      return this.tags.filter((tag) => tag[0] === tagName);
+    }
+
+    async publishReplaceable(relaySet: unknown): Promise<void> {
+      await publishReplaceable(this, relaySet);
+    }
+  }
+
+  class MockNDKPrivateKeySigner {
+    pubkey: string;
+    privateKey: string;
+
+    constructor(privateKey: string) {
+      this.privateKey = privateKey;
+      this.pubkey = groupPubkey;
+    }
+
+    static generate = vi.fn(() => ({
+      pubkey: groupPubkey,
+      privateKey: 'group-private-key',
+    }));
+
+    async user(): Promise<{ pubkey: string }> {
+      return {
+        pubkey: this.pubkey,
+      };
+    }
+  }
+
+  return {
+    MockNDKEvent,
+    MockNDKPrivateKeySigner,
+    MockNDKRelaySet: {
+      fromRelayUrls: relaySetFromRelayUrls,
+    },
+    groupPubkey,
+    publishReplaceable,
+    relaySetFromRelayUrls,
+  };
+});
+
+const serviceMocks = vi.hoisted(() => ({
+  chatDataService: {
+    getChatByPublicKey: vi.fn(),
+    init: vi.fn(),
+    listMessages: vi.fn(),
+    updateChatMeta: vi.fn(),
+    updateChatUnreadCount: vi.fn(),
+    updateMessageMeta: vi.fn(),
+  },
+  contactsService: {
+    getContactByPublicKey: vi.fn(),
+    init: vi.fn(),
+    listContacts: vi.fn(),
+    updateContact: vi.fn(),
+  },
+}));
+
+vi.mock('@nostr-dev-kit/ndk', async () => {
+  const actual = await vi.importActual<typeof import('@nostr-dev-kit/ndk')>('@nostr-dev-kit/ndk');
+
+  return {
+    ...actual,
+    NDKEvent: ndkMocks.MockNDKEvent,
+    NDKPrivateKeySigner: ndkMocks.MockNDKPrivateKeySigner,
+    NDKRelaySet: ndkMocks.MockNDKRelaySet,
+  };
+});
+
+vi.mock('src/services/chatDataService', () => ({
+  chatDataService: serviceMocks.chatDataService,
+}));
+
+vi.mock('src/services/contactsService', () => ({
+  contactsService: serviceMocks.contactsService,
+}));
+
+function makeRelayStatus(overrides: Partial<MessageRelayStatus> = {}): MessageRelayStatus {
+  return {
+    relay_url: 'wss://relay.example/',
+    direction: 'outbound',
+    scope: 'self',
+    status: 'published',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function createDeps(overrides: Record<string, unknown> = {}) {
+  const restoreState = {
+    restoreContactCursorStatePromise: null,
+    restoreGroupIdentitySecretsPromise: null,
+    restorePrivatePreferencesPromise: null,
+  };
+  const ndk = {
+    fetchEvent: vi.fn(),
+    fetchEvents: vi.fn(),
+  };
+
+  const deps = {
+    beginStartupStep: vi.fn(),
+    buildFreshPrivatePreferences: vi.fn((existing?: Record<string, unknown>) => ({
+      ...existing,
+      contactSecret: 'secret',
+    })),
+    buildRelaySaveStatus: vi.fn((relayStatuses: MessageRelayStatus[]) => ({
+      relayUrls: relayStatuses.map((relayStatus) => relayStatus.relay_url),
+      publishedRelayUrls: relayStatuses
+        .filter((relayStatus) => relayStatus.status === 'published')
+        .map((relayStatus) => relayStatus.relay_url),
+      failedRelayUrls: relayStatuses
+        .filter((relayStatus) => relayStatus.status === 'failed')
+        .map((relayStatus) => relayStatus.relay_url),
+      errorMessage: null,
+    })),
+    bumpContactListVersion: vi.fn(),
+    chatStore: {
+      reload: vi.fn().mockResolvedValue(undefined),
+    },
+    chunkValues: vi.fn(<T>(values: T[], chunkSize: number) => {
+      const chunks: T[][] = [];
+      for (let index = 0; index < values.length; index += chunkSize) {
+        chunks.push(values.slice(index, index + chunkSize));
+      }
+      return chunks;
+    }),
+    compareReplaceableEventState: vi.fn((first, second) => {
+      const firstCreatedAt = Number(first?.created_at ?? 0);
+      const secondCreatedAt = Number(second?.created_at ?? 0);
+      if (firstCreatedAt !== secondCreatedAt) {
+        return firstCreatedAt - secondCreatedAt;
+      }
+
+      return String(first?.id ?? '').localeCompare(String(second?.id ?? ''));
+    }),
+    completeStartupStep: vi.fn(),
+    contactRelayListsEqual: vi.fn(
+      (first, second) => JSON.stringify(first) === JSON.stringify(second)
+    ),
+    createInitialGroupEpochSecretState: vi.fn(() => ({
+      epoch_number: 0,
+      epoch_privkey: 'epoch-private-key',
+    })),
+    createStartupBatchTracker: vi.fn(() => ({
+      beginItem: vi.fn(),
+      finishItem: vi.fn(),
+      seal: vi.fn(),
+    })),
+    decryptContactCursorContent: vi.fn(),
+    decryptGroupIdentitySecretContent: vi.fn(),
+    decryptPrivatePreferencesContent: vi.fn(),
+    deriveContactCursorDTag: vi.fn(async (contactPublicKey: string) => `dtag-${contactPublicKey}`),
+    encryptContactCursorContent: vi.fn(),
+    encryptGroupIdentitySecretContent: vi.fn(),
+    encryptPrivatePreferencesContent: vi.fn(),
+    ensureGroupContactAndChat: vi.fn().mockResolvedValue(false),
+    ensureLoggedInSignerUser: vi.fn().mockResolvedValue({
+      pubkey: 'f'.repeat(64),
+    }),
+    ensurePrivatePreferences: vi.fn().mockResolvedValue({
+      contactSecret: 'secret',
+    }),
+    ensureRelayConnections: vi.fn().mockResolvedValue(undefined),
+    failStartupStep: vi.fn(),
+    getFilterSince: vi.fn(() => 0),
+    getLoggedInPublicKeyHex: vi.fn(() => 'f'.repeat(64)),
+    getStartupStepSnapshot: vi.fn(() => ({
+      status: 'pending',
+    })),
+    isRestoringStartupState: ref(false),
+    ndk,
+    normalizeEventId: vi.fn((value: unknown) =>
+      typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : null
+    ),
+    normalizeTimestamp: vi.fn((value: unknown) =>
+      typeof value === 'string' && value.trim() ? value.trim() : null
+    ),
+    pendingContactCursorPublishStates: new Map(),
+    pendingContactCursorPublishTimers: new Map(),
+    persistIncomingGroupEpochTicket: vi.fn().mockResolvedValue(undefined),
+    publishGroupRelayList: vi.fn().mockResolvedValue({
+      relayUrls: [],
+      publishedRelayUrls: [],
+      failedRelayUrls: [],
+      errorMessage: null,
+    }),
+    publishPrivateContactList: vi.fn().mockResolvedValue(undefined),
+    publishReplaceableEventWithRelayStatuses: vi.fn().mockResolvedValue({
+      relayStatuses: [makeRelayStatus()],
+      error: null,
+    }),
+    queueTrackedContactSubscriptionsRefresh: vi.fn(),
+    readPrivatePreferencesFromStorage: vi.fn(() => null),
+    refreshContactByPublicKey: vi.fn().mockResolvedValue(null),
+    refreshContactRelayList: vi.fn().mockResolvedValue(null),
+    resolveLoggedInPublishRelayUrls: vi.fn().mockResolvedValue(['wss://relay.example/']),
+    resolveLoggedInReadRelayUrls: vi.fn().mockResolvedValue(['wss://relay.example/']),
+    restoreState,
+    scheduleChatChecks: vi.fn(),
+    sha256Hex: vi.fn(async (value: string) => `sha256:${value}`),
+    shouldApplyPrivateContactListEvent: vi.fn(() => true),
+    toComparableTimestamp: vi.fn((value: string | null | undefined) =>
+      value ? Date.parse(value) || 0 : 0
+    ),
+    toIsoTimestampFromUnix: vi.fn((value: number | undefined) =>
+      typeof value === 'number' ? new Date(value * 1000).toISOString() : ''
+    ),
+    updateStoredEventSinceFromCreatedAt: vi.fn(),
+    writePrivatePreferencesToStorage: vi.fn(),
+    ...overrides,
+  };
+
+  return deps as Parameters<typeof createPrivateStateRuntime>[0] & typeof deps;
+}
+
+describe('privateStateRuntime', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serviceMocks.chatDataService.init.mockResolvedValue(undefined);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(null);
+    serviceMocks.chatDataService.listMessages.mockResolvedValue([]);
+    serviceMocks.chatDataService.updateChatMeta.mockResolvedValue(undefined);
+    serviceMocks.chatDataService.updateChatUnreadCount.mockResolvedValue(undefined);
+    serviceMocks.chatDataService.updateMessageMeta.mockResolvedValue(undefined);
+    serviceMocks.contactsService.init.mockResolvedValue(undefined);
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(null);
+    serviceMocks.contactsService.listContacts.mockResolvedValue([]);
+    serviceMocks.contactsService.updateContact.mockResolvedValue(null);
+    ndkMocks.publishReplaceable.mockClear();
+    ndkMocks.relaySetFromRelayUrls.mockClear();
+    ndkMocks.MockNDKPrivateKeySigner.generate.mockClear();
+  });
+
+  it('orders contact cursor state by timestamp first and event id second', () => {
+    const deps = createDeps();
+    const runtime = createPrivateStateRuntime(deps);
+
+    expect(
+      runtime.compareContactCursorState(
+        {
+          at: '2026-01-01T00:00:00.000Z',
+          eventId: 'b',
+        },
+        {
+          at: '2026-01-02T00:00:00.000Z',
+          eventId: 'a',
+        }
+      )
+    ).toBeLessThan(0);
+
+    expect(
+      runtime.compareContactCursorState(
+        {
+          at: '2026-01-02T00:00:00.000Z',
+          eventId: 'b',
+        },
+        {
+          at: '2026-01-02T00:00:00.000Z',
+          eventId: 'c',
+        }
+      )
+    ).toBeLessThan(0);
+  });
+
+  it('restores and persists decrypted private preferences from relays', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateStateRuntime(deps);
+
+    (deps.ndk.fetchEvent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      created_at: 1700000000,
+      content: 'encrypted-preferences',
+    });
+    deps.decryptPrivatePreferencesContent.mockResolvedValue({
+      contactSecret: 'secret-value',
+      notifications: true,
+    });
+
+    await runtime.restorePrivatePreferences(['wss://seed.example']);
+
+    expect(deps.beginStartupStep).toHaveBeenCalledWith('private-preferences');
+    expect(deps.ensureRelayConnections).toHaveBeenCalledWith(['wss://relay.example/']);
+    expect(deps.decryptPrivatePreferencesContent).toHaveBeenCalledWith('encrypted-preferences');
+    expect(deps.writePrivatePreferencesToStorage).toHaveBeenCalledWith({
+      contactSecret: 'secret-value',
+      notifications: true,
+    });
+    expect(deps.completeStartupStep).toHaveBeenCalledWith('private-preferences');
+    expect(deps.updateStoredEventSinceFromCreatedAt).toHaveBeenCalledWith(1700000000);
+  });
+
+  it('creates group chats, publishes the secret, and reports contact-list sync failures without throwing', async () => {
+    const deps = createDeps({
+      encryptGroupIdentitySecretContent: vi.fn().mockResolvedValue('encrypted-group-secret'),
+      ensureGroupContactAndChat: vi.fn().mockResolvedValue(true),
+      publishGroupRelayList: vi.fn().mockResolvedValue({
+        relayUrls: ['wss://relay.example/'],
+        publishedRelayUrls: ['wss://relay.example/'],
+        failedRelayUrls: [],
+        errorMessage: null,
+      }),
+      publishPrivateContactList: vi
+        .fn()
+        .mockRejectedValue(new Error('Failed to publish private contact list.')),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue({
+      id: 7,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      name: 'Launch Group',
+      given_name: null,
+      meta: {},
+      relays: [],
+      sendMessagesToAppRelays: false,
+    });
+    serviceMocks.contactsService.updateContact.mockResolvedValue({
+      id: 7,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      name: 'Launch Group',
+      given_name: null,
+      meta: {},
+      relays: [{ url: 'wss://relay.example/', read: true, write: true }],
+      sendMessagesToAppRelays: false,
+    });
+
+    const result = await runtime.createGroupChat({
+      name: 'Launch Group',
+      about: 'Roadmap',
+      relayUrls: ['wss://relay.example'],
+    });
+
+    expect(result.groupPublicKey).toBe(ndkMocks.groupPubkey);
+    expect(result.encryptedPrivateKey).toBe('encrypted-group-secret');
+    expect(result.groupSecretSave).toEqual({
+      relayUrls: ['wss://relay.example/'],
+      publishedRelayUrls: ['wss://relay.example/'],
+      failedRelayUrls: [],
+      errorMessage: null,
+    });
+    expect(result.contactListSyncError).toBe('Failed to publish private contact list.');
+    expect(deps.persistIncomingGroupEpochTicket).toHaveBeenCalledWith(
+      ndkMocks.groupPubkey,
+      0,
+      'epoch-private-key',
+      expect.objectContaining({
+        accepted: true,
+        fallbackName: 'Launch Group',
+      })
+    );
+    expect(deps.publishGroupRelayList).toHaveBeenCalledWith(
+      ndkMocks.groupPubkey,
+      [
+        expect.objectContaining({
+          url: 'wss://relay.example',
+          read: true,
+          write: true,
+        }),
+      ],
+      ['wss://relay.example']
+    );
+    expect(deps.chatStore.reload).toHaveBeenCalled();
+  });
+});
