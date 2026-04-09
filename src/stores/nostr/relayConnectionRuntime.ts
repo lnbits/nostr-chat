@@ -1,0 +1,386 @@
+import {
+  NDKNip07Signer,
+  NDKPrivateKeySigner,
+  NDKRelayStatus,
+  normalizeRelayUrl,
+  type NDK,
+  type NDKRelay,
+  type NDKRelayInformation,
+  type NDKSigner
+} from '@nostr-dev-kit/ndk';
+import type { AuthMethod, RelayConnectionState } from 'src/stores/nostr/types';
+import { inputSanitizerService } from 'src/services/inputSanitizerService';
+
+interface RelayConnectionRuntimeDeps {
+  authenticatedRelayUrls: Set<string>;
+  buildRelaySnapshot: (relay: NDKRelay | null | undefined) => Record<string, unknown>;
+  bumpRelayStatusVersion: () => void;
+  configuredRelayUrls: Set<string>;
+  getCachedSigner: () => NDKSigner | null;
+  getCachedSignerSessionKey: () => string | null;
+  getConnectPromise: () => Promise<void> | null;
+  getHasActivatedPool: () => boolean;
+  getHasRelayStatusListeners: () => boolean;
+  getLoggedInPublicKeyHex: () => string | null;
+  getPrivateKeyHex: () => string | null;
+  getStoredAuthMethod: () => AuthMethod | null;
+  hasNip07Extension: () => boolean;
+  initialConnectTimeoutMs: number;
+  isPrivateMessagesSubscriptionRelayTracked: (relayUrl: string) => boolean;
+  logDeveloperTrace: (
+    level: 'info' | 'warn' | 'error',
+    area: string,
+    phase: string,
+    details: Record<string, unknown>
+  ) => void;
+  logRelayLifecycle: (eventName: string, relay: NDKRelay) => void;
+  markPrivateMessagesWatchdogRelayDisconnected: (relayUrl: string) => void;
+  ndk: NDK;
+  queuePrivateMessagesWatchdog: (delayMs?: number) => void;
+  relayAuthFailureListenerUrls: Set<string>;
+  relayConnectFailureCooldownMs: number;
+  relayConnectFailureCooldownUntilByUrl: Map<string, number>;
+  relayConnectPromises: Map<string, Promise<void>>;
+  setCachedSigner: (signer: NDKSigner | null) => void;
+  setCachedSignerSessionKey: (sessionKey: string | null) => void;
+  setConnectPromise: (promise: Promise<void> | null) => void;
+  setHasActivatedPool: (value: boolean) => void;
+  setHasRelayStatusListeners: (value: boolean) => void;
+}
+
+export function createRelayConnectionRuntime({
+  authenticatedRelayUrls,
+  buildRelaySnapshot,
+  bumpRelayStatusVersion,
+  configuredRelayUrls,
+  getCachedSigner,
+  getCachedSignerSessionKey,
+  getConnectPromise,
+  getHasActivatedPool,
+  getHasRelayStatusListeners,
+  getLoggedInPublicKeyHex,
+  getPrivateKeyHex,
+  getStoredAuthMethod,
+  hasNip07Extension,
+  initialConnectTimeoutMs,
+  isPrivateMessagesSubscriptionRelayTracked,
+  logDeveloperTrace,
+  logRelayLifecycle,
+  markPrivateMessagesWatchdogRelayDisconnected,
+  ndk,
+  queuePrivateMessagesWatchdog,
+  relayAuthFailureListenerUrls,
+  relayConnectFailureCooldownMs,
+  relayConnectFailureCooldownUntilByUrl,
+  relayConnectPromises,
+  setCachedSigner,
+  setCachedSignerSessionKey,
+  setConnectPromise,
+  setHasActivatedPool,
+  setHasRelayStatusListeners
+}: RelayConnectionRuntimeDeps) {
+  function setRelayConnectivityStatus(relay: NDKRelay, status: NDKRelayStatus): void {
+    const connectivity = relay.connectivity as unknown as {
+      _status?: NDKRelayStatus;
+    };
+    connectivity._status = status;
+  }
+
+  async function getOrCreateSigner(): Promise<NDKSigner> {
+    const authMethod = getStoredAuthMethod();
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!authMethod || !loggedInPubkeyHex) {
+      throw new Error('Missing signer session. Login is required.');
+    }
+
+    const sessionKey = `${authMethod}:${loggedInPubkeyHex}`;
+    let cachedSigner = getCachedSigner();
+    if (!cachedSigner || getCachedSignerSessionKey() !== sessionKey) {
+      if (authMethod === 'nip07') {
+        if (!hasNip07Extension()) {
+          throw new Error('No NIP-07 extension detected. Install or enable one to continue.');
+        }
+
+        cachedSigner = new NDKNip07Signer(undefined, ndk);
+      } else {
+        const privateKeyHex = getPrivateKeyHex();
+        if (!privateKeyHex) {
+          throw new Error('Missing private key for local signer. Login is required.');
+        }
+
+        cachedSigner = new NDKPrivateKeySigner(privateKeyHex, ndk);
+      }
+
+      setCachedSigner(cachedSigner);
+      setCachedSignerSessionKey(sessionKey);
+    }
+
+    ndk.signer = cachedSigner;
+    const user = await cachedSigner.blockUntilReady();
+    user.ndk = ndk;
+    const signerPubkey = inputSanitizerService.normalizeHexKey(
+      user.pubkey ?? cachedSigner.pubkey
+    );
+    if (!signerPubkey) {
+      throw new Error('Signer did not provide a valid public key.');
+    }
+
+    if (signerPubkey !== loggedInPubkeyHex) {
+      throw new Error(
+        authMethod === 'nip07'
+          ? 'The connected NIP-07 extension account does not match the current login.'
+          : 'The stored signer does not match the current login.'
+      );
+    }
+
+    return cachedSigner;
+  }
+
+  ndk.relayAuthDefaultPolicy = async (relay, challenge) => {
+    if (authenticatedRelayUrls.has(relay.url)) {
+      setRelayConnectivityStatus(relay, NDKRelayStatus.AUTHENTICATED);
+      logDeveloperTrace('info', 'relay', 'auth-skip-already-authenticated', {
+        ...buildRelaySnapshot(relay),
+        challengeLength: challenge.length
+      });
+      relay.emit('authed');
+      return false;
+    }
+
+    try {
+      await getOrCreateSigner();
+      return true;
+    } catch (error) {
+      logDeveloperTrace('warn', 'relay', 'auth-skip-missing-signer', {
+        ...buildRelaySnapshot(relay),
+        challengeLength: challenge.length,
+        error
+      });
+      relay.disconnect();
+      return false;
+    }
+  };
+
+  function ensureRelayStatusListeners(): void {
+    if (getHasRelayStatusListeners()) {
+      return;
+    }
+
+    ndk.pool.on('relay:connecting', (relay) => {
+      authenticatedRelayUrls.delete(relay.url);
+      bumpRelayStatusVersion();
+      logRelayLifecycle('connecting', relay);
+    });
+    ndk.pool.on('relay:connect', (relay) => {
+      authenticatedRelayUrls.delete(relay.url);
+      bumpRelayStatusVersion();
+      logRelayLifecycle('connect', relay);
+      if (isPrivateMessagesSubscriptionRelayTracked(relay.url)) {
+        queuePrivateMessagesWatchdog(0);
+      }
+    });
+    ndk.pool.on('relay:ready', (relay) => {
+      bumpRelayStatusVersion();
+      logRelayLifecycle('ready', relay);
+    });
+    ndk.pool.on('relay:disconnect', (relay) => {
+      authenticatedRelayUrls.delete(relay.url);
+      bumpRelayStatusVersion();
+      logRelayLifecycle('disconnect', relay);
+      if (isPrivateMessagesSubscriptionRelayTracked(relay.url)) {
+        markPrivateMessagesWatchdogRelayDisconnected(relay.url);
+        queuePrivateMessagesWatchdog(0);
+      }
+    });
+    ndk.pool.on('relay:auth', (relay, challenge) => {
+      bumpRelayStatusVersion();
+      logDeveloperTrace('info', 'relay', 'auth-requested', {
+        ...buildRelaySnapshot(relay),
+        challengeLength: challenge.length
+      });
+    });
+    ndk.pool.on('relay:authed', (relay) => {
+      authenticatedRelayUrls.add(relay.url);
+      bumpRelayStatusVersion();
+      logDeveloperTrace('info', 'relay', 'authed', buildRelaySnapshot(relay));
+    });
+    ndk.pool.on('flapping', (relay) => {
+      bumpRelayStatusVersion();
+      logRelayLifecycle('flapping', relay);
+    });
+    setHasRelayStatusListeners(true);
+  }
+
+  function ensureRelayAuthFailureListener(relay: NDKRelay | null | undefined): void {
+    if (!relay || relayAuthFailureListenerUrls.has(relay.url)) {
+      return;
+    }
+
+    relay.on('auth:failed', (error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error ?? '');
+      if (errorMessage.toLowerCase().includes('already authenticated')) {
+        authenticatedRelayUrls.add(relay.url);
+        setRelayConnectivityStatus(relay, NDKRelayStatus.AUTHENTICATED);
+        bumpRelayStatusVersion();
+        logDeveloperTrace('info', 'relay', 'auth-failed-already-authenticated', {
+          ...buildRelaySnapshot(relay),
+          error: errorMessage
+        });
+        relay.emit('authed');
+        return;
+      }
+
+      authenticatedRelayUrls.delete(relay.url);
+      bumpRelayStatusVersion();
+      logDeveloperTrace('warn', 'relay', 'auth-failed', {
+        ...buildRelaySnapshot(relay),
+        error
+      });
+    });
+    relayAuthFailureListenerUrls.add(relay.url);
+  }
+
+  function connectRelayForEnsureRelayConnections(
+    relay: NDKRelay | null | undefined,
+    normalizedRelayUrl: string,
+    mode: 'connect' | 'reconnect'
+  ): Promise<void> | null {
+    ensureRelayAuthFailureListener(relay);
+    if (!relay || relay.connected || relay.status !== NDKRelayStatus.DISCONNECTED) {
+      return null;
+    }
+
+    const pendingConnectPromise = relayConnectPromises.get(normalizedRelayUrl);
+    if (pendingConnectPromise) {
+      return pendingConnectPromise;
+    }
+
+    const cooldownUntil = relayConnectFailureCooldownUntilByUrl.get(normalizedRelayUrl) ?? 0;
+    if (cooldownUntil > Date.now()) {
+      return null;
+    }
+
+    logDeveloperTrace(
+      'info',
+      'relay-connect',
+      mode === 'reconnect' ? 'reconnecting configured relay' : 'connecting new explicit relay',
+      {
+        reason: 'ensureRelayConnections',
+        ...buildRelaySnapshot(relay)
+      }
+    );
+
+    const connectPromise = relay
+      .connect(initialConnectTimeoutMs)
+      .catch((error) => {
+        relayConnectFailureCooldownUntilByUrl.set(
+          normalizedRelayUrl,
+          Date.now() + relayConnectFailureCooldownMs
+        );
+        console.warn(
+          mode === 'reconnect' ? 'Failed to reconnect relay' : 'Failed to connect relay',
+          normalizedRelayUrl,
+          {
+            cooldownMs: relayConnectFailureCooldownMs,
+            error,
+            relay: buildRelaySnapshot(relay)
+          }
+        );
+      })
+      .finally(() => {
+        relayConnectPromises.delete(normalizedRelayUrl);
+      });
+
+    relayConnectPromises.set(normalizedRelayUrl, connectPromise);
+    return connectPromise;
+  }
+
+  async function ensureRelayConnections(relayUrls: string[]): Promise<void> {
+    ensureRelayStatusListeners();
+
+    const relaysToReconnect = new Map<string, Promise<void>>();
+
+    for (const relayUrl of relayUrls) {
+      const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+      if (!normalizedRelayUrl) {
+        continue;
+      }
+
+      if (configuredRelayUrls.has(normalizedRelayUrl)) {
+        const existingRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
+        const reconnectPromise = connectRelayForEnsureRelayConnections(
+          existingRelay,
+          normalizedRelayUrl,
+          'reconnect'
+        );
+        if (reconnectPromise) {
+          relaysToReconnect.set(normalizedRelayUrl, reconnectPromise);
+        }
+        continue;
+      }
+
+      ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
+      configuredRelayUrls.add(normalizedRelayUrl);
+      const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
+      const connectPromise = connectRelayForEnsureRelayConnections(
+        addedRelay,
+        normalizedRelayUrl,
+        'connect'
+      );
+      if (connectPromise) {
+        relaysToReconnect.set(normalizedRelayUrl, connectPromise);
+      }
+      bumpRelayStatusVersion();
+    }
+
+    if (getHasActivatedPool()) {
+      if (relaysToReconnect.size > 0) {
+        await Promise.all(relaysToReconnect.values());
+        bumpRelayStatusVersion();
+      }
+      return;
+    }
+
+    if (!getConnectPromise()) {
+      setConnectPromise(
+        ndk
+          .connect(initialConnectTimeoutMs)
+          .then(() => {
+            setHasActivatedPool(true);
+          })
+          .finally(() => {
+            setConnectPromise(null);
+          })
+      );
+    }
+
+    await getConnectPromise();
+    bumpRelayStatusVersion();
+  }
+
+  function getRelayConnectionState(relayUrl: string): RelayConnectionState {
+    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+    const relay = ndk.pool.relays.get(normalizedRelayUrl);
+    if (!relay) {
+      return 'issue';
+    }
+
+    return relay.connected ? 'connected' : 'issue';
+  }
+
+  async function fetchRelayNip11Info(
+    relayUrl: string,
+    force = false
+  ): Promise<NDKRelayInformation> {
+    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+    const relay = ndk.pool.getRelay(normalizedRelayUrl, false);
+    return relay.fetchInfo(force);
+  }
+
+  return {
+    ensureRelayConnections,
+    fetchRelayNip11Info,
+    getOrCreateSigner,
+    getRelayConnectionState
+  };
+}

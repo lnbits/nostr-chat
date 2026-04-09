@@ -100,6 +100,8 @@ import { createPrivateMessagesIngestRuntime } from 'src/stores/nostr/privateMess
 import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
 import { createPrivateMessagesSubscriptionRuntime } from 'src/stores/nostr/privateMessagesSubscriptionRuntime';
 import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessagesUiRuntime';
+import { createRelayConnectionRuntime } from 'src/stores/nostr/relayConnectionRuntime';
+import { createRelayPublishRuntime } from 'src/stores/nostr/relayPublishRuntime';
 import { hasStorage, isPlainRecord } from 'src/stores/nostr/shared';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
 import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
@@ -300,6 +302,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     throw new Error('Private messages subscription runtime is not initialized.');
   };
   let ensurePrivateMessagesWatchdogRuntime: () => void = () => {};
+  let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () =>
+    false;
+  let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
+  let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
   let refreshAllStoredContactsRuntime: () => Promise<Record<string, unknown>> = async () => {
     throw new Error('Private messages refresh runtime is not initialized.');
   };
@@ -2161,15 +2167,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayUrls: string[],
     scope: 'recipient' | 'self'
   ): MessageRelayStatus[] {
-    const updatedAt = new Date().toISOString();
-
-    return normalizeRelayStatusUrls(relayUrls).map((relayUrl) => ({
-      relay_url: relayUrl,
-      direction: 'outbound',
-      status: 'pending',
-      scope,
-      updated_at: updatedAt
-    }));
+    return buildPendingOutboundRelayStatusesRuntime(relayUrls, scope);
   }
 
   function buildFailedOutboundRelayStatuses(
@@ -2177,27 +2175,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     scope: 'recipient' | 'self',
     detail: string
   ): MessageRelayStatus[] {
-    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
-    const normalizedDetail = detail.trim() || 'Failed to publish event.';
-    const errorsByRelayUrl = new Map<string, string>();
-
-    for (const relayUrl of normalizedRelayUrls) {
-      errorsByRelayUrl.set(relayUrl, normalizedDetail);
-    }
-
-    return buildOutboundRelayStatuses(
-      normalizedRelayUrls,
-      new Set<string>(),
-      errorsByRelayUrl,
-      scope
-    );
+    return buildFailedOutboundRelayStatusesRuntime(relayUrls, scope, detail);
   }
 
   function extractRelayUrlsFromEvent(event: NDKEvent): string[] {
-    return normalizeRelayStatusUrls([
-      event.relay?.url ?? '',
-      ...event.onRelays.map((relay) => relay.url)
-    ]);
+    return extractRelayUrlsFromEventRuntime(event);
   }
 
   async function publishEventWithRelayStatuses(
@@ -2205,72 +2187,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayUrls: string[],
     scope: 'recipient' | 'self'
   ): Promise<RelayPublishStatusesResult> {
-    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
-    if (normalizedRelayUrls.length === 0) {
-      return {
-        relayStatuses: [],
-        error: null
-      };
-    }
-
-    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk);
-
-    try {
-      const publishedToRelays = await event.publish(relaySet);
-      const publishedRelayUrls = new Set(
-        Array.from(publishedToRelays, (relay) => normalizeRelayStatusUrl(relay.url)).filter(
-          (relayUrl): relayUrl is string => Boolean(relayUrl)
-        )
-      );
-
-      return {
-        relayStatuses: buildOutboundRelayStatuses(
-          normalizedRelayUrls,
-          publishedRelayUrls,
-          new Map<string, string>(),
-          scope
-        ),
-        error: null
-      };
-    } catch (error) {
-      const publishedRelayUrls = new Set<string>();
-      const errorsByRelayUrl = new Map<string, string>();
-
-      if (error instanceof NDKPublishError) {
-        for (const relay of error.publishedToRelays) {
-          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
-          if (normalizedRelayUrl) {
-            publishedRelayUrls.add(normalizedRelayUrl);
-          }
-        }
-
-        error.errors.forEach((relayError, relay) => {
-          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
-          if (!normalizedRelayUrl) {
-            return;
-          }
-
-          errorsByRelayUrl.set(
-            normalizedRelayUrl,
-            relayError instanceof Error ? relayError.message : String(relayError)
-          );
-        });
-      } else if (error instanceof Error) {
-        for (const relayUrl of normalizedRelayUrls) {
-          errorsByRelayUrl.set(relayUrl, error.message);
-        }
-      }
-
-      return {
-        relayStatuses: buildOutboundRelayStatuses(
-          normalizedRelayUrls,
-          publishedRelayUrls,
-          errorsByRelayUrl,
-          scope
-        ),
-        error: error instanceof Error ? error : new Error('Failed to publish event.')
-      };
-    }
+    return publishEventWithRelayStatusesRuntime(event, relayUrls, scope);
   }
 
   async function publishReplaceableEventWithRelayStatuses(
@@ -2278,145 +2195,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayUrls: string[],
     scope: 'recipient' | 'self'
   ): Promise<RelayPublishStatusesResult> {
-    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
-    if (normalizedRelayUrls.length === 0) {
-      return {
-        relayStatuses: [],
-        error: null
-      };
-    }
-
-    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk);
-
-    try {
-      const publishedToRelays = await event.publishReplaceable(relaySet);
-      const publishedRelayUrls = new Set(
-        Array.from(publishedToRelays, (relay) => normalizeRelayStatusUrl(relay.url)).filter(
-          (relayUrl): relayUrl is string => Boolean(relayUrl)
-        )
-      );
-
-      return {
-        relayStatuses: buildOutboundRelayStatuses(
-          normalizedRelayUrls,
-          publishedRelayUrls,
-          new Map<string, string>(),
-          scope
-        ),
-        error: null
-      };
-    } catch (error) {
-      const publishedRelayUrls = new Set<string>();
-      const errorsByRelayUrl = new Map<string, string>();
-
-      if (error instanceof NDKPublishError) {
-        for (const relay of error.publishedToRelays) {
-          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
-          if (normalizedRelayUrl) {
-            publishedRelayUrls.add(normalizedRelayUrl);
-          }
-        }
-
-        error.errors.forEach((relayError, relay) => {
-          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
-          if (!normalizedRelayUrl) {
-            return;
-          }
-
-          errorsByRelayUrl.set(
-            normalizedRelayUrl,
-            relayError instanceof Error ? relayError.message : String(relayError)
-          );
-        });
-      } else if (error instanceof Error) {
-        for (const relayUrl of normalizedRelayUrls) {
-          errorsByRelayUrl.set(relayUrl, error.message);
-        }
-      }
-
-      return {
-        relayStatuses: buildOutboundRelayStatuses(
-          normalizedRelayUrls,
-          publishedRelayUrls,
-          errorsByRelayUrl,
-          scope
-        ),
-        error: error instanceof Error ? error : new Error('Failed to publish replaceable event.')
-      };
-    }
-  }
-
-  async function publishEventWithRelayStatuses(
-    event: NDKEvent,
-    relayUrls: string[],
-    scope: 'recipient' | 'self'
-  ): Promise<RelayPublishStatusesResult> {
-    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
-    if (normalizedRelayUrls.length === 0) {
-      return {
-        relayStatuses: [],
-        error: null
-      };
-    }
-
-    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk);
-
-    try {
-      const publishedToRelays = await event.publish(relaySet);
-      const publishedRelayUrls = new Set(
-        Array.from(publishedToRelays, (relay) => normalizeRelayStatusUrl(relay.url)).filter(
-          (relayUrl): relayUrl is string => Boolean(relayUrl)
-        )
-      );
-
-      return {
-        relayStatuses: buildOutboundRelayStatuses(
-          normalizedRelayUrls,
-          publishedRelayUrls,
-          new Map<string, string>(),
-          scope
-        ),
-        error: null
-      };
-    } catch (error) {
-      const publishedRelayUrls = new Set<string>();
-      const errorsByRelayUrl = new Map<string, string>();
-
-      if (error instanceof NDKPublishError) {
-        for (const relay of error.publishedToRelays) {
-          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
-          if (normalizedRelayUrl) {
-            publishedRelayUrls.add(normalizedRelayUrl);
-          }
-        }
-
-        error.errors.forEach((relayError, relay) => {
-          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
-          if (!normalizedRelayUrl) {
-            return;
-          }
-
-          errorsByRelayUrl.set(
-            normalizedRelayUrl,
-            relayError instanceof Error ? relayError.message : String(relayError)
-          );
-        });
-      } else if (error instanceof Error) {
-        for (const relayUrl of normalizedRelayUrls) {
-          errorsByRelayUrl.set(relayUrl, error.message);
-        }
-      }
-
-      return {
-        relayStatuses: buildOutboundRelayStatuses(
-          normalizedRelayUrls,
-          publishedRelayUrls,
-          errorsByRelayUrl,
-          scope
-        ),
-        error: error instanceof Error ? error : new Error('Failed to publish event.')
-      };
-    }
+    return publishReplaceableEventWithRelayStatusesRuntime(event, relayUrls, scope);
   }
 
   async function sendGiftWrappedRumor(
@@ -2430,174 +2209,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ) => NDKEvent,
     options: SendGiftWrappedRumorOptions = {}
   ): Promise<GiftWrappedRumorPublishResult> {
-    const recipientInput = recipientPublicKey.trim();
-    if (!recipientInput) {
-      throw new Error('Recipient public key is required.');
-    }
-
-    let normalizedRecipientPubkey: string | null = null;
-    if (isValidPubkey(recipientInput)) {
-      normalizedRecipientPubkey = recipientInput.toLowerCase();
-    } else {
-      normalizedRecipientPubkey = validateNpub(recipientInput).normalizedPubkey;
-    }
-
-    if (!normalizedRecipientPubkey) {
-      throw new Error('Recipient public key must be a valid hex pubkey or npub.');
-    }
-
-    const relayUrls = inputSanitizerService.normalizeStringArray(relays);
-    if (relayUrls.length === 0) {
-      throw new Error('Cannot send encrypted event without contact relays.');
-    }
-    await ensureRelayConnections(relayUrls);
-
-    const signer = await getOrCreateSigner();
-    const shouldPublishSelfCopy = options.publishSelfCopy !== false;
-    const createdAt = toUnixTimestamp(options.createdAt);
-    const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
-    const recipientRumorEvent = createRumorEvent(
-      signer.pubkey,
-      normalizedRecipientPubkey,
-      createdAt
+    return sendGiftWrappedRumorRuntime(
+      recipientPublicKey,
+      relays,
+      rumorKind,
+      createRumorEvent,
+      options
     );
-    const recipientRumorNostrEvent = await toStoredNostrEvent(recipientRumorEvent);
-    const rumorEventId = normalizeEventId(
-      recipientRumorNostrEvent?.id ?? recipientRumorEvent.id
-    );
-    const selfRelayUrls = shouldPublishSelfCopy ? await resolveLoggedInPublishRelayUrls() : [];
-    const persistOutboundRelayStatuses = async (
-      relayStatuses: MessageRelayStatus[]
-    ): Promise<void> => {
-      if (!options.localMessageId || !rumorEventId || relayStatuses.length === 0) {
-        return;
-      }
-
-      await appendRelayStatusesToMessageEvent(
-        options.localMessageId,
-        relayStatuses,
-        {
-          event: recipientRumorNostrEvent ?? undefined,
-          direction: 'out',
-          eventId: rumorEventId
-        }
-      );
-    };
-    const appendFailedOutboundRelayStatuses = async (
-      relayUrlsToFail: string[],
-      scope: 'recipient' | 'self',
-      detail: string
-    ): Promise<MessageRelayStatus[]> => {
-      const failedRelayStatuses = buildFailedOutboundRelayStatuses(
-        relayUrlsToFail,
-        scope,
-        detail
-      );
-      await persistOutboundRelayStatuses(failedRelayStatuses);
-      return failedRelayStatuses;
-    };
-    let recipientRelayStatusesFinalized = false;
-    let selfRelayStatusesFinalized = selfRelayUrls.length === 0;
-
-    if (options.localMessageId && rumorEventId) {
-      try {
-        await persistOutboundRelayStatuses([
-          ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
-          ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
-        ]);
-      } catch (error) {
-        console.warn('Failed to persist encrypted event details before publish', error);
-      }
-    }
-
-    const combinedRelayStatuses: MessageRelayStatus[] = [];
-
-    try {
-      const recipientGiftWrapEvent = await giftWrap(recipientRumorEvent, recipient, signer, {
-        rumorKind
-      });
-      const recipientPublishResult = await publishEventWithRelayStatuses(
-        recipientGiftWrapEvent,
-        relayUrls,
-        'recipient'
-      );
-      combinedRelayStatuses.push(...recipientPublishResult.relayStatuses);
-      await persistOutboundRelayStatuses(recipientPublishResult.relayStatuses);
-      recipientRelayStatusesFinalized = true;
-
-      if (recipientPublishResult.error) {
-        const skippedSelfRelayStatuses = await appendFailedOutboundRelayStatuses(
-          selfRelayUrls,
-          'self',
-          'Skipped because recipient relay publish failed.'
-        );
-        combinedRelayStatuses.push(...skippedSelfRelayStatuses);
-        selfRelayStatusesFinalized = true;
-        throw recipientPublishResult.error;
-      }
-
-      if (selfRelayUrls.length > 0) {
-        try {
-          await ensureRelayConnections(selfRelayUrls);
-          const senderRecipient = new NDKUser({ pubkey: signer.pubkey });
-          const selfRumorEvent = createRumorEvent(
-            signer.pubkey,
-            normalizedRecipientPubkey,
-            createdAt
-          );
-          const selfGiftWrapEvent = await giftWrap(selfRumorEvent, senderRecipient, signer, {
-            rumorKind
-          });
-          const selfPublishResult = await publishEventWithRelayStatuses(
-            selfGiftWrapEvent,
-            selfRelayUrls,
-            'self'
-          );
-          combinedRelayStatuses.push(...selfPublishResult.relayStatuses);
-          await persistOutboundRelayStatuses(selfPublishResult.relayStatuses);
-          selfRelayStatusesFinalized = true;
-
-          if (selfPublishResult.error) {
-            console.warn('Failed to publish encrypted event self-copy', selfPublishResult.error);
-          }
-        } catch (error) {
-          const selfFailureDetail =
-            error instanceof Error && error.message.trim()
-              ? error.message.trim()
-              : 'Failed to publish encrypted event self-copy.';
-          const failedSelfRelayStatuses = await appendFailedOutboundRelayStatuses(
-            selfRelayUrls,
-            'self',
-            selfFailureDetail
-          );
-          combinedRelayStatuses.push(...failedSelfRelayStatuses);
-          selfRelayStatusesFinalized = true;
-          console.warn('Failed to publish encrypted event self-copy', error);
-        }
-      }
-
-      return {
-        giftWrapEvent: await recipientGiftWrapEvent.toNostrEvent(),
-        rumorEvent: recipientRumorNostrEvent,
-        rumorEventId,
-        relayStatuses: combinedRelayStatuses
-      };
-    } catch (error) {
-      const failureDetail =
-        error instanceof Error && error.message.trim()
-          ? error.message.trim()
-          : 'Failed to publish encrypted event.';
-
-      if (!recipientRelayStatusesFinalized) {
-        await appendFailedOutboundRelayStatuses(relayUrls, 'recipient', failureDetail);
-      }
-
-      if (!selfRelayStatusesFinalized) {
-        await appendFailedOutboundRelayStatuses(selfRelayUrls, 'self', failureDetail);
-      }
-
-      throw error;
-    }
   }
 
   function queuePendingIncomingReaction(
@@ -3443,6 +3061,58 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ): boolean {
     return shouldPreserveExistingGroupRelaysValue(contact, nextRelayEntries);
   }
+
+  const {
+    ensureRelayConnections: ensureRelayConnectionsRuntime,
+    fetchRelayNip11Info: fetchRelayNip11InfoRuntime,
+    getOrCreateSigner: getOrCreateSignerRuntime,
+    getRelayConnectionState: getRelayConnectionStateRuntime
+  } = createRelayConnectionRuntime({
+    authenticatedRelayUrls,
+    buildRelaySnapshot,
+    bumpRelayStatusVersion,
+    configuredRelayUrls,
+    getCachedSigner: () => cachedSigner,
+    getCachedSignerSessionKey: () => cachedSignerSessionKey,
+    getConnectPromise: () => connectPromise,
+    getHasActivatedPool: () => hasActivatedPool,
+    getHasRelayStatusListeners: () => hasRelayStatusListeners,
+    getLoggedInPublicKeyHex,
+    getPrivateKeyHex,
+    getStoredAuthMethod,
+    hasNip07Extension,
+    initialConnectTimeoutMs: INITIAL_CONNECT_TIMEOUT_MS,
+    isPrivateMessagesSubscriptionRelayTracked: (relayUrl) =>
+      isPrivateMessagesSubscriptionRelayTrackedRuntime(relayUrl),
+    logDeveloperTrace,
+    logRelayLifecycle,
+    markPrivateMessagesWatchdogRelayDisconnected: (relayUrl) => {
+      markPrivateMessagesWatchdogRelayDisconnectedRuntime(relayUrl);
+    },
+    ndk,
+    queuePrivateMessagesWatchdog: (delayMs) => {
+      queuePrivateMessagesWatchdogRuntime(delayMs);
+    },
+    relayAuthFailureListenerUrls,
+    relayConnectFailureCooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
+    relayConnectFailureCooldownUntilByUrl,
+    relayConnectPromises,
+    setCachedSigner: (signer) => {
+      cachedSigner = signer;
+    },
+    setCachedSignerSessionKey: (sessionKey) => {
+      cachedSignerSessionKey = sessionKey;
+    },
+    setConnectPromise: (promise) => {
+      connectPromise = promise;
+    },
+    setHasActivatedPool: (value) => {
+      hasActivatedPool = value;
+    },
+    setHasRelayStatusListeners: (value) => {
+      hasRelayStatusListeners = value;
+    }
+  });
   const {
     buildPrivateContactListTags,
     decryptPrivateContactListContent,
@@ -3477,6 +3147,34 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStore,
     resolveGroupPublishRelayUrlsValue,
     shouldPreserveExistingGroupRelays,
+    updateStoredEventSinceFromCreatedAt
+  });
+
+  const {
+    buildFailedOutboundRelayStatuses: buildFailedOutboundRelayStatusesRuntime,
+    buildPendingOutboundRelayStatuses: buildPendingOutboundRelayStatusesRuntime,
+    extractRelayUrlsFromEvent: extractRelayUrlsFromEventRuntime,
+    publishEventWithRelayStatuses: publishEventWithRelayStatusesRuntime,
+    publishGroupMetadata: publishGroupMetadataRuntime,
+    publishGroupRelayList: publishGroupRelayListRuntime,
+    publishReplaceableEventWithRelayStatuses: publishReplaceableEventWithRelayStatusesRuntime,
+    publishUserMetadata: publishUserMetadataRuntime,
+    sendGiftWrappedRumor: sendGiftWrappedRumorRuntime
+  } = createRelayPublishRuntime({
+    appendRelayStatusesToMessageEvent,
+    buildRelaySaveStatus,
+    decryptGroupIdentitySecretContent,
+    ensureRelayConnections,
+    getLoggedInPublicKeyHex,
+    getOrCreateSigner,
+    ndk,
+    normalizeEventId,
+    normalizeRelayStatusUrl,
+    normalizeRelayStatusUrls,
+    resolveGroupPublishRelayUrls,
+    resolveLoggedInPublishRelayUrls,
+    toStoredNostrEvent,
+    toUnixTimestamp,
     updateStoredEventSinceFromCreatedAt
   });
 
@@ -3795,6 +3493,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStoredPrivateMessagesLastReceivedFromCreatedAt
   });
   ensurePrivateMessagesWatchdogRuntime = ensurePrivateMessagesWatchdogImpl;
+  isPrivateMessagesSubscriptionRelayTrackedRuntime = isPrivateMessagesSubscriptionRelayTracked;
+  markPrivateMessagesWatchdogRelayDisconnectedRuntime =
+    markPrivateMessagesWatchdogRelayDisconnected;
+  queuePrivateMessagesWatchdogRuntime = queuePrivateMessagesWatchdog;
   subscribePrivateMessagesForLoggedInUserRuntime = subscribePrivateMessagesForLoggedInUserImpl;
   ensurePrivateMessagesWatchdog();
 
@@ -4224,313 +3926,30 @@ export const useNostrStore = defineStore('nostrStore', () => {
     logDeveloperTrace(level, 'message-relays', phase, details);
   }
 
-  function setRelayConnectivityStatus(
-    relay: NDKRelay,
-    status: NDKRelayStatus
-  ): void {
-    const connectivity = relay.connectivity as unknown as {
-      _status?: NDKRelayStatus;
-    };
-    connectivity._status = status;
-  }
-
-  ndk.relayAuthDefaultPolicy = async (relay, challenge) => {
-    if (authenticatedRelayUrls.has(relay.url)) {
-      setRelayConnectivityStatus(relay, NDKRelayStatus.AUTHENTICATED);
-      logDeveloperTrace('info', 'relay', 'auth-skip-already-authenticated', {
-        ...buildRelaySnapshot(relay),
-        challengeLength: challenge.length
-      });
-      relay.emit('authed');
-      return false;
-    }
-
-    try {
-      await getOrCreateSigner();
-      return true;
-    } catch (error) {
-      logDeveloperTrace('warn', 'relay', 'auth-skip-missing-signer', {
-        ...buildRelaySnapshot(relay),
-        challengeLength: challenge.length,
-        error
-      });
-      relay.disconnect();
-      return false;
-    }
-  };
-
-  function ensureRelayStatusListeners(): void {
-    if (hasRelayStatusListeners) {
-      return;
-    }
-
-    ndk.pool.on('relay:connecting', (relay) => {
-      authenticatedRelayUrls.delete(relay.url);
-      bumpRelayStatusVersion();
-      logRelayLifecycle('connecting', relay);
-    });
-    ndk.pool.on('relay:connect', (relay) => {
-      authenticatedRelayUrls.delete(relay.url);
-      bumpRelayStatusVersion();
-      logRelayLifecycle('connect', relay);
-      if (isPrivateMessagesSubscriptionRelayTracked(relay.url)) {
-        queuePrivateMessagesWatchdog(0);
-      }
-    });
-    ndk.pool.on('relay:ready', (relay) => {
-      bumpRelayStatusVersion();
-      logRelayLifecycle('ready', relay);
-    });
-    ndk.pool.on('relay:disconnect', (relay) => {
-      authenticatedRelayUrls.delete(relay.url);
-      bumpRelayStatusVersion();
-      logRelayLifecycle('disconnect', relay);
-      if (isPrivateMessagesSubscriptionRelayTracked(relay.url)) {
-        markPrivateMessagesWatchdogRelayDisconnected(relay.url);
-        queuePrivateMessagesWatchdog(0);
-      }
-    });
-    ndk.pool.on('relay:auth', (relay, challenge) => {
-      bumpRelayStatusVersion();
-      logDeveloperTrace('info', 'relay', 'auth-requested', {
-        ...buildRelaySnapshot(relay),
-        challengeLength: challenge.length
-      });
-    });
-    ndk.pool.on('relay:authed', (relay) => {
-      authenticatedRelayUrls.add(relay.url);
-      bumpRelayStatusVersion();
-      logDeveloperTrace('info', 'relay', 'authed', buildRelaySnapshot(relay));
-    });
-    ndk.pool.on('flapping', (relay) => {
-      bumpRelayStatusVersion();
-      logRelayLifecycle('flapping', relay);
-    });
-    hasRelayStatusListeners = true;
-  }
-
-  function ensureRelayAuthFailureListener(relay: NDKRelay | null | undefined): void {
-    if (!relay || relayAuthFailureListenerUrls.has(relay.url)) {
-      return;
-    }
-
-    relay.on('auth:failed', (error) => {
-      const errorMessage = error instanceof Error ? error.message : String(error ?? '');
-      if (errorMessage.toLowerCase().includes('already authenticated')) {
-        authenticatedRelayUrls.add(relay.url);
-        setRelayConnectivityStatus(relay, NDKRelayStatus.AUTHENTICATED);
-        bumpRelayStatusVersion();
-        logDeveloperTrace('info', 'relay', 'auth-failed-already-authenticated', {
-          ...buildRelaySnapshot(relay),
-          error: errorMessage
-        });
-        relay.emit('authed');
-        return;
-      }
-
-      authenticatedRelayUrls.delete(relay.url);
-      bumpRelayStatusVersion();
-      logDeveloperTrace('warn', 'relay', 'auth-failed', {
-        ...buildRelaySnapshot(relay),
-        error
-      });
-    });
-    relayAuthFailureListenerUrls.add(relay.url);
-  }
-
   async function getOrCreateSigner(): Promise<NDKSigner> {
-    const authMethod = getStoredAuthMethod();
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!authMethod || !loggedInPubkeyHex) {
-      throw new Error('Missing signer session. Login is required.');
-    }
-
-    const sessionKey = `${authMethod}:${loggedInPubkeyHex}`;
-    if (!cachedSigner || cachedSignerSessionKey !== sessionKey) {
-      if (authMethod === 'nip07') {
-        if (!hasNip07Extension()) {
-          throw new Error('No NIP-07 extension detected. Install or enable one to continue.');
-        }
-
-        cachedSigner = new NDKNip07Signer(undefined, ndk);
-      } else {
-        const privateKeyHex = getPrivateKeyHex();
-        if (!privateKeyHex) {
-          throw new Error('Missing private key for local signer. Login is required.');
-        }
-
-        cachedSigner = new NDKPrivateKeySigner(privateKeyHex, ndk);
-      }
-
-      cachedSignerSessionKey = sessionKey;
-    }
-
-    ndk.signer = cachedSigner;
-    const user = await cachedSigner.blockUntilReady();
-    user.ndk = ndk;
-    const signerPubkey = inputSanitizerService.normalizeHexKey(user.pubkey ?? cachedSigner.pubkey);
-    if (!signerPubkey) {
-      throw new Error('Signer did not provide a valid public key.');
-    }
-
-    if (signerPubkey !== loggedInPubkeyHex) {
-      throw new Error(
-        authMethod === 'nip07'
-          ? 'The connected NIP-07 extension account does not match the current login.'
-          : 'The stored signer does not match the current login.'
-      );
-    }
-
-    return cachedSigner;
+    return getOrCreateSignerRuntime();
   }
 
   async function ensureRelayConnections(relayUrls: string[]): Promise<void> {
-    ensureRelayStatusListeners();
-
-    const relaysToReconnect = new Map<string, Promise<void>>();
-
-    for (const relayUrl of relayUrls) {
-      const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
-      if (configuredRelayUrls.has(normalizedRelayUrl)) {
-        const existingRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
-        const reconnectPromise = connectRelayForEnsureRelayConnections(
-          existingRelay,
-          normalizedRelayUrl,
-          'reconnect'
-        );
-        if (reconnectPromise) {
-          relaysToReconnect.set(normalizedRelayUrl, reconnectPromise);
-        }
-        continue;
-      }
-
-      ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
-      configuredRelayUrls.add(normalizedRelayUrl);
-      const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
-      const connectPromise = connectRelayForEnsureRelayConnections(
-        addedRelay,
-        normalizedRelayUrl,
-        'connect'
-      );
-      if (connectPromise) {
-        relaysToReconnect.set(normalizedRelayUrl, connectPromise);
-      }
-      bumpRelayStatusVersion();
-    }
-
-    if (hasActivatedPool) {
-      if (relaysToReconnect.size > 0) {
-        await Promise.all(relaysToReconnect.values());
-        bumpRelayStatusVersion();
-      }
-      return;
-    }
-
-    if (!connectPromise) {
-      connectPromise = ndk
-        .connect(INITIAL_CONNECT_TIMEOUT_MS)
-        .then(() => {
-          hasActivatedPool = true;
-        })
-        .finally(() => {
-          connectPromise = null;
-        });
-    }
-
-    await connectPromise;
-    bumpRelayStatusVersion();
-  }
-
-  function connectRelayForEnsureRelayConnections(
-    relay: NDKRelay | null | undefined,
-    normalizedRelayUrl: string,
-    mode: 'connect' | 'reconnect'
-  ): Promise<void> | null {
-    ensureRelayAuthFailureListener(relay);
-    if (!relay || relay.connected || relay.status !== NDKRelayStatus.DISCONNECTED) {
-      return null;
-    }
-
-    const pendingConnectPromise = relayConnectPromises.get(normalizedRelayUrl);
-    if (pendingConnectPromise) {
-      return pendingConnectPromise;
-    }
-
-    const cooldownUntil = relayConnectFailureCooldownUntilByUrl.get(normalizedRelayUrl) ?? 0;
-    if (cooldownUntil > Date.now()) {
-      return null;
-    }
-
-    logDeveloperTrace(
-      'info',
-      'relay-connect',
-      mode === 'reconnect' ? 'reconnecting configured relay' : 'connecting new explicit relay',
-      {
-        reason: 'ensureRelayConnections',
-        ...buildRelaySnapshot(relay)
-      }
-    );
-
-    const connectPromise = relay
-      .connect(INITIAL_CONNECT_TIMEOUT_MS)
-      .catch((error) => {
-        relayConnectFailureCooldownUntilByUrl.set(
-          normalizedRelayUrl,
-          Date.now() + RELAY_CONNECT_FAILURE_COOLDOWN_MS
-        );
-        console.warn(
-          mode === 'reconnect' ? 'Failed to reconnect relay' : 'Failed to connect relay',
-          normalizedRelayUrl,
-          {
-            cooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
-            error,
-            relay: buildRelaySnapshot(relay)
-          }
-        );
-      })
-      .finally(() => {
-        relayConnectPromises.delete(normalizedRelayUrl);
-      });
-
-    relayConnectPromises.set(normalizedRelayUrl, connectPromise);
-    return connectPromise;
+    return ensureRelayConnectionsRuntime(relayUrls);
   }
 
   function getRelayConnectionState(relayUrl: string): RelayConnectionState {
-    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
-    const relay = ndk.pool.relays.get(normalizedRelayUrl);
-    if (!relay) {
-      return 'issue';
-    }
-
-    return relay.connected ? 'connected' : 'issue';
+    return getRelayConnectionStateRuntime(relayUrl);
   }
 
   async function fetchRelayNip11Info(
     relayUrl: string,
     force = false
   ): Promise<NDKRelayInformation> {
-    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
-    const relay = ndk.pool.getRelay(normalizedRelayUrl, false);
-    return relay.fetchInfo(force);
+    return fetchRelayNip11InfoRuntime(relayUrl, force);
   }
 
   async function publishUserMetadata(
     metadata: PublishUserMetadataInput,
     relayUrls: string[]
   ): Promise<void> {
-    const relayList = inputSanitizerService.normalizeStringArray(relayUrls);
-    if (relayList.length === 0) {
-      throw new Error('Cannot publish profile without at least one relay.');
-    }
-
-    await ensureRelayConnections(relayList);
-
-    const signer = await getOrCreateSigner();
-    const user = await signer.user();
-    user.ndk = ndk;
-    user.profile = metadata as NDKUserProfile;
-    await user.publish();
+    return publishUserMetadataRuntime(metadata, relayUrls);
   }
 
   async function publishGroupMetadata(
@@ -4538,73 +3957,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     metadata: PublishUserMetadataInput,
     seedRelayUrls: string[] = []
   ): Promise<void> {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      throw new Error('Missing public key in localStorage. Login is required.');
-    }
-
-    if (!normalizedGroupPublicKey) {
-      throw new Error('A valid group public key is required.');
-    }
-
-    await contactsService.init();
-    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
-    if (!groupContact || groupContact.type !== 'group') {
-      throw new Error('Group contact not found.');
-    }
-
-    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
-      groupContact.meta.owner_public_key ?? ''
-    );
-    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
-      throw new Error('Only the owner can publish this group profile.');
-    }
-
-    const encryptedGroupPrivateKey = groupContact.meta.group_private_key_encrypted?.trim() ?? '';
-    if (!encryptedGroupPrivateKey) {
-      throw new Error('Encrypted group private key not found.');
-    }
-
-    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
-    if (
-      !decryptedSecret ||
-      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !== normalizedGroupPublicKey
-    ) {
-      throw new Error('Failed to decrypt the group private key.');
-    }
-
-    const relayUrls = resolveGroupPublishRelayUrls(groupContact.relays, seedRelayUrls);
-    if (relayUrls.length === 0) {
-      throw new Error('Cannot publish group profile without at least one group relay.');
-    }
-
-    await ensureRelayConnections(relayUrls);
-
-    const groupSigner = new NDKPrivateKeySigner(decryptedSecret.group_privkey, ndk);
-    const signerUser = await groupSigner.user();
-    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
-      throw new Error('Decrypted group private key does not match the group public key.');
-    }
-
-    const metadataEvent = new NDKEvent(ndk, {
-      kind: NDKKind.Metadata,
-      created_at: Math.floor(Date.now() / 1000),
-      content: JSON.stringify(metadata)
-    } as NostrEvent);
-    await metadataEvent.sign(groupSigner);
-
-    const publishResult = await publishEventWithRelayStatuses(metadataEvent, relayUrls, 'self');
-    if (
-      publishResult.relayStatuses.some(
-        (entry) => entry.direction === 'outbound' && entry.status === 'published'
-      )
-    ) {
-      updateStoredEventSinceFromCreatedAt(metadataEvent.created_at);
-      return;
-    }
-
-    throw publishResult.error ?? new Error('Failed to publish group profile metadata.');
+    return publishGroupMetadataRuntime(groupPublicKey, metadata, seedRelayUrls);
   }
 
   async function publishGroupRelayList(
@@ -4612,87 +3965,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayEntries: RelayListMetadataEntry[],
     publishRelayUrls: string[] = []
   ): Promise<RelaySaveStatus> {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      throw new Error('Missing public key in localStorage. Login is required.');
-    }
-
-    if (!normalizedGroupPublicKey) {
-      throw new Error('A valid group public key is required.');
-    }
-
-    await contactsService.init();
-    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
-    if (!groupContact || groupContact.type !== 'group') {
-      throw new Error('Group contact not found.');
-    }
-
-    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
-      groupContact.meta.owner_public_key ?? ''
-    );
-    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
-      throw new Error('Only the owner can publish the group relay list.');
-    }
-
-    const encryptedGroupPrivateKey =
-      groupContact.meta.group_private_key_encrypted?.trim() ?? '';
-    if (!encryptedGroupPrivateKey) {
-      throw new Error('Encrypted group private key not found.');
-    }
-
-    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
-    if (
-      !decryptedSecret ||
-      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !== normalizedGroupPublicKey
-    ) {
-      throw new Error('Failed to decrypt the group private key.');
-    }
-
-    const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
-    const relayUrls = normalizeRelayStatusUrls([
-      ...inputSanitizerService.normalizeStringArray(publishRelayUrls),
-      ...normalizedRelayEntries.map((relay) => relay.url)
-    ]);
-    if (relayUrls.length === 0) {
-      throw new Error('Cannot publish group relay list without at least one group relay.');
-    }
-
-    await ensureRelayConnections(relayUrls);
-
-    const groupSigner = new NDKPrivateKeySigner(decryptedSecret.group_privkey, ndk);
-    const signerUser = await groupSigner.user();
-    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
-      throw new Error('Decrypted group private key does not match the group public key.');
-    }
-
-    const relayListEvent = new NDKRelayList(ndk);
-    relayListEvent.pubkey = normalizedGroupPublicKey;
-    relayListEvent.created_at = Math.floor(Date.now() / 1000);
-    relayListEvent.content = '';
-    relayListEvent.tags = [];
-    relayListEvent.bothRelayUrls = normalizedRelayEntries
-      .filter((relay) => relay.read && relay.write)
-      .map((relay) => relay.url);
-    relayListEvent.readRelayUrls = normalizedRelayEntries
-      .filter((relay) => relay.read && !relay.write)
-      .map((relay) => relay.url);
-    relayListEvent.writeRelayUrls = normalizedRelayEntries
-      .filter((relay) => !relay.read && relay.write)
-      .map((relay) => relay.url);
-    await relayListEvent.sign(groupSigner);
-
-    const publishResult = await publishEventWithRelayStatuses(relayListEvent, relayUrls, 'self');
-    const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
-    if (publishResult.error && !relaySaveStatus.errorMessage) {
-      relaySaveStatus.errorMessage = publishResult.error.message;
-    }
-
-    if (relaySaveStatus.publishedRelayUrls.length > 0) {
-      updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
-    }
-
-    return relaySaveStatus;
+    return publishGroupRelayListRuntime(groupPublicKey, relayEntries, publishRelayUrls);
   }
 
   function stopPrivateMessagesBackfill(reason = 'replace'): void {
