@@ -647,33 +647,6 @@ export const useChatStore = defineStore('chatStore', () => {
     visibleChatId.value = nextChatId;
   }
 
-  async function _getLatestIncomingMessageAt(chatId: string): Promise<string | null> {
-    const normalizedChatId = normalizeChatIdentifier(chatId);
-    const loggedInPublicKey = getLoggedInPublicKey();
-    if (!normalizedChatId || !loggedInPublicKey) {
-      return null;
-    }
-
-    await chatDataService.init();
-    const rows = await chatDataService.listMessages(normalizedChatId);
-
-    let latestIncomingMessageAt: string | null = null;
-    for (const row of rows) {
-      if (normalizeChatIdentifier(row.author_public_key) === loggedInPublicKey) {
-        continue;
-      }
-
-      if (
-        !latestIncomingMessageAt ||
-        toComparableTimestamp(row.created_at) > toComparableTimestamp(latestIncomingMessageAt)
-      ) {
-        latestIncomingMessageAt = row.created_at;
-      }
-    }
-
-    return latestIncomingMessageAt;
-  }
-
   async function setLastSeenReceivedActivityAt(chatId: string, at: string): Promise<void> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     const normalizedAt = at.trim();

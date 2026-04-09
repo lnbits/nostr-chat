@@ -15,6 +15,7 @@ const {
   failStartupStepSnapshot,
   findConflictingKnownGroupEpochNumber,
   findHigherKnownGroupEpochConflict,
+  isContactListedInPrivateContactList,
   normalizeChatGroupEpochKeys,
   normalizeRelayStatusUrls,
   normalizeWritableRelayUrls,
@@ -186,6 +187,26 @@ describe('nostrStore logic', () => {
         { url: 'invalid relay', read: true, write: true },
       ] as never)
     ).toEqual(['wss://write.example/']);
+  });
+
+  it('detects when a contact came from the private contact list', () => {
+    expect(
+      isContactListedInPrivateContactList({
+        meta: {
+          private_contact_list_member: true,
+        },
+      } as never)
+    ).toBe(true);
+
+    expect(
+      isContactListedInPrivateContactList({
+        meta: {
+          private_contact_list_member: false,
+        },
+      } as never)
+    ).toBe(false);
+
+    expect(isContactListedInPrivateContactList(null)).toBe(false);
   });
 
   it('synthesizes a fallback current epoch entry when the current key is missing from history', () => {

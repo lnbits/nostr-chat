@@ -18,6 +18,7 @@ const CHAT_REQUEST_MESSAGE_META_KEY = 'request_message';
 const CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY = 'last_incoming_message_at';
 const GROUP_INVITE_REQUEST_TYPE = 'group_invite';
 const GROUP_INVITE_REQUEST_MESSAGE = 'This is an invitation to a group.';
+const PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY = 'private_contact_list_member';
 
 function parseOptionalUnixTimestampValue(value: string | null | undefined): number | null {
   if (typeof value !== 'string') {
@@ -252,6 +253,12 @@ export function resolveIncomingChatInboxStateValue(options: {
   }
 
   return 'request';
+}
+
+export function isContactListedInPrivateContactListValue(
+  contact: Pick<ContactRecord, 'meta'> | null | undefined
+): boolean {
+  return contact?.meta?.[PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY] === true;
 }
 
 export function buildAvatarFallbackValue(value: string): string {

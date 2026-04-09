@@ -90,13 +90,13 @@ import type {
 } from 'src/stores/nostr/types';
 import { createUserActions } from 'src/stores/nostr/userActions';
 import {
-  buildAvatarFallbackValue,
   buildIdentifierFallbacksValue,
   buildUpdatedContactMetaValue,
   contactMetadataEqualValue,
   contactRelayListsEqualValue,
   findConflictingKnownGroupEpochNumberValue,
   findHigherKnownGroupEpochConflictValue,
+  isContactListedInPrivateContactListValue,
   normalizeChatGroupEpochKeysValue,
   normalizeRelayStatusUrlsValue,
   normalizeWritableRelayUrlsValue,
@@ -111,7 +111,6 @@ import {
 import { useRelayStore } from 'src/stores/relayStore';
 import type {
   ChatGroupEpochKey,
-  GroupMemberTicketDelivery,
   MessageRelayStatus,
   MessageReplyPreview,
   NostrEventDirection,
@@ -472,13 +471,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return resolveCurrentGroupChatEpochEntryValue(chat);
   }
 
-  async function _upsertGroupMemberTicketDelivery(
-    groupPublicKey: string,
-    delivery: GroupMemberTicketDelivery
-  ): Promise<void> {
-    return upsertGroupMemberTicketDeliveryRuntime(groupPublicKey, delivery);
-  }
-
   async function appendRelayStatusesToGroupMemberTicketEvent(
     groupPublicKey: string,
     memberPublicKey: string,
@@ -607,17 +599,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  function _readGiftWrapRecipientPubkey(event: Pick<NDKEvent, 'tags'>): string | null {
-    const tags = Array.isArray(event.tags)
-      ? event.tags.filter((tag): tag is string[] => Array.isArray(tag))
-      : [];
-    return readFirstTagValue(tags, 'p');
-  }
-
   function isContactListedInPrivateContactList(
     contact: Pick<ContactRecord, 'meta'> | null | undefined
   ): boolean {
-    return contact?.meta?.[PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY] === true;
+    return isContactListedInPrivateContactListValue(contact);
   }
 
   async function ensureContactListedInPrivateContactList(
@@ -775,10 +760,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return firstId.localeCompare(secondId);
   }
 
-  function _buildAvatarFallback(value: string): string {
-    return buildAvatarFallbackValue(value);
-  }
-
   function resolveGroupDisplayName(groupPublicKey: string): string {
     return resolveGroupDisplayNameValue(groupPublicKey);
   }
@@ -821,37 +802,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       epochPrivateKey,
       options
     );
-  }
-
-  function _normalizeUniqueMemberPublicKeys(
-    memberPublicKeys: string[],
-    excludedPublicKeys: string[] = []
-  ): string[] {
-    const excludedPubkeySet = new Set(
-      excludedPublicKeys
-        .map((publicKey) => inputSanitizerService.normalizeHexKey(publicKey))
-        .filter((publicKey): publicKey is string => Boolean(publicKey))
-    );
-
-    return Array.from(
-      new Set(
-        memberPublicKeys
-          .map((memberPublicKey) => inputSanitizerService.normalizeHexKey(memberPublicKey))
-          .filter((memberPublicKey): memberPublicKey is string => Boolean(memberPublicKey))
-          .filter((memberPublicKey) => !excludedPubkeySet.has(memberPublicKey))
-      )
-    );
-  }
-
-  async function _publishGroupEpochTickets(
-    groupPublicKey: string,
-    memberPublicKeys: string[],
-    options: {
-      rotateEpoch?: boolean;
-      seedRelayUrls?: string[];
-    } = {}
-  ): Promise<PublishGroupMemberChangesResult> {
-    return publishGroupEpochTicketsRuntime(groupPublicKey, memberPublicKeys, options);
   }
 
   async function rotateGroupEpochAndSendTickets(
@@ -1530,10 +1480,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return toStoredNostrEventRuntime(event);
   }
 
-  async function _refreshMessageInLiveState(messageId: number): Promise<void> {
-    return refreshMessageInLiveStateRuntime(messageId);
-  }
-
   async function appendRelayStatusesToMessageEvent(
     messageId: number,
     relayStatuses: MessageRelayStatus[],
@@ -1981,7 +1927,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     findGroupChatEpochContextByRecipientPubkey: findGroupChatEpochContextByRecipientPubkeyRuntime,
     listPrivateMessageRecipientPubkeys: listPrivateMessageRecipientPubkeysRuntime,
     persistIncomingGroupEpochTicket: persistIncomingGroupEpochTicketRuntime,
-    upsertGroupMemberTicketDelivery: upsertGroupMemberTicketDeliveryRuntime,
   } = createGroupEpochStateRuntime({
     bumpContactListVersion,
     chatStore,
@@ -2001,7 +1946,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
 
   const {
-    publishGroupEpochTickets: publishGroupEpochTicketsRuntime,
     publishGroupMemberChanges: publishGroupMemberChangesRuntime,
     rotateGroupEpochAndSendTickets: rotateGroupEpochAndSendTicketsRuntime,
     sendGroupEpochTicket: sendGroupEpochTicketRuntime,
@@ -2534,17 +2478,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function stopPrivateMessagesBackfill(reason = 'replace'): void {
     stopPrivateMessagesBackfillRuntime(reason);
-  }
-
-  async function _restoreGroupEpochHistory(
-    groupPublicKey: string,
-    epochPublicKey: string,
-    options: {
-      force?: boolean;
-      seedRelayUrls?: string[];
-    } = {}
-  ): Promise<void> {
-    return restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options);
   }
 
   function stopPrivateMessagesSubscription(reason = 'replace'): void {
