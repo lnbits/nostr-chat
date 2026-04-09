@@ -368,11 +368,15 @@ export function createPrivateMessagesIngestRuntime({
           chat: existingGroupChat,
           isAcceptedContact: isContactListedInPrivateContactList(senderContact),
         }) === 'accepted';
+      const existingGroupChatContactName =
+        typeof existingGroupChat?.meta?.contact_name === 'string'
+          ? existingGroupChat.meta.contact_name.trim()
+          : '';
       const fallbackGroupName =
         senderContact?.meta?.display_name?.trim() ||
         senderContact?.meta?.name?.trim() ||
         senderContact?.name?.trim() ||
-        existingGroupChat?.meta?.contact_name?.trim() ||
+        existingGroupChatContactName ||
         existingGroupChat?.name?.trim() ||
         resolveGroupDisplayName(senderPubkeyHex);
 

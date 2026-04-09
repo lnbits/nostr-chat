@@ -1,4 +1,4 @@
-import { type NDK, NDKEvent, NDKKind, type NostrEvent } from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKKind, type NostrEvent } from '@nostr-dev-kit/ndk';
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
@@ -11,13 +11,14 @@ import type {
   PendingIncomingReaction,
   QueuePrivateMessageUiRefreshOptions,
 } from 'src/stores/nostr/types';
-import type { MessageRelayStatus, MessageReplyPreview, NostrEventDirection } from 'src/types/chat';
+import type {
+  MessageReaction,
+  MessageRelayStatus,
+  MessageReplyPreview,
+  NostrEventDirection,
+} from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
-import {
-  buildMetaWithReactions,
-  type MessageReaction,
-  normalizeMessageReactions,
-} from 'src/utils/messageReactions';
+import { buildMetaWithReactions, normalizeMessageReactions } from 'src/utils/messageReactions';
 
 interface MessageMutationRuntimeDeps {
   buildInboundTraceDetails: (options: {

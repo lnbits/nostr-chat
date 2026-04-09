@@ -1,4 +1,4 @@
-import type { NDK, NDKUser, NDKUserProfile } from '@nostr-dev-kit/ndk';
+import NDK, { type NDKUser, type NDKUserProfile } from '@nostr-dev-kit/ndk';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS } from 'src/stores/nostr/constants';

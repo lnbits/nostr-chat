@@ -1,7 +1,6 @@
-import {
+import NDK, {
   giftWrap,
   isValidPubkey,
-  type NDK,
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,

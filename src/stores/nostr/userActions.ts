@@ -1,10 +1,11 @@
-import {
+import NDK, {
   giftWrap,
   isValidNip05,
   isValidPubkey,
-  type NDK,
+  type NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
+  type NDKSigner,
   NDKUser,
   type NostrEvent,
 } from '@nostr-dev-kit/ndk';
@@ -18,6 +19,7 @@ import {
 } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import type {
+  GiftWrappedRumorPublishResult,
   NostrIdentifierResolutionResult,
   NostrNip05DataResult,
   SendDirectMessageDeletionOptions,
@@ -61,16 +63,16 @@ interface UserActionsDeps {
     senderPubkey: string,
     recipientPubkey: string,
     message: string,
-    createdAt?: string,
+    createdAt?: number,
     replyToEventId?: string | null
-  ) => NostrEvent;
+  ) => NDKEvent;
   createEventDeletionRumorEvent: (
     senderPubkey: string,
     recipientPubkey: string,
     targetEventId: string,
     targetKind: number,
-    createdAt?: string
-  ) => NostrEvent;
+    createdAt?: number
+  ) => NDKEvent;
   createReactionRumorEvent: (
     senderPubkey: string,
     recipientPubkey: string,
@@ -78,23 +80,22 @@ interface UserActionsDeps {
     targetEventId: string,
     targetAuthorPublicKey: string,
     targetKind: number,
-    createdAt?: string
-  ) => NostrEvent;
-  createStoredDirectMessageRumorEvent: (event: NostrEvent) => { kind: number } | null;
-  createStoredSignedEvent: (event: NostrEvent) => { kind: number } | null;
+    createdAt?: number
+  ) => NDKEvent;
+  createStoredDirectMessageRumorEvent: (event: NostrEvent) => NDKEvent | null;
+  createStoredSignedEvent: (event: NostrEvent) => NDKEvent | null;
   ensureGroupIdentitySecretEpochState: (
     groupContact: Awaited<ReturnType<typeof contactsService.getContactByPublicKey>>,
     seedRelayUrls?: string[]
   ) => Promise<{ secret: { group_privkey: string } }>;
   ensureRelayConnections: (relayUrls: string[]) => Promise<void>;
   getLoggedInPublicKeyHex: () => string | null;
-  getNip05Data: (identifier: string) => Promise<NostrNip05DataResult>;
-  getOrCreateSigner: () => Promise<{ pubkey: string }>;
+  getOrCreateSigner: () => Promise<NDKSigner & { pubkey: string }>;
   giftWrapSignedEvent: (
-    signedEvent: { kind: number },
+    signedEvent: NDKEvent,
     recipient: NDKUser,
-    signer: NDKPrivateKeySigner
-  ) => Promise<{ kind: number }>;
+    signer: NDKSigner
+  ) => Promise<NDKEvent>;
   ndk: NDK;
   normalizeEventId: (value: unknown) => string | null;
   normalizeRelayStatusUrl: (value: string) => string | null;
@@ -114,18 +115,14 @@ interface UserActionsDeps {
     rumorFactory: (
       senderPubkey: string,
       normalizedRecipientPubkey: string,
-      createdAt?: string
-    ) => NostrEvent,
+      createdAt?: number
+    ) => NDKEvent,
     options?: {
       localMessageId?: number;
       createdAt?: string;
       publishSelfCopy?: boolean;
     }
-  ) => Promise<{
-    giftWrapEvent: NostrEvent;
-    rumorEvent: NostrEvent | null;
-    relayStatuses: MessageRelayStatus[];
-  }>;
+  ) => Promise<GiftWrappedRumorPublishResult>;
   toIsoTimestampFromUnix: (value: number | undefined) => string;
 }
 
@@ -464,7 +461,7 @@ export function createUserActions({
         scope === 'self'
           ? new NDKUser({ pubkey: signer.pubkey })
           : new NDKUser({ pubkey: recipientPubkey });
-      const giftWrapEvent = await giftWrap(rumorEvent as NostrEvent, recipient, signer as any, {
+      const giftWrapEvent = await giftWrap(rumorEvent, recipient, signer as any, {
         rumorKind: NDKKind.PrivateDirectMessage,
       });
       const publishResult = await publishEventWithRelayStatuses(

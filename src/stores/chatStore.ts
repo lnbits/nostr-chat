@@ -1157,6 +1157,10 @@ export const useChatStore = defineStore('chatStore', () => {
     const nextChat: Chat = {
       id: nextChatId,
       publicKey: existingChat?.publicKey || nextPublicKey,
+      epochPublicKey:
+        existingChat?.epochPublicKey ||
+        readMetaString(nextMeta, 'current_epoch_public_key') ||
+        null,
       type: existingChat?.type ?? 'user',
       name: nextName,
       avatar: nextAvatar,

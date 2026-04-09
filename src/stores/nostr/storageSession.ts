@@ -1,4 +1,4 @@
-import { type NDK, NDKPrivateKeySigner, type NDKUser } from '@nostr-dev-kit/ndk';
+import NDK, { NDKPrivateKeySigner, type NDKUser } from '@nostr-dev-kit/ndk';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   CONTACT_CURSOR_VERSION,

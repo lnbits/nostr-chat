@@ -1,5 +1,4 @@
-import {
-  type NDK,
+import NDK, {
   NDKNip07Signer,
   NDKPrivateKeySigner,
   type NDKRelay,
@@ -9,11 +8,15 @@ import {
   normalizeRelayUrl,
 } from '@nostr-dev-kit/ndk';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import type { AuthMethod, RelayConnectionState } from 'src/stores/nostr/types';
+import type {
+  AuthMethod,
+  DeveloperRelaySnapshot,
+  RelayConnectionState,
+} from 'src/stores/nostr/types';
 
 interface RelayConnectionRuntimeDeps {
   authenticatedRelayUrls: Set<string>;
-  buildRelaySnapshot: (relay: NDKRelay | null | undefined) => Record<string, unknown>;
+  buildRelaySnapshot: (relay: NDKRelay | null | undefined) => DeveloperRelaySnapshot;
   bumpRelayStatusVersion: () => void;
   configuredRelayUrls: Set<string>;
   getCachedSigner: () => NDKSigner | null;
@@ -200,7 +203,9 @@ export function createRelayConnectionRuntime({
     ndk.pool.on('relay:authed', (relay) => {
       authenticatedRelayUrls.add(relay.url);
       bumpRelayStatusVersion();
-      logDeveloperTrace('info', 'relay', 'authed', buildRelaySnapshot(relay));
+      logDeveloperTrace('info', 'relay', 'authed', {
+        ...buildRelaySnapshot(relay),
+      });
     });
     ndk.pool.on('flapping', (relay) => {
       bumpRelayStatusVersion();

@@ -203,6 +203,7 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import type { ContactMetadata } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
 import {
@@ -288,7 +289,10 @@ function logThreadScrollTrace(label: string, extra: Record<string, unknown> = {}
   void extra;
 }
 
-function readMetaString(meta: Record<string, unknown> | null | undefined, key: string): string {
+function readMetaString(
+  meta: ContactMetadata | Record<string, unknown> | null | undefined,
+  key: string
+): string {
   const value = meta?.[key];
   return typeof value === 'string' ? value.trim() : '';
 }

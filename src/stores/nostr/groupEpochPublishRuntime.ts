@@ -1,10 +1,4 @@
-import {
-  type NDK,
-  NDKEvent,
-  NDKPrivateKeySigner,
-  NDKUser,
-  type NostrEvent,
-} from '@nostr-dev-kit/ndk';
+import NDK, { NDKEvent, NDKPrivateKeySigner, NDKUser, type NostrEvent } from '@nostr-dev-kit/ndk';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { GROUP_PRIVATE_KEY_CONTACT_META_KEY } from 'src/stores/nostr/constants';

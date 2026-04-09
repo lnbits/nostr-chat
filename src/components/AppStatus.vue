@@ -148,7 +148,9 @@ function startupStepMeta(
   }
 
   if (step.status === 'in_progress') {
-    return step.showProgress === true ? 'Fetching from relays...' : 'In progress';
+    return 'showProgress' in step && step.showProgress === true
+      ? 'Fetching from relays...'
+      : 'In progress';
   }
 
   return 'Pending';

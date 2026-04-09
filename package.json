@@ -11,7 +11,7 @@
     "lint": "biome lint",
     "lint:dead-code": "biome lint --only=lint/correctness/noUnusedImports --only=lint/correctness/noUnusedVariables",
     "lint:fix": "biome check --write --unsafe --max-diagnostics=100",
-    "quality:all": "npm run format && npm run lint:fix && npm run format:check && npm run lint:dead-code && npm run lint",
+    "quality:all": "npm run format && npm run lint:fix && npm run format:check && npm run lint:dead-code && npm run lint && npm run typecheck",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",

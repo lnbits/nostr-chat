@@ -877,7 +877,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const rows = [...initialRows];
-    let hasMore = initialHasMore;
+    let hasMore: boolean = initialHasMore;
 
     while (hasMore) {
       const oldestCursor = buildMessageCursorFromRow(rows[0] ?? null);
@@ -937,7 +937,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const rows = [...initialRows];
-    let hasMore = initialHasMore;
+    let hasMore: boolean = initialHasMore;
 
     while (hasMore) {
       const newestCursor = buildMessageCursorFromRow(rows[rows.length - 1] ?? null);

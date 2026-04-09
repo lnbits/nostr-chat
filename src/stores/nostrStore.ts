@@ -133,7 +133,9 @@ export type {
   AuthMethod,
   CreateGroupChatResult,
   DeveloperDiagnosticsSnapshot,
+  DeveloperGroupMessageSubscriptionSnapshot,
   DeveloperPendingQueueRefreshSummary,
+  DeveloperRelayRow,
   DeveloperTraceEntry,
   DeveloperTraceLevel,
   NostrIdentifierResolutionResult,
@@ -247,7 +249,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let logoutRuntime: () => Promise<void> = async () => {
     throw new Error('Auth session runtime is not initialized.');
   };
-  let refreshAllStoredContactsRuntime: () => Promise<Record<string, unknown>> = async () => {
+  let refreshAllStoredContactsRuntime: () => Promise<unknown> = async () => {
     throw new Error('Private messages refresh runtime is not initialized.');
   };
   let queueBackgroundGroupContactRefreshRuntime: (
@@ -882,7 +884,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
     return chunks;
   }
-  let refreshDeveloperPendingQueuesRuntime: () => Promise<void> = async () => {};
+  let refreshDeveloperPendingQueuesRuntime: () => Promise<unknown> = async () => {};
 
   const {
     clearPrivateMessagesUiRefreshState,
@@ -894,7 +896,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   } = createPrivateMessagesUiRuntime({
     chatStore,
     normalizeThrottleMs,
-    refreshDeveloperPendingQueues: () => refreshDeveloperPendingQueuesRuntime(),
+    refreshDeveloperPendingQueues: async () => {
+      await refreshDeveloperPendingQueuesRuntime();
+    },
     waitForPrivateMessagesIngestQueue: () =>
       getPrivateMessagesIngestQueueRuntime().catch((error) => {
         console.error(
@@ -1105,8 +1109,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function buildInboundTraceDetails(
     options: {
-      wrappedEvent?: Pick<NDKEvent, 'id' | 'kind' | 'created_at'> | null;
-      rumorEvent?: Pick<NDKEvent, 'id' | 'kind' | 'created_at'> | null;
+      wrappedEvent?: {
+        id?: string | null;
+        kind?: number | null;
+        created_at?: number | null;
+      } | null;
+      rumorEvent?: { id?: string | null; kind?: number | null; created_at?: number | null } | null;
       loggedInPubkeyHex?: string | null;
       senderPubkeyHex?: string | null;
       chatPubkey?: string | null;

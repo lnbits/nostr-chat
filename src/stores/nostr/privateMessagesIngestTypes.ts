@@ -36,8 +36,8 @@ export interface ChatStoreRuntime {
 }
 
 export interface InboundTraceOptions {
-  wrappedEvent?: Pick<NDKEvent, 'id' | 'kind' | 'created_at'> | null;
-  rumorEvent?: Pick<NDKEvent, 'id' | 'kind' | 'created_at'> | null;
+  wrappedEvent?: { id?: string | null; kind?: number | null; created_at?: number | null } | null;
+  rumorEvent?: { id?: string | null; kind?: number | null; created_at?: number | null } | null;
   loggedInPubkeyHex?: string | null;
   senderPubkeyHex?: string | null;
   chatPubkey?: string | null;

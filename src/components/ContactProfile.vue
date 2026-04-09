@@ -1472,15 +1472,20 @@ function buildGroupMemberTicketStatusItems(
   };
 
   return relayStatuses
-    .filter((relayStatus) => {
-      return (
+    .filter(
+      (
+        relayStatus
+      ): relayStatus is MessageRelayStatus & {
+        direction: 'outbound';
+        scope: 'recipient';
+        status: GroupMemberTicketStatusListItem['status'];
+      } =>
         relayStatus.direction === 'outbound' &&
         relayStatus.scope === 'recipient' &&
         (relayStatus.status === 'published' ||
           relayStatus.status === 'failed' ||
           relayStatus.status === 'pending')
-      );
-    })
+    )
     .slice()
     .sort((first, second) => {
       const byStatus = statusPriority[first.status] - statusPriority[second.status];
@@ -1522,7 +1527,11 @@ function memberLatestGroupTicketStatusSegments(member: GroupMemberDraft): Array<
       relayStatus.status === 'pending';
   }).length;
 
-  return [
+  const segments: Array<{
+    key: GroupMemberTicketStatusListItem['status'];
+    className: string;
+    weight: number;
+  }> = [
     {
       key: 'published',
       className: groupMemberTicketStatusSegmentClass('published'),
@@ -1538,7 +1547,9 @@ function memberLatestGroupTicketStatusSegments(member: GroupMemberDraft): Array<
       className: groupMemberTicketStatusSegmentClass('pending'),
       weight: pending
     }
-  ].filter((segment) => segment.weight > 0);
+  ];
+
+  return segments.filter((segment) => segment.weight > 0);
 }
 
 async function loadGroupMemberTicketEvents(): Promise<void> {
@@ -2225,7 +2236,17 @@ function isMemberRefreshing(pubkey: string): boolean {
 }
 
 function buildStoredGroupMember(
-  preview: Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'>,
+  preview:
+    | Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'>
+    | {
+        public_key: string;
+        name: string;
+        given_name?: string | null;
+        meta?: ContactRecord['meta'];
+        about?: string;
+        nip05?: string;
+        nprofile?: string;
+      },
   identifierType: string | null,
   nprofile: string | null,
   nip05: string | null
@@ -2235,7 +2256,8 @@ function buildStoredGroupMember(
     preview.meta?.display_name?.trim() ||
     preview.name.trim() ||
     preview.public_key;
-  const about = preview.meta?.about?.trim() || '';
+  const about =
+    preview.meta?.about?.trim() || ('about' in preview ? preview.about?.trim() || '' : '');
 
   return {
     public_key: preview.public_key,

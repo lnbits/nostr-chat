@@ -1,5 +1,5 @@
+import type NDK from '@nostr-dev-kit/ndk';
 import {
-  type NDK,
   NDKEvent,
   NDKPrivateKeySigner,
   NDKRelaySet,
@@ -103,8 +103,9 @@ interface PrivateStateRuntimeDeps {
       fallbackName?: string;
       accepted?: boolean;
       invitationCreatedAt?: string | null;
+      seedRelayUrls?: string[];
     }
-  ) => Promise<boolean>;
+  ) => Promise<void>;
   publishGroupRelayList: (
     groupPublicKey: string,
     relayEntries: ContactRelay[],
@@ -118,7 +119,6 @@ interface PrivateStateRuntimeDeps {
   ) => Promise<{ relayStatuses: any[]; error: Error | null }>;
   queueTrackedContactSubscriptionsRefresh: () => void;
   readPrivatePreferencesFromStorage: () => PrivatePreferences | null;
-  readStoredPrivateMessagesLastReceivedCreatedAt: () => number | null;
   refreshContactByPublicKey: (
     pubkeyHex: string,
     fallbackName?: string,
@@ -127,7 +127,6 @@ interface PrivateStateRuntimeDeps {
   refreshContactRelayList: (pubkeyHex: string) => Promise<ContactRelay[] | null>;
   resolveLoggedInPublishRelayUrls: (seedRelayUrls?: string[]) => Promise<string[]>;
   resolveLoggedInReadRelayUrls: (seedRelayUrls?: string[]) => Promise<string[]>;
-  restorePrivatePreferences: (seedRelayUrls?: string[]) => Promise<void>;
   restoreState: RestoreRuntimeState;
   scheduleChatChecks: (chatIds?: string[], options?: { allChats?: boolean }) => void;
   sha256Hex: (value: string) => Promise<string>;
@@ -191,11 +190,15 @@ export function createPrivateStateRuntime({
     const firstTimestamp =
       first && 'last_seen_incoming_activity_at' in first
         ? first.last_seen_incoming_activity_at
-        : first?.at;
+        : first && 'at' in first
+          ? first.at
+          : null;
     const secondTimestamp =
       second && 'last_seen_incoming_activity_at' in second
         ? second.last_seen_incoming_activity_at
-        : second?.at;
+        : second && 'at' in second
+          ? second.at
+          : null;
     const byTimestamp =
       toComparableTimestamp(firstTimestamp) - toComparableTimestamp(secondTimestamp);
     if (byTimestamp !== 0) {
@@ -206,13 +209,17 @@ export function createPrivateStateRuntime({
       normalizeEventId(
         first && 'last_seen_incoming_activity_event_id' in first
           ? first.last_seen_incoming_activity_event_id
-          : first?.eventId
+          : first && 'eventId' in first
+            ? first.eventId
+            : null
       ) ?? '';
     const secondEventId =
       normalizeEventId(
         second && 'last_seen_incoming_activity_event_id' in second
           ? second.last_seen_incoming_activity_event_id
-          : second?.eventId
+          : second && 'eventId' in second
+            ? second.eventId
+            : null
       ) ?? '';
 
     return firstEventId.localeCompare(secondEventId);

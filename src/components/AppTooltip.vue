@@ -14,9 +14,26 @@
 </template>
 
 <script setup lang="ts">
+type TooltipPosition =
+  | 'bottom middle'
+  | 'top middle'
+  | 'top left'
+  | 'top right'
+  | 'top start'
+  | 'top end'
+  | 'center left'
+  | 'center middle'
+  | 'center right'
+  | 'center start'
+  | 'center end'
+  | 'bottom left'
+  | 'bottom right'
+  | 'bottom start'
+  | 'bottom end';
+
 interface Props {
-  anchor?: string;
-  self?: string;
+  anchor?: TooltipPosition;
+  self?: TooltipPosition;
   offset?: [number, number];
   maxWidth?: string;
 }

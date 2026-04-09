@@ -1,5 +1,4 @@
-import {
-  type NDK,
+import NDK, {
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,

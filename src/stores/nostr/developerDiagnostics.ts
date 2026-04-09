@@ -1,4 +1,5 @@
-import { type NDK, NDKKind, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
+import type NDK from '@nostr-dev-kit/ndk';
+import { NDKKind, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -10,11 +11,14 @@ import {
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
 } from 'src/stores/nostr/constants';
 import type {
+  AuthMethod,
   DeveloperDiagnosticsSnapshot,
   DeveloperGroupMessageSubscriptionSnapshot,
   DeveloperPendingDeletionSnapshot,
   DeveloperPendingQueueRefreshSummary,
   DeveloperPendingReactionSnapshot,
+  DeveloperRelayRow,
+  DeveloperRelaySnapshot,
   PendingIncomingDeletion,
   PendingIncomingReaction,
   RelayConnectionState,
@@ -32,7 +36,7 @@ interface DeveloperDiagnosticsDeps {
     message: Awaited<ReturnType<typeof chatDataService.getMessageByEventId>>,
     options?: { uiThrottleMs?: number }
   ) => Promise<Awaited<ReturnType<typeof chatDataService.getMessageByEventId>>>;
-  buildRelaySnapshot: (relay: unknown) => Record<string, unknown>;
+  buildRelaySnapshot: (relay: unknown) => DeveloperRelaySnapshot;
   bumpDeveloperDiagnosticsVersion: () => void;
   configuredRelayUrls: Set<string>;
   ensureRelayConnections: (relayUrls: string[]) => Promise<void>;
@@ -43,10 +47,10 @@ interface DeveloperDiagnosticsDeps {
   getLoggedInPublicKeyHex: () => string | null;
   getPrivateMessagesRestoreThrottleMs: () => number;
   getPrivateMessagesSubscription: () => unknown;
-  getPrivateMessagesSubscriptionSignature: () => string;
+  getPrivateMessagesSubscriptionSignature: () => string | null;
   getRelayConnectionState: (relayUrl: string) => RelayConnectionState;
-  getRelaySnapshots: (relayUrls: string[]) => Array<Record<string, unknown>>;
-  getStoredAuthMethod: () => string | null;
+  getRelaySnapshots: (relayUrls: string[]) => DeveloperRelaySnapshot[];
+  getStoredAuthMethod: () => AuthMethod | null;
   hasNip07Extension: () => boolean;
   isRestoringStartupState: Ref<boolean>;
   listPrivateMessageRecipientPubkeys: () => Promise<string[]>;
@@ -223,8 +227,8 @@ export function createDeveloperDiagnosticsRuntime({
       (await chatDataService.listChats()).map((chat) => [chat.public_key, chat] as const)
     );
 
-    return groupContacts
-      .map((contact) => {
+    const snapshots: Array<DeveloperGroupMessageSubscriptionSnapshot | null> = groupContacts.map(
+      (contact) => {
         const normalizedGroupPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
         if (!normalizedGroupPubkey) {
           return null;
@@ -268,10 +272,13 @@ export function createDeveloperDiagnosticsRuntime({
             lastMessage: groupChat?.last_message ?? null,
             epochCount: epochKeys.length,
             chatMeta: buildDeveloperGroupSubscriptionChatMeta(groupChat?.meta),
-          },
+          } as Record<string, unknown>,
         };
-      })
-      .filter((entry): entry is DeveloperGroupMessageSubscriptionSnapshot => Boolean(entry))
+      }
+    );
+
+    return snapshots
+      .filter((entry): entry is DeveloperGroupMessageSubscriptionSnapshot => entry !== null)
       .sort((first, second) => first.name.localeCompare(second.name));
   }
 
@@ -446,7 +453,7 @@ export function createDeveloperDiagnosticsRuntime({
       privateMessagesSubscriptionRelayUrls.value
     );
     const groupMessagesSubscription = await buildDeveloperGroupMessageSubscriptionSnapshot();
-    const relayRows = normalizeRelayStatusUrls([
+    const relayRows: DeveloperRelayRow[] = normalizeRelayStatusUrls([
       ...appRelayUrls,
       ...effectiveReadRelayUrls,
       ...effectivePublishRelayUrls,

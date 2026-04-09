@@ -203,7 +203,7 @@
               label="Cancel"
               color="primary"
               :disable="isCreatingGroup"
-              @click="closeCreateGroupDialog"
+              @click="closeCreateGroupDialog()"
             />
             <q-btn
               unelevated

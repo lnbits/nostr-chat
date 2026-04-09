@@ -1,7 +1,7 @@
 import type { Message, MessageRelayStatus } from 'src/types/chat';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
 import { uniqueRelayUrls } from 'src/utils/relayUrls';
-import { type ComputedRef, computed } from 'vue';
+import { type ComputedRef, computed, type Ref } from 'vue';
 
 export interface StatusSegment {
   key:
@@ -121,7 +121,7 @@ export function useMessageBubbleStatus(options: {
   contactName: ComputedRef<string>;
   contactRelayUrls: ComputedRef<string[]>;
   isMine: ComputedRef<boolean>;
-  message: ComputedRef<Message>;
+  message: Readonly<Ref<Message>>;
 }) {
   const relayStatuses = computed(() => {
     const value = options.message.value.nostrEvent?.relay_statuses;
@@ -208,7 +208,7 @@ export function useMessageBubbleStatus(options: {
 
   const statusSegments = computed<StatusSegment[]>(() => {
     if (!options.isMine.value) {
-      return [
+      const segments: StatusSegment[] = [
         {
           key: 'received',
           className: getStatusSegmentClassName('received'),
@@ -219,7 +219,9 @@ export function useMessageBubbleStatus(options: {
           className: getStatusSegmentClassName('missing'),
           weight: inboundMissingRelayUrls.value.length,
         },
-      ].filter((segment) => segment.weight > 0);
+      ];
+
+      return segments.filter((segment) => segment.weight > 0);
     }
 
     function countByStatus(
@@ -240,7 +242,7 @@ export function useMessageBubbleStatus(options: {
     const pending = countByStatus('pending');
     const failed = countByStatus('failed');
 
-    return [
+    const segments: StatusSegment[] = [
       {
         key: 'published-recipient',
         className: getStatusSegmentClassName('published-recipient'),
@@ -261,7 +263,9 @@ export function useMessageBubbleStatus(options: {
         className: getStatusSegmentClassName('failed'),
         weight: failed,
       },
-    ].filter((segment) => segment.weight > 0);
+    ];
+
+    return segments.filter((segment) => segment.weight > 0);
   });
 
   const contactStatusListItems = computed<StatusListItem[]>(() => {

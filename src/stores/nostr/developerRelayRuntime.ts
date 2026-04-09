@@ -1,5 +1,4 @@
-import {
-  type NDK,
+import NDK, {
   type NDKRelay,
   type NDKRelayConnectionStats,
   NDKRelayStatus,

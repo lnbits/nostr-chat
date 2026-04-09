@@ -1,5 +1,4 @@
-import {
-  type NDK,
+import NDK, {
   NDKEvent,
   type NDKFilter,
   NDKKind,
@@ -64,7 +63,7 @@ interface PrivateMessagesSubscriptionRuntimeDeps {
   privateMessagesSubscriptionSince: Ref<number | null>;
   privateMessagesSubscriptionStartedAt: Ref<string | null>;
   queuePrivateMessageIngestion: (wrappedEvent: NDKEvent, loggedInPubkeyHex: string) => void;
-  refreshAllStoredContacts: () => Promise<Record<string, unknown>>;
+  refreshAllStoredContacts: () => Promise<unknown>;
   relaySignature: (relays: string[]) => string;
   resolvePrivateMessageReadRelayUrls: (seedRelayUrls?: string[]) => Promise<string[]>;
   schedulePostPrivateMessagesEoseChecks: () => void;
@@ -596,7 +595,9 @@ export function createPrivateMessagesSubscriptionRuntime({
                   const contactRefreshSummary = await refreshAllStoredContacts();
                   logSubscription('private-messages', 'contacts-refresh-after-eose', {
                     signature,
-                    ...contactRefreshSummary,
+                    ...(contactRefreshSummary && typeof contactRefreshSummary === 'object'
+                      ? contactRefreshSummary
+                      : {}),
                   });
                 } catch (error) {
                   console.warn(

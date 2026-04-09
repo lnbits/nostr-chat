@@ -1,6 +1,5 @@
-import {
-  type NDK,
-  type NDKEvent,
+import NDK, {
+  NDKEvent,
   NDKKind,
   NDKRelayList,
   NDKRelaySet,
