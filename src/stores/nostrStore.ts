@@ -7,12 +7,10 @@ import NDK, {
   NDKPublishError,
   NDKPrivateKeySigner,
   type NDKRelay,
-  type NDKRelayConnectionStats,
   NDKRelayList,
   type NDKSigner,
   type NDKUserProfile,
   type NDKRelayInformation,
-  NDKRelayStatus,
   NDKRelaySet,
   type NDKSubscriptionOptions,
   NDKUser,
@@ -83,6 +81,7 @@ import {
   createDeveloperTraceRuntime,
   readDeveloperDiagnosticsEnabledFromStorage
 } from 'src/stores/nostr/developerTrace';
+import { createDeveloperRelayRuntime } from 'src/stores/nostr/developerRelayRuntime';
 import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import { createDeveloperDiagnosticsRuntime } from 'src/stores/nostr/developerDiagnostics';
 import { createGroupInviteRuntime } from 'src/stores/nostr/groupInviteRuntime';
@@ -142,7 +141,6 @@ import type {
   DeveloperPendingReactionSnapshot,
   DeveloperPrivateMessagesSubscriptionSnapshot,
   DeveloperRelayRow,
-  DeveloperRelaySnapshot,
   DeveloperSessionSnapshot,
   DeveloperTraceEntry,
   DeveloperTraceLevel,
@@ -417,6 +415,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     developerDiagnosticsVersion,
     developerTraceState,
     developerTraceVersion
+  });
+  const {
+    buildRelaySnapshot,
+    getRelaySnapshots,
+    logMessageRelayDiagnostics,
+    logRelayLifecycle
+  } = createDeveloperRelayRuntime({
+    logDeveloperTrace,
+    ndk
   });
   const {
     buildFreshPrivatePreferences,
@@ -3855,87 +3862,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function bumpRelayStatusVersion(): void {
     relayStatusVersion.value += 1;
-  }
-
-  function getRelayStatusName(status: number): string {
-    return NDKRelayStatus[status] ?? 'UNKNOWN';
-  }
-
-  function buildRelayConnectionStatsSnapshot(
-    stats: NDKRelayConnectionStats | undefined
-  ): Pick<
-    DeveloperRelaySnapshot,
-    'attempts' | 'success' | 'connectedAt' | 'nextReconnectAt' | 'validationRatio' | 'lastDurationMs'
-  > {
-    if (!stats) {
-      return {
-        attempts: null,
-        success: null,
-        connectedAt: null,
-        nextReconnectAt: null,
-        validationRatio: null,
-        lastDurationMs: null
-      };
-    }
-
-    return {
-      attempts: stats.attempts,
-      success: stats.success,
-      connectedAt: stats.connectedAt ?? null,
-      nextReconnectAt: stats.nextReconnectAt ?? null,
-      validationRatio: stats.validationRatio ?? null,
-      lastDurationMs:
-        stats.durations.length > 0 ? stats.durations[stats.durations.length - 1] : null
-    };
-  }
-
-  function buildRelaySnapshot(relay: NDKRelay | null | undefined): DeveloperRelaySnapshot {
-    if (!relay) {
-      return {
-        present: false,
-        url: null,
-        connected: false,
-        status: null,
-        statusName: null,
-        attempts: null,
-        success: null,
-        connectedAt: null,
-        nextReconnectAt: null,
-        validationRatio: null,
-        lastDurationMs: null
-      };
-    }
-
-    return {
-      present: true,
-      url: relay.url,
-      connected: relay.connected,
-      status: relay.status,
-      statusName: getRelayStatusName(relay.status),
-      ...buildRelayConnectionStatsSnapshot(relay.connectionStats)
-    };
-  }
-
-  function getRelaySnapshots(relayUrls: string[]): DeveloperRelaySnapshot[] {
-    return relayUrls.map((relayUrl) => {
-      const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
-      return buildRelaySnapshot(ndk.pool.getRelay(normalizedRelayUrl, false));
-    });
-  }
-
-  function logRelayLifecycle(eventName: string, relay: NDKRelay): void {
-    logDeveloperTrace('info', 'relay', eventName, {
-      ...buildRelaySnapshot(relay),
-      pool: ndk.pool.stats()
-    });
-  }
-
-  function logMessageRelayDiagnostics(
-    phase: string,
-    details: Record<string, unknown>,
-    level: DeveloperTraceLevel = 'info'
-  ): void {
-    logDeveloperTrace(level, 'message-relays', phase, details);
   }
 
   async function getOrCreateSigner(): Promise<NDKSigner> {
