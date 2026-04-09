@@ -1,5 +1,5 @@
-import { computed, ref } from 'vue';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { computed, ref } from 'vue';
 
 export interface RelayListEntry {
   url: string;
@@ -55,7 +55,7 @@ function writeStoredRelays(storageKey: string, relays: RelayListEntry[]): void {
 
 export function createRelayListStoreSetup({
   storageKey,
-  defaultRelays = []
+  defaultRelays = [],
 }: RelayListStoreFactoryOptions) {
   function defaultRelayEntries(): RelayListEntry[] {
     return defaultRelays
@@ -64,7 +64,7 @@ export function createRelayListStoreSetup({
       .map((url) => ({
         url,
         read: true,
-        write: true
+        write: true,
       }));
   }
 
@@ -102,8 +102,8 @@ export function createRelayListStoreSetup({
         {
           url: value,
           read: true,
-          write: true
-        }
+          write: true,
+        },
       ];
       writeStoredRelays(storageKey, relayEntries.value);
     }
@@ -125,7 +125,7 @@ export function createRelayListStoreSetup({
       const entry = relayEntries.value[index];
       return {
         read: entry?.read ?? true,
-        write: entry?.write ?? true
+        write: entry?.write ?? true,
       };
     }
 
@@ -148,7 +148,7 @@ export function createRelayListStoreSetup({
         return {
           ...entry,
           read: typeof flags.read === 'boolean' ? flags.read : entry.read,
-          write: typeof flags.write === 'boolean' ? flags.write : entry.write
+          write: typeof flags.write === 'boolean' ? flags.write : entry.write,
         };
       });
 
@@ -176,7 +176,7 @@ export function createRelayListStoreSetup({
       replaceRelayEntries,
       restoreDefaults,
       getRelayFlags,
-      setRelayFlags
+      setRelayFlags,
     };
   };
 }

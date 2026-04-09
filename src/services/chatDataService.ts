@@ -1,5 +1,5 @@
-import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 import type { ChatType } from 'src/types/chat';
+import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 
 export interface ChatRow {
   id: string;
@@ -103,18 +103,12 @@ function normalizeMetaValue(value: unknown): unknown {
     return null;
   }
 
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     return value;
   }
 
   if (Array.isArray(value)) {
-    return value
-      .map((entry) => normalizeMetaValue(entry))
-      .filter((entry) => entry !== undefined);
+    return value.map((entry) => normalizeMetaValue(entry)).filter((entry) => entry !== undefined);
   }
 
   if (isPlainRecord(value)) {
@@ -180,9 +174,7 @@ function hasReactionEventId(meta: Record<string, unknown>, eventId: string): boo
       return false;
     }
 
-    const reactionEventId = normalizeEventId(
-      'eventId' in reaction ? reaction.eventId : null
-    );
+    const reactionEventId = normalizeEventId('eventId' in reaction ? reaction.eventId : null);
     return reactionEventId === eventId;
   });
 }
@@ -206,7 +198,8 @@ function toComparableTimestamp(value: string | null): number {
 }
 
 function sortChatsByLatest(first: ChatRecord, second: ChatRecord): number {
-  const byTime = toComparableTimestamp(second.last_message_at) - toComparableTimestamp(first.last_message_at);
+  const byTime =
+    toComparableTimestamp(second.last_message_at) - toComparableTimestamp(first.last_message_at);
   if (byTime !== 0) {
     return byTime;
   }
@@ -227,8 +220,7 @@ function compareMessageCursor(
   first: Pick<MessageRecord, 'created_at' | 'id'>,
   second: Pick<MessageCursor, 'created_at' | 'id'>
 ): number {
-  const byTime =
-    toComparableTimestamp(first.created_at) - toComparableTimestamp(second.created_at);
+  const byTime = toComparableTimestamp(first.created_at) - toComparableTimestamp(second.created_at);
   if (byTime !== 0) {
     return byTime;
   }
@@ -263,7 +255,7 @@ function toChatRow(record: ChatRecord): ChatRow {
     last_message: record.last_message,
     last_message_at: record.last_message_at,
     unread_count: record.unread_count,
-    meta: normalizeMeta(record.meta)
+    meta: normalizeMeta(record.meta),
   };
 }
 
@@ -275,7 +267,7 @@ function toMessageRow(record: MessageRecord): MessageRow {
     message: record.message,
     created_at: record.created_at,
     event_id: normalizeEventId(record.event_id),
-    meta: normalizeMeta(record.meta)
+    meta: normalizeMeta(record.meta),
   };
 }
 
@@ -379,7 +371,7 @@ class ChatDataService {
       last_message: input.last_message?.trim() ?? '',
       last_message_at: toIsoTimestamp(input.last_message_at),
       unread_count: normalizeUnreadCount(input.unread_count),
-      meta: normalizeMeta(input.meta)
+      meta: normalizeMeta(input.meta),
     };
 
     const existing = await this.getChatByPublicKey(publicKey);
@@ -433,7 +425,7 @@ class ChatDataService {
       type: normalizeChatType(existingRecord.type),
       last_message: lastMessage,
       last_message_at: toIsoTimestamp(lastMessageAt),
-      unread_count: normalizeUnreadCount(unreadCount)
+      unread_count: normalizeUnreadCount(unreadCount),
     });
     await waitForTransaction(transaction);
   }
@@ -459,7 +451,7 @@ class ChatDataService {
     store.put({
       ...existingRecord,
       type: normalizeChatType(existingRecord.type),
-      unread_count: normalizeUnreadCount(unreadCount)
+      unread_count: normalizeUnreadCount(unreadCount),
     });
     await waitForTransaction(transaction);
   }
@@ -485,7 +477,7 @@ class ChatDataService {
     store.put({
       ...existingRecord,
       type: normalizeChatType(existingRecord.type),
-      unread_count: 0
+      unread_count: 0,
     });
     await waitForTransaction(transaction);
   }
@@ -511,7 +503,7 @@ class ChatDataService {
     store.put({
       ...existingRecord,
       type: normalizeChatType(existingRecord.type),
-      meta: normalizeMeta(meta)
+      meta: normalizeMeta(meta),
     });
     await waitForTransaction(transaction);
   }
@@ -540,7 +532,7 @@ class ChatDataService {
       ...existingRecord,
       ...(nextType ? { type: nextType } : {}),
       ...(nextName ? { name: nextName } : {}),
-      ...(input.meta !== undefined ? { meta: normalizeMeta(input.meta) } : {})
+      ...(input.meta !== undefined ? { meta: normalizeMeta(input.meta) } : {}),
     });
     await waitForTransaction(transaction);
   }
@@ -568,7 +560,9 @@ class ChatDataService {
 
     const messagesByChatIndex = messagesStore.index(MESSAGES_CHAT_PUBLIC_KEY_INDEX);
     const messageIds = await requestToPromise<IDBValidKey[]>(
-      messagesByChatIndex.getAllKeys(IDBKeyRange.only(normalizedPublicKey)) as IDBRequest<IDBValidKey[]>
+      messagesByChatIndex.getAllKeys(IDBKeyRange.only(normalizedPublicKey)) as IDBRequest<
+        IDBValidKey[]
+      >
     );
 
     for (const messageId of messageIds) {
@@ -605,7 +599,7 @@ class ChatDataService {
   async listLatestMessages(chatPublicKey: string, limit: number): Promise<MessageBatchResult> {
     return this.collectMessagesByCursor(chatPublicKey, {
       direction: 'prev',
-      limit
+      limit,
     });
   }
 
@@ -617,7 +611,7 @@ class ChatDataService {
     return this.collectMessagesByCursor(chatPublicKey, {
       direction: 'prev',
       limit,
-      cursor
+      cursor,
     });
   }
 
@@ -629,7 +623,7 @@ class ChatDataService {
     return this.collectMessagesByCursor(chatPublicKey, {
       direction: 'next',
       limit,
-      cursor
+      cursor,
     });
   }
 
@@ -737,7 +731,7 @@ class ChatDataService {
       message,
       created_at: createdAt,
       ...(eventId ? { event_id: eventId } : {}),
-      meta: normalizeMeta(input.meta)
+      meta: normalizeMeta(input.meta),
     };
 
     const db = await this.getDatabase();
@@ -752,7 +746,7 @@ class ChatDataService {
 
       return toMessageRow({
         ...record,
-        id: Number(insertedId)
+        id: Number(insertedId),
       });
     } catch (error) {
       if (eventId && isConstraintError(error)) {
@@ -764,7 +758,10 @@ class ChatDataService {
     }
   }
 
-  async updateMessageMeta(messageId: number, meta: Record<string, unknown>): Promise<MessageRow | null> {
+  async updateMessageMeta(
+    messageId: number,
+    meta: Record<string, unknown>
+  ): Promise<MessageRow | null> {
     const normalizedMessageId = Number(messageId);
     if (!Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0) {
       return null;
@@ -783,7 +780,7 @@ class ChatDataService {
 
     const nextRecord: MessageRecord = {
       ...record,
-      meta: normalizeMeta(meta)
+      meta: normalizeMeta(meta),
     };
 
     try {
@@ -821,7 +818,7 @@ class ChatDataService {
 
     const nextRecord: MessageRecord = {
       ...record,
-      event_id: normalizedEventId
+      event_id: normalizedEventId,
     };
 
     try {
@@ -920,7 +917,7 @@ class ChatDataService {
           : db.createObjectStore(CHATS_STORE, { keyPath: CHATS_PUBLIC_KEY_KEY });
         if (!chatsStore.indexNames.contains(CHATS_LAST_MESSAGE_AT_INDEX)) {
           chatsStore.createIndex(CHATS_LAST_MESSAGE_AT_INDEX, CHATS_LAST_MESSAGE_AT_INDEX, {
-            unique: false
+            unique: false,
           });
         }
 
@@ -928,22 +925,26 @@ class ChatDataService {
           ? transaction.objectStore(MESSAGES_STORE)
           : db.createObjectStore(MESSAGES_STORE, { keyPath: 'id', autoIncrement: true });
         if (!messagesStore.indexNames.contains(MESSAGES_CHAT_PUBLIC_KEY_INDEX)) {
-          messagesStore.createIndex(MESSAGES_CHAT_PUBLIC_KEY_INDEX, MESSAGES_CHAT_PUBLIC_KEY_INDEX, {
-            unique: false
-          });
+          messagesStore.createIndex(
+            MESSAGES_CHAT_PUBLIC_KEY_INDEX,
+            MESSAGES_CHAT_PUBLIC_KEY_INDEX,
+            {
+              unique: false,
+            }
+          );
         }
         if (!messagesStore.indexNames.contains(MESSAGES_CHAT_CREATED_AT_INDEX)) {
           messagesStore.createIndex(
             MESSAGES_CHAT_CREATED_AT_INDEX,
             [MESSAGES_CHAT_PUBLIC_KEY_INDEX, 'created_at'],
             {
-              unique: false
+              unique: false,
             }
           );
         }
         if (!messagesStore.indexNames.contains(MESSAGES_EVENT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_EVENT_ID_INDEX, MESSAGES_EVENT_ID_INDEX, {
-            unique: true
+            unique: true,
           });
         }
       };
@@ -979,7 +980,7 @@ class ChatDataService {
     if (!normalizedPublicKey || normalizedLimit <= 0) {
       return {
         rows: [],
-        has_more: false
+        has_more: false,
       };
     }
 
@@ -1001,7 +1002,7 @@ class ChatDataService {
         if (!cursorValue) {
           resolve({
             rows: options.direction === 'prev' ? rows.reverse() : rows,
-            has_more: hasMore
+            has_more: hasMore,
           });
           return;
         }
@@ -1014,8 +1015,7 @@ class ChatDataService {
 
         if (options.cursor) {
           const comparison = compareMessageCursor(record, options.cursor);
-          const shouldInclude =
-            options.direction === 'next' ? comparison > 0 : comparison < 0;
+          const shouldInclude = options.direction === 'next' ? comparison > 0 : comparison < 0;
 
           if (!shouldInclude) {
             cursorValue.continue();
@@ -1027,7 +1027,7 @@ class ChatDataService {
           hasMore = true;
           resolve({
             rows: options.direction === 'prev' ? rows.reverse() : rows,
-            has_more: hasMore
+            has_more: hasMore,
           });
           return;
         }

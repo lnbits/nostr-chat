@@ -1,10 +1,10 @@
-import { onBeforeUnmount, ref } from 'vue';
 import {
   getBrowserNotificationPermission,
   isBrowserNotificationSupported,
   requestBrowserNotificationsAfterLogin,
-  saveBrowserNotificationsPreference
+  saveBrowserNotificationsPreference,
 } from 'src/utils/browserNotificationPreference';
+import { onBeforeUnmount, ref } from 'vue';
 
 export function useBrowserNotificationsLoginPrompt() {
   const isDialogOpen = ref(false);
@@ -62,6 +62,6 @@ export function useBrowserNotificationsLoginPrompt() {
     isBrowserNotificationsLoginDialogOpen: isDialogOpen,
     handleBrowserNotificationsAfterLogin,
     confirmBrowserNotificationsLoginDialog: () => resolveDialog(true),
-    skipBrowserNotificationsLoginDialog: () => resolveDialog(false)
+    skipBrowserNotificationsLoginDialog: () => resolveDialog(false),
   };
 }

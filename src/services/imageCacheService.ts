@@ -180,7 +180,7 @@ class ImageCacheService {
       const request = transaction.objectStore(IMAGE_CACHE_STORE_NAME).put({
         url,
         blob,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       } satisfies CachedImageRecord);
 
       request.onerror = () => {

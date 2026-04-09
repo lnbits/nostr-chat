@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { __messageStoreTestUtils, MissingContactRelaysError } from 'src/stores/messageStore';
+import { describe, expect, it } from 'vitest';
 
 const {
   applyMessageUpsert,
@@ -18,28 +18,20 @@ const {
   resolveReplyTargetEventId,
   resolveSendRelayUrls,
   takeLeadingRowsWithAuthor,
-  takeTrailingRowsWithAuthor
+  takeTrailingRowsWithAuthor,
 } = __messageStoreTestUtils;
 
 describe('messageStore logic', () => {
   it('adds and clears unseen reaction counts in chat metadata', () => {
-    expect(
-      buildChatMetaWithUnseenReactionCount(
-        { name: 'chat' },
-        3
-      )
-    ).toEqual({
+    expect(buildChatMetaWithUnseenReactionCount({ name: 'chat' }, 3)).toEqual({
       name: 'chat',
-      unseen_reaction_count: 3
+      unseen_reaction_count: 3,
     });
 
     expect(
-      buildChatMetaWithUnseenReactionCount(
-        { unseen_reaction_count: 2, name: 'chat' },
-        0
-      )
+      buildChatMetaWithUnseenReactionCount({ unseen_reaction_count: 2, name: 'chat' }, 0)
     ).toEqual({
-      name: 'chat'
+      name: 'chat',
     });
 
     expect(readUnseenReactionCountFromMeta({ unseen_reaction_count: '4' })).toBe(4);
@@ -74,7 +66,7 @@ describe('messageStore logic', () => {
           authorPublicKey: 'b',
           eventId: null,
           nostrEvent: null,
-          meta: {}
+          meta: {},
         },
         {
           id: '3',
@@ -85,8 +77,8 @@ describe('messageStore logic', () => {
           authorPublicKey: 'a',
           eventId: null,
           nostrEvent: null,
-          meta: {}
-        }
+          meta: {},
+        },
       ],
       [
         {
@@ -98,7 +90,7 @@ describe('messageStore logic', () => {
           authorPublicKey: 'b',
           eventId: null,
           nostrEvent: null,
-          meta: {}
+          meta: {},
         },
         {
           id: '2',
@@ -110,9 +102,9 @@ describe('messageStore logic', () => {
           eventId: null,
           nostrEvent: null,
           meta: {
-            edited: true
-          }
-        }
+            edited: true,
+          },
+        },
       ]
     );
 
@@ -125,7 +117,7 @@ describe('messageStore logic', () => {
       { author_public_key: 'alice' },
       { author_public_key: 'alice' },
       { author_public_key: 'bob' },
-      { author_public_key: 'bob' }
+      { author_public_key: 'bob' },
     ];
 
     expect(takeLeadingRowsWithAuthor(rows as never, 'alice')).toHaveLength(2);
@@ -138,7 +130,7 @@ describe('messageStore logic', () => {
       resolveChatRecipientPublicKey({
         public_key: 'user-chat',
         type: 'user',
-        meta: {}
+        meta: {},
       } as never)
     ).toBe('user-chat');
 
@@ -147,8 +139,8 @@ describe('messageStore logic', () => {
         public_key: 'group-chat',
         type: 'group',
         meta: {
-          current_epoch_public_key: 'ABCD'
-        }
+          current_epoch_public_key: 'ABCD',
+        },
       } as never)
     ).toBe('abcd');
 
@@ -156,33 +148,31 @@ describe('messageStore logic', () => {
       resolveChatRecipientPublicKey({
         public_key: 'group-chat',
         type: 'group',
-        meta: {}
+        meta: {},
       } as never)
     ).toBe('');
 
-    expect(
-      buildDeletedMessageMeta('author', 5, '2026-01-02T00:00:00.000Z', 'ABC123')
-    ).toEqual({
+    expect(buildDeletedMessageMeta('author', 5, '2026-01-02T00:00:00.000Z', 'ABC123')).toEqual({
       deletedAt: '2026-01-02T00:00:00.000Z',
       deletedByPublicKey: 'author',
       deletedEventKind: 5,
-      deleteEventId: 'abc123'
+      deleteEventId: 'abc123',
     });
 
     expect(buildDeletedMessageMeta('author', 5, '2026-01-02T00:00:00.000Z', '   ')).toEqual({
       deletedAt: '2026-01-02T00:00:00.000Z',
       deletedByPublicKey: 'author',
-      deletedEventKind: 5
+      deletedEventKind: 5,
     });
 
     expect(
       buildMessageCursorFromMessage({
         id: '12',
-        sentAt: '2026-01-02T00:00:00.000Z'
+        sentAt: '2026-01-02T00:00:00.000Z',
       })
     ).toEqual({
       id: 12,
-      created_at: '2026-01-02T00:00:00.000Z'
+      created_at: '2026-01-02T00:00:00.000Z',
     });
   });
 
@@ -191,21 +181,21 @@ describe('messageStore logic', () => {
       resolveSendRelayUrls({
         chatPublicKey: 'chat-pubkey',
         relayUrls: [' ws://relay.example ', 'ws://relay.example/'],
-        recipientRelayUrls: ['wss://ignored.example']
+        recipientRelayUrls: ['wss://ignored.example'],
       })
     ).toEqual(['ws://relay.example', 'ws://relay.example/']);
 
     expect(() =>
       resolveSendRelayUrls({
         chatPublicKey: 'chat-pubkey',
-        relayUrls: ['   ']
+        relayUrls: ['   '],
       })
     ).toThrow('Cannot send encrypted event without application relays.');
 
     expect(() =>
       resolveSendRelayUrls({
         chatPublicKey: 'chat-pubkey',
-        recipientRelayUrls: []
+        recipientRelayUrls: [],
       })
     ).toThrow(MissingContactRelaysError);
   });
@@ -216,16 +206,16 @@ describe('messageStore logic', () => {
         {
           public_key: 'user-chat',
           type: 'user',
-          meta: {}
+          meta: {},
         } as never,
         {
-          recipientRelayUrls: ['wss://contact.example']
+          recipientRelayUrls: ['wss://contact.example'],
         }
       )
     ).toMatchObject({
       recipientPublicKey: 'user-chat',
       relayUrls: ['wss://contact.example'],
-      publishSelfCopy: true
+      publishSelfCopy: true,
     });
 
     expect(
@@ -234,17 +224,17 @@ describe('messageStore logic', () => {
           public_key: 'group-chat',
           type: 'group',
           meta: {
-            current_epoch_public_key: 'ABCD'
-          }
+            current_epoch_public_key: 'ABCD',
+          },
         } as never,
         {
-          recipientRelayUrls: ['wss://group.example']
+          recipientRelayUrls: ['wss://group.example'],
         }
       )
     ).toMatchObject({
       recipientPublicKey: 'abcd',
       relayUrls: ['wss://group.example'],
-      publishSelfCopy: false
+      publishSelfCopy: false,
     });
 
     expect(() =>
@@ -252,17 +242,17 @@ describe('messageStore logic', () => {
         {
           public_key: 'group-chat',
           type: 'group',
-          meta: {}
+          meta: {},
         } as never,
         {
-          recipientRelayUrls: ['wss://group.example']
+          recipientRelayUrls: ['wss://group.example'],
         }
       )
     ).toThrow('Group chat is missing the current epoch public key.');
 
     expect(
       resolveChatDeliveryTarget(null, {
-        recipientRelayUrls: ['wss://group.example']
+        recipientRelayUrls: ['wss://group.example'],
       })
     ).toBeNull();
   });
@@ -272,7 +262,7 @@ describe('messageStore logic', () => {
       resolveReplyTargetEventId(
         {
           messageId: '12',
-          eventId: ' ABC123 '
+          eventId: ' ABC123 ',
         } as never,
         'def456'
       )
@@ -282,7 +272,7 @@ describe('messageStore logic', () => {
       resolveReplyTargetEventId(
         {
           messageId: '12',
-          eventId: '   '
+          eventId: '   ',
         } as never,
         ' DEF456 '
       )
@@ -292,7 +282,7 @@ describe('messageStore logic', () => {
       resolveReplyTargetEventId(
         {
           messageId: '0',
-          eventId: null
+          eventId: null,
         } as never,
         ' DEF456 '
       )
@@ -310,15 +300,15 @@ describe('messageStore logic', () => {
                 {
                   emoji: '👍',
                   name: 'thumbs up',
-                  reactorPublicKey: 'other-user'
+                  reactorPublicKey: 'other-user',
                 },
                 {
                   emoji: '🔥',
                   name: 'fire',
-                  reactorPublicKey: 'me'
-                }
-              ]
-            }
+                  reactorPublicKey: 'me',
+                },
+              ],
+            },
           },
           {
             author_public_key: 'them',
@@ -327,11 +317,11 @@ describe('messageStore logic', () => {
                 {
                   emoji: '👍',
                   name: 'thumbs up',
-                  reactorPublicKey: 'another-user'
-                }
-              ]
-            }
-          }
+                  reactorPublicKey: 'another-user',
+                },
+              ],
+            },
+          },
         ] as never,
         'me'
       )
@@ -349,11 +339,11 @@ describe('messageStore logic', () => {
                 {
                   emoji: '👍',
                   name: 'thumbs up',
-                  reactorPublicKey: 'other-user'
-                }
-              ]
-            }
-          }
+                  reactorPublicKey: 'other-user',
+                },
+              ],
+            },
+          },
         ] as never,
         null
       )
@@ -372,11 +362,11 @@ describe('messageStore logic', () => {
                   emoji: '👍',
                   name: 'thumbs up',
                   reactorPublicKey: 'other-user',
-                  viewedByAuthorAt: '2026-01-03T00:00:00.000Z'
-                }
-              ]
-            }
-          }
+                  viewedByAuthorAt: '2026-01-03T00:00:00.000Z',
+                },
+              ],
+            },
+          },
         ] as never,
         'me'
       )
@@ -389,16 +379,16 @@ describe('messageStore logic', () => {
             emoji: '👍',
             name: 'thumbs up',
             reactorPublicKey: 'alice',
-            eventId: 'abc'
-          }
+            eventId: 'abc',
+          },
         ] as never,
         [
           {
             emoji: '👍',
             name: 'thumbs up',
             reactorPublicKey: 'alice',
-            eventId: 'abc'
-          }
+            eventId: 'abc',
+          },
         ] as never
       )
     ).toBe(true);
@@ -410,16 +400,16 @@ describe('messageStore logic', () => {
             emoji: '👍',
             name: 'thumbs up',
             reactorPublicKey: 'alice',
-            eventId: 'abc'
-          }
+            eventId: 'abc',
+          },
         ] as never,
         [
           {
             emoji: '🔥',
             name: 'fire',
             reactorPublicKey: 'alice',
-            eventId: 'abc'
-          }
+            eventId: 'abc',
+          },
         ] as never
       )
     ).toBe(false);
@@ -430,12 +420,12 @@ describe('messageStore logic', () => {
       buildInitialMessageWindowFromUnreadAnchor(
         [
           { id: 1, message: 'older-1' },
-          { id: 2, message: 'older-2' }
+          { id: 2, message: 'older-2' },
         ] as never,
         { id: 3, message: 'first-unread' } as never,
         [
           { id: 4, message: 'newer-1' },
-          { id: 5, message: 'newer-2' }
+          { id: 5, message: 'newer-2' },
         ] as never,
         true,
         false
@@ -448,8 +438,8 @@ describe('messageStore logic', () => {
         { id: 2, message: 'older-2' },
         { id: 3, message: 'first-unread' },
         { id: 4, message: 'newer-1' },
-        { id: 5, message: 'newer-2' }
-      ]
+        { id: 5, message: 'newer-2' },
+      ],
     });
   });
 
@@ -464,7 +454,7 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
+        meta: {},
       },
       {
         id: '3',
@@ -475,8 +465,8 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
-      }
+        meta: {},
+      },
     ];
 
     const result = applyMessageUpsert(
@@ -487,7 +477,7 @@ describe('messageStore logic', () => {
         hasOlder: true,
         hasNewer: false,
         isLoadingOlder: false,
-        isLoadingNewer: false
+        isLoadingNewer: false,
       },
       {
         id: '1',
@@ -498,10 +488,10 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
+        meta: {},
       },
       {
-        allowOutsideLoadedWindow: false
+        allowOutsideLoadedWindow: false,
       }
     );
 
@@ -521,8 +511,8 @@ describe('messageStore logic', () => {
           authorPublicKey: 'b',
           eventId: null,
           nostrEvent: null,
-          meta: {}
-        }
+          meta: {},
+        },
       ] as never,
       {
         oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
@@ -530,7 +520,7 @@ describe('messageStore logic', () => {
         hasOlder: false,
         hasNewer: false,
         isLoadingOlder: false,
-        isLoadingNewer: false
+        isLoadingNewer: false,
       },
       {
         id: '3',
@@ -541,10 +531,10 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
+        meta: {},
       },
       {
-        allowOutsideLoadedWindow: false
+        allowOutsideLoadedWindow: false,
       }
     );
 
@@ -552,7 +542,7 @@ describe('messageStore logic', () => {
     expect(result.messages.map((message) => message.id)).toEqual(['2', '3']);
     expect(result.paginationState.newestCursor).toEqual({
       id: 3,
-      created_at: '2026-01-03T00:00:00.000Z'
+      created_at: '2026-01-03T00:00:00.000Z',
     });
   });
 
@@ -567,7 +557,7 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
+        meta: {},
       },
       {
         id: '3',
@@ -578,8 +568,8 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
-      }
+        meta: {},
+      },
     ];
 
     const result = applyMessageUpsert(
@@ -588,7 +578,7 @@ describe('messageStore logic', () => {
         ...buildDefaultChatMessagePaginationState(),
         oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
         newestCursor: { id: 3, created_at: '2026-01-03T00:00:00.000Z' },
-        hasNewer: true
+        hasNewer: true,
       },
       {
         id: '4',
@@ -599,10 +589,10 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
+        meta: {},
       },
       {
-        allowOutsideLoadedWindow: false
+        allowOutsideLoadedWindow: false,
       }
     );
 
@@ -622,14 +612,14 @@ describe('messageStore logic', () => {
           authorPublicKey: 'b',
           eventId: null,
           nostrEvent: null,
-          meta: {}
-        }
+          meta: {},
+        },
       ] as never,
       {
         ...buildDefaultChatMessagePaginationState(),
         oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
         newestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
-        hasOlder: true
+        hasOlder: true,
       },
       {
         id: '1',
@@ -640,10 +630,10 @@ describe('messageStore logic', () => {
         authorPublicKey: 'b',
         eventId: null,
         nostrEvent: null,
-        meta: {}
+        meta: {},
       },
       {
-        allowOutsideLoadedWindow: true
+        allowOutsideLoadedWindow: true,
       }
     );
 
@@ -651,7 +641,7 @@ describe('messageStore logic', () => {
     expect(result.messages.map((message) => message.id)).toEqual(['1', '2']);
     expect(result.paginationState.oldestCursor).toEqual({
       id: 2,
-      created_at: '2026-01-02T00:00:00.000Z'
+      created_at: '2026-01-02T00:00:00.000Z',
     });
   });
 
@@ -667,8 +657,8 @@ describe('messageStore logic', () => {
           authorPublicKey: 'b',
           eventId: null,
           nostrEvent: null,
-          meta: {}
-        }
+          meta: {},
+        },
       ] as never,
       {
         oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
@@ -676,7 +666,7 @@ describe('messageStore logic', () => {
         hasOlder: false,
         hasNewer: false,
         isLoadingOlder: false,
-        isLoadingNewer: false
+        isLoadingNewer: false,
       },
       {
         id: '2',
@@ -688,11 +678,11 @@ describe('messageStore logic', () => {
         eventId: null,
         nostrEvent: null,
         meta: {
-          edited: true
-        }
+          edited: true,
+        },
       },
       {
-        allowOutsideLoadedWindow: false
+        allowOutsideLoadedWindow: false,
       }
     );
 
@@ -702,12 +692,12 @@ describe('messageStore logic', () => {
       id: '2',
       text: 'middle edited',
       meta: {
-        edited: true
-      }
+        edited: true,
+      },
     });
     expect(result.paginationState).toMatchObject({
       oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
-      newestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' }
+      newestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
     });
   });
 });

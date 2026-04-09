@@ -35,9 +35,9 @@ export function createEmptyContactProfileForm(): ContactProfileForm {
     birthday: {
       year: null,
       month: null,
-      day: null
+      day: null,
     },
     relays: [],
-    sendMessagesToAppRelays: false
+    sendMessagesToAppRelays: false,
   };
 }

@@ -3,7 +3,7 @@ import {
   completeStartupStepSnapshotValue,
   createInitialStartupStepSnapshots,
   failStartupStepSnapshotValue,
-  resetStartupStepSnapshotsValue
+  resetStartupStepSnapshotsValue,
 } from 'src/stores/nostr/startupState';
 import {
   buildAcceptedGroupInviteChatPlanValue,
@@ -24,7 +24,7 @@ import {
   resolveGroupDisplayNameValue,
   resolveGroupPublishRelayUrlsValue,
   resolveIncomingChatInboxStateValue,
-  shouldPreserveExistingGroupRelaysValue
+  shouldPreserveExistingGroupRelaysValue,
 } from 'src/stores/nostr/valueUtils';
 
 export const __nostrStoreTestUtils = {
@@ -51,5 +51,5 @@ export const __nostrStoreTestUtils = {
   resolveCurrentGroupChatEpochEntry: resolveCurrentGroupChatEpochEntryValue,
   resolveGroupChatEpochEntries: resolveGroupChatEpochEntriesValue,
   resolveIncomingChatInboxState: resolveIncomingChatInboxStateValue,
-  shouldPreserveExistingGroupRelays: shouldPreserveExistingGroupRelaysValue
+  shouldPreserveExistingGroupRelays: shouldPreserveExistingGroupRelaysValue,
 };

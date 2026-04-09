@@ -1,15 +1,13 @@
-import { normalizeRelayUrl, NDKKind, type NDK } from '@nostr-dev-kit/ndk';
-import type { Ref } from 'vue';
+import { type NDK, NDKKind, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
-import { useRelayStore } from 'src/stores/relayStore';
 import {
   GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY,
   GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY,
   GROUP_EPOCH_KEYS_CHAT_META_KEY,
-  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
 } from 'src/stores/nostr/constants';
 import type {
   DeveloperDiagnosticsSnapshot,
@@ -19,10 +17,12 @@ import type {
   DeveloperPendingReactionSnapshot,
   PendingIncomingDeletion,
   PendingIncomingReaction,
-  RelayConnectionState
+  RelayConnectionState,
 } from 'src/stores/nostr/types';
-import type { ContactMetadata, ContactRelay } from 'src/types/contact';
+import { useRelayStore } from 'src/stores/relayStore';
 import type { MessageRelayStatus } from 'src/types/chat';
+import type { ContactMetadata, ContactRelay } from 'src/types/contact';
+import type { Ref } from 'vue';
 
 interface DeveloperDiagnosticsDeps {
   applyPendingIncomingDeletionsForMessage: (
@@ -127,7 +127,7 @@ export function createDeveloperDiagnosticsRuntime({
   resolveLoggedInPublishRelayUrls,
   resolveLoggedInReadRelayUrls,
   subscribePrivateMessagesForLoggedInUser,
-  toOptionalIsoTimestampFromUnix
+  toOptionalIsoTimestampFromUnix,
 }: DeveloperDiagnosticsDeps) {
   function buildPendingReactionDiagnostics(): DeveloperPendingReactionSnapshot[] {
     return Array.from(pendingIncomingReactions.entries())
@@ -140,8 +140,8 @@ export function createDeveloperDiagnosticsRuntime({
           emoji: entry.reaction.emoji,
           reactorPublicKey: entry.reaction.reactorPublicKey,
           createdAt: entry.reaction.createdAt,
-          eventId: normalizeEventId(entry.reaction.eventId) ?? null
-        }))
+          eventId: normalizeEventId(entry.reaction.eventId) ?? null,
+        })),
       }))
       .sort((first, second) => second.count - first.count);
   }
@@ -155,8 +155,8 @@ export function createDeveloperDiagnosticsRuntime({
           deletionAuthorPublicKey: entry.deletionAuthorPublicKey,
           deleteEventId: normalizeEventId(entry.deleteEventId) ?? null,
           deletedAt: entry.deletedAt,
-          targetKind: entry.targetKind
-        }))
+          targetKind: entry.targetKind,
+        })),
       }))
       .sort((first, second) => second.count - first.count);
   }
@@ -170,14 +170,12 @@ export function createDeveloperDiagnosticsRuntime({
 
     return {
       ...meta,
-      ...(meta.group_private_key_encrypted
-        ? { group_private_key_encrypted: '[redacted]' }
-        : {}),
+      ...(meta.group_private_key_encrypted ? { group_private_key_encrypted: '[redacted]' } : {}),
       ...(Array.isArray(meta.group_members)
         ? {
-            group_members: meta.group_members.map((member) => ({ ...member }))
+            group_members: meta.group_members.map((member) => ({ ...member })),
           }
-        : {})
+        : {}),
     };
   }
 
@@ -196,16 +194,16 @@ export function createDeveloperDiagnosticsRuntime({
               epoch_private_key_encrypted: '[redacted]',
               ...(entry.invitation_created_at
                 ? { invitation_created_at: entry.invitation_created_at }
-                : {})
-            }))
+                : {}),
+            })),
           }
         : {}),
       ...(typeof meta?.[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY] === 'string' &&
       String(meta[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]).trim()
         ? {
-            [GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]: '[redacted]'
+            [GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]: '[redacted]',
           }
-        : {})
+        : {}),
     };
   }
 
@@ -240,7 +238,7 @@ export function createDeveloperDiagnosticsRuntime({
         const currentEpochPubkey = inputSanitizerService.normalizeHexKey(
           typeof groupChat?.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
             ? String(groupChat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
-            : epochKeys[0]?.epoch_public_key ?? ''
+            : (epochKeys[0]?.epoch_public_key ?? '')
         );
         if (!currentEpochPubkey || !recipientPubkeys.has(currentEpochPubkey)) {
           return null;
@@ -270,13 +268,11 @@ export function createDeveloperDiagnosticsRuntime({
             lastMessageAt: groupChat?.last_message_at ?? null,
             lastMessage: groupChat?.last_message ?? null,
             epochCount: epochKeys.length,
-            chatMeta: buildDeveloperGroupSubscriptionChatMeta(groupChat?.meta)
-          }
+            chatMeta: buildDeveloperGroupSubscriptionChatMeta(groupChat?.meta),
+          },
         };
       })
-      .filter(
-        (entry): entry is DeveloperGroupMessageSubscriptionSnapshot => Boolean(entry)
-      )
+      .filter((entry): entry is DeveloperGroupMessageSubscriptionSnapshot => Boolean(entry))
       .sort((first, second) => first.name.localeCompare(second.name));
   }
 
@@ -409,14 +405,14 @@ export function createDeveloperDiagnosticsRuntime({
         initialTargetCount,
         initialEntryCount,
         remainingTargetCount: 0,
-        remainingEntryCount: 0
+        remainingEntryCount: 0,
       };
     }
 
     const didChange = await applyPendingQueuesForStoredTargets(
       getPendingDeveloperQueueTargetEventIds(),
       {
-        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
       }
     );
 
@@ -429,7 +425,7 @@ export function createDeveloperDiagnosticsRuntime({
       initialTargetCount,
       initialEntryCount,
       remainingTargetCount: getPendingDeveloperQueueTargetEventIds().length,
-      remainingEntryCount: getPendingDeveloperQueueEntryCount()
+      remainingEntryCount: getPendingDeveloperQueueEntryCount(),
     };
   }
 
@@ -456,7 +452,7 @@ export function createDeveloperDiagnosticsRuntime({
       ...effectiveReadRelayUrls,
       ...effectivePublishRelayUrls,
       ...privateMessagesRelayUrls,
-      ...configuredRelayList
+      ...configuredRelayList,
     ]).map((relayUrl) => {
       const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
       const snapshot = buildRelaySnapshot(ndk.pool.getRelay(normalizedRelayUrl, false));
@@ -467,7 +463,7 @@ export function createDeveloperDiagnosticsRuntime({
         inReadSet: effectiveReadRelayUrls.includes(normalizedRelayUrl),
         inPublishSet: effectivePublishRelayUrls.includes(normalizedRelayUrl),
         inPrivateMessagesSubscription: privateMessagesRelayUrls.includes(normalizedRelayUrl),
-        isConfigured: configuredRelayUrls.has(normalizedRelayUrl)
+        isConfigured: configuredRelayUrls.has(normalizedRelayUrl),
       };
     });
 
@@ -485,7 +481,7 @@ export function createDeveloperDiagnosticsRuntime({
         myRelayEntries: nip65RelayStore.relayEntries.map((entry) => ({ ...entry })),
         effectiveReadRelayUrls,
         effectivePublishRelayUrls,
-        configuredRelayUrls: configuredRelayList
+        configuredRelayUrls: configuredRelayList,
       },
       privateMessagesSubscription: {
         active: Boolean(getPrivateMessagesSubscription()),
@@ -502,12 +498,12 @@ export function createDeveloperDiagnosticsRuntime({
         lastEventCreatedAtIso: toOptionalIsoTimestampFromUnix(
           privateMessagesSubscriptionLastEventCreatedAt.value
         ),
-        lastEoseAt: privateMessagesSubscriptionLastEoseAt.value
+        lastEoseAt: privateMessagesSubscriptionLastEoseAt.value,
       },
       groupMessagesSubscription,
       relayRows,
       pendingReactions: buildPendingReactionDiagnostics(),
-      pendingDeletions: buildPendingDeletionDiagnostics()
+      pendingDeletions: buildPendingDeletionDiagnostics(),
     };
   }
 
@@ -534,11 +530,7 @@ export function createDeveloperDiagnosticsRuntime({
     bumpDeveloperDiagnosticsVersion();
   }
 
-  async function refreshPrivateMessages(
-    options: {
-      lookbackMinutes?: number;
-    } = {}
-  ): Promise<void> {
+  async function refreshPrivateMessages(options: { lookbackMinutes?: number } = {}): Promise<void> {
     const lookbackMinutes =
       typeof options.lookbackMinutes === 'number' && Number.isFinite(options.lookbackMinutes)
         ? Math.max(1, Math.floor(options.lookbackMinutes))
@@ -551,20 +543,18 @@ export function createDeveloperDiagnosticsRuntime({
     console.log('Refreshing private messages', {
       lookbackMinutes,
       sinceOverride: sinceOverride ?? null,
-      sinceOverrideIso: toOptionalIsoTimestampFromUnix(sinceOverride ?? null)
+      sinceOverrideIso: toOptionalIsoTimestampFromUnix(sinceOverride ?? null),
     });
 
     await subscribePrivateMessagesForLoggedInUser(true, {
       restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-      sinceOverride
+      sinceOverride,
     });
     bumpDeveloperDiagnosticsVersion();
   }
 
   async function restartPrivateMessagesDiagnosticsSubscription(
-    options: {
-      lookbackMinutes?: number;
-    } = {}
+    options: { lookbackMinutes?: number } = {}
   ): Promise<void> {
     await refreshPrivateMessages(options);
   }
@@ -575,6 +565,6 @@ export function createDeveloperDiagnosticsRuntime({
     reconnectDeveloperRelay,
     refreshDeveloperPendingQueues,
     refreshPrivateMessages,
-    restartPrivateMessagesDiagnosticsSubscription
+    restartPrivateMessagesDiagnosticsSubscription,
   };
 }

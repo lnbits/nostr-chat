@@ -15,11 +15,7 @@ function normalizeBirthday(
     normalized.year = Number(input.year);
   }
 
-  if (
-    Number.isInteger(input.month) &&
-    Number(input.month) >= 1 &&
-    Number(input.month) <= 12
-  ) {
+  if (Number.isInteger(input.month) && Number(input.month) >= 1 && Number(input.month) <= 12) {
     normalized.month = Number(input.month);
   }
 
@@ -35,22 +31,15 @@ export function buildContactProfilePublishPayload(
 ): PublishUserMetadataInput {
   const payload: PublishUserMetadataInput = {
     bot: profile.bot,
-    group: profile.group
+    group: profile.group,
   };
 
   const fields: Array<
-    keyof Omit<ContactProfileForm, 'bot' | 'group' | 'birthday' | 'relays' | 'sendMessagesToAppRelays'>
-  > = [
-    'name',
-    'about',
-    'picture',
-    'nip05',
-    'lud06',
-    'lud16',
-    'display_name',
-    'website',
-    'banner'
-  ];
+    keyof Omit<
+      ContactProfileForm,
+      'bot' | 'group' | 'birthday' | 'relays' | 'sendMessagesToAppRelays'
+    >
+  > = ['name', 'about', 'picture', 'nip05', 'lud06', 'lud16', 'display_name', 'website', 'banner'];
 
   for (const field of fields) {
     const fieldValue = cleanString(profile[field]);

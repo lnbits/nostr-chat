@@ -1,4 +1,3 @@
-import type { Ref } from 'vue';
 import {
   beginStartupStepSnapshotValue,
   completeStartupStepSnapshotValue,
@@ -6,8 +5,9 @@ import {
   resetStartupStepSnapshotsValue,
   type StartupDisplaySnapshot,
   type StartupStepId,
-  type StartupStepSnapshot
+  type StartupStepSnapshot,
 } from 'src/stores/nostr/startupState';
+import type { Ref } from 'vue';
 
 interface StartupRuntimeState {
   startupDisplayShownAt: number;
@@ -26,7 +26,7 @@ export function createStartupRuntime({
   startupDisplay,
   startupState,
   startupSteps,
-  startupStepMinProgressMs
+  startupStepMinProgressMs,
 }: StartupRuntimeDeps) {
   function clearStartupDisplayTimer(): void {
     if (startupState.startupDisplayTimer !== null) {
@@ -53,7 +53,7 @@ export function createStartupRuntime({
       stepId,
       label: step.label,
       status: 'in_progress',
-      showProgress: true
+      showProgress: true,
     };
   }
 
@@ -73,7 +73,7 @@ export function createStartupRuntime({
         stepId,
         label: step.label,
         status,
-        showProgress: false
+        showProgress: false,
       };
       startupState.startupDisplayTimer = null;
     };
@@ -125,7 +125,7 @@ export function createStartupRuntime({
       stepId: null,
       label: null,
       status: null,
-      showProgress: false
+      showProgress: false,
     };
   }
 
@@ -180,7 +180,7 @@ export function createStartupRuntime({
         }
 
         maybeComplete();
-      }
+      },
     };
   }
 
@@ -193,7 +193,6 @@ export function createStartupRuntime({
     finalizeStartupStepDisplay,
     getStartupStepSnapshot,
     resetStartupStepTracking,
-    showStartupStepProgress
+    showStartupStepProgress,
   };
 }
-

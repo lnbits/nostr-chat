@@ -1,28 +1,28 @@
 import {
-  NDKKind,
-  NDKPrivateKeySigner,
-  NDKUser,
   giftWrap,
   isValidNip05,
   isValidPubkey,
   type NDK,
-  type NostrEvent
+  NDKKind,
+  NDKPrivateKeySigner,
+  NDKUser,
+  type NostrEvent,
 } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   inputSanitizerService,
   type NpubValidationResult,
   type NsecValidationResult,
-  type PrivateKeyValidationResult
+  type PrivateKeyValidationResult,
 } from 'src/services/inputSanitizerService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import type {
   NostrIdentifierResolutionResult,
   NostrNip05DataResult,
   SendDirectMessageDeletionOptions,
   SendDirectMessageOptions,
-  SendDirectMessageReactionOptions
+  SendDirectMessageReactionOptions,
 } from 'src/stores/nostr/types';
 import type { MessageRelayStatus } from 'src/types/chat';
 
@@ -153,7 +153,7 @@ export function createUserActions({
   readFirstTagValue,
   savePrivateKeyHex,
   sendGiftWrappedRumor,
-  toIsoTimestampFromUnix
+  toIsoTimestampFromUnix,
 }: UserActionsDeps) {
   function validateNsec(input: string): NsecValidationResult {
     return inputSanitizerService.validateNsec(input);
@@ -195,7 +195,7 @@ export function createUserActions({
         normalizedPubkey: null,
         name: null,
         relays: [],
-        error: 'invalid'
+        error: 'invalid',
       };
     }
 
@@ -209,7 +209,7 @@ export function createUserActions({
           normalizedPubkey: null,
           name: null,
           relays: [],
-          error: 'nip05_unresolved'
+          error: 'nip05_unresolved',
         };
       }
 
@@ -220,7 +220,7 @@ export function createUserActions({
         normalizedPubkey,
         name: user?.profile?.name?.trim() || inputSanitizerService.extractNip05Name(value),
         relays,
-        error: null
+        error: null,
       };
     } catch {
       return {
@@ -228,7 +228,7 @@ export function createUserActions({
         normalizedPubkey: null,
         name: null,
         relays: [],
-        error: 'nip05_unresolved'
+        error: 'nip05_unresolved',
       };
     }
   }
@@ -242,7 +242,7 @@ export function createUserActions({
         resolvedName: null,
         relays: [],
         identifierType: null,
-        error: 'invalid'
+        error: 'invalid',
       };
     }
 
@@ -254,7 +254,7 @@ export function createUserActions({
         resolvedName: nip05Data.name,
         relays: nip05Data.relays,
         identifierType: 'nip05',
-        error: nip05Data.error
+        error: nip05Data.error,
       };
     }
 
@@ -265,7 +265,7 @@ export function createUserActions({
         resolvedName: null,
         relays: [],
         identifierType: 'pubkey',
-        error: null
+        error: null,
       };
     }
 
@@ -276,7 +276,7 @@ export function createUserActions({
       resolvedName: null,
       relays: [],
       identifierType: 'pubkey',
-      error: npubValidation.isValid ? null : 'invalid'
+      error: npubValidation.isValid ? null : 'invalid',
     };
   }
 
@@ -321,9 +321,8 @@ export function createUserActions({
   ): Promise<NostrEvent | null> {
     const normalizedEmoji = emoji.trim();
     const normalizedTargetEventId = normalizeEventId(targetEventId);
-    const normalizedTargetAuthorPublicKey = inputSanitizerService.normalizeHexKey(
-      targetAuthorPublicKey
-    );
+    const normalizedTargetAuthorPublicKey =
+      inputSanitizerService.normalizeHexKey(targetAuthorPublicKey);
     if (!normalizedEmoji) {
       throw new Error('Reaction emoji is required.');
     }
@@ -358,14 +357,14 @@ export function createUserActions({
       },
       {
         createdAt: options.createdAt,
-        publishSelfCopy: options.publishSelfCopy
+        publishSelfCopy: options.publishSelfCopy,
       }
     );
     if (publishResult.rumorEvent) {
       await nostrEventDataService.upsertEvent({
         event: publishResult.rumorEvent,
         direction: 'out',
-        relay_statuses: publishResult.relayStatuses
+        relay_statuses: publishResult.relayStatuses,
       });
     }
 
@@ -403,7 +402,7 @@ export function createUserActions({
       },
       {
         createdAt: options.createdAt,
-        publishSelfCopy: options.publishSelfCopy
+        publishSelfCopy: options.publishSelfCopy,
       }
     );
 
@@ -455,7 +454,7 @@ export function createUserActions({
       {
         event: storedEvent.event,
         direction: 'out',
-        eventId: message.event_id
+        eventId: message.event_id,
       }
     );
 
@@ -466,7 +465,7 @@ export function createUserActions({
           ? new NDKUser({ pubkey: signer.pubkey })
           : new NDKUser({ pubkey: recipientPubkey });
       const giftWrapEvent = await giftWrap(rumorEvent as NostrEvent, recipient, signer as any, {
-        rumorKind: NDKKind.PrivateDirectMessage
+        rumorKind: NDKKind.PrivateDirectMessage,
       });
       const publishResult = await publishEventWithRelayStatuses(
         giftWrapEvent as { kind: number },
@@ -477,7 +476,7 @@ export function createUserActions({
       await appendRelayStatusesToMessageEvent(normalizedMessageId, publishResult.relayStatuses, {
         event: storedEvent.event,
         direction: 'out',
-        eventId: message.event_id
+        eventId: message.event_id,
       });
 
       if (publishResult.error) {
@@ -504,7 +503,7 @@ export function createUserActions({
         {
           event: storedEvent.event,
           direction: 'out',
-          eventId: message.event_id
+          eventId: message.event_id,
         }
       );
 
@@ -512,10 +511,7 @@ export function createUserActions({
     }
   }
 
-  async function retryGroupEpochTicketRelay(
-    eventId: string,
-    relayUrl: string
-  ): Promise<void> {
+  async function retryGroupEpochTicketRelay(eventId: string, relayUrl: string): Promise<void> {
     const normalizedEventId = normalizeEventId(eventId);
     const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
     if (!normalizedEventId || !normalizedRelayUrl) {
@@ -525,7 +521,7 @@ export function createUserActions({
     await Promise.all([
       contactsService.init(),
       chatDataService.init(),
-      nostrEventDataService.init()
+      nostrEventDataService.init(),
     ]);
 
     const storedEvent = await nostrEventDataService.getEventById(normalizedEventId);
@@ -581,14 +577,18 @@ export function createUserActions({
         event: storedEvent.event,
         direction: 'out',
         eventId: normalizedEventId,
-        createdAt
+        createdAt,
       }
     );
 
     try {
       await ensureRelayConnections([normalizedRelayUrl]);
       const recipient = new NDKUser({ pubkey: memberPublicKey });
-      const giftWrapEvent = await giftWrapSignedEvent(signedEpochTicketEvent, recipient, groupSigner);
+      const giftWrapEvent = await giftWrapSignedEvent(
+        signedEpochTicketEvent,
+        recipient,
+        groupSigner
+      );
       const publishResult = await publishEventWithRelayStatuses(
         giftWrapEvent as { kind: number },
         [normalizedRelayUrl],
@@ -604,7 +604,7 @@ export function createUserActions({
           event: storedEvent.event,
           direction: 'out',
           eventId: normalizedEventId,
-          createdAt
+          createdAt,
         }
       );
 
@@ -635,7 +635,7 @@ export function createUserActions({
           event: storedEvent.event,
           direction: 'out',
           eventId: normalizedEventId,
-          createdAt
+          createdAt,
         }
       );
 
@@ -655,6 +655,6 @@ export function createUserActions({
     sendDirectMessageReaction,
     validateNpub,
     validateNsec,
-    validatePrivateKey
+    validatePrivateKey,
   };
 }

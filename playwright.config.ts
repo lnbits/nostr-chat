@@ -10,7 +10,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   expect: {
-    timeout: 15_000
+    timeout: 15_000,
   },
   reporter: process.env.CI
     ? [['github'], ['html', { open: 'never' }]]
@@ -21,17 +21,17 @@ export default defineConfig({
     headless: true,
     viewport: {
       width: 1440,
-      height: 960
+      height: 960,
     },
     testIdAttribute: 'data-testid',
     trace: 'on',
     screenshot: 'on',
-    video: 'on'
+    video: 'on',
   },
   webServer: {
     command: 'npm run dev:e2e',
     url: appBaseUrl,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000
-  }
+    timeout: 120_000,
+  },
 });

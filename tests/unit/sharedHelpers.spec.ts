@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { formatCompactPublicKey } from 'src/utils/publicKeyText';
 import { buildRelayLookupKey, uniqueRelayUrls } from 'src/utils/relayUrls';
+import { describe, expect, it } from 'vitest';
 
 describe('shared helper utils', () => {
   it('builds stable avatar text from names and compact identifiers', () => {
@@ -22,7 +22,7 @@ describe('shared helper utils', () => {
         'wss://relay.example.com',
         'wss://relay.example.com/',
         'wss://other.example.com',
-        '   '
+        '   ',
       ])
     ).toEqual(['wss://relay.example.com', 'wss://other.example.com']);
   });

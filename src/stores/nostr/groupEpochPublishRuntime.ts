@@ -1,9 +1,9 @@
 import {
+  type NDK,
   NDKEvent,
   NDKPrivateKeySigner,
   NDKUser,
-  type NDK,
-  type NostrEvent
+  type NostrEvent,
 } from '@nostr-dev-kit/ndk';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -13,11 +13,11 @@ import type {
   PublishGroupMemberChangesResult,
   RelayPublishStatusesResult,
   RelaySaveStatus,
-  RotateGroupEpochResult
+  RotateGroupEpochResult,
 } from 'src/stores/nostr/types';
 import {
   normalizeRelayStatusUrlsValue,
-  resolveGroupPublishRelayUrlsValue
+  resolveGroupPublishRelayUrlsValue,
 } from 'src/stores/nostr/valueUtils';
 import type { MessageRelayStatus } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
@@ -45,9 +45,7 @@ interface GroupEpochPublishRuntimeDeps {
     scope: 'recipient' | 'self'
   ) => MessageRelayStatus[];
   buildRelaySaveStatus: (relayStatuses: MessageRelayStatus[]) => RelaySaveStatus;
-  encryptGroupIdentitySecretContent: (
-    content: GroupIdentitySecretContent
-  ) => Promise<string>;
+  encryptGroupIdentitySecretContent: (content: GroupIdentitySecretContent) => Promise<string>;
   ensureGroupIdentitySecretEpochState: (
     groupContact: ContactRecord,
     seedRelayUrls?: string[]
@@ -107,7 +105,7 @@ export function createGroupEpochPublishRuntime({
   publishEventWithRelayStatuses,
   publishGroupIdentitySecret,
   toIsoTimestampFromUnix,
-  toStoredNostrEvent
+  toStoredNostrEvent,
 }: GroupEpochPublishRuntimeDeps) {
   function normalizeUniqueMemberPublicKeys(
     memberPublicKeys: string[],
@@ -162,7 +160,7 @@ export function createGroupEpochPublishRuntime({
 
     const seedRelayUrls = normalizeRelayStatusUrlsValue([
       ...inputSanitizerService.normalizeStringArray(options.seedRelayUrls ?? []),
-      ...getAppRelayUrls()
+      ...getAppRelayUrls(),
     ]);
     const shouldRotateEpoch = options.rotateEpoch === true;
     const { contact: currentGroupContact, secret } = await ensureGroupIdentitySecretEpochState(
@@ -185,14 +183,14 @@ export function createGroupEpochPublishRuntime({
       const nextSecret: GroupIdentitySecretContent = {
         ...secret,
         epoch_number: nextEpochNumber,
-        epoch_privkey: nextEpochSigner.privateKey
+        epoch_privkey: nextEpochSigner.privateKey,
       };
       const nextEncryptedSecret = await encryptGroupIdentitySecretContent(nextSecret);
       const updatedGroupContact = await contactsService.updateContact(currentGroupContact.id, {
         meta: {
           ...(currentGroupContact.meta ?? {}),
-          [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: nextEncryptedSecret
-        }
+          [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: nextEncryptedSecret,
+        },
       });
       if (!updatedGroupContact) {
         throw new Error('Failed to persist the new group epoch.');
@@ -205,7 +203,7 @@ export function createGroupEpochPublishRuntime({
         {
           fallbackName: updatedGroupContact.name,
           accepted: true,
-          invitationCreatedAt: new Date().toISOString()
+          invitationCreatedAt: new Date().toISOString(),
         }
       );
 
@@ -219,17 +217,14 @@ export function createGroupEpochPublishRuntime({
           publishedRelayUrls.add(relayUrl);
         }
       } catch (error) {
-        console.warn(
-          'Failed to publish updated group identity secret after epoch rotation',
-          error
-        );
+        console.warn('Failed to publish updated group identity secret after epoch rotation', error);
       }
 
       epochNumber = nextEpochNumber;
     }
 
     const normalizedMemberPubkeys = normalizeUniqueMemberPublicKeys(memberPublicKeys, [
-      normalizedOwnerPublicKey
+      normalizedOwnerPublicKey,
     ]);
     const normalizedTicketRecipientPubkeys = shouldRotateEpoch
       ? normalizeUniqueMemberPublicKeys([normalizedOwnerPublicKey, ...normalizedMemberPubkeys])
@@ -251,7 +246,7 @@ export function createGroupEpochPublishRuntime({
         console.warn('Failed to publish group epoch ticket', {
           groupPublicKey: normalizedGroupPublicKey,
           memberPublicKey,
-          error
+          error,
         });
       }
     }
@@ -260,10 +255,9 @@ export function createGroupEpochPublishRuntime({
       epochNumber,
       createdNewEpoch: shouldRotateEpoch,
       attemptedMemberCount: normalizedTicketRecipientPubkeys.length,
-      deliveredMemberCount:
-        normalizedTicketRecipientPubkeys.length - failedMemberPubkeys.length,
+      deliveredMemberCount: normalizedTicketRecipientPubkeys.length - failedMemberPubkeys.length,
       failedMemberPubkeys,
-      publishedRelayUrls: Array.from(publishedRelayUrls.values())
+      publishedRelayUrls: Array.from(publishedRelayUrls.values()),
     };
   }
 
@@ -274,7 +268,7 @@ export function createGroupEpochPublishRuntime({
   ): Promise<RotateGroupEpochResult> {
     return publishGroupEpochTickets(groupPublicKey, memberPublicKeys, {
       rotateEpoch: true,
-      seedRelayUrls
+      seedRelayUrls,
     });
   }
 
@@ -311,7 +305,7 @@ export function createGroupEpochPublishRuntime({
       [normalizedOwnerPublicKey]
     );
     const nextMemberPubkeys = normalizeUniqueMemberPublicKeys(memberPublicKeys, [
-      normalizedOwnerPublicKey
+      normalizedOwnerPublicKey,
     ]);
     const nextMemberPubkeySet = new Set(nextMemberPubkeys);
     const currentMemberPubkeySet = new Set(currentMemberPubkeys);
@@ -327,7 +321,7 @@ export function createGroupEpochPublishRuntime({
       hasRemovedMembers ? nextMemberPubkeys : addedMemberPubkeys,
       {
         rotateEpoch: hasRemovedMembers,
-        seedRelayUrls
+        seedRelayUrls,
       }
     );
   }
@@ -378,10 +372,7 @@ export function createGroupEpochPublishRuntime({
       throw new Error('Decrypted group private key does not match the group public key.');
     }
 
-    const relayUrls = resolveGroupPublishRelayUrlsValue(
-      updatedGroupContact.relays,
-      seedRelayUrls
-    );
+    const relayUrls = resolveGroupPublishRelayUrlsValue(updatedGroupContact.relays, seedRelayUrls);
     if (relayUrls.length === 0) {
       throw new Error('Cannot send epoch ticket without at least one group relay.');
     }
@@ -394,15 +385,13 @@ export function createGroupEpochPublishRuntime({
       content: normalizedEpochPrivateKey,
       tags: [
         ['p', normalizedMemberPublicKey],
-        ['epoch', String(Math.floor(Number(secret.epoch_number)))]
-      ]
+        ['epoch', String(Math.floor(Number(secret.epoch_number)))],
+      ],
     });
     await epochTicketEvent.sign(groupSigner);
 
     const storedEpochTicketEvent = await toStoredNostrEvent(epochTicketEvent);
-    const epochTicketEventId = normalizeEventId(
-      storedEpochTicketEvent?.id ?? epochTicketEvent.id
-    );
+    const epochTicketEventId = normalizeEventId(storedEpochTicketEvent?.id ?? epochTicketEvent.id);
     const createdAtIso = toIsoTimestampFromUnix(createdAt);
     const epochNumber = Math.floor(Number(secret.epoch_number));
 
@@ -416,7 +405,7 @@ export function createGroupEpochPublishRuntime({
           event: storedEpochTicketEvent ?? undefined,
           direction: 'out',
           eventId: epochTicketEventId,
-          createdAt: createdAtIso
+          createdAt: createdAtIso,
         }
       );
     }
@@ -427,11 +416,7 @@ export function createGroupEpochPublishRuntime({
       await ensureRelayConnections(relayUrls);
       const recipient = new NDKUser({ pubkey: normalizedMemberPublicKey });
       const giftWrapEvent = await giftWrapSignedEvent(epochTicketEvent, recipient, groupSigner);
-      publishResult = await publishEventWithRelayStatuses(
-        giftWrapEvent,
-        relayUrls,
-        'recipient'
-      );
+      publishResult = await publishEventWithRelayStatuses(giftWrapEvent, relayUrls, 'recipient');
     } catch (error) {
       const failureDetail =
         error instanceof Error && error.message.trim()
@@ -447,7 +432,7 @@ export function createGroupEpochPublishRuntime({
             event: storedEpochTicketEvent ?? undefined,
             direction: 'out',
             eventId: epochTicketEventId,
-            createdAt: createdAtIso
+            createdAt: createdAtIso,
           }
         );
       }
@@ -464,7 +449,7 @@ export function createGroupEpochPublishRuntime({
           event: storedEpochTicketEvent ?? undefined,
           direction: 'out',
           eventId: epochTicketEventId,
-          createdAt: createdAtIso
+          createdAt: createdAtIso,
         }
       );
     }
@@ -490,6 +475,6 @@ export function createGroupEpochPublishRuntime({
     publishGroupEpochTickets,
     publishGroupMemberChanges,
     rotateGroupEpochAndSendTickets,
-    sendGroupEpochTicket
+    sendGroupEpochTicket,
   };
 }

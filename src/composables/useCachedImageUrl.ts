@@ -1,5 +1,5 @@
-import { ref, watch, type ComputedRef, type Ref } from 'vue';
 import { imageCacheService } from 'src/services/imageCacheService';
+import { type ComputedRef, type Ref, ref, watch } from 'vue';
 
 type SourceRef = Ref<string> | ComputedRef<string>;
 

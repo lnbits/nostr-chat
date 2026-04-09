@@ -1,17 +1,17 @@
 import {
+  giftWrap,
+  isValidPubkey,
+  type NDK,
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
   NDKPublishError,
   NDKRelayList,
   NDKRelaySet,
-  NDKUser,
-  giftWrap,
-  isValidPubkey,
-  type NDK,
   type NDKSigner,
+  NDKUser,
   type NDKUserProfile,
-  type NostrEvent
+  type NostrEvent,
 } from '@nostr-dev-kit/ndk';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -22,7 +22,7 @@ import type {
   RelayListMetadataEntry,
   RelayPublishStatusesResult,
   RelaySaveStatus,
-  SendGiftWrappedRumorOptions
+  SendGiftWrappedRumorOptions,
 } from 'src/stores/nostr/types';
 import type { MessageRelayStatus } from 'src/types/chat';
 
@@ -73,7 +73,7 @@ export function createRelayPublishRuntime({
   resolveLoggedInPublishRelayUrls,
   toStoredNostrEvent,
   toUnixTimestamp,
-  updateStoredEventSinceFromCreatedAt
+  updateStoredEventSinceFromCreatedAt,
 }: RelayPublishRuntimeDeps) {
   function buildOutboundRelayStatuses(
     relayUrls: string[],
@@ -87,7 +87,7 @@ export function createRelayPublishRuntime({
       const isPublished = publishedRelayUrls.has(relayUrl);
       const detail = isPublished
         ? undefined
-        : errorsByRelayUrl.get(relayUrl) ?? 'Relay did not acknowledge publish.';
+        : (errorsByRelayUrl.get(relayUrl) ?? 'Relay did not acknowledge publish.');
 
       return {
         relay_url: relayUrl,
@@ -95,7 +95,7 @@ export function createRelayPublishRuntime({
         status: isPublished ? 'published' : 'failed',
         scope,
         updated_at: updatedAt,
-        ...(detail ? { detail } : {})
+        ...(detail ? { detail } : {}),
       };
     });
   }
@@ -111,7 +111,7 @@ export function createRelayPublishRuntime({
       direction: 'outbound',
       status: 'pending',
       scope,
-      updated_at: updatedAt
+      updated_at: updatedAt,
     }));
   }
 
@@ -139,7 +139,7 @@ export function createRelayPublishRuntime({
   function extractRelayUrlsFromEvent(event: NDKEvent): string[] {
     return normalizeRelayStatusUrls([
       event.relay?.url ?? '',
-      ...event.onRelays.map((relay) => relay.url)
+      ...event.onRelays.map((relay) => relay.url),
     ]);
   }
 
@@ -152,7 +152,7 @@ export function createRelayPublishRuntime({
     if (normalizedRelayUrls.length === 0) {
       return {
         relayStatuses: [],
-        error: null
+        error: null,
       };
     }
 
@@ -173,7 +173,7 @@ export function createRelayPublishRuntime({
           new Map<string, string>(),
           scope
         ),
-        error: null
+        error: null,
       };
     } catch (error) {
       const publishedRelayUrls = new Set<string>();
@@ -211,7 +211,7 @@ export function createRelayPublishRuntime({
           errorsByRelayUrl,
           scope
         ),
-        error: error instanceof Error ? error : new Error('Failed to publish event.')
+        error: error instanceof Error ? error : new Error('Failed to publish event.'),
       };
     }
   }
@@ -225,7 +225,7 @@ export function createRelayPublishRuntime({
     if (normalizedRelayUrls.length === 0) {
       return {
         relayStatuses: [],
-        error: null
+        error: null,
       };
     }
 
@@ -246,7 +246,7 @@ export function createRelayPublishRuntime({
           new Map<string, string>(),
           scope
         ),
-        error: null
+        error: null,
       };
     } catch (error) {
       const publishedRelayUrls = new Set<string>();
@@ -284,10 +284,7 @@ export function createRelayPublishRuntime({
           errorsByRelayUrl,
           scope
         ),
-        error:
-          error instanceof Error
-            ? error
-            : new Error('Failed to publish replaceable event.')
+        error: error instanceof Error ? error : new Error('Failed to publish replaceable event.'),
       };
     }
   }
@@ -336,12 +333,8 @@ export function createRelayPublishRuntime({
       createdAt
     );
     const recipientRumorNostrEvent = await toStoredNostrEvent(recipientRumorEvent);
-    const rumorEventId = normalizeEventId(
-      recipientRumorNostrEvent?.id ?? recipientRumorEvent.id
-    );
-    const selfRelayUrls = shouldPublishSelfCopy
-      ? await resolveLoggedInPublishRelayUrls()
-      : [];
+    const rumorEventId = normalizeEventId(recipientRumorNostrEvent?.id ?? recipientRumorEvent.id);
+    const selfRelayUrls = shouldPublishSelfCopy ? await resolveLoggedInPublishRelayUrls() : [];
     const persistOutboundRelayStatuses = async (
       relayStatuses: MessageRelayStatus[]
     ): Promise<void> => {
@@ -352,7 +345,7 @@ export function createRelayPublishRuntime({
       await appendRelayStatusesToMessageEvent(options.localMessageId, relayStatuses, {
         event: recipientRumorNostrEvent ?? undefined,
         direction: 'out',
-        eventId: rumorEventId
+        eventId: rumorEventId,
       });
     };
     const appendFailedOutboundRelayStatuses = async (
@@ -360,11 +353,7 @@ export function createRelayPublishRuntime({
       scope: 'recipient' | 'self',
       detail: string
     ): Promise<MessageRelayStatus[]> => {
-      const failedRelayStatuses = buildFailedOutboundRelayStatuses(
-        relayUrlsToFail,
-        scope,
-        detail
-      );
+      const failedRelayStatuses = buildFailedOutboundRelayStatuses(relayUrlsToFail, scope, detail);
       await persistOutboundRelayStatuses(failedRelayStatuses);
       return failedRelayStatuses;
     };
@@ -375,7 +364,7 @@ export function createRelayPublishRuntime({
       try {
         await persistOutboundRelayStatuses([
           ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
-          ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
+          ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self'),
         ]);
       } catch (error) {
         console.warn('Failed to persist encrypted event details before publish', error);
@@ -386,7 +375,7 @@ export function createRelayPublishRuntime({
 
     try {
       const recipientGiftWrapEvent = await giftWrap(recipientRumorEvent, recipient, signer, {
-        rumorKind
+        rumorKind,
       });
       const recipientPublishResult = await publishEventWithRelayStatuses(
         recipientGiftWrapEvent,
@@ -418,7 +407,7 @@ export function createRelayPublishRuntime({
             createdAt
           );
           const selfGiftWrapEvent = await giftWrap(selfRumorEvent, senderRecipient, signer, {
-            rumorKind
+            rumorKind,
           });
           const selfPublishResult = await publishEventWithRelayStatuses(
             selfGiftWrapEvent,
@@ -452,7 +441,7 @@ export function createRelayPublishRuntime({
         giftWrapEvent: await recipientGiftWrapEvent.toNostrEvent(),
         rumorEvent: recipientRumorNostrEvent,
         rumorEventId,
-        relayStatuses: combinedRelayStatuses
+        relayStatuses: combinedRelayStatuses,
       };
     } catch (error) {
       const failureDetail =
@@ -515,8 +504,7 @@ export function createRelayPublishRuntime({
       throw new Error('Only the owner can publish this group profile.');
     }
 
-    const encryptedGroupPrivateKey =
-      groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    const encryptedGroupPrivateKey = groupContact.meta.group_private_key_encrypted?.trim() ?? '';
     if (!encryptedGroupPrivateKey) {
       throw new Error('Encrypted group private key not found.');
     }
@@ -546,7 +534,7 @@ export function createRelayPublishRuntime({
     const metadataEvent = new NDKEvent(ndk, {
       kind: NDKKind.Metadata,
       created_at: Math.floor(Date.now() / 1000),
-      content: JSON.stringify(metadata)
+      content: JSON.stringify(metadata),
     } as NostrEvent);
     await metadataEvent.sign(groupSigner);
 
@@ -591,8 +579,7 @@ export function createRelayPublishRuntime({
       throw new Error('Only the owner can publish the group relay list.');
     }
 
-    const encryptedGroupPrivateKey =
-      groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    const encryptedGroupPrivateKey = groupContact.meta.group_private_key_encrypted?.trim() ?? '';
     if (!encryptedGroupPrivateKey) {
       throw new Error('Encrypted group private key not found.');
     }
@@ -610,7 +597,7 @@ export function createRelayPublishRuntime({
       inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
     const relayUrls = normalizeRelayStatusUrls([
       ...inputSanitizerService.normalizeStringArray(publishRelayUrls),
-      ...normalizedRelayEntries.map((relay) => relay.url)
+      ...normalizedRelayEntries.map((relay) => relay.url),
     ]);
     if (relayUrls.length === 0) {
       throw new Error('Cannot publish group relay list without at least one group relay.');
@@ -662,6 +649,6 @@ export function createRelayPublishRuntime({
     publishGroupRelayList,
     publishReplaceableEventWithRelayStatuses,
     publishUserMetadata,
-    sendGiftWrappedRumor
+    sendGiftWrappedRumor,
   };
 }

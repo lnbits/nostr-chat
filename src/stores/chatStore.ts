@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
+import { computed, ref } from 'vue';
 
 interface ChatContactContext {
   picture: string;
@@ -94,11 +94,7 @@ function readMetaNumber(meta: Record<string, unknown>, key: string): number | nu
   return Math.max(0, Math.floor(numericValue));
 }
 
-function syncMetaString(
-  meta: Record<string, unknown>,
-  key: string,
-  value: string
-): boolean {
+function syncMetaString(meta: Record<string, unknown>, key: string, value: string): boolean {
   const normalizedValue = value.trim();
   const currentValue = readMetaString(meta, key);
 
@@ -138,10 +134,7 @@ function syncMetaLatestTimestamp(
   return true;
 }
 
-function syncMetaInboxState(
-  meta: Record<string, unknown>,
-  nextState: ChatInboxState
-): boolean {
+function syncMetaInboxState(meta: Record<string, unknown>, nextState: ChatInboxState): boolean {
   const currentState = readMetaInboxState(meta);
   if (currentState === nextState) {
     return false;
@@ -173,7 +166,10 @@ function resolveChatCategory(meta: Record<string, unknown>): ChatListCategory {
 }
 
 function resolveDefaultSelectedChatId(chatList: Chat[]): string | null {
-  return chatList.find((chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'chat')?.id ?? null;
+  return (
+    chatList.find((chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'chat')
+      ?.id ?? null
+  );
 }
 
 function buildChatSearchText(chat: Chat): string {
@@ -182,7 +178,7 @@ function buildChatSearchText(chat: Chat): string {
     chat.publicKey,
     chat.lastMessage,
     readMetaString(chat.meta as Record<string, unknown>, 'given_name'),
-    readMetaString(chat.meta as Record<string, unknown>, 'contact_name')
+    readMetaString(chat.meta as Record<string, unknown>, 'contact_name'),
   ];
 
   return candidates
@@ -217,7 +213,7 @@ function buildChatActivitySnapshotByPublicKey(
 
     const snapshot = snapshotsByPublicKey.get(chatPublicKey) ?? {
       lastIncomingMessageAt: '',
-      lastOutgoingMessageAt: ''
+      lastOutgoingMessageAt: '',
     };
     const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
 
@@ -229,8 +225,7 @@ function buildChatActivitySnapshotByPublicKey(
         snapshot.lastOutgoingMessageAt = row.created_at;
       }
     } else if (
-      toComparableTimestamp(row.created_at) >
-      toComparableTimestamp(snapshot.lastIncomingMessageAt)
+      toComparableTimestamp(row.created_at) > toComparableTimestamp(snapshot.lastIncomingMessageAt)
     ) {
       snapshot.lastIncomingMessageAt = row.created_at;
     }
@@ -313,14 +308,12 @@ function syncChatActivityMeta(
   if (
     snapshot.lastOutgoingMessageAt &&
     currentInboxState !== 'blocked' &&
-    (
-      toComparableTimestamp(snapshot.lastOutgoingMessageAt) >
-        toComparableTimestamp(readMetaString(meta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY)) ||
+    (toComparableTimestamp(snapshot.lastOutgoingMessageAt) >
+      toComparableTimestamp(readMetaString(meta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY)) ||
       currentInboxState !== 'accepted' ||
       toComparableTimestamp(snapshot.lastOutgoingMessageAt) >
         toComparableTimestamp(readMetaString(meta, CHAT_ACCEPTED_AT_META_KEY)) ||
-      readMetaString(meta, CHAT_BLOCKED_AT_META_KEY)
-    )
+      readMetaString(meta, CHAT_BLOCKED_AT_META_KEY))
   ) {
     const writableMeta = ensureWritableMeta();
     syncMetaLatestTimestamp(
@@ -329,7 +322,11 @@ function syncChatActivityMeta(
       snapshot.lastOutgoingMessageAt
     );
     syncMetaInboxState(writableMeta, 'accepted');
-    syncMetaLatestTimestamp(writableMeta, CHAT_ACCEPTED_AT_META_KEY, snapshot.lastOutgoingMessageAt);
+    syncMetaLatestTimestamp(
+      writableMeta,
+      CHAT_ACCEPTED_AT_META_KEY,
+      snapshot.lastOutgoingMessageAt
+    );
     delete writableMeta[CHAT_BLOCKED_AT_META_KEY];
   }
 
@@ -355,7 +352,7 @@ function toContactContext(contact: ContactRecord): ChatContactContext {
     picture: resolvePictureFromContactMeta(contactMeta),
     givenName: contact.given_name?.trim() ?? '',
     contactName: contact.name.trim(),
-    lastSeenIncomingActivityAt: readMetaString(contactMeta, 'last_seen_incoming_activity_at')
+    lastSeenIncomingActivityAt: readMetaString(contactMeta, 'last_seen_incoming_activity_at'),
   };
 }
 
@@ -432,7 +429,7 @@ function mapChatRowToChat(
     lastMessage: row.last_message || '',
     lastMessageAt: row.last_message_at || new Date(0).toISOString(),
     unreadCount: row.unread_count,
-    meta: nextMeta
+    meta: nextMeta,
   };
 }
 
@@ -444,7 +441,7 @@ function buildAcceptedChatMeta(
   const nextMeta: ChatMetadata = {
     ...(meta as ChatMetadata),
     [CHAT_INBOX_STATE_META_KEY]: 'accepted',
-    [CHAT_ACCEPTED_AT_META_KEY]: acceptedAt
+    [CHAT_ACCEPTED_AT_META_KEY]: acceptedAt,
   };
 
   if (lastOutgoingMessageAt) {
@@ -458,28 +455,20 @@ function buildAcceptedChatMeta(
   return nextMeta;
 }
 
-function buildBlockedChatMeta(
-  meta: Record<string, unknown>,
-  blockedAt: string
-): ChatMetadata {
+function buildBlockedChatMeta(meta: Record<string, unknown>, blockedAt: string): ChatMetadata {
   return {
     ...(meta as ChatMetadata),
     [CHAT_INBOX_STATE_META_KEY]: 'blocked',
-    [CHAT_BLOCKED_AT_META_KEY]: blockedAt
+    [CHAT_BLOCKED_AT_META_KEY]: blockedAt,
   };
 }
 
-function buildUpdatedChatPreview(
-  chat: Chat,
-  text: string,
-  at: string,
-  isVisible: boolean
-): Chat {
+function buildUpdatedChatPreview(chat: Chat, text: string, at: string, isVisible: boolean): Chat {
   return {
     ...chat,
     lastMessage: text,
     lastMessageAt: at,
-    unreadCount: isVisible ? 0 : chat.unreadCount
+    unreadCount: isVisible ? 0 : chat.unreadCount,
   };
 }
 
@@ -494,7 +483,7 @@ export const __chatStoreTestUtils = {
   mapChatRowToChat,
   resolveChatCategory,
   resolveDefaultSelectedChatId,
-  syncChatActivityMeta
+  syncChatActivityMeta,
 };
 
 export const useChatStore = defineStore('chatStore', () => {
@@ -510,20 +499,25 @@ export const useChatStore = defineStore('chatStore', () => {
     () => chats.value.find((chat) => chat.id === selectedChatId.value) ?? null
   );
   const inboxChats = computed(() =>
-    chats.value.filter((chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'chat')
+    chats.value.filter(
+      (chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'chat'
+    )
   );
   const requestChats = computed(() =>
-    chats.value.filter((chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'request')
+    chats.value.filter(
+      (chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'request'
+    )
   );
   const visibleChats = computed(() =>
     inboxChats.value.filter((chat) => chatMatchesSearch(chat, searchQuery.value))
   );
   const requestCount = computed(() => requestChats.value.length);
-  const unreadChatCount = computed(() =>
-    chats.value.filter((chat) => {
-      const category = resolveChatCategory(chat.meta as Record<string, unknown>);
-      return category !== 'blocked' && chat.unreadCount > 0;
-    }).length
+  const unreadChatCount = computed(
+    () =>
+      chats.value.filter((chat) => {
+        const category = resolveChatCategory(chat.meta as Record<string, unknown>);
+        return category !== 'blocked' && chat.unreadCount > 0;
+      }).length
   );
 
   async function loadChatsIntoState(): Promise<void> {
@@ -531,7 +525,7 @@ export const useChatStore = defineStore('chatStore', () => {
     const [rows, contacts, messageRows] = await Promise.all([
       chatDataService.listChats(),
       contactsService.listContacts(),
-      chatDataService.listAllMessages()
+      chatDataService.listAllMessages(),
     ]);
     const contactContextByPublicKey = new Map<string, ChatContactContext>();
     const activitySnapshotByPublicKey = buildChatActivitySnapshotByPublicKey(
@@ -575,9 +569,11 @@ export const useChatStore = defineStore('chatStore', () => {
         );
         if (normalizedUnreadCount !== row.unread_count) {
           unreadCountSyncPromises.push(
-            chatDataService.updateChatUnreadCount(row.public_key, normalizedUnreadCount).catch((error) => {
-              console.error('Failed to persist derived chat unread count', error);
-            })
+            chatDataService
+              .updateChatUnreadCount(row.public_key, normalizedUnreadCount)
+              .catch((error) => {
+                console.error('Failed to persist derived chat unread count', error);
+              })
           );
         }
 
@@ -585,7 +581,7 @@ export const useChatStore = defineStore('chatStore', () => {
           {
             ...row,
             unread_count: normalizedUnreadCount,
-            meta: nextMeta
+            meta: nextMeta,
           },
           contactContext
         );
@@ -697,14 +693,14 @@ export const useChatStore = defineStore('chatStore', () => {
 
       nextMetaToPersist = {
         ...currentMeta,
-        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: normalizedAt
+        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: normalizedAt,
       };
 
       chats.value = chats.value.map((chat) =>
         chat.id === normalizedChatId
           ? {
               ...chat,
-              meta: nextMetaToPersist ?? chat.meta
+              meta: nextMetaToPersist ?? chat.meta,
             }
           : chat
       );
@@ -715,17 +711,14 @@ export const useChatStore = defineStore('chatStore', () => {
         return;
       }
 
-      const currentAt = readMetaString(
-        existingRow.meta,
-        LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY
-      );
+      const currentAt = readMetaString(existingRow.meta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY);
       if (toComparableTimestamp(currentAt) >= toComparableTimestamp(normalizedAt)) {
         return;
       }
 
       nextMetaToPersist = {
         ...existingRow.meta,
-        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: normalizedAt
+        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: normalizedAt,
       };
     }
 
@@ -773,14 +766,14 @@ export const useChatStore = defineStore('chatStore', () => {
 
       nextMetaToPersist = {
         ...(currentMeta as ChatMetadata),
-        [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: normalizedAt
+        [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: normalizedAt,
       };
 
       chats.value = chats.value.map((chat) =>
         chat.id === normalizedChatId
           ? {
               ...chat,
-              meta: nextMetaToPersist ?? chat.meta
+              meta: nextMetaToPersist ?? chat.meta,
             }
           : chat
       );
@@ -798,7 +791,7 @@ export const useChatStore = defineStore('chatStore', () => {
 
       nextMetaToPersist = {
         ...(existingRow.meta as ChatMetadata),
-        [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: normalizedAt
+        [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: normalizedAt,
       };
     }
 
@@ -843,7 +836,7 @@ export const useChatStore = defineStore('chatStore', () => {
         chat.id === normalizedChatId
           ? {
               ...chat,
-              meta: nextMetaToPersist ?? chat.meta
+              meta: nextMetaToPersist ?? chat.meta,
             }
           : chat
       );
@@ -854,7 +847,11 @@ export const useChatStore = defineStore('chatStore', () => {
         return;
       }
 
-      nextMetaToPersist = buildAcceptedChatMeta(existingRow.meta, acceptedAt, lastOutgoingMessageAt);
+      nextMetaToPersist = buildAcceptedChatMeta(
+        existingRow.meta,
+        acceptedAt,
+        lastOutgoingMessageAt
+      );
     }
 
     if (!nextMetaToPersist) {
@@ -903,14 +900,14 @@ export const useChatStore = defineStore('chatStore', () => {
 
     const nextMeta = {
       ...(targetChat.meta as Record<string, unknown>),
-      muted: true
+      muted: true,
     };
 
     chats.value = chats.value.map((chat) =>
       chat.id === normalizedChatId
         ? {
             ...chat,
-            meta: nextMeta
+            meta: nextMeta,
           }
         : chat
     );
@@ -940,7 +937,7 @@ export const useChatStore = defineStore('chatStore', () => {
       return {
         ...chat,
         unreadCount: 0,
-        meta: nextMetaToPersist
+        meta: nextMetaToPersist,
       };
     });
 
@@ -967,7 +964,7 @@ export const useChatStore = defineStore('chatStore', () => {
     try {
       await Promise.all([
         chatDataService.updateChatMeta(normalizedChatId, nextMetaToPersist),
-        chatDataService.markChatAsRead(normalizedChatId)
+        chatDataService.markChatAsRead(normalizedChatId),
       ]);
     } catch (error) {
       console.error('Failed to block chat request', error);
@@ -991,7 +988,10 @@ export const useChatStore = defineStore('chatStore', () => {
         await nostrEventDataService.deleteEventsByIds(
           existingMessages
             .map((message) => message.event_id)
-            .filter((eventId): eventId is string => typeof eventId === 'string' && eventId.trim().length > 0)
+            .filter(
+              (eventId): eventId is string =>
+                typeof eventId === 'string' && eventId.trim().length > 0
+            )
         );
       } catch (error) {
         console.error('Failed to delete nostr events for chat', error);
@@ -1053,7 +1053,7 @@ export const useChatStore = defineStore('chatStore', () => {
 
     composerDraftsByChatId.value = {
       ...composerDraftsByChatId.value,
-      [normalizedChatId]: normalizedDraft
+      [normalizedChatId]: normalizedDraft,
     };
   }
 
@@ -1094,12 +1094,7 @@ export const useChatStore = defineStore('chatStore', () => {
     );
 
     try {
-      await chatDataService.updateChatPreview(
-        normalizedChatId,
-        text,
-        at,
-        nextUnreadCount
-      );
+      await chatDataService.updateChatPreview(normalizedChatId, text, at, nextUnreadCount);
     } catch (error) {
       console.error('Failed to update chat preview', error);
     }
@@ -1133,7 +1128,7 @@ export const useChatStore = defineStore('chatStore', () => {
 
       return {
         ...chat,
-        meta: nextMeta
+        meta: nextMeta,
       };
     });
   }
@@ -1150,7 +1145,7 @@ export const useChatStore = defineStore('chatStore', () => {
       chat.id === normalizedChatId
         ? {
             ...chat,
-            unreadCount: normalizedCount
+            unreadCount: normalizedCount,
           }
         : chat
     );
@@ -1174,18 +1169,14 @@ export const useChatStore = defineStore('chatStore', () => {
     const existingChat = chats.value.find((chat) => chat.id === nextChatId) ?? null;
     const currentMeta = {
       ...((existingChat?.meta as Record<string, unknown> | undefined) ?? {}),
-      ...(input.meta ? { ...input.meta } : {})
+      ...(input.meta ? { ...input.meta } : {}),
     };
     const currentIncomingAt = readMetaString(currentMeta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY);
     if (toComparableTimestamp(input.at) > toComparableTimestamp(currentIncomingAt)) {
       currentMeta[CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY] = input.at;
     }
     const nextName = existingChat?.name || fallbackName;
-    const nextMeta = syncChatMeta(
-      currentMeta,
-      undefined,
-      nextName || nextPublicKey
-    );
+    const nextMeta = syncChatMeta(currentMeta, undefined, nextName || nextPublicKey);
     const nextAvatar =
       readMetaString(nextMeta, 'avatar') ||
       existingChat?.avatar ||
@@ -1199,7 +1190,7 @@ export const useChatStore = defineStore('chatStore', () => {
       lastMessage: input.messageText,
       lastMessageAt: input.at,
       unreadCount: visibleChatId.value === nextChatId ? 0 : Math.max(0, input.unreadCount),
-      meta: nextMeta
+      meta: nextMeta,
     };
 
     if (existingChat) {
@@ -1217,7 +1208,8 @@ export const useChatStore = defineStore('chatStore', () => {
     publicKey = nameOrIdentifier
   ): Promise<Chat | null> {
     const cleanName = nameOrIdentifier.trim();
-    const cleanPublicKey = normalizeChatIdentifier(publicKey) ?? normalizeChatIdentifier(cleanName) ?? '';
+    const cleanPublicKey =
+      normalizeChatIdentifier(publicKey) ?? normalizeChatIdentifier(cleanName) ?? '';
 
     if (!cleanName || !cleanPublicKey) {
       return null;
@@ -1251,7 +1243,7 @@ export const useChatStore = defineStore('chatStore', () => {
           ...chat,
           name: nextName,
           avatar: readMetaString(nextMeta, 'avatar') || chat.avatar,
-          meta: nextMeta
+          meta: nextMeta,
         };
         return nextChat;
       });
@@ -1285,8 +1277,8 @@ export const useChatStore = defineStore('chatStore', () => {
         ...(contactContext?.givenName ? { given_name: contactContext.givenName } : {}),
         ...(contactContext?.contactName ? { contact_name: contactContext.contactName } : {}),
         [CHAT_INBOX_STATE_META_KEY]: 'accepted',
-        [CHAT_ACCEPTED_AT_META_KEY]: now
-      }
+        [CHAT_ACCEPTED_AT_META_KEY]: now,
+      },
     });
     if (!created) {
       return null;
@@ -1336,7 +1328,7 @@ export const useChatStore = defineStore('chatStore', () => {
     if (existingChatRow) {
       await chatDataService.updateChat(existingChatRow.id, {
         name: nextName,
-        meta: nextMeta
+        meta: nextMeta,
       });
     }
 
@@ -1352,7 +1344,7 @@ export const useChatStore = defineStore('chatStore', () => {
               ...chat,
               name: nextName,
               avatar: nextAvatar,
-              meta: nextMeta
+              meta: nextMeta,
             }
           : chat
       )
@@ -1398,6 +1390,6 @@ export const useChatStore = defineStore('chatStore', () => {
     setUnseenReactionCount,
     applyIncomingMessage,
     addContact,
-    syncContactProfile
+    syncContactProfile,
   };
 });

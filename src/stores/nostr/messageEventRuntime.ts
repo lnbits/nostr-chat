@@ -1,11 +1,11 @@
 import {
+  type NDK,
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
-  NDKUser,
-  type NDK,
   type NDKSigner,
-  type NostrEvent
+  NDKUser,
+  type NostrEvent,
 } from '@nostr-dev-kit/ndk';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { INVITATION_PROOF_TAG } from 'src/stores/nostr/constants';
@@ -38,7 +38,7 @@ export function createMessageEventRuntime({
   getOrCreateSigner,
   ndk,
   readEpochNumberTag,
-  readFirstTagValue
+  readFirstTagValue,
 }: MessageEventRuntimeDeps) {
   function normalizeEventId(value: unknown): string | null {
     if (typeof value !== 'string') {
@@ -67,7 +67,7 @@ export function createMessageEventRuntime({
       created_at: createdAt,
       pubkey: senderPubkey,
       content: message,
-      tags
+      tags,
     });
   }
 
@@ -89,8 +89,8 @@ export function createMessageEventRuntime({
         ['p', recipientPubkey],
         ['e', targetEventId],
         ['p', targetAuthorPubkey],
-        ['k', String(targetKind)]
-      ]
+        ['k', String(targetKind)],
+      ],
     });
   }
 
@@ -109,8 +109,8 @@ export function createMessageEventRuntime({
       tags: [
         ['p', recipientPubkey],
         ['e', targetEventId],
-        ['k', String(targetKind)]
-      ]
+        ['k', String(targetKind)],
+      ],
     });
   }
 
@@ -133,7 +133,7 @@ export function createMessageEventRuntime({
       content: event.content,
       tags,
       ...(event.id?.trim() ? { id: event.id.trim() } : {}),
-      ...(event.sig?.trim() ? { sig: event.sig.trim() } : {})
+      ...(event.sig?.trim() ? { sig: event.sig.trim() } : {}),
     });
   }
 
@@ -165,7 +165,7 @@ export function createMessageEventRuntime({
       tags: event.tags.map((tag) => [...tag]),
       kind: event.kind,
       pubkey: event.pubkey,
-      ...(event.id?.trim() ? { id: event.id.trim() } : {})
+      ...(event.id?.trim() ? { id: event.id.trim() } : {}),
     };
 
     const sealEvent = new NDKEvent(ndk, {
@@ -173,7 +173,7 @@ export function createMessageEventRuntime({
       created_at: approximateGiftWrapNow(),
       pubkey: event.pubkey,
       content: JSON.stringify(rumorPayload),
-      tags: [[INVITATION_PROOF_TAG, invitationProof]]
+      tags: [[INVITATION_PROOF_TAG, invitationProof]],
     });
     await sealEvent.encrypt(recipient, signer, 'nip44');
     await sealEvent.sign(signer);
@@ -183,7 +183,7 @@ export function createMessageEventRuntime({
       kind: NDKKind.GiftWrap,
       created_at: approximateGiftWrapNow(),
       content: JSON.stringify(sealEvent.rawEvent()),
-      tags: [['p', recipient.pubkey]]
+      tags: [['p', recipient.pubkey]],
     });
     await giftWrapEvent.encrypt(recipient, wrapSigner, 'nip44');
     await giftWrapEvent.sign(wrapSigner);
@@ -201,7 +201,7 @@ export function createMessageEventRuntime({
 
       return {
         ...nostrEvent,
-        id: eventId
+        id: eventId,
       };
     } catch {
       const eventId = normalizeEventId(event.id);
@@ -224,7 +224,7 @@ export function createMessageEventRuntime({
         tags,
         pubkey,
         id: eventId,
-        ...(typeof event.kind === 'number' ? { kind: event.kind } : {})
+        ...(typeof event.kind === 'number' ? { kind: event.kind } : {}),
       };
     }
   }
@@ -273,7 +273,7 @@ export function createMessageEventRuntime({
         isValid: false,
         signedEvent: null,
         epochNumber,
-        epochPrivateKey
+        epochPrivateKey,
       };
     }
 
@@ -284,7 +284,7 @@ export function createMessageEventRuntime({
       kind: rumorEvent.kind,
       pubkey: rumorEvent.pubkey,
       ...(rumorEvent.id?.trim() ? { id: rumorEvent.id.trim() } : {}),
-      sig: invitationProof
+      sig: invitationProof,
     });
     const isValid = signedEvent.verifySignature(false) === true;
 
@@ -292,7 +292,7 @@ export function createMessageEventRuntime({
       isValid,
       signedEvent: isValid ? await toStoredNostrEvent(signedEvent) : null,
       epochNumber,
-      epochPrivateKey
+      epochPrivateKey,
     };
   }
 
@@ -318,11 +318,12 @@ export function createMessageEventRuntime({
       return {
         recipientPubkey: wrappedRecipientPubkey,
         unwrapSigner: await getOrCreateSigner(),
-        groupChatPublicKey: null
+        groupChatPublicKey: null,
       };
     }
 
-    const groupEpochContext = await findGroupChatEpochContextByRecipientPubkey(wrappedRecipientPubkey);
+    const groupEpochContext =
+      await findGroupChatEpochContextByRecipientPubkey(wrappedRecipientPubkey);
     if (!groupEpochContext?.epochEntry.epoch_private_key_encrypted) {
       return null;
     }
@@ -342,7 +343,7 @@ export function createMessageEventRuntime({
     return {
       recipientPubkey: wrappedRecipientPubkey,
       unwrapSigner: new NDKPrivateKeySigner(decryptedCurrentEpochPrivateKey, ndk),
-      groupChatPublicKey: groupEpochContext.chat.public_key
+      groupChatPublicKey: groupEpochContext.chat.public_key,
     };
   }
 
@@ -371,7 +372,9 @@ export function createMessageEventRuntime({
 
   function readReplyTargetEventId(event: NDKEvent): string | null {
     const replyTag = event.getMatchingTags('e').find((tag) => {
-      const marker = String(tag[3] ?? '').trim().toLowerCase();
+      const marker = String(tag[3] ?? '')
+        .trim()
+        .toLowerCase();
       return marker === 'reply' && normalizeEventId(tag[1] ?? '');
     });
     if (replyTag) {
@@ -404,7 +407,7 @@ export function createMessageEventRuntime({
 
     return eventIds.map((eventId, index) => ({
       eventId,
-      kind: kinds[index] ?? fallbackKind
+      kind: kinds[index] ?? fallbackKind,
     }));
   }
 
@@ -424,6 +427,6 @@ export function createMessageEventRuntime({
     resolveIncomingPrivateMessageRecipientContext,
     toStoredNostrEvent,
     unwrapGiftWrapSealEvent,
-    verifyIncomingGroupEpochTicket
+    verifyIncomingGroupEpochTicket,
   };
 }

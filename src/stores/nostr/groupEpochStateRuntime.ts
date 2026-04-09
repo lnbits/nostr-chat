@@ -1,8 +1,8 @@
 import { NDKPrivateKeySigner, type NostrEvent } from '@nostr-dev-kit/ndk';
-import { chatDataService, type ChatRow } from 'src/services/chatDataService';
+import { type ChatRow, chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY,
   GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY,
@@ -10,12 +10,12 @@ import {
   GROUP_EPOCH_KEYS_CHAT_META_KEY,
   GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY,
   GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY,
-  GROUP_PRIVATE_KEY_CONTACT_META_KEY
+  GROUP_PRIVATE_KEY_CONTACT_META_KEY,
 } from 'src/stores/nostr/constants';
 import type {
   GroupIdentitySecretContent,
   RelaySaveStatus,
-  SubscribePrivateMessagesOptions
+  SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
 import {
   buildAvatarFallbackValue,
@@ -24,21 +24,21 @@ import {
   normalizeChatGroupEpochKeysValue,
   resolveCurrentGroupChatEpochEntryValue,
   resolveGroupChatEpochEntriesValue,
-  resolveGroupDisplayNameValue
+  resolveGroupDisplayNameValue,
 } from 'src/stores/nostr/valueUtils';
-import {
-  mergeGroupMemberTicketDeliveries,
-  normalizeGroupMemberTicketDeliveries
-} from 'src/utils/groupMemberTicketDelivery';
-import { normalizeMessageRelayStatuses } from 'src/utils/messageRelayStatus';
 import type {
   ChatGroupEpochKey,
   ChatMetadata,
   GroupMemberTicketDelivery,
   MessageRelayStatus,
-  NostrEventDirection
+  NostrEventDirection,
 } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord } from 'src/types/contact';
+import {
+  mergeGroupMemberTicketDeliveries,
+  normalizeGroupMemberTicketDeliveries,
+} from 'src/utils/groupMemberTicketDelivery';
+import { normalizeMessageRelayStatuses } from 'src/utils/messageRelayStatus';
 
 interface GroupEpochStateRuntimeDeps {
   bumpContactListVersion: () => void;
@@ -57,9 +57,7 @@ interface GroupEpochStateRuntimeDeps {
     content: string
   ) => Promise<GroupIdentitySecretContent | null>;
   derivePublicKeyFromPrivateKey: (privateKey: string) => string | null;
-  encryptGroupIdentitySecretContent: (
-    content: GroupIdentitySecretContent
-  ) => Promise<string>;
+  encryptGroupIdentitySecretContent: (content: GroupIdentitySecretContent) => Promise<string>;
   encryptPrivateStringContent: (content: string) => Promise<string>;
   getLoggedInPublicKeyHex: () => string | null;
   getPrivateMessagesEpochSwitchSince: () => number;
@@ -112,7 +110,7 @@ export function createGroupEpochStateRuntime({
   logInvalidIncomingEpochNumber,
   publishGroupIdentitySecret,
   queueEpochDrivenPrivateMessagesSubscriptionRefresh,
-  restoreGroupEpochHistory
+  restoreGroupEpochHistory,
 }: GroupEpochStateRuntimeDeps) {
   async function upsertGroupMemberTicketDelivery(
     groupPublicKey: string,
@@ -141,11 +139,11 @@ export function createGroupEpochStateRuntime({
     const nextDeliveries = mergeGroupMemberTicketDeliveries(existingDeliveries, normalizedDelivery);
     const nextMeta: ChatMetadata = {
       ...(existingChat.meta ?? {}),
-      [GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY]: nextDeliveries
+      [GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY]: nextDeliveries,
     };
 
     await chatDataService.updateChat(normalizedGroupPublicKey, {
-      meta: nextMeta
+      meta: nextMeta,
     });
   }
 
@@ -190,7 +188,7 @@ export function createGroupEpochStateRuntime({
       member_public_key: normalizedMemberPublicKey,
       epoch_number: Math.floor(normalizedEpochNumber),
       event_id: normalizedEventId,
-      created_at: createdAt
+      created_at: createdAt,
     });
 
     if (normalizedRelayStatuses.length === 0) {
@@ -201,10 +199,10 @@ export function createGroupEpochStateRuntime({
       event: options.event
         ? {
             ...options.event,
-            id: normalizedEventId
+            id: normalizedEventId,
           }
         : undefined,
-      direction: options.direction
+      direction: options.direction,
     });
   }
 
@@ -231,7 +229,7 @@ export function createGroupEpochStateRuntime({
       if (epochEntry) {
         return {
           chat,
-          epochEntry
+          epochEntry,
         };
       }
     }
@@ -264,9 +262,7 @@ export function createGroupEpochStateRuntime({
 
     return [
       loggedInPubkeyHex,
-      ...Array.from(groupRecipientPubkeys).sort((first, second) =>
-        first.localeCompare(second)
-      )
+      ...Array.from(groupRecipientPubkeys).sort((first, second) => first.localeCompare(second)),
     ];
   }
 
@@ -294,7 +290,7 @@ export function createGroupEpochStateRuntime({
     const fallbackName = normalizedName || resolveGroupDisplayNameValue(normalizedGroupPublicKey);
     const existingContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
     const nextContactMeta: ContactMetadata = {
-      ...(existingContact?.meta ?? {})
+      ...(existingContact?.meta ?? {}),
     };
     nextContactMeta[GROUP_PRIVATE_KEY_CONTACT_META_KEY] = normalizedEncryptedPrivateKey;
     nextContactMeta[GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY] = normalizedOwnerPublicKey;
@@ -311,7 +307,7 @@ export function createGroupEpochStateRuntime({
         type: 'group',
         name: fallbackName,
         meta: nextContactMeta,
-        relays: []
+        relays: [],
       });
       didChange = true;
     } else {
@@ -324,7 +320,7 @@ export function createGroupEpochStateRuntime({
         await contactsService.updateContact(existingContact.id, {
           type: 'group',
           ...(shouldUpdateName ? { name: fallbackName } : {}),
-          ...(shouldUpdateMeta ? { meta: nextContactMeta } : {})
+          ...(shouldUpdateMeta ? { meta: nextContactMeta } : {}),
         });
         didChange = true;
       }
@@ -332,10 +328,7 @@ export function createGroupEpochStateRuntime({
 
     const nextContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
     const groupName =
-      normalizedName ||
-      nextContact?.name?.trim() ||
-      existingContact?.name?.trim() ||
-      fallbackName;
+      normalizedName || nextContact?.name?.trim() || existingContact?.name?.trim() || fallbackName;
     const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
     const existingChatMeta = existingChat?.meta ?? {};
     const {
@@ -355,8 +348,8 @@ export function createGroupEpochStateRuntime({
         meta: {
           avatar: buildAvatarFallbackValue(groupName),
           inbox_state: 'accepted',
-          accepted_at: new Date().toISOString()
-        }
+          accepted_at: new Date().toISOString(),
+        },
       });
       return true;
     }
@@ -368,7 +361,7 @@ export function createGroupEpochStateRuntime({
       await chatDataService.updateChat(normalizedGroupPublicKey, {
         type: 'group',
         ...(shouldUpdateName ? { name: groupName } : {}),
-        meta: nextChatMeta
+        meta: nextChatMeta,
       });
       didChange = true;
     }
@@ -383,15 +376,12 @@ export function createGroupEpochStateRuntime({
     contact: ContactRecord;
     secret: GroupIdentitySecretContent;
   }> {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(
-      groupContact.public_key
-    );
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupContact.public_key);
     if (!normalizedGroupPublicKey || groupContact.type !== 'group') {
       throw new Error('Group contact not found.');
     }
 
-    const encryptedGroupPrivateKey =
-      groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    const encryptedGroupPrivateKey = groupContact.meta.group_private_key_encrypted?.trim() ?? '';
     if (!encryptedGroupPrivateKey) {
       throw new Error('Encrypted group private key not found.');
     }
@@ -416,24 +406,23 @@ export function createGroupEpochStateRuntime({
           ...decryptedSecret,
           epoch_number: Math.floor(Number(decryptedSecret.epoch_number)),
           epoch_privkey:
-            inputSanitizerService.normalizeHexKey(decryptedSecret.epoch_privkey ?? '') ??
-            undefined
-        }
+            inputSanitizerService.normalizeHexKey(decryptedSecret.epoch_privkey ?? '') ?? undefined,
+        },
       };
     }
 
     const nextSecret: GroupIdentitySecretContent = {
       ...decryptedSecret,
       epoch_number: 0,
-      epoch_privkey: NDKPrivateKeySigner.generate().privateKey
+      epoch_privkey: NDKPrivateKeySigner.generate().privateKey,
     };
     const nextEncryptedSecret = await encryptGroupIdentitySecretContent(nextSecret);
     const nextMeta: ContactMetadata = {
       ...(groupContact.meta ?? {}),
-      [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: nextEncryptedSecret
+      [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: nextEncryptedSecret,
     };
     const updatedContact = await contactsService.updateContact(groupContact.id, {
-      meta: nextMeta
+      meta: nextMeta,
     });
     if (!updatedContact) {
       throw new Error('Failed to persist initial group epoch state.');
@@ -452,7 +441,7 @@ export function createGroupEpochStateRuntime({
 
     return {
       contact: updatedContact,
-      secret: nextSecret
+      secret: nextSecret,
     };
   }
 
@@ -526,8 +515,7 @@ export function createGroupEpochStateRuntime({
     const existingEpochEntry =
       existingGroupEpochKeys.find(
         (entry) =>
-          entry.epoch_number === epochNumber &&
-          entry.epoch_public_key === normalizedEpochPublicKey
+          entry.epoch_number === epochNumber && entry.epoch_public_key === normalizedEpochPublicKey
       ) ?? null;
     const entriesByEpoch = new Map<number, ChatGroupEpochKey>(
       existingGroupEpochKeys.map((entry) => [entry.epoch_number, entry])
@@ -535,17 +523,15 @@ export function createGroupEpochStateRuntime({
     if (existingEpochEntry) {
       entriesByEpoch.set(epochNumber, {
         ...existingEpochEntry,
-        ...(invitationCreatedAt ? { invitation_created_at: invitationCreatedAt } : {})
+        ...(invitationCreatedAt ? { invitation_created_at: invitationCreatedAt } : {}),
       });
     } else {
-      const encryptedEpochPrivateKey = await encryptPrivateStringContent(
-        normalizedEpochPrivateKey
-      );
+      const encryptedEpochPrivateKey = await encryptPrivateStringContent(normalizedEpochPrivateKey);
       entriesByEpoch.set(epochNumber, {
         epoch_number: epochNumber,
         epoch_public_key: normalizedEpochPublicKey,
         epoch_private_key_encrypted: encryptedEpochPrivateKey,
-        ...(invitationCreatedAt ? { invitation_created_at: invitationCreatedAt } : {})
+        ...(invitationCreatedAt ? { invitation_created_at: invitationCreatedAt } : {}),
       });
     }
 
@@ -558,7 +544,7 @@ export function createGroupEpochStateRuntime({
     const previousCurrentEpochPublicKey = inputSanitizerService.normalizeHexKey(
       typeof existingChat?.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
         ? String(existingChat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
-        : existingGroupEpochKeys[0]?.epoch_public_key ?? ''
+        : (existingGroupEpochKeys[0]?.epoch_public_key ?? '')
     );
     const nextCurrentEpochPublicKey = currentEpochEntry?.epoch_public_key ?? null;
     const fallbackName =
@@ -568,11 +554,10 @@ export function createGroupEpochStateRuntime({
     const nextMeta: ChatMetadata = {
       ...(existingChat?.meta ?? {}),
       [GROUP_EPOCH_KEYS_CHAT_META_KEY]: nextGroupEpochKeys,
-      [GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY]:
-        currentEpochEntry?.epoch_public_key ?? '',
+      [GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY]: currentEpochEntry?.epoch_public_key ?? '',
       [GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]:
         currentEpochEntry?.epoch_private_key_encrypted ?? '',
-      [GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY]: currentEpochEntry?.epoch_public_key ?? ''
+      [GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY]: currentEpochEntry?.epoch_public_key ?? '',
     };
 
     if (!existingChat) {
@@ -589,15 +574,15 @@ export function createGroupEpochStateRuntime({
           ...(options.accepted
             ? {
                 inbox_state: 'accepted',
-                accepted_at: createdAt
+                accepted_at: createdAt,
               }
             : {}),
-          ...nextMeta
-        }
+          ...nextMeta,
+        },
       });
       queueEpochDrivenPrivateMessagesSubscriptionRefresh({
         seedRelayUrls: options.seedRelayUrls,
-        sinceOverride: getPrivateMessagesEpochSwitchSince()
+        sinceOverride: getPrivateMessagesEpochSwitchSince(),
       });
       await chatStore.reload();
       void restoreGroupEpochHistory(normalizedGroupPublicKey, normalizedEpochPublicKey);
@@ -606,8 +591,7 @@ export function createGroupEpochStateRuntime({
 
     const shouldUpdateType = existingChat.type !== 'group';
     const shouldUpdateName = existingChat.name !== fallbackName;
-    const shouldUpdateMeta =
-      JSON.stringify(existingChat.meta ?? {}) !== JSON.stringify(nextMeta);
+    const shouldUpdateMeta = JSON.stringify(existingChat.meta ?? {}) !== JSON.stringify(nextMeta);
     if (!shouldUpdateType && !shouldUpdateName && !shouldUpdateMeta) {
       return;
     }
@@ -615,12 +599,12 @@ export function createGroupEpochStateRuntime({
     await chatDataService.updateChat(normalizedGroupPublicKey, {
       ...(shouldUpdateType ? { type: 'group' as const } : {}),
       ...(shouldUpdateName ? { name: fallbackName } : {}),
-      ...(shouldUpdateMeta ? { meta: nextMeta } : {})
+      ...(shouldUpdateMeta ? { meta: nextMeta } : {}),
     });
     if (previousCurrentEpochPublicKey !== nextCurrentEpochPublicKey) {
       queueEpochDrivenPrivateMessagesSubscriptionRefresh({
         seedRelayUrls: options.seedRelayUrls,
-        sinceOverride: getPrivateMessagesEpochSwitchSince()
+        sinceOverride: getPrivateMessagesEpochSwitchSince(),
       });
     }
     await chatStore.reload();
@@ -637,6 +621,6 @@ export function createGroupEpochStateRuntime({
     findGroupChatEpochContextByRecipientPubkey,
     listPrivateMessageRecipientPubkeys,
     persistIncomingGroupEpochTicket,
-    upsertGroupMemberTicketDelivery
+    upsertGroupMemberTicketDelivery,
   };
 }

@@ -1,19 +1,19 @@
 import {
+  type NDK,
   NDKEvent,
+  type NDKFilter,
   NDKKind,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
-  type NDK,
-  type NDKFilter,
-  type NDKSubscriptionOptions
+  type NDKSubscriptionOptions,
 } from '@nostr-dev-kit/ndk';
-import { chatDataService, type ChatRow } from 'src/services/chatDataService';
+import { type ChatRow, chatDataService } from 'src/services/chatDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS,
   PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
   PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS,
-  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
 } from 'src/stores/nostr/constants';
 import type { PrivateMessagesBackfillState } from 'src/stores/nostr/types';
 
@@ -102,7 +102,7 @@ export function createPrivateMessagesBackfillRuntime({
   toOptionalIsoTimestampFromUnix,
   updateStoredEventSinceFromCreatedAt,
   updateStoredPrivateMessagesLastReceivedFromCreatedAt,
-  writePrivateMessagesBackfillState
+  writePrivateMessagesBackfillState,
 }: PrivateMessagesBackfillRuntimeDeps) {
   let privateMessagesBackfillSubscription: ReturnType<NDK['subscribe']> | null = null;
   let privateMessagesBackfillPromise: Promise<void> | null = null;
@@ -133,7 +133,7 @@ export function createPrivateMessagesBackfillRuntime({
     if (privateMessagesBackfillSubscription) {
       logSubscription('private-messages', 'backfill-stop', {
         reason,
-        signature: privateMessagesBackfillSignature || null
+        signature: privateMessagesBackfillSignature || null,
       });
       privateMessagesBackfillSubscription.stop();
       privateMessagesBackfillSubscription = null;
@@ -213,13 +213,13 @@ export function createPrivateMessagesBackfillRuntime({
           ...buildSubscriptionRelayDetails(options.relayUrls),
           recipientCount: options.recipientPubkeys.length,
           recipients: options.recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
-          ...privateMessageTargetDetails
+          ...privateMessageTargetDetails,
         });
         const privateMessagesBackfillFilters: NDKFilter = {
           kinds: [NDKKind.GiftWrap],
           '#p': options.recipientPubkeys,
           since: options.since,
-          until: options.until
+          until: options.until,
         };
         subscription = subscribeWithReqLogging(
           'private-messages',
@@ -235,7 +235,7 @@ export function createPrivateMessagesBackfillRuntime({
               updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
               updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
               queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
-                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
               });
             },
             onEose: () => {
@@ -243,7 +243,7 @@ export function createPrivateMessagesBackfillRuntime({
                 signature: options.signature,
                 eventCount,
                 ...buildFilterSinceDetails(options.since),
-                ...buildFilterUntilDetails(options.until)
+                ...buildFilterUntilDetails(options.until),
               });
               schedulePostPrivateMessagesEoseChecks();
               flushPrivateMessagesUiRefreshNow();
@@ -251,13 +251,13 @@ export function createPrivateMessagesBackfillRuntime({
             },
             onClose: () => {
               finish();
-            }
+            },
           },
           {
             signature: options.signature,
             ...buildFilterSinceDetails(options.since),
             ...buildFilterUntilDetails(options.until),
-            ...buildSubscriptionRelayDetails(options.relayUrls)
+            ...buildSubscriptionRelayDetails(options.relayUrls),
           }
         );
 
@@ -314,18 +314,18 @@ export function createPrivateMessagesBackfillRuntime({
               groupChatPubkey:
                 formatSubscriptionLogValue(options.groupPublicKey) ?? options.groupPublicKey,
               epochRecipientPubkey:
-                formatSubscriptionLogValue(options.recipientPubkey) ?? options.recipientPubkey
-            }
+                formatSubscriptionLogValue(options.recipientPubkey) ?? options.recipientPubkey,
+            },
           ],
           ...buildFilterSinceDetails(options.since),
           ...buildFilterUntilDetails(options.until),
-          ...buildSubscriptionRelayDetails(options.relayUrls)
+          ...buildSubscriptionRelayDetails(options.relayUrls),
         });
         const groupEpochHistoryFilters: NDKFilter = {
           kinds: [NDKKind.GiftWrap],
           '#p': [options.recipientPubkey],
           since: options.since,
-          until: options.until
+          until: options.until,
         };
         subscription = subscribeWithReqLogging(
           'private-messages',
@@ -340,7 +340,7 @@ export function createPrivateMessagesBackfillRuntime({
               updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
               updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
               queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
-                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
               });
             },
             onEose: () => {
@@ -350,14 +350,14 @@ export function createPrivateMessagesBackfillRuntime({
             },
             onClose: () => {
               finish();
-            }
+            },
           },
           {
             groupPublicKey: formatSubscriptionLogValue(options.groupPublicKey),
             epochRecipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
             ...buildFilterSinceDetails(options.since),
             ...buildFilterUntilDetails(options.until),
-            ...buildSubscriptionRelayDetails(options.relayUrls)
+            ...buildSubscriptionRelayDetails(options.relayUrls),
           }
         );
       } catch (error) {
@@ -417,7 +417,7 @@ export function createPrivateMessagesBackfillRuntime({
         recipientPubkey: normalizedEpochPublicKey,
         relayUrls,
         since: getPrivateMessagesStartupFloorSince(now),
-        until: now
+        until: now,
       });
       restoredGroupEpochHistoryKeys.add(restoreKey);
     })()
@@ -473,7 +473,7 @@ export function createPrivateMessagesBackfillRuntime({
           reason: 'no-pending-window',
           ...buildFilterSinceDetails(liveSince),
           floorSince,
-          floorSinceIso: toOptionalIsoTimestampFromUnix(floorSince)
+          floorSinceIso: toOptionalIsoTimestampFromUnix(floorSince),
         });
         return;
       }
@@ -484,21 +484,21 @@ export function createPrivateMessagesBackfillRuntime({
         ...buildFilterUntilDetails(state.nextUntil),
         floorSince: state.floorSince,
         floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince),
-        delayMs: state.delayMs
+        delayMs: state.delayMs,
       });
 
       while (runToken === privateMessagesBackfillRunToken) {
         if (state.nextSince >= state.nextUntil || state.nextUntil <= state.floorSince) {
           writePrivateMessagesBackfillState({
             ...state,
-            completed: true
+            completed: true,
           });
           logSubscription('private-messages', 'backfill-complete', {
             signature,
             ...buildFilterSinceDetails(state.nextSince),
             ...buildFilterUntilDetails(state.nextUntil),
             floorSince: state.floorSince,
-            floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince)
+            floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince),
           });
           return;
         }
@@ -508,7 +508,7 @@ export function createPrivateMessagesBackfillRuntime({
           signature,
           ...buildFilterSinceDetails(state.nextSince),
           ...buildFilterUntilDetails(state.nextUntil),
-          delayMs: state.delayMs
+          delayMs: state.delayMs,
         });
 
         await runPrivateMessagesBackfillWindow({
@@ -517,7 +517,7 @@ export function createPrivateMessagesBackfillRuntime({
           relayUrls,
           since: state.nextSince,
           until: state.nextUntil,
-          signature
+          signature,
         });
 
         if (runToken !== privateMessagesBackfillRunToken) {
@@ -528,14 +528,14 @@ export function createPrivateMessagesBackfillRuntime({
         if (reachedFloor) {
           writePrivateMessagesBackfillState({
             ...state,
-            completed: true
+            completed: true,
           });
           logSubscription('private-messages', 'backfill-complete', {
             signature,
             ...buildFilterSinceDetails(state.nextSince),
             ...buildFilterUntilDetails(state.nextUntil),
             floorSince: state.floorSince,
-            floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince)
+            floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince),
           });
           return;
         }
@@ -554,7 +554,7 @@ export function createPrivateMessagesBackfillRuntime({
             PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
             state.delayMs + PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS
           ),
-          completed: false
+          completed: false,
         };
         writePrivateMessagesBackfillState(state);
 
@@ -564,7 +564,7 @@ export function createPrivateMessagesBackfillRuntime({
           nextSince,
           nextSinceIso: toOptionalIsoTimestampFromUnix(nextSince),
           nextUntil,
-          nextUntilIso: toOptionalIsoTimestampFromUnix(nextUntil)
+          nextUntilIso: toOptionalIsoTimestampFromUnix(nextUntil),
         });
 
         const shouldContinue = await waitForPrivateMessagesBackfillDelay(waitDelayMs, runToken);
@@ -577,7 +577,7 @@ export function createPrivateMessagesBackfillRuntime({
         console.error('Failed to backfill private messages', error);
         logSubscription('private-messages', 'backfill-error', {
           signature,
-          error
+          error,
         });
       })
       .finally(() => {
@@ -595,6 +595,6 @@ export function createPrivateMessagesBackfillRuntime({
   return {
     restoreGroupEpochHistory,
     startPrivateMessagesStartupBackfill,
-    stopPrivateMessagesBackfill
+    stopPrivateMessagesBackfill,
   };
 }

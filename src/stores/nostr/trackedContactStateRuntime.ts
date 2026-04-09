@@ -1,9 +1,6 @@
-import { type NDKEvent } from '@nostr-dev-kit/ndk';
+import type { NDKEvent } from '@nostr-dev-kit/ndk';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import type {
-  ContactProfileEventState,
-  ContactRelayListEventState
-} from 'src/stores/nostr/types';
+import type { ContactProfileEventState, ContactRelayListEventState } from 'src/stores/nostr/types';
 
 export function createTrackedContactStateRuntime() {
   const lastContactProfileEventStateByPubkey = new Map<string, ContactProfileEventState>();
@@ -39,7 +36,7 @@ export function createTrackedContactStateRuntime() {
   ): ContactRelayListEventState {
     return {
       createdAt: Number(event.created_at ?? 0),
-      eventId: event.id?.trim() ?? ''
+      eventId: event.id?.trim() ?? '',
     };
   }
 
@@ -89,7 +86,7 @@ export function createTrackedContactStateRuntime() {
   ): ContactProfileEventState {
     return {
       createdAt: Number(event.created_at ?? 0),
-      eventId: event.id?.trim() ?? ''
+      eventId: event.id?.trim() ?? '',
     };
   }
 
@@ -152,6 +149,6 @@ export function createTrackedContactStateRuntime() {
     resetTrackedContactEventState,
     shouldApplyContactProfileEvent,
     shouldApplyContactRelayListEvent,
-    shouldApplyPrivateContactListEvent
+    shouldApplyPrivateContactListEvent,
   };
 }

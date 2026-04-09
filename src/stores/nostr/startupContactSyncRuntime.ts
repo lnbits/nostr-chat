@@ -1,4 +1,3 @@
-import type { Ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -7,9 +6,10 @@ import type {
   ContactCursorContent,
   ContactRefreshLifecycle,
   PrivatePreferences,
-  SubscribePrivateMessagesOptions
+  SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
 import type { ContactRecord } from 'src/types/contact';
+import type { Ref } from 'vue';
 
 interface StartupBatchTracker {
   beginItem: () => void;
@@ -107,13 +107,13 @@ export function createStartupContactSyncRuntime({
   subscribeContactRelayListUpdates,
   subscribeMyRelayListUpdates,
   subscribePrivateContactListUpdates,
-  subscribePrivateMessagesForLoggedInUser
+  subscribePrivateMessagesForLoggedInUser,
 }: StartupContactSyncRuntimeDeps) {
   async function refreshAllStoredContacts(): Promise<RefreshAllStoredContactsSummary> {
     await contactsService.init();
     const storedContacts = await contactsService.listContacts();
     console.log('Starting stored contacts refresh after DM startup EOSE', {
-      contactCount: storedContacts.length
+      contactCount: storedContacts.length,
     });
     if (storedContacts.length === 0) {
       return {
@@ -122,7 +122,7 @@ export function createStartupContactSyncRuntime({
         failedCount: 0,
         cursorContactCount: 0,
         cursorAppliedCount: 0,
-        cursorUiReloaded: false
+        cursorUiReloaded: false,
       };
     }
 
@@ -149,7 +149,7 @@ export function createStartupContactSyncRuntime({
     let cursorUiReloaded = false;
     if (readPrivatePreferencesFromStorage() && refreshedContacts.length > 0) {
       console.log('Starting per-contact cursor data refresh after DM startup EOSE', {
-        contactCount: refreshedContacts.length
+        contactCount: refreshedContacts.length,
       });
       const cursorsByDTag = await fetchContactCursorEvents(refreshedContacts);
       for (const contact of refreshedContacts) {
@@ -170,7 +170,7 @@ export function createStartupContactSyncRuntime({
 
       if (cursorAppliedCount > 0) {
         console.log('Starting UI refresh after per-contact cursor data refresh', {
-          cursorAppliedCount
+          cursorAppliedCount,
         });
         const { useMessageStore } = await import('src/stores/messageStore');
         await Promise.all([reloadChats(), useMessageStore().reloadLoadedMessages()]);
@@ -186,7 +186,7 @@ export function createStartupContactSyncRuntime({
       failedCount,
       cursorContactCount: refreshedContacts.length,
       cursorAppliedCount,
-      cursorUiReloaded
+      cursorUiReloaded,
     };
   }
 
@@ -226,7 +226,7 @@ export function createStartupContactSyncRuntime({
           },
           onRelayFetchEnd: (error) => {
             relayTracker.finishItem(error ?? undefined);
-          }
+          },
         });
       } catch (error) {
         profileTracker.finishItem(error);
@@ -239,7 +239,7 @@ export function createStartupContactSyncRuntime({
 
       await subscribePrivateMessagesForLoggedInUser(true, {
         restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-        startupTrackStep: true
+        startupTrackStep: true,
       });
     })().finally(() => {
       setSyncLoggedInContactProfilePromise(null);
@@ -317,7 +317,7 @@ export function createStartupContactSyncRuntime({
               },
               onRelayFetchEnd: (error) => {
                 relayTracker.finishItem(error ?? undefined);
-              }
+              },
             });
           } catch (error) {
             profileTracker.finishItem(error);
@@ -417,6 +417,6 @@ export function createStartupContactSyncRuntime({
     refreshAllStoredContacts,
     restoreStartupState,
     syncLoggedInContactProfile,
-    syncRecentChatContacts
+    syncRecentChatContacts,
   };
 }

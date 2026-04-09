@@ -3,7 +3,7 @@ import type { MessageRelayStatus, NostrEventDirection, NostrEventEntry } from 's
 import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 import {
   mergeMessageRelayStatuses,
-  normalizeMessageRelayStatuses
+  normalizeMessageRelayStatuses,
 } from 'src/utils/messageRelayStatus';
 
 interface NostrEventStoreRecord {
@@ -84,7 +84,7 @@ function normalizeEvent(value: NostrEvent): NostrEvent | null {
     content,
     tags,
     pubkey,
-    id: eventId
+    id: eventId,
   };
 
   if (typeof value.kind === 'number') {
@@ -116,7 +116,7 @@ function toNostrEventEntry(record: NostrEventStoreRecord): NostrEventEntry | nul
   return {
     event,
     direction,
-    relay_statuses: normalizeMessageRelayStatuses(record.relay_statuses)
+    relay_statuses: normalizeMessageRelayStatuses(record.relay_statuses),
   };
 }
 
@@ -154,7 +154,11 @@ class NostrEventDataService {
 
   async getEventsByIds(eventIds: string[]): Promise<Map<string, NostrEventEntry>> {
     const normalizedEventIds = Array.from(
-      new Set(eventIds.map((eventId) => normalizeEventId(eventId)).filter((eventId): eventId is string => Boolean(eventId)))
+      new Set(
+        eventIds
+          .map((eventId) => normalizeEventId(eventId))
+          .filter((eventId): eventId is string => Boolean(eventId))
+      )
     );
     if (normalizedEventIds.length === 0) {
       return new Map<string, NostrEventEntry>();
@@ -165,13 +169,13 @@ class NostrEventDataService {
     const store = transaction.objectStore(EVENTS_STORE);
     const requests = normalizedEventIds.map((eventId) => ({
       eventId,
-      request: store.get(eventId) as IDBRequest<NostrEventStoreRecord | undefined>
+      request: store.get(eventId) as IDBRequest<NostrEventStoreRecord | undefined>,
     }));
 
     const records = await Promise.all(
       requests.map(async ({ eventId, request }) => ({
         eventId,
-        record: await requestToPromise<NostrEventStoreRecord | undefined>(request)
+        record: await requestToPromise<NostrEventStoreRecord | undefined>(request),
       }))
     );
     await waitForTransaction(transaction);
@@ -216,12 +220,10 @@ class NostrEventDataService {
       relay_statuses: mergeMessageRelayStatuses(
         normalizeMessageRelayStatuses(existingRecord?.relay_statuses),
         normalizeMessageRelayStatuses(input.relay_statuses)
-      )
+      ),
     };
 
-    await requestToPromise<IDBValidKey>(
-      store.put(nextRecord, eventId) as IDBRequest<IDBValidKey>
-    );
+    await requestToPromise<IDBValidKey>(store.put(nextRecord, eventId) as IDBRequest<IDBValidKey>);
     await waitForTransaction(transaction);
 
     return toNostrEventEntry(nextRecord);
@@ -256,14 +258,15 @@ class NostrEventDataService {
     return this.upsertEvent({
       event,
       direction,
-      relay_statuses: normalizedRelayStatuses
+      relay_statuses: normalizedRelayStatuses,
     });
   }
 
   async resolvePendingOutboundRelayStatuses(
     detail = 'Marked as failed after app reload interrupted publish.'
   ): Promise<number> {
-    const normalizedDetail = detail.trim() || 'Marked as failed after app reload interrupted publish.';
+    const normalizedDetail =
+      detail.trim() || 'Marked as failed after app reload interrupted publish.';
     const db = await this.getDatabase();
     const transaction = db.transaction(EVENTS_STORE, 'readwrite');
     const store = transaction.objectStore(EVENTS_STORE);
@@ -282,20 +285,22 @@ class NostrEventDataService {
       }
 
       let didChange = false;
-      const nextRelayStatuses = normalizeMessageRelayStatuses(record.relay_statuses).map((relayStatus) => {
-        if (relayStatus.direction !== 'outbound' || relayStatus.status !== 'pending') {
-          return relayStatus;
-        }
+      const nextRelayStatuses = normalizeMessageRelayStatuses(record.relay_statuses).map(
+        (relayStatus) => {
+          if (relayStatus.direction !== 'outbound' || relayStatus.status !== 'pending') {
+            return relayStatus;
+          }
 
-        didChange = true;
-        updatedStatusCount += 1;
-        return {
-          ...relayStatus,
-          status: 'failed' as const,
-          updated_at: updatedAt,
-          detail: relayStatus.detail?.trim() || normalizedDetail
-        };
-      });
+          didChange = true;
+          updatedStatusCount += 1;
+          return {
+            ...relayStatus,
+            status: 'failed' as const,
+            updated_at: updatedAt,
+            detail: relayStatus.detail?.trim() || normalizedDetail,
+          };
+        }
+      );
 
       if (!didChange) {
         continue;
@@ -304,7 +309,7 @@ class NostrEventDataService {
       const nextRecord: NostrEventStoreRecord = {
         event,
         direction,
-        relay_statuses: nextRelayStatuses
+        relay_statuses: nextRelayStatuses,
       };
 
       await requestToPromise<IDBValidKey>(
@@ -318,7 +323,11 @@ class NostrEventDataService {
 
   async deleteEventsByIds(eventIds: string[]): Promise<void> {
     const normalizedEventIds = Array.from(
-      new Set(eventIds.map((eventId) => normalizeEventId(eventId)).filter((eventId): eventId is string => Boolean(eventId)))
+      new Set(
+        eventIds
+          .map((eventId) => normalizeEventId(eventId))
+          .filter((eventId): eventId is string => Boolean(eventId))
+      )
     );
     if (normalizedEventIds.length === 0) {
       return;

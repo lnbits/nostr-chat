@@ -15,8 +15,7 @@ function canUseDocument(): boolean {
 }
 
 function normalizePanelOpacityPreference(value: unknown): number {
-  const parsedValue =
-    typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+  const parsedValue = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
 
   if (!Number.isFinite(parsedValue)) {
     return DEFAULT_PANEL_OPACITY;
@@ -26,8 +25,7 @@ function normalizePanelOpacityPreference(value: unknown): number {
 }
 
 function normalizeDesktopSidebarWidthPreference(value: unknown): number {
-  const parsedValue =
-    typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+  const parsedValue = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
 
   if (!Number.isFinite(parsedValue)) {
     return DEFAULT_DESKTOP_SIDEBAR_WIDTH;

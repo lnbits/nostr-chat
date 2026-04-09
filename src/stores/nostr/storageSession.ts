@@ -1,5 +1,4 @@
-import { NDKPrivateKeySigner, type NDK, type NDKUser } from '@nostr-dev-kit/ndk';
-import type { Ref } from 'vue';
+import { type NDK, NDKPrivateKeySigner, type NDKUser } from '@nostr-dev-kit/ndk';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   CONTACT_CURSOR_VERSION,
@@ -12,7 +11,7 @@ import {
   PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS,
   PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY,
   PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS,
-  PRIVATE_PREFERENCES_STORAGE_KEY
+  PRIVATE_PREFERENCES_STORAGE_KEY,
 } from 'src/stores/nostr/constants';
 import { hasStorage, isPlainRecord } from 'src/stores/nostr/shared';
 import type {
@@ -20,8 +19,9 @@ import type {
   ContactCursorState,
   GroupIdentitySecretContent,
   PrivateMessagesBackfillState,
-  PrivatePreferences
+  PrivatePreferences,
 } from 'src/stores/nostr/types';
+import type { Ref } from 'vue';
 
 interface PendingEventSinceState {
   pendingEventSinceUpdate: number;
@@ -44,7 +44,7 @@ export function createStorageSessionRuntime({
   isRestoringStartupState,
   ndk,
   normalizeEventId,
-  pendingEventSinceState
+  pendingEventSinceState,
 }: StorageSessionRuntimeDeps) {
   function setStoredEventSince(value: number): number {
     const normalizedValue =
@@ -161,7 +161,7 @@ export function createStorageSessionRuntime({
         PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
         Math.max(PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS, Math.floor(delayMs))
       ),
-      completed
+      completed,
     };
   }
 
@@ -170,9 +170,7 @@ export function createStorageSessionRuntime({
       return null;
     }
 
-    const stored = window.localStorage
-      .getItem(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY)
-      ?.trim();
+    const stored = window.localStorage.getItem(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY)?.trim();
     if (!stored) {
       return null;
     }
@@ -189,10 +187,7 @@ export function createStorageSessionRuntime({
       return;
     }
 
-    window.localStorage.setItem(
-      PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY,
-      JSON.stringify(state)
-    );
+    window.localStorage.setItem(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY, JSON.stringify(state));
   }
 
   function clearPrivateMessagesBackfillState(): void {
@@ -253,7 +248,7 @@ export function createStorageSessionRuntime({
       nextUntil,
       floorSince: normalizedFloorSince,
       delayMs: PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS,
-      completed: false
+      completed: false,
     };
   }
 
@@ -282,7 +277,7 @@ export function createStorageSessionRuntime({
           nextSince,
           nextUntil,
           floorSince: normalizedFloorSince,
-          completed: false
+          completed: false,
         };
       }
     }
@@ -364,7 +359,7 @@ export function createStorageSessionRuntime({
 
     return {
       ...value,
-      contactSecret: normalizedContactSecret
+      contactSecret: normalizedContactSecret,
     };
   }
 
@@ -416,7 +411,7 @@ export function createStorageSessionRuntime({
   ): PrivatePreferences {
     return {
       ...existing,
-      contactSecret: NDKPrivateKeySigner.generate().privateKey
+      contactSecret: NDKPrivateKeySigner.generate().privateKey,
     };
   }
 
@@ -438,7 +433,7 @@ export function createStorageSessionRuntime({
     return {
       version,
       last_seen_incoming_activity_at: lastSeenIncomingActivityAt,
-      last_seen_incoming_activity_event_id: lastSeenIncomingActivityEventId
+      last_seen_incoming_activity_event_id: lastSeenIncomingActivityEventId,
     };
   }
 
@@ -477,7 +472,7 @@ export function createStorageSessionRuntime({
       JSON.stringify({
         version: CONTACT_CURSOR_VERSION,
         last_seen_incoming_activity_at: cursor.at,
-        last_seen_incoming_activity_event_id: cursor.eventId
+        last_seen_incoming_activity_event_id: cursor.eventId,
       }),
       'nip44'
     );
@@ -502,9 +497,7 @@ export function createStorageSessionRuntime({
     }
   }
 
-  function normalizeGroupIdentitySecretContent(
-    value: unknown
-  ): GroupIdentitySecretContent | null {
+  function normalizeGroupIdentitySecretContent(value: unknown): GroupIdentitySecretContent | null {
     if (!isPlainRecord(value)) {
       return null;
     }
@@ -543,11 +536,11 @@ export function createStorageSessionRuntime({
       ...(Number.isInteger(epochNumber) && epochNumber >= 0 && epochPrivkey
         ? {
             epoch_number: Math.floor(epochNumber),
-            epoch_privkey: epochPrivkey
+            epoch_privkey: epochPrivkey,
           }
         : {}),
       ...(name ? { name } : {}),
-      ...(about ? { about } : {})
+      ...(about ? { about } : {}),
     };
   }
 
@@ -634,6 +627,6 @@ export function createStorageSessionRuntime({
     updateStoredEventSinceFromCreatedAt,
     updateStoredPrivateMessagesLastReceivedFromCreatedAt,
     writePrivateMessagesBackfillState,
-    writePrivatePreferencesToStorage
+    writePrivatePreferencesToStorage,
   };
 }

@@ -53,7 +53,7 @@ function normalizeEntry(entry: DeveloperTraceEntry): DeveloperTraceStoreRecord {
 
   return {
     ...entry,
-    loggedAtMs: Number.isFinite(loggedAtMs) ? loggedAtMs : Date.now()
+    loggedAtMs: Number.isFinite(loggedAtMs) ? loggedAtMs : Date.now(),
   };
 }
 
@@ -67,7 +67,7 @@ function toDeveloperTraceEntry(record: DeveloperTraceStoreRecord): DeveloperTrac
     details:
       record.details && typeof record.details === 'object' && !Array.isArray(record.details)
         ? record.details
-        : {}
+        : {},
   };
 }
 
@@ -100,7 +100,7 @@ function normalizeStoredRecord(value: unknown): DeveloperTraceStoreRecord | null
     loggedAtMs:
       typeof record.loggedAtMs === 'number' && Number.isFinite(record.loggedAtMs)
         ? record.loggedAtMs
-        : Date.parse(record.timestamp)
+        : Date.parse(record.timestamp),
   };
 }
 
@@ -234,9 +234,9 @@ class DeveloperTraceDataService {
         const db = request.result;
         const existingStoreNames = Array.from(db.objectStoreNames);
         const store = existingStoreNames.includes(DEVELOPER_TRACE_STORE)
-          ? request.transaction?.objectStore(DEVELOPER_TRACE_STORE) ?? null
+          ? (request.transaction?.objectStore(DEVELOPER_TRACE_STORE) ?? null)
           : db.createObjectStore(DEVELOPER_TRACE_STORE, {
-              keyPath: 'id'
+              keyPath: 'id',
             });
 
         if (store && !store.indexNames.contains(DEVELOPER_TRACE_LOGGED_AT_MS_INDEX)) {

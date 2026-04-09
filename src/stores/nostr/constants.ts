@@ -4,8 +4,7 @@ export const AUTH_METHOD_STORAGE_KEY = 'auth-method';
 export const EVENT_SINCE_STORAGE_KEY = 'nostr-event-since';
 export const PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY =
   'nostr-private-messages-last-received-event';
-export const PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY =
-  'nostr-private-messages-backfill-state';
+export const PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY = 'nostr-private-messages-backfill-state';
 export const PRIVATE_PREFERENCES_STORAGE_KEY = 'privatePreferences';
 export const DEVELOPER_DIAGNOSTICS_STORAGE_KEY = 'developer-diagnostics-enabled';
 export const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;

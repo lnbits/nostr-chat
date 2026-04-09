@@ -58,26 +58,21 @@ export function normalizeMessageReactions(value: unknown): MessageReaction[] {
     return [];
   }
 
-  return value
-    .filter(isMessageReaction)
-    .map((reaction) => ({
-      emoji: reaction.emoji.trim(),
-      name: reaction.name.trim(),
-      reactorPublicKey: reaction.reactorPublicKey.trim().toLowerCase(),
-      ...(normalizeTimestamp(reaction.createdAt)
-        ? { createdAt: normalizeTimestamp(reaction.createdAt) }
-        : {}),
-      ...(normalizeEventId(reaction.eventId) ? { eventId: normalizeEventId(reaction.eventId) } : {}),
-      ...(normalizeTimestamp(reaction.viewedByAuthorAt)
-        ? { viewedByAuthorAt: normalizeTimestamp(reaction.viewedByAuthorAt) }
-        : {})
-    }));
+  return value.filter(isMessageReaction).map((reaction) => ({
+    emoji: reaction.emoji.trim(),
+    name: reaction.name.trim(),
+    reactorPublicKey: reaction.reactorPublicKey.trim().toLowerCase(),
+    ...(normalizeTimestamp(reaction.createdAt)
+      ? { createdAt: normalizeTimestamp(reaction.createdAt) }
+      : {}),
+    ...(normalizeEventId(reaction.eventId) ? { eventId: normalizeEventId(reaction.eventId) } : {}),
+    ...(normalizeTimestamp(reaction.viewedByAuthorAt)
+      ? { viewedByAuthorAt: normalizeTimestamp(reaction.viewedByAuthorAt) }
+      : {}),
+  }));
 }
 
-export function areMessageReactionsEqual(
-  first: MessageReaction,
-  second: MessageReaction
-): boolean {
+export function areMessageReactionsEqual(first: MessageReaction, second: MessageReaction): boolean {
   return (
     first.emoji === second.emoji &&
     first.name === second.name &&
@@ -126,7 +121,7 @@ export function markReactionsViewedByAuthor(
 
     return {
       ...reaction,
-      viewedByAuthorAt: normalizedViewedAt
+      viewedByAuthorAt: normalizedViewedAt,
     };
   });
 }

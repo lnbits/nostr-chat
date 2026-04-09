@@ -8,23 +8,23 @@ export default configure(() => {
     build: {
       target: {
         browser: ['es2022', 'firefox115', 'chrome115', 'safari14'],
-        node: 'node20'
+        node: 'node20',
       },
-      vueRouterMode: 'hash'
+      vueRouterMode: 'hash',
     },
 
     devServer: {
       open: false,
-      allowedHosts: ['.ngrok-free.app', '.ngrok.app']
+      allowedHosts: ['.ngrok-free.app', '.ngrok.app'],
     },
 
     framework: {
       config: {
-        dark: true
+        dark: true,
       },
-      plugins: ['Dark', 'Notify', 'Dialog']
+      plugins: ['Dark', 'Notify', 'Dialog'],
     },
 
-    animations: []
+    animations: [],
   };
 });

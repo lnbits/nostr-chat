@@ -12,7 +12,7 @@ function normalizeRelayValue(value: unknown): ContactRelay | null {
     return {
       url: relayWs,
       read: true,
-      write: true
+      write: true,
     };
   }
 
@@ -29,7 +29,7 @@ function normalizeRelayValue(value: unknown): ContactRelay | null {
   const normalizedRelay: ContactRelay = {
     url: relayWs,
     read: relay.read !== false,
-    write: relay.write !== false
+    write: relay.write !== false,
   };
 
   if (!normalizedRelay.read && !normalizedRelay.write) {
@@ -71,7 +71,9 @@ function normalizeRelayList(value: unknown): ContactRelay[] {
     byUrl.set(key, relay);
   }
 
-  return Array.from(byUrl.values()).sort((first, second) => compareRelayUrls(first.url, second.url));
+  return Array.from(byUrl.values()).sort((first, second) =>
+    compareRelayUrls(first.url, second.url)
+  );
 }
 
 class RelaysService {
@@ -122,7 +124,9 @@ class RelaysService {
     }
 
     const currentRelays = normalizeRelayList(contact.relays ?? []);
-    if (currentRelays.some((entry) => entry.url.toLowerCase() === normalizedRelay.url.toLowerCase())) {
+    if (
+      currentRelays.some((entry) => entry.url.toLowerCase() === normalizedRelay.url.toLowerCase())
+    ) {
       return false;
     }
 
@@ -170,7 +174,7 @@ class RelaysService {
     const nextRelays = [...currentRelays];
     nextRelays.splice(previousRelayIndex, 1, normalizedNextRelay);
     const updatedContact = await contactsService.updateContact(contact.id, {
-      relays: normalizeRelayList(nextRelays)
+      relays: normalizeRelayList(nextRelays),
     });
 
     return Boolean(updatedContact);
@@ -201,7 +205,10 @@ class RelaysService {
     return Boolean(updatedContact);
   }
 
-  async replaceRelaysForPublicKey(publicKey: string, relays: ContactRelay[]): Promise<ContactRelay[]> {
+  async replaceRelaysForPublicKey(
+    publicKey: string,
+    relays: ContactRelay[]
+  ): Promise<ContactRelay[]> {
     const normalizedPublicKey = inputSanitizerService.normalizePublicKey(publicKey);
     if (!normalizedPublicKey) {
       return [];

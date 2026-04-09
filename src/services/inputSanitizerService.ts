@@ -3,7 +3,7 @@ import type {
   ContactBirthday,
   ContactGroupMember,
   ContactMetadata,
-  ContactRelay
+  ContactRelay,
 } from 'src/types/contact';
 
 export interface NpubValidationResult {
@@ -104,7 +104,7 @@ class InputSanitizerService {
       return {
         url,
         read: true,
-        write: true
+        write: true,
       };
     }
 
@@ -121,7 +121,7 @@ class InputSanitizerService {
     return {
       url,
       read: typeof value.read === 'boolean' ? value.read : true,
-      write: typeof value.write === 'boolean' ? value.write : true
+      write: typeof value.write === 'boolean' ? value.write : true,
     };
   }
 
@@ -158,7 +158,7 @@ class InputSanitizerService {
     return Array.from(uniqueRelays).map((url) => ({
       url,
       read: true,
-      write: true
+      write: true,
     }));
   }
 
@@ -198,7 +198,7 @@ class InputSanitizerService {
       uniqueRelays.set(normalizedRelayWs, {
         url: normalizedRelayWs,
         read,
-        write
+        write,
       });
     }
 
@@ -223,9 +223,7 @@ class InputSanitizerService {
 
       try {
         uniqueRelays.add(normalizeRelayUrl(relayUrl));
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     return Array.from(uniqueRelays);
@@ -275,8 +273,7 @@ class InputSanitizerService {
         continue;
       }
 
-      const name =
-        (typeof rawMember.name === 'string' ? rawMember.name.trim() : '') || publicKey;
+      const name = (typeof rawMember.name === 'string' ? rawMember.name.trim() : '') || publicKey;
       const givenName =
         typeof rawMember.given_name === 'string' ? rawMember.given_name.trim() || null : null;
       const about = this.readOptionalString(rawMember.about);
@@ -289,7 +286,7 @@ class InputSanitizerService {
         given_name: givenName,
         ...(about ? { about } : {}),
         ...(nip05 ? { nip05 } : {}),
-        ...(nprofile ? { nprofile } : {})
+        ...(nprofile ? { nprofile } : {}),
       });
     }
 
@@ -315,7 +312,9 @@ class InputSanitizerService {
     const banner = this.readOptionalString(value.banner);
     const chatId = this.readOptionalString(value.chatId);
     const avatar = this.readOptionalString(value.avatar);
-    const lastSeenIncomingActivityAt = this.readOptionalString(value.last_seen_incoming_activity_at);
+    const lastSeenIncomingActivityAt = this.readOptionalString(
+      value.last_seen_incoming_activity_at
+    );
     const lastSeenIncomingActivityEventId = this.readOptionalString(
       value.last_seen_incoming_activity_event_id
     );
@@ -473,7 +472,7 @@ class InputSanitizerService {
         return {
           isValid: Boolean(normalized),
           hexPrivateKey: normalized,
-          format: normalized ? 'nsec' : null
+          format: normalized ? 'nsec' : null,
         };
       }
 
@@ -489,7 +488,7 @@ class InputSanitizerService {
       return {
         isValid: true,
         hexPrivateKey: normalizedHexKey,
-        format: 'hex'
+        format: 'hex',
       };
     }
 

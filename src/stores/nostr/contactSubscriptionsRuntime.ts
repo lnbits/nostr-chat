@@ -1,26 +1,28 @@
 import {
+  type NDK,
   NDKEvent,
+  type NDKFilter,
   NDKKind,
   NDKRelayList,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
-  type NDK,
-  type NDKFilter,
   type NDKSubscriptionOptions,
   type NDKUser,
-  type NDKUserProfile
+  type NDKUserProfile,
 } from '@nostr-dev-kit/ndk';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 interface ContactSubscriptionsRuntimeDeps {
-  buildContactProfileEventState: (
-    event: Pick<NDKEvent, 'created_at' | 'id'>
-  ) => { createdAt: number; eventId: string };
-  buildContactRelayListEventState: (
-    event: Pick<NDKEvent, 'created_at' | 'id'>
-  ) => { createdAt: number; eventId: string };
+  buildContactProfileEventState: (event: Pick<NDKEvent, 'created_at' | 'id'>) => {
+    createdAt: number;
+    eventId: string;
+  };
+  buildContactRelayListEventState: (event: Pick<NDKEvent, 'created_at' | 'id'>) => {
+    createdAt: number;
+    eventId: string;
+  };
   buildSubscriptionEventDetails: (
     event: Pick<NDKEvent, 'id' | 'kind' | 'created_at' | 'pubkey'>
   ) => Record<string, unknown>;
@@ -55,11 +57,7 @@ interface ContactSubscriptionsRuntimeDeps {
   getLoggedInPublicKeyHex: () => string | null;
   getLoggedInSignerUser: () => Promise<NDKUser>;
   listTrackedContactPubkeys: () => Promise<string[]>;
-  logSubscription: (
-    label: string,
-    stage: string,
-    details?: Record<string, unknown>
-  ) => void;
+  logSubscription: (label: string, stage: string, details?: Record<string, unknown>) => void;
   markContactProfileEventApplied: (
     pubkeyHex: string,
     eventState: { createdAt: number; eventId: string }
@@ -133,7 +131,7 @@ export function createContactSubscriptionsRuntime({
   shouldApplyContactRelayListEvent,
   shouldPreserveExistingGroupRelays,
   subscribeWithReqLogging,
-  updateStoredEventSinceFromCreatedAt
+  updateStoredEventSinceFromCreatedAt,
 }: ContactSubscriptionsRuntimeDeps) {
   let contactProfileSubscription: ReturnType<NDK['subscribe']> | null = null;
   let contactProfileSubscriptionSignature = '';
@@ -184,7 +182,7 @@ export function createContactSubscriptionsRuntime({
 
     const updatedContact = await contactsService.updateContact(existingContact.id, {
       name: nextName,
-      meta: nextMeta
+      meta: nextMeta,
     });
     if (!updatedContact) {
       return;
@@ -228,7 +226,7 @@ export function createContactSubscriptionsRuntime({
       console.warn('Ignoring empty group relay list event to preserve stored relays', {
         pubkey: normalizedPubkey,
         eventId: event.id ?? null,
-        existingRelayCount: existingContact.relays.length
+        existingRelayCount: existingContact.relays.length,
       });
       markContactRelayListEventApplied(normalizedPubkey, nextEventState);
       return;
@@ -240,7 +238,7 @@ export function createContactSubscriptionsRuntime({
     }
 
     const updatedContact = await contactsService.updateContact(existingContact.id, {
-      relays: nextRelayEntries
+      relays: nextRelayEntries,
     });
     if (!updatedContact) {
       return;
@@ -262,7 +260,7 @@ export function createContactSubscriptionsRuntime({
     if (contactProfileSubscription) {
       logSubscription('contact-profile', 'stop', {
         reason,
-        signature: contactProfileSubscriptionSignature || null
+        signature: contactProfileSubscriptionSignature || null,
       });
       contactProfileSubscription.stop();
       contactProfileSubscription = null;
@@ -302,7 +300,7 @@ export function createContactSubscriptionsRuntime({
         signature,
         ...buildSubscriptionRelayDetails(relayUrls),
         recipientCount: contactPubkeys.length,
-        recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+        recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
       });
       return;
     }
@@ -313,7 +311,7 @@ export function createContactSubscriptionsRuntime({
       since: getFilterSince(),
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
-      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
     });
 
     await ensureRelayConnections(relayUrls);
@@ -329,14 +327,14 @@ export function createContactSubscriptionsRuntime({
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
       recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
-      ...contactProfileTargetDetails
+      ...contactProfileTargetDetails,
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     const contactProfileFilters: NDKFilter = {
       kinds: [NDKKind.Metadata],
       authors: contactPubkeys,
-      since: getFilterSince()
+      since: getFilterSince(),
     };
     contactProfileSubscription = subscribeWithReqLogging(
       'contact-profile',
@@ -350,20 +348,20 @@ export function createContactSubscriptionsRuntime({
           logSubscription('contact-profile', 'event', {
             signature,
             ...buildSubscriptionEventDetails(wrappedEvent),
-            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent)),
           });
           updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queueContactProfileEventApplication(wrappedEvent);
         },
         onEose: () => {
           logSubscription('contact-profile', 'eose', {
-            signature
+            signature,
           });
-        }
+        },
       },
       {
         signature,
-        ...buildSubscriptionRelayDetails(relayUrls)
+        ...buildSubscriptionRelayDetails(relayUrls),
       }
     );
     contactProfileSubscriptionSignature = signature;
@@ -372,7 +370,7 @@ export function createContactSubscriptionsRuntime({
       signature,
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
-      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
     });
   }
 
@@ -380,7 +378,7 @@ export function createContactSubscriptionsRuntime({
     if (contactRelayListSubscription) {
       logSubscription('contact-relay-list', 'stop', {
         reason,
-        signature: contactRelayListSubscriptionSignature || null
+        signature: contactRelayListSubscriptionSignature || null,
       });
       contactRelayListSubscription.stop();
       contactRelayListSubscription = null;
@@ -424,7 +422,7 @@ export function createContactSubscriptionsRuntime({
         signature,
         ...buildSubscriptionRelayDetails(relayUrls),
         recipientCount: contactPubkeys.length,
-        recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+        recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
       });
       return;
     }
@@ -435,7 +433,7 @@ export function createContactSubscriptionsRuntime({
       since: getFilterSince(),
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
-      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
     });
 
     await ensureRelayConnections(relayUrls);
@@ -451,14 +449,14 @@ export function createContactSubscriptionsRuntime({
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
       recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
-      ...contactRelayTargetDetails
+      ...contactRelayTargetDetails,
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     const contactRelayListFilters: NDKFilter = {
       kinds: [NDKKind.RelayList],
       authors: contactPubkeys,
-      since: getFilterSince()
+      since: getFilterSince(),
     };
     contactRelayListSubscription = subscribeWithReqLogging(
       'contact-relay-list',
@@ -472,20 +470,20 @@ export function createContactSubscriptionsRuntime({
           logSubscription('contact-relay-list', 'event', {
             signature,
             ...buildSubscriptionEventDetails(wrappedEvent),
-            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent)),
           });
           updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queueContactRelayListEventApplication(wrappedEvent);
         },
         onEose: () => {
           logSubscription('contact-relay-list', 'eose', {
-            signature
+            signature,
           });
-        }
+        },
       },
       {
         signature,
-        ...buildSubscriptionRelayDetails(relayUrls)
+        ...buildSubscriptionRelayDetails(relayUrls),
       }
     );
     contactRelayListSubscriptionSignature = signature;
@@ -494,7 +492,7 @@ export function createContactSubscriptionsRuntime({
       signature,
       ...buildSubscriptionRelayDetails(relayUrls),
       recipientCount: contactPubkeys.length,
-      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value)),
     });
   }
 
@@ -508,6 +506,6 @@ export function createContactSubscriptionsRuntime({
   return {
     resetContactSubscriptionsRuntimeState,
     subscribeContactProfileUpdates,
-    subscribeContactRelayListUpdates
+    subscribeContactRelayListUpdates,
   };
 }

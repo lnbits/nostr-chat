@@ -1,10 +1,10 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   MAX_DESKTOP_SIDEBAR_WIDTH,
   MIN_DESKTOP_SIDEBAR_WIDTH,
   readDesktopSidebarWidthPreference,
-  saveDesktopSidebarWidthPreference
+  saveDesktopSidebarWidthPreference,
 } from 'src/utils/themeStorage';
+import { computed, onBeforeUnmount, onMounted, type Ref, ref, watch } from 'vue';
 
 const DESKTOP_SIDEBAR_MAX_RATIO = 0.75;
 
@@ -151,7 +151,7 @@ export function useDesktopSidebarWidth(
     }
 
     return {
-      '--desktop-sidebar-width': `${clampSidebarWidth(sidebarWidth.value)}px`
+      '--desktop-sidebar-width': `${clampSidebarWidth(sidebarWidth.value)}px`,
     };
   });
 
@@ -207,6 +207,6 @@ export function useDesktopSidebarWidth(
     minSidebarWidth: MIN_DESKTOP_SIDEBAR_WIDTH,
     maxSidebarWidth,
     startSidebarResize,
-    handleSidebarResizeKeydown
+    handleSidebarResizeKeydown,
   };
 }

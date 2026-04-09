@@ -1,21 +1,18 @@
 import {
+  type NDK,
   NDKEvent,
+  type NDKFilter,
   NDKKind,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
-  type NDK,
-  type NDKFilter,
   type NDKSubscriptionOptions,
-  type NDKUser
+  type NDKUser,
 } from '@nostr-dev-kit/ndk';
-import type { Ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import {
-  PRIVATE_CONTACT_LIST_D_TAG,
-  PRIVATE_CONTACT_LIST_TITLE
-} from 'src/stores/nostr/constants';
+import { PRIVATE_CONTACT_LIST_D_TAG, PRIVATE_CONTACT_LIST_TITLE } from 'src/stores/nostr/constants';
+import type { Ref } from 'vue';
 
 interface PrivateContactListRuntimeDeps {
   beginStartupStep: (stepId: 'private-contact-list') => void;
@@ -27,9 +24,7 @@ interface PrivateContactListRuntimeDeps {
   buildSubscriptionRelayDetails: (relayUrls: string[]) => Record<string, unknown>;
   chatStore: { init: () => Promise<void> };
   completeStartupStep: (stepId: 'private-contact-list') => void;
-  createStartupBatchTracker: (
-    stepId: 'private-contact-profiles' | 'private-contact-relays'
-  ) => {
+  createStartupBatchTracker: (stepId: 'private-contact-profiles' | 'private-contact-relays') => {
     beginItem: () => void;
     finishItem: (error?: unknown) => void;
     seal: () => void;
@@ -55,11 +50,7 @@ interface PrivateContactListRuntimeDeps {
   getLoggedInSignerUser: () => Promise<NDKUser>;
   getStartupStepSnapshot: (stepId: 'private-contact-list') => { status: string };
   isRestoringStartupState: Ref<boolean>;
-  logSubscription: (
-    label: string,
-    stage: string,
-    details?: Record<string, unknown>
-  ) => void;
+  logSubscription: (label: string, stage: string, details?: Record<string, unknown>) => void;
   markPrivateContactListEventApplied: (event: Pick<NDKEvent, 'created_at' | 'id'>) => void;
   ndk: NDK;
   queueTrackedContactSubscriptionsRefresh: (seedRelayUrls?: string[], force?: boolean) => void;
@@ -119,7 +110,7 @@ export function createPrivateContactListRuntime({
   resolvePrivateContactListReadRelayUrls,
   shouldApplyPrivateContactListEvent,
   subscribeWithReqLogging,
-  updateStoredEventSinceFromCreatedAt
+  updateStoredEventSinceFromCreatedAt,
 }: PrivateContactListRuntimeDeps) {
   let restorePrivateContactListPromise: Promise<void> | null = null;
   let privateContactListSubscription: ReturnType<NDK['subscribe']> | null = null;
@@ -160,7 +151,7 @@ export function createPrivateContactListRuntime({
     for (const pubkeyHex of nextPubkeys) {
       const existingContact = await contactsService.getContactByPublicKey(pubkeyHex);
       const ensuredContactResult = await ensureContactListedInPrivateContactList(pubkeyHex, {
-        fallbackName: existingContact?.name?.trim() || pubkeyHex.slice(0, 16)
+        fallbackName: existingContact?.name?.trim() || pubkeyHex.slice(0, 16),
       });
       const fallbackName =
         ensuredContactResult.contact?.name?.trim() ||
@@ -179,7 +170,7 @@ export function createPrivateContactListRuntime({
           },
           onRelayFetchEnd: (error?: unknown) => {
             relayTracker?.finishItem(error ?? undefined);
-          }
+          },
         });
       } catch (error) {
         profileTracker?.finishItem(error);
@@ -243,8 +234,8 @@ export function createPrivateContactListRuntime({
         content: await encryptPrivateContactListTags(buildPrivateContactListTags(pubkeys)),
         tags: [
           ['d', PRIVATE_CONTACT_LIST_D_TAG],
-          ['title', PRIVATE_CONTACT_LIST_TITLE]
-        ]
+          ['title', PRIVATE_CONTACT_LIST_TITLE],
+        ],
       });
 
       const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
@@ -285,10 +276,10 @@ export function createPrivateContactListRuntime({
             kinds: [NDKKind.FollowSet],
             authors: [loggedInPubkeyHex],
             '#d': [PRIVATE_CONTACT_LIST_D_TAG],
-            since: getFilterSince()
+            since: getFilterSince(),
           },
           {
-            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
           },
           relaySet
         );
@@ -317,7 +308,7 @@ export function createPrivateContactListRuntime({
     if (privateContactListSubscription) {
       logSubscription('private-contact-list', 'stop', {
         reason,
-        signature: privateContactListSubscriptionSignature || null
+        signature: privateContactListSubscriptionSignature || null,
       });
       privateContactListSubscription.stop();
       privateContactListSubscription = null;
@@ -352,7 +343,7 @@ export function createPrivateContactListRuntime({
         reason: 'already-active',
         signature,
         pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        ...buildSubscriptionRelayDetails(relayUrls)
+        ...buildSubscriptionRelayDetails(relayUrls),
       });
       return;
     }
@@ -362,7 +353,7 @@ export function createPrivateContactListRuntime({
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
       since: getFilterSince(),
-      ...buildSubscriptionRelayDetails(relayUrls)
+      ...buildSubscriptionRelayDetails(relayUrls),
     });
 
     await ensureRelayConnections(relayUrls);
@@ -377,7 +368,7 @@ export function createPrivateContactListRuntime({
       userTargetCount: 1,
       userTargetPubkeys: [formatSubscriptionLogValue(loggedInPubkeyHex)],
       since: getFilterSince(),
-      ...buildSubscriptionRelayDetails(relayUrls)
+      ...buildSubscriptionRelayDetails(relayUrls),
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
@@ -385,7 +376,7 @@ export function createPrivateContactListRuntime({
       kinds: [NDKKind.FollowSet],
       authors: [loggedInPubkeyHex],
       '#d': [PRIVATE_CONTACT_LIST_D_TAG],
-      since: getFilterSince()
+      since: getFilterSince(),
     };
     privateContactListSubscription = subscribeWithReqLogging(
       'private-contact-list',
@@ -399,20 +390,20 @@ export function createPrivateContactListRuntime({
           logSubscription('private-contact-list', 'event', {
             signature,
             ...buildSubscriptionEventDetails(wrappedEvent),
-            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent)),
           });
           updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queuePrivateContactListEventApplication(wrappedEvent);
         },
         onEose: () => {
           logSubscription('private-contact-list', 'eose', {
-            signature
+            signature,
           });
-        }
+        },
       },
       {
         signature,
-        ...buildSubscriptionRelayDetails(relayUrls)
+        ...buildSubscriptionRelayDetails(relayUrls),
       }
     );
     privateContactListSubscriptionSignature = signature;
@@ -420,7 +411,7 @@ export function createPrivateContactListRuntime({
     logSubscription('private-contact-list', 'active', {
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      ...buildSubscriptionRelayDetails(relayUrls)
+      ...buildSubscriptionRelayDetails(relayUrls),
     });
   }
 
@@ -435,6 +426,6 @@ export function createPrivateContactListRuntime({
     resetPrivateContactListRuntimeState,
     restorePrivateContactList,
     stopPrivateContactListSubscription,
-    subscribePrivateContactListUpdates
+    subscribePrivateContactListUpdates,
   };
 }

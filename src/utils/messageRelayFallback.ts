@@ -37,38 +37,38 @@ export function confirmUseAppRelaysDialog($q: QVueGlobals): Promise<AppRelayFall
           {
             label: 'Remember this',
             value: REMEMBER_THIS_OPTION,
-            color: 'primary'
-          }
-        ]
+            color: 'primary',
+          },
+        ],
       },
       ok: {
         label: 'Yes',
         color: 'primary',
-        noCaps: true
+        noCaps: true,
       },
       cancel: {
         label: 'No',
         flat: true,
-        noCaps: true
-      }
+        noCaps: true,
+      },
     })
       .onOk((selectedValues: unknown) =>
         settle({
           shouldUseAppRelays: true,
           rememberThis:
-            Array.isArray(selectedValues) && selectedValues.includes(REMEMBER_THIS_OPTION)
+            Array.isArray(selectedValues) && selectedValues.includes(REMEMBER_THIS_OPTION),
         })
       )
       .onCancel(() =>
         settle({
           shouldUseAppRelays: false,
-          rememberThis: false
+          rememberThis: false,
         })
       )
       .onDismiss(() =>
         settle({
           shouldUseAppRelays: false,
-          rememberThis: false
+          rememberThis: false,
         })
       );
   });
@@ -92,7 +92,7 @@ export async function resolveContactAppRelayFallback(
     $q.notify({
       type: 'warning',
       message: 'No app relays configured.',
-      position: 'top'
+      position: 'top',
     });
     return null;
   }
@@ -125,7 +125,7 @@ export async function resolveContactAppRelayFallback(
       $q.notify({
         type: 'warning',
         message: 'Could not save this preference. App relays will be used this time only.',
-        position: 'top'
+        position: 'top',
       });
     }
   }

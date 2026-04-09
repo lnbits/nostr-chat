@@ -1,20 +1,20 @@
-import { NDKNip07Signer, NDKPrivateKeySigner, type NDKSigner, type NDK } from '@nostr-dev-kit/ndk';
-import type { Ref } from 'vue';
+import { type NDK, NDKNip07Signer, NDKPrivateKeySigner, type NDKSigner } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { imageCacheService } from 'src/services/imageCacheService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   AUTH_METHOD_STORAGE_KEY,
   DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
   EVENT_SINCE_STORAGE_KEY,
   PRIVATE_KEY_STORAGE_KEY,
   PUBLIC_KEY_STORAGE_KEY,
-  RELAY_STORAGE_KEYS
+  RELAY_STORAGE_KEYS,
 } from 'src/stores/nostr/constants';
 import { hasStorage } from 'src/stores/nostr/shared';
 import type { AuthMethod, SubscribePrivateMessagesOptions } from 'src/stores/nostr/types';
+import type { Ref } from 'vue';
 
 interface RestoreRuntimeState {
   restoreContactCursorStatePromise: Promise<void> | null;
@@ -46,10 +46,7 @@ interface AuthSessionRuntimeDeps {
   loggedInvalidGroupEpochConflictKeys: { clear: () => void };
   ndk: NDK;
   pendingContactCursorPublishStates: { clear: () => void };
-  pendingContactCursorPublishTimers: Map<
-    string,
-    ReturnType<typeof globalThis.setTimeout>
-  >;
+  pendingContactCursorPublishTimers: Map<string, ReturnType<typeof globalThis.setTimeout>>;
   pendingEventSinceState: {
     pendingEventSinceUpdate: number;
   };
@@ -66,9 +63,7 @@ interface AuthSessionRuntimeDeps {
   resetPrivateMessagesSubscriptionRuntimeState: (options?: {
     clearLastEventState?: boolean;
   }) => void;
-  resetPrivateMessagesUiRuntimeState: (options?: {
-    includeRefreshQueue?: boolean;
-  }) => void;
+  resetPrivateMessagesUiRuntimeState: (options?: { includeRefreshQueue?: boolean }) => void;
   resetStartupStepTracking: () => void;
   resetTrackedContactEventState: () => void;
   restoreRuntimeState: RestoreRuntimeState;
@@ -134,7 +129,7 @@ export function createAuthSessionRuntime({
   setRestoreStartupStatePromise,
   setSyncLoggedInContactProfilePromise,
   setSyncRecentChatContactsPromise,
-  stopPrivateMessagesSubscription
+  stopPrivateMessagesSubscription,
 }: AuthSessionRuntimeDeps) {
   function getPrivateKeyHex(): string | null {
     if (!hasStorage()) {
@@ -302,7 +297,7 @@ export function createAuthSessionRuntime({
       chatDataService.clearAllData(),
       contactsService.clearAllData(),
       nostrEventDataService.clearAllData(),
-      imageCacheService.clearAllData()
+      imageCacheService.clearAllData(),
     ]);
   }
 
@@ -311,6 +306,6 @@ export function createAuthSessionRuntime({
     getPrivateKeyHex,
     loginWithExtension,
     logout,
-    savePrivateKeyHex
+    savePrivateKeyHex,
   };
 }

@@ -1,11 +1,7 @@
 import type { NDKEvent, NDKSigner, NostrEvent } from '@nostr-dev-kit/ndk';
 import type { ChatRow } from 'src/services/chatDataService';
 import type { MessageRow } from 'src/stores/nostr/types';
-import type {
-  MessageReplyPreview,
-  MessageRelayStatus,
-  NostrEventDirection
-} from 'src/types/chat';
+import type { MessageRelayStatus, MessageReplyPreview, NostrEventDirection } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 
 export interface GroupEpochEntryLike {

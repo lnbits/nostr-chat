@@ -5,7 +5,7 @@ import { GROUP_INVITE_REQUEST_MESSAGE } from 'src/stores/nostr/constants';
 import {
   buildAcceptedGroupInviteChatPlanValue,
   buildGroupInviteRequestPlanValue,
-  resolveGroupDisplayNameValue
+  resolveGroupDisplayNameValue,
 } from 'src/stores/nostr/valueUtils';
 import type { ChatMetadata } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
@@ -52,7 +52,7 @@ export function createGroupInviteRuntime({
   getLoggedInPublicKeyHex,
   publishPrivateContactList,
   refreshGroupContactByPublicKey,
-  subscribePrivateMessagesForLoggedInUser
+  subscribePrivateMessagesForLoggedInUser,
 }: GroupInviteRuntimeDeps) {
   async function upsertIncomingGroupInviteRequestChat(
     groupPublicKey: string,
@@ -71,7 +71,7 @@ export function createGroupInviteRuntime({
       groupPublicKey: normalizedGroupPublicKey,
       createdAt,
       existingChat,
-      preview
+      preview,
     });
     if (!invitePlan) {
       return;
@@ -85,7 +85,7 @@ export function createGroupInviteRuntime({
         last_message: GROUP_INVITE_REQUEST_MESSAGE,
         last_message_at: createdAt,
         unread_count: invitePlan.nextUnreadCount,
-        meta: invitePlan.nextMeta
+        meta: invitePlan.nextMeta,
       });
       await chatStore.reload();
       return;
@@ -94,7 +94,7 @@ export function createGroupInviteRuntime({
     await chatDataService.updateChat(normalizedGroupPublicKey, {
       type: 'group',
       ...(existingChat.name !== invitePlan.nextName ? { name: invitePlan.nextName } : {}),
-      meta: invitePlan.nextMeta
+      meta: invitePlan.nextMeta,
     });
     await chatDataService.updateChatPreview(
       normalizedGroupPublicKey,
@@ -120,14 +120,13 @@ export function createGroupInviteRuntime({
     }
 
     await Promise.all([contactsService.init(), chatDataService.init()]);
-    const initialName =
-      fallbackName.trim() || resolveGroupDisplayNameValue(normalizedTargetPubkey);
+    const initialName = fallbackName.trim() || resolveGroupDisplayNameValue(normalizedTargetPubkey);
     await ensureContactStoredAsGroup(normalizedTargetPubkey, {
-      fallbackName: initialName
+      fallbackName: initialName,
     });
     await ensureContactListedInPrivateContactList(normalizedTargetPubkey, {
       fallbackName: initialName,
-      type: 'group'
+      type: 'group',
     });
 
     const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
@@ -136,7 +135,7 @@ export function createGroupInviteRuntime({
         groupPublicKey: normalizedTargetPubkey,
         fallbackName: initialName,
         existingChat,
-        acceptedAt: new Date().toISOString()
+        acceptedAt: new Date().toISOString(),
       });
 
       if (acceptedChatPlan) {
@@ -145,7 +144,7 @@ export function createGroupInviteRuntime({
           ...(existingChat.name !== acceptedChatPlan.nextName
             ? { name: acceptedChatPlan.nextName }
             : {}),
-          meta: acceptedChatPlan.nextMeta as ChatMetadata
+          meta: acceptedChatPlan.nextMeta as ChatMetadata,
         });
       }
     }
@@ -183,6 +182,6 @@ export function createGroupInviteRuntime({
 
   return {
     ensureGroupInvitePubkeyIsContact,
-    upsertIncomingGroupInviteRequestChat
+    upsertIncomingGroupInviteRequestChat,
   };
 }

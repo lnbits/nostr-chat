@@ -1,15 +1,15 @@
 import {
+  type NDK,
   NDKNip07Signer,
   NDKPrivateKeySigner,
-  NDKRelayStatus,
-  normalizeRelayUrl,
-  type NDK,
   type NDKRelay,
   type NDKRelayInformation,
-  type NDKSigner
+  NDKRelayStatus,
+  type NDKSigner,
+  normalizeRelayUrl,
 } from '@nostr-dev-kit/ndk';
-import type { AuthMethod, RelayConnectionState } from 'src/stores/nostr/types';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import type { AuthMethod, RelayConnectionState } from 'src/stores/nostr/types';
 
 interface RelayConnectionRuntimeDeps {
   authenticatedRelayUrls: Set<string>;
@@ -77,7 +77,7 @@ export function createRelayConnectionRuntime({
   setCachedSignerSessionKey,
   setConnectPromise,
   setHasActivatedPool,
-  setHasRelayStatusListeners
+  setHasRelayStatusListeners,
 }: RelayConnectionRuntimeDeps) {
   function setRelayConnectivityStatus(relay: NDKRelay, status: NDKRelayStatus): void {
     const connectivity = relay.connectivity as unknown as {
@@ -118,9 +118,7 @@ export function createRelayConnectionRuntime({
     ndk.signer = cachedSigner;
     const user = await cachedSigner.blockUntilReady();
     user.ndk = ndk;
-    const signerPubkey = inputSanitizerService.normalizeHexKey(
-      user.pubkey ?? cachedSigner.pubkey
-    );
+    const signerPubkey = inputSanitizerService.normalizeHexKey(user.pubkey ?? cachedSigner.pubkey);
     if (!signerPubkey) {
       throw new Error('Signer did not provide a valid public key.');
     }
@@ -141,7 +139,7 @@ export function createRelayConnectionRuntime({
       setRelayConnectivityStatus(relay, NDKRelayStatus.AUTHENTICATED);
       logDeveloperTrace('info', 'relay', 'auth-skip-already-authenticated', {
         ...buildRelaySnapshot(relay),
-        challengeLength: challenge.length
+        challengeLength: challenge.length,
       });
       relay.emit('authed');
       return false;
@@ -154,7 +152,7 @@ export function createRelayConnectionRuntime({
       logDeveloperTrace('warn', 'relay', 'auth-skip-missing-signer', {
         ...buildRelaySnapshot(relay),
         challengeLength: challenge.length,
-        error
+        error,
       });
       relay.disconnect();
       return false;
@@ -196,7 +194,7 @@ export function createRelayConnectionRuntime({
       bumpRelayStatusVersion();
       logDeveloperTrace('info', 'relay', 'auth-requested', {
         ...buildRelaySnapshot(relay),
-        challengeLength: challenge.length
+        challengeLength: challenge.length,
       });
     });
     ndk.pool.on('relay:authed', (relay) => {
@@ -224,7 +222,7 @@ export function createRelayConnectionRuntime({
         bumpRelayStatusVersion();
         logDeveloperTrace('info', 'relay', 'auth-failed-already-authenticated', {
           ...buildRelaySnapshot(relay),
-          error: errorMessage
+          error: errorMessage,
         });
         relay.emit('authed');
         return;
@@ -234,7 +232,7 @@ export function createRelayConnectionRuntime({
       bumpRelayStatusVersion();
       logDeveloperTrace('warn', 'relay', 'auth-failed', {
         ...buildRelaySnapshot(relay),
-        error
+        error,
       });
     });
     relayAuthFailureListenerUrls.add(relay.url);
@@ -266,7 +264,7 @@ export function createRelayConnectionRuntime({
       mode === 'reconnect' ? 'reconnecting configured relay' : 'connecting new explicit relay',
       {
         reason: 'ensureRelayConnections',
-        ...buildRelaySnapshot(relay)
+        ...buildRelaySnapshot(relay),
       }
     );
 
@@ -283,7 +281,7 @@ export function createRelayConnectionRuntime({
           {
             cooldownMs: relayConnectFailureCooldownMs,
             error,
-            relay: buildRelaySnapshot(relay)
+            relay: buildRelaySnapshot(relay),
           }
         );
       })
@@ -381,6 +379,6 @@ export function createRelayConnectionRuntime({
     ensureRelayConnections,
     fetchRelayNip11Info,
     getOrCreateSigner,
-    getRelayConnectionState
+    getRelayConnectionState,
   };
 }

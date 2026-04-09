@@ -1,6 +1,6 @@
-import { ref } from 'vue';
 import type { NDKRelayInformation } from '@nostr-dev-kit/ndk';
 import { buildRelayLookupKey } from 'src/utils/relayUrls';
+import { ref } from 'vue';
 
 export interface RelayDecorationsStore {
   relayStatusVersion: unknown;
@@ -128,6 +128,6 @@ export function useRelayDecorations(nostrStore: RelayDecorationsStore) {
     relayIconUrl,
     relayInfo,
     relayInfoError,
-    setRelayIconError
+    setRelayIconError,
   };
 }

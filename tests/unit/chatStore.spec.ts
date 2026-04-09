@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { __chatStoreTestUtils } from 'src/stores/chatStore';
+import { describe, expect, it } from 'vitest';
 
 const {
   buildChatSearchText,
@@ -12,7 +12,7 @@ const {
   mapChatRowToChat,
   resolveChatCategory,
   resolveDefaultSelectedChatId,
-  syncChatActivityMeta
+  syncChatActivityMeta,
 } = __chatStoreTestUtils;
 
 describe('chatStore logic', () => {
@@ -21,19 +21,19 @@ describe('chatStore logic', () => {
       resolveChatCategory({
         inbox_state: 'blocked',
         accepted_at: '2026-01-01T00:00:00.000Z',
-        last_incoming_message_at: '2026-01-02T00:00:00.000Z'
+        last_incoming_message_at: '2026-01-02T00:00:00.000Z',
       })
     ).toBe('blocked');
 
     expect(
       resolveChatCategory({
-        accepted_at: '2026-01-01T00:00:00.000Z'
+        accepted_at: '2026-01-01T00:00:00.000Z',
       })
     ).toBe('chat');
 
     expect(
       resolveChatCategory({
-        last_incoming_message_at: '2026-01-02T00:00:00.000Z'
+        last_incoming_message_at: '2026-01-02T00:00:00.000Z',
       })
     ).toBe('request');
   });
@@ -42,7 +42,7 @@ describe('chatStore logic', () => {
     const timestamps = [
       '2026-01-01T00:00:00.000Z',
       '2026-01-02T00:00:00.000Z',
-      '2026-01-03T00:00:00.000Z'
+      '2026-01-03T00:00:00.000Z',
     ];
 
     expect(countUnreadMessagesAfter(timestamps, '2026-01-02T00:00:00.000Z')).toBe(1);
@@ -53,11 +53,11 @@ describe('chatStore logic', () => {
   it('promotes a request chat to accepted when an outgoing message appears', () => {
     const nextMeta = syncChatActivityMeta(
       {
-        last_incoming_message_at: '2026-01-01T00:00:00.000Z'
+        last_incoming_message_at: '2026-01-01T00:00:00.000Z',
       },
       {
         lastIncomingMessageAt: '2026-01-02T00:00:00.000Z',
-        lastOutgoingMessageAt: '2026-01-03T00:00:00.000Z'
+        lastOutgoingMessageAt: '2026-01-03T00:00:00.000Z',
       }
     );
 
@@ -65,7 +65,7 @@ describe('chatStore logic', () => {
       inbox_state: 'accepted',
       accepted_at: '2026-01-03T00:00:00.000Z',
       last_incoming_message_at: '2026-01-02T00:00:00.000Z',
-      last_outgoing_message_at: '2026-01-03T00:00:00.000Z'
+      last_outgoing_message_at: '2026-01-03T00:00:00.000Z',
     });
   });
 
@@ -73,12 +73,12 @@ describe('chatStore logic', () => {
     const originalMeta = {
       inbox_state: 'blocked',
       blocked_at: '2026-01-01T00:00:00.000Z',
-      last_incoming_message_at: '2026-01-01T00:00:00.000Z'
+      last_incoming_message_at: '2026-01-01T00:00:00.000Z',
     };
 
     const nextMeta = syncChatActivityMeta(originalMeta, {
       lastIncomingMessageAt: '',
-      lastOutgoingMessageAt: '2026-01-03T00:00:00.000Z'
+      lastOutgoingMessageAt: '2026-01-03T00:00:00.000Z',
     });
 
     expect(nextMeta).toEqual(originalMeta);
@@ -91,34 +91,34 @@ describe('chatStore logic', () => {
         {
           chat_public_key: 'chat-a',
           author_public_key: 'me',
-          created_at: '2026-01-01T00:00:00.000Z'
+          created_at: '2026-01-01T00:00:00.000Z',
         },
         {
           chat_public_key: 'chat-a',
           author_public_key: 'them',
-          created_at: '2026-01-02T00:00:00.000Z'
+          created_at: '2026-01-02T00:00:00.000Z',
         },
         {
           chat_public_key: 'chat-a',
           author_public_key: 'them',
-          created_at: '2026-01-03T00:00:00.000Z'
+          created_at: '2026-01-03T00:00:00.000Z',
         },
         {
           chat_public_key: 'chat-b',
           author_public_key: 'me',
-          created_at: '2026-01-04T00:00:00.000Z'
-        }
+          created_at: '2026-01-04T00:00:00.000Z',
+        },
       ] as never,
       'me'
     );
 
     expect(snapshots.get('chat-a')).toEqual({
       lastIncomingMessageAt: '2026-01-03T00:00:00.000Z',
-      lastOutgoingMessageAt: '2026-01-01T00:00:00.000Z'
+      lastOutgoingMessageAt: '2026-01-01T00:00:00.000Z',
     });
     expect(snapshots.get('chat-b')).toEqual({
       lastIncomingMessageAt: '',
-      lastOutgoingMessageAt: '2026-01-04T00:00:00.000Z'
+      lastOutgoingMessageAt: '2026-01-04T00:00:00.000Z',
     });
   });
 
@@ -128,7 +128,7 @@ describe('chatStore logic', () => {
         {
           inbox_state: 'blocked',
           blocked_at: '2026-01-01T00:00:00.000Z',
-          last_outgoing_message_at: '2026-01-01T00:00:00.000Z'
+          last_outgoing_message_at: '2026-01-01T00:00:00.000Z',
         },
         '2026-01-03T00:00:00.000Z',
         '2026-01-02T00:00:00.000Z'
@@ -136,7 +136,7 @@ describe('chatStore logic', () => {
     ).toEqual({
       inbox_state: 'accepted',
       accepted_at: '2026-01-03T00:00:00.000Z',
-      last_outgoing_message_at: '2026-01-02T00:00:00.000Z'
+      last_outgoing_message_at: '2026-01-02T00:00:00.000Z',
     });
   });
 
@@ -145,14 +145,14 @@ describe('chatStore logic', () => {
       buildBlockedChatMeta(
         {
           inbox_state: 'accepted',
-          accepted_at: '2026-01-01T00:00:00.000Z'
+          accepted_at: '2026-01-01T00:00:00.000Z',
         },
         '2026-01-04T00:00:00.000Z'
       )
     ).toEqual({
       inbox_state: 'blocked',
       accepted_at: '2026-01-01T00:00:00.000Z',
-      blocked_at: '2026-01-04T00:00:00.000Z'
+      blocked_at: '2026-01-04T00:00:00.000Z',
     });
 
     expect(
@@ -167,7 +167,7 @@ describe('chatStore logic', () => {
           lastMessage: 'old',
           lastMessageAt: '2026-01-01T00:00:00.000Z',
           unreadCount: 3,
-          meta: {}
+          meta: {},
         },
         'new',
         '2026-01-05T00:00:00.000Z',
@@ -187,7 +187,7 @@ describe('chatStore logic', () => {
           lastMessage: 'old',
           lastMessageAt: '2026-01-01T00:00:00.000Z',
           unreadCount: 3,
-          meta: {}
+          meta: {},
         },
         'new',
         '2026-01-05T00:00:00.000Z',
@@ -210,8 +210,8 @@ describe('chatStore logic', () => {
           lastMessageAt: '2026-01-03T00:00:00.000Z',
           unreadCount: 1,
           meta: {
-            last_incoming_message_at: '2026-01-03T00:00:00.000Z'
-          }
+            last_incoming_message_at: '2026-01-03T00:00:00.000Z',
+          },
         },
         {
           id: 'accepted-chat',
@@ -225,8 +225,8 @@ describe('chatStore logic', () => {
           unreadCount: 0,
           meta: {
             inbox_state: 'accepted',
-            accepted_at: '2026-01-02T00:00:00.000Z'
-          }
+            accepted_at: '2026-01-02T00:00:00.000Z',
+          },
         },
         {
           id: 'blocked-chat',
@@ -239,9 +239,9 @@ describe('chatStore logic', () => {
           lastMessageAt: '2026-01-01T00:00:00.000Z',
           unreadCount: 0,
           meta: {
-            inbox_state: 'blocked'
-          }
-        }
+            inbox_state: 'blocked',
+          },
+        },
       ] as never)
     ).toBe('accepted-chat');
 
@@ -258,9 +258,9 @@ describe('chatStore logic', () => {
           lastMessageAt: '2026-01-03T00:00:00.000Z',
           unreadCount: 1,
           meta: {
-            last_incoming_message_at: '2026-01-03T00:00:00.000Z'
-          }
-        }
+            last_incoming_message_at: '2026-01-03T00:00:00.000Z',
+          },
+        },
       ] as never)
     ).toBeNull();
   });
@@ -278,8 +278,8 @@ describe('chatStore logic', () => {
       unreadCount: 0,
       meta: {
         given_name: 'Ali',
-        contact_name: 'Alice Cooper'
-      }
+        contact_name: 'Alice Cooper',
+      },
     };
 
     expect(buildChatSearchText(chat as never)).toContain('alice contact');
@@ -300,14 +300,14 @@ describe('chatStore logic', () => {
           last_message_at: '2026-01-05T00:00:00.000Z',
           unread_count: 2,
           meta: {
-            current_epoch_public_key: 'epoch-key'
-          }
+            current_epoch_public_key: 'epoch-key',
+          },
         } as never,
         {
           picture: 'https://example.com/group.png',
           givenName: 'Alpha Team',
           contactName: 'Alpha Group',
-          lastSeenIncomingActivityAt: '2026-01-04T00:00:00.000Z'
+          lastSeenIncomingActivityAt: '2026-01-04T00:00:00.000Z',
         }
       )
     ).toMatchObject({
@@ -326,8 +326,8 @@ describe('chatStore logic', () => {
         contact_name: 'Alpha Group',
         last_seen_received_activity_at: '2026-01-04T00:00:00.000Z',
         avatar: 'AT',
-        current_epoch_public_key: 'epoch-key'
-      }
+        current_epoch_public_key: 'epoch-key',
+      },
     });
   });
 });

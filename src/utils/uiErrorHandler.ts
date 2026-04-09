@@ -22,6 +22,6 @@ export function reportUiError(
     type: 'negative',
     message: resolveErrorMessage(error, fallbackMessage),
     position: 'top-right',
-    timeout: 3200
+    timeout: 3200,
   });
 }

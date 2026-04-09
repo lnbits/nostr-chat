@@ -1,7 +1,7 @@
-import type { Ref } from 'vue';
 import { developerTraceDataService } from 'src/services/developerTraceDataService';
 import { hasStorage } from 'src/stores/nostr/shared';
 import type { DeveloperTraceEntry, DeveloperTraceLevel } from 'src/stores/nostr/types';
+import type { Ref } from 'vue';
 
 interface DeveloperTraceRuntimeState {
   developerTraceCounter: number;
@@ -30,7 +30,7 @@ export function createDeveloperTraceRuntime({
   developerDiagnosticsVersion,
   developerTraceState,
   developerTraceVersion,
-  developerDiagnosticsStorageKey
+  developerDiagnosticsStorageKey,
 }: DeveloperTraceRuntimeDeps) {
   function readDeveloperDiagnosticsEnabled(): boolean {
     return readDeveloperDiagnosticsEnabledFromStorage(developerDiagnosticsStorageKey);
@@ -75,7 +75,7 @@ export function createDeveloperTraceRuntime({
       return {
         name: value.name,
         message: value.message,
-        stack: value.stack ?? null
+        stack: value.stack ?? null,
       };
     }
 
@@ -170,7 +170,7 @@ export function createDeveloperTraceRuntime({
       level,
       scope,
       phase,
-      details: normalizedDetails
+      details: normalizedDetails,
     };
 
     void developerTraceDataService
@@ -220,6 +220,6 @@ export function createDeveloperTraceRuntime({
     serializeDeveloperTraceValue,
     setDeveloperDiagnosticsEnabled,
     shouldEchoDeveloperTraceToConsole,
-    toOptionalIsoTimestampFromUnix
+    toOptionalIsoTimestampFromUnix,
   };
 }

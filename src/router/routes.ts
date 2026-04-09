@@ -1,21 +1,17 @@
 import type { RouteRecordRaw } from 'vue-router';
-import {
-  loadChatsPage,
-  loadContactsPage,
-  loadSettingsPage
-} from './pageLoaders';
+import { loadChatsPage, loadContactsPage, loadSettingsPage } from './pageLoaders';
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/auth',
     name: 'auth',
     alias: '/login',
-    component: () => import('pages/AuthPage.vue')
+    component: () => import('pages/AuthPage.vue'),
   },
   {
     path: '/register',
     name: 'register',
-    component: () => import('pages/RegisterPage.vue')
+    component: () => import('pages/RegisterPage.vue'),
   },
   {
     path: '/',
@@ -23,22 +19,22 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
-        redirect: { name: 'chats' }
+        redirect: { name: 'chats' },
       },
       {
         path: 'chats/requests',
         name: 'chat-requests',
-        component: loadChatsPage
+        component: loadChatsPage,
       },
       {
         path: 'chats/:pubkey?',
         name: 'chats',
-        component: loadChatsPage
+        component: loadChatsPage,
       },
       {
         path: 'contacts/:pubkey?',
         name: 'contacts',
-        component: loadContactsPage
+        component: loadContactsPage,
       },
       {
         path: 'settings',
@@ -48,46 +44,46 @@ const routes: RouteRecordRaw[] = [
           {
             path: 'profile',
             name: 'settings-profile',
-            component: () => import('pages/settings/ProfileSettingsPage.vue')
+            component: () => import('pages/settings/ProfileSettingsPage.vue'),
           },
           {
             path: 'status',
             name: 'settings-status',
-            component: () => import('pages/settings/StatusSettingsPage.vue')
+            component: () => import('pages/settings/StatusSettingsPage.vue'),
           },
           {
             path: 'theme',
             name: 'settings-theme',
-            component: () => import('pages/settings/ThemeSettingsPage.vue')
+            component: () => import('pages/settings/ThemeSettingsPage.vue'),
           },
           {
             path: 'relays',
             name: 'settings-relays',
-            component: () => import('pages/settings/RelaysSettingsPage.vue')
+            component: () => import('pages/settings/RelaysSettingsPage.vue'),
           },
           {
             path: 'language',
             name: 'settings-language',
-            component: () => import('pages/settings/LanguageSettingsPage.vue')
+            component: () => import('pages/settings/LanguageSettingsPage.vue'),
           },
           {
             path: 'notifications',
             name: 'settings-notifications',
-            component: () => import('pages/settings/NotificationsSettingsPage.vue')
+            component: () => import('pages/settings/NotificationsSettingsPage.vue'),
           },
           {
             path: 'developer',
             name: 'settings-developer',
-            component: () => import('pages/settings/DeveloperSettingsPage.vue')
-          }
-        ]
+            component: () => import('pages/settings/DeveloperSettingsPage.vue'),
+          },
+        ],
       },
-    ]
+    ],
   },
   {
     path: '/:catchAll(.*)*',
-    component: () => import('pages/ErrorNotFound.vue')
-  }
+    component: () => import('pages/ErrorNotFound.vue'),
+  },
 ];
 
 export default routes;

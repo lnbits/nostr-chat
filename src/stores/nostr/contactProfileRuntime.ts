@@ -1,11 +1,11 @@
-import { type NDK, type NDKUser, type NDKUserProfile } from '@nostr-dev-kit/ndk';
+import type { NDK, NDKUser, NDKUserProfile } from '@nostr-dev-kit/ndk';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS } from 'src/stores/nostr/constants';
 import type {
   ContactProfileEventState,
   ContactRefreshLifecycle,
-  ContactRelayListFetchResult
+  ContactRelayListFetchResult,
 } from 'src/stores/nostr/types';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
@@ -48,10 +48,7 @@ interface ContactProfileRuntimeDeps {
   getLoggedInPublicKeyHex: () => string | null;
   groupContactRefreshPromises: Map<string, Promise<ContactRecord | null>>;
   isContactListedInPrivateContactList: (contact: ContactRecord | null | undefined) => boolean;
-  markContactProfileEventApplied: (
-    pubkeyHex: string,
-    eventState: ContactProfileEventState
-  ) => void;
+  markContactProfileEventApplied: (pubkeyHex: string, eventState: ContactProfileEventState) => void;
   markContactRelayListEventApplied: (
     pubkeyHex: string,
     eventState: {
@@ -90,7 +87,7 @@ export function createContactProfileRuntime({
   publishPrivateContactList,
   refreshContactRelayList,
   resolveGroupDisplayName,
-  shouldPreserveExistingGroupRelays
+  shouldPreserveExistingGroupRelays,
 }: ContactProfileRuntimeDeps) {
   async function resolveUserByIdentifiers(
     identifiers: string[],
@@ -109,9 +106,7 @@ export function createContactProfileRuntime({
         }
 
         return user;
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     return undefined;
@@ -201,11 +196,10 @@ export function createContactProfileRuntime({
         ? explicitRelayList.relayEntries
         : fallbackRelayEntries.length > 0
           ? fallbackRelayEntries
-          : existingContact?.relays ?? [];
-    const effectiveNextRelays =
-      shouldPreserveExistingGroupRelays(existingContact, nextRelays)
-        ? existingContact?.relays ?? []
-        : nextRelays;
+          : (existingContact?.relays ?? []);
+    const effectiveNextRelays = shouldPreserveExistingGroupRelays(existingContact, nextRelays)
+      ? (existingContact?.relays ?? [])
+      : nextRelays;
 
     const didChangeContact =
       !existingContact ||
@@ -217,7 +211,7 @@ export function createContactProfileRuntime({
       const updatedContact = await contactsService.updateContact(existingContact.id, {
         name: nextName,
         meta: nextMeta,
-        relays: effectiveNextRelays
+        relays: effectiveNextRelays,
       });
       if (!updatedContact) {
         return;
@@ -229,7 +223,7 @@ export function createContactProfileRuntime({
       if (explicitRelayList !== null) {
         markContactRelayListEventApplied(normalizedTargetPubkey, {
           createdAt: explicitRelayList.createdAt,
-          eventId: explicitRelayList.eventId
+          eventId: explicitRelayList.eventId,
         });
       }
       if (didChangeContact) {
@@ -243,7 +237,7 @@ export function createContactProfileRuntime({
       name: nextName,
       given_name: null,
       meta: nextMeta,
-      relays: nextRelays
+      relays: nextRelays,
     });
     if (!createdContact) {
       return;
@@ -255,7 +249,7 @@ export function createContactProfileRuntime({
     if (explicitRelayList !== null) {
       markContactRelayListEventApplied(normalizedTargetPubkey, {
         createdAt: explicitRelayList.createdAt,
-        eventId: explicitRelayList.eventId
+        eventId: explicitRelayList.eventId,
       });
     }
     bumpContactListVersion();
@@ -286,7 +280,7 @@ export function createContactProfileRuntime({
         type: 'group',
         name: fallbackName,
         given_name: null,
-        ...(options.relays ? { relays: options.relays } : {})
+        ...(options.relays ? { relays: options.relays } : {}),
       });
       if (createdContact) {
         bumpContactListVersion();
@@ -307,7 +301,7 @@ export function createContactProfileRuntime({
     const updatedContact = await contactsService.updateContact(existingContact.id, {
       ...(shouldUpdateType ? { type: 'group' as const } : {}),
       ...(shouldUpdateName ? { name: fallbackName } : {}),
-      ...(shouldUpdateRelays ? { relays: options.relays } : {})
+      ...(shouldUpdateRelays ? { relays: options.relays } : {}),
     });
     if (updatedContact) {
       bumpContactListVersion();
@@ -338,7 +332,7 @@ export function createContactProfileRuntime({
       }
 
       const contact = await ensureContactStoredAsGroup(normalizedGroupPublicKey, {
-        fallbackName
+        fallbackName,
       });
       try {
         await refreshContactRelayList(normalizedGroupPublicKey);
@@ -376,7 +370,11 @@ export function createContactProfileRuntime({
 
     backgroundGroupContactRefreshStartedAt.set(normalizedGroupPublicKey, now);
     void refreshGroupContactByPublicKey(normalizedGroupPublicKey, fallbackName).catch((error) => {
-      console.warn('Failed to refresh group contact after epoch ticket', normalizedGroupPublicKey, error);
+      console.warn(
+        'Failed to refresh group contact after epoch ticket',
+        normalizedGroupPublicKey,
+        error
+      );
     });
   }
 
@@ -432,9 +430,7 @@ export function createContactProfileRuntime({
       resolvedNprofile
     );
     const fallbackContactName =
-      fallbackName.trim() ||
-      existingContact?.name?.trim() ||
-      normalizedTargetPubkey.slice(0, 16);
+      fallbackName.trim() || existingContact?.name?.trim() || normalizedTargetPubkey.slice(0, 16);
     const nextName =
       nextMeta.display_name?.trim() ||
       nextMeta.name?.trim() ||
@@ -445,7 +441,7 @@ export function createContactProfileRuntime({
       public_key: normalizedTargetPubkey,
       name: nextName,
       given_name: existingContact?.given_name ?? null,
-      meta: nextMeta
+      meta: nextMeta,
     };
   }
 
@@ -471,7 +467,7 @@ export function createContactProfileRuntime({
 
     const initialName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
     const ensureResult = await ensureContactListedInPrivateContactList(normalizedTargetPubkey, {
-      fallbackName: initialName
+      fallbackName: initialName,
     });
     if (!ensureResult.contact) {
       return;
@@ -505,6 +501,6 @@ export function createContactProfileRuntime({
     queueBackgroundGroupContactRefresh,
     refreshContactByPublicKey,
     refreshGroupContactByPublicKey,
-    resolveUserByIdentifiers
+    resolveUserByIdentifiers,
   };
 }

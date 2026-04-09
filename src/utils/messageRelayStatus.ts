@@ -31,7 +31,8 @@ export function normalizeMessageRelayStatus(value: unknown): MessageRelayStatus 
     typeof value.updated_at === 'string' && value.updated_at.trim()
       ? value.updated_at.trim()
       : new Date().toISOString();
-  const detail = typeof value.detail === 'string' && value.detail.trim() ? value.detail.trim() : undefined;
+  const detail =
+    typeof value.detail === 'string' && value.detail.trim() ? value.detail.trim() : undefined;
 
   return {
     relay_url: relayUrl,
@@ -39,7 +40,7 @@ export function normalizeMessageRelayStatus(value: unknown): MessageRelayStatus 
     status: value.status,
     scope: value.scope,
     updated_at: updatedAt,
-    ...(detail ? { detail } : {})
+    ...(detail ? { detail } : {}),
   };
 }
 
@@ -68,7 +69,7 @@ export function mergeMessageRelayStatuses(
     const key = [
       normalizedRelayStatus.relay_url,
       normalizedRelayStatus.direction,
-      normalizedRelayStatus.scope
+      normalizedRelayStatus.scope,
     ].join('|');
     mergedRelayStatuses.set(key, normalizedRelayStatus);
   }

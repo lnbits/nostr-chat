@@ -1,4 +1,4 @@
-import { NDKEvent, type NDK, type NDKFilter, type NDKSubscriptionOptions } from '@nostr-dev-kit/ndk';
+import type { NDK, NDKEvent, NDKFilter, NDKSubscriptionOptions } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -25,7 +25,7 @@ export function createSubscriptionLoggingRuntime({
   ndk,
   logDeveloperTrace,
   normalizeEventId,
-  resolveGroupChatEpochEntries
+  resolveGroupChatEpochEntries,
 }: SubscriptionLoggingRuntimeDeps) {
   let subscriptionRequestCounter = 0;
 
@@ -49,7 +49,7 @@ export function createSubscriptionLoggingRuntime({
   function buildSubscriptionRelayDetails(relayUrls: string[]): Record<string, unknown> {
     return {
       relayCount: relayUrls.length,
-      relayUrls
+      relayUrls,
     };
   }
 
@@ -60,7 +60,7 @@ export function createSubscriptionLoggingRuntime({
       eventId: formatSubscriptionLogValue(event.id),
       kind: event.kind ?? null,
       createdAt: event.created_at ?? null,
-      author: formatSubscriptionLogValue(event.pubkey)
+      author: formatSubscriptionLogValue(event.pubkey),
     };
   }
 
@@ -82,7 +82,7 @@ export function createSubscriptionLoggingRuntime({
         ? event.tags
             .filter((tag): tag is string[] => Array.isArray(tag))
             .map((tag) => tag.map((value) => String(value ?? '')))
-        : []
+        : [],
     };
   }
 
@@ -101,7 +101,7 @@ export function createSubscriptionLoggingRuntime({
         userTargetCount: 0,
         groupTargetCount: 0,
         userTargetPubkeys: [],
-        groupTargetPubkeys: []
+        groupTargetPubkeys: [],
       };
     }
 
@@ -138,7 +138,7 @@ export function createSubscriptionLoggingRuntime({
       userTargetCount: userTargetPubkeys.length,
       groupTargetCount: groupTargetPubkeys.length,
       userTargetPubkeys,
-      groupTargetPubkeys
+      groupTargetPubkeys,
     };
   }
 
@@ -195,15 +195,14 @@ export function createSubscriptionLoggingRuntime({
             formatSubscriptionLogValue(normalizedGroupChatPubkey) ?? normalizedGroupChatPubkey,
           epochRecipientPubkey:
             formatSubscriptionLogValue(normalizedEpochPubkey) ?? normalizedEpochPubkey,
-          epochNumber: entry.epoch_number
+          epochNumber: entry.epoch_number,
         });
       }
     }
 
     const unclassifiedRecipientPubkeys = normalizedRecipientPubkeys
       .filter(
-        (pubkey) =>
-          pubkey !== normalizedLoggedInPubkey && !matchedEpochRecipientPubkeys.has(pubkey)
+        (pubkey) => pubkey !== normalizedLoggedInPubkey && !matchedEpochRecipientPubkeys.has(pubkey)
       )
       .map((pubkey) => formatSubscriptionLogValue(pubkey) ?? pubkey);
 
@@ -215,14 +214,14 @@ export function createSubscriptionLoggingRuntime({
       userRecipientPubkeys,
       groupChatPubkeys: Array.from(groupChatPubkeys),
       epochRecipients,
-      unclassifiedRecipientPubkeys
+      unclassifiedRecipientPubkeys,
     };
   }
 
   function buildNostrReqFrame(subId: string, filters: NDKFilter | NDKFilter[]): unknown[] {
     const normalizedFilters = Array.isArray(filters) ? filters : [filters];
-    const serializedFilters = normalizedFilters.map((filter) =>
-      JSON.parse(JSON.stringify(filter)) as Record<string, unknown>
+    const serializedFilters = normalizedFilters.map(
+      (filter) => JSON.parse(JSON.stringify(filter)) as Record<string, unknown>
     );
 
     return ['REQ', subId, ...serializedFilters];
@@ -231,7 +230,10 @@ export function createSubscriptionLoggingRuntime({
   function createLoggedSubscriptionSubId(label: string): string {
     subscriptionRequestCounter += 1;
     const normalizedLabel =
-      label.trim().replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '') || 'subscription';
+      label
+        .trim()
+        .replace(/[^a-z0-9-]+/gi, '-')
+        .replace(/^-+|-+$/g, '') || 'subscription';
     return `${normalizedLabel}-${subscriptionRequestCounter.toString(36)}`;
   }
 
@@ -245,14 +247,14 @@ export function createSubscriptionLoggingRuntime({
     const subId = createLoggedSubscriptionSubId(label);
     const subscription = ndk.subscribe(filters, {
       ...options,
-      subId
+      subId,
     });
     const reqFrame = buildNostrReqFrame(subId, subscription.filters);
 
     logDeveloperTrace('info', `subscription:${name}`, 'req', {
       subId,
       reqFrame,
-      ...details
+      ...details,
     });
 
     return subscription;
@@ -265,7 +267,7 @@ export function createSubscriptionLoggingRuntime({
       sinceIso:
         normalizedSince && normalizedSince > 0
           ? new Date(normalizedSince * 1000).toISOString()
-          : null
+          : null,
     };
   }
 
@@ -276,7 +278,7 @@ export function createSubscriptionLoggingRuntime({
       untilIso:
         normalizedUntil && normalizedUntil > 0
           ? new Date(normalizedUntil * 1000).toISOString()
-          : null
+          : null,
     };
   }
 
@@ -290,6 +292,6 @@ export function createSubscriptionLoggingRuntime({
     buildTrackedContactSubscriptionTargetDetails,
     formatSubscriptionLogValue,
     relaySignature,
-    subscribeWithReqLogging
+    subscribeWithReqLogging,
   };
 }

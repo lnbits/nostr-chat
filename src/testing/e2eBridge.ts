@@ -33,14 +33,10 @@ export interface AppE2EBridge {
 const WINDOW_BRIDGE_KEY = '__appE2E__';
 
 function normalizeRelayUrls(relayUrls: string[]): string[] {
-  return inputSanitizerService
-    .normalizeRelayEntriesFromUrls(relayUrls)
-    .map((entry) => entry.url);
+  return inputSanitizerService.normalizeRelayEntriesFromUrls(relayUrls).map((entry) => entry.url);
 }
 
-async function bootstrapSession(
-  options: AppE2EBootstrapOptions
-): Promise<AppE2ESessionSnapshot> {
+async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot> {
   const privateKey = options.privateKey.trim();
   const relayUrls = normalizeRelayUrls(options.relayUrls);
 
@@ -58,13 +54,13 @@ async function bootstrapSession(
     { useRelayStore },
     { useNip65RelayStore },
     { useChatStore },
-    { useMessageStore }
+    { useMessageStore },
   ] = await Promise.all([
     import('src/stores/nostrStore'),
     import('src/stores/relayStore'),
     import('src/stores/nip65RelayStore'),
     import('src/stores/chatStore'),
-    import('src/stores/messageStore')
+    import('src/stores/messageStore'),
   ]);
 
   const nostrStore = useNostrStore();
@@ -104,22 +100,18 @@ async function bootstrapSession(
   return {
     publicKey,
     npub: nostrStore.encodeNpub(publicKey),
-    relayUrls
+    relayUrls,
   };
 }
 
 async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void> {
-  const [
-    { useNostrStore },
-    { useRelayStore },
-    { useChatStore },
-    { useMessageStore }
-  ] = await Promise.all([
-    import('src/stores/nostrStore'),
-    import('src/stores/relayStore'),
-    import('src/stores/chatStore'),
-    import('src/stores/messageStore')
-  ]);
+  const [{ useNostrStore }, { useRelayStore }, { useChatStore }, { useMessageStore }] =
+    await Promise.all([
+      import('src/stores/nostrStore'),
+      import('src/stores/relayStore'),
+      import('src/stores/chatStore'),
+      import('src/stores/messageStore'),
+    ]);
 
   const nostrStore = useNostrStore();
   const relayStore = useRelayStore();
@@ -144,9 +136,7 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
 }
 
 async function logout(): Promise<void> {
-  const [{ useNostrStore }] = await Promise.all([
-    import('src/stores/nostrStore')
-  ]);
+  const [{ useNostrStore }] = await Promise.all([import('src/stores/nostrStore')]);
 
   const nostrStore = useNostrStore();
   await nostrStore.logout();
@@ -164,9 +154,7 @@ async function rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise
     throw new Error('A group public key is required for e2e rotation.');
   }
 
-  const [{ useNostrStore }] = await Promise.all([
-    import('src/stores/nostrStore')
-  ]);
+  const [{ useNostrStore }] = await Promise.all([import('src/stores/nostrStore')]);
 
   const nostrStore = useNostrStore();
   await nostrStore.rotateGroupEpochAndSendTickets(
@@ -185,11 +173,11 @@ export function installAppE2EBridge(): void {
     bootstrapSession,
     refreshSession,
     logout,
-    rotateGroupEpoch
+    rotateGroupEpoch,
   };
 
   Object.defineProperty(window, WINDOW_BRIDGE_KEY, {
     configurable: true,
-    value: bridge
+    value: bridge,
   });
 }

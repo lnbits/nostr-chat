@@ -2,7 +2,7 @@ import {
   type NDKRelayList,
   type NDKUserProfile,
   nip19,
-  normalizeRelayUrl
+  normalizeRelayUrl,
 } from '@nostr-dev-kit/ndk';
 import type { ChatRow } from 'src/services/chatDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -77,7 +77,7 @@ export function normalizeChatGroupEpochKeysValue(value: unknown): ChatGroupEpoch
       typeof entry.invitation_created_at === 'string' &&
       entry.invitation_created_at.trim()
         ? { invitation_created_at: entry.invitation_created_at.trim() }
-        : {})
+        : {}),
     });
   }
 
@@ -96,7 +96,7 @@ export function resolveGroupChatEpochEntriesValue(
   const entriesByEpoch = new Map<number, ChatGroupEpochKey>(
     normalizeChatGroupEpochKeysValue(chat.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]).map((entry) => [
       entry.epoch_number,
-      entry
+      entry,
     ])
   );
   const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(
@@ -123,7 +123,7 @@ export function resolveGroupChatEpochEntriesValue(
     entriesByEpoch.set(fallbackEpochNumber, {
       epoch_number: fallbackEpochNumber,
       epoch_public_key: currentEpochPublicKey,
-      epoch_private_key_encrypted: currentEpochPrivateKeyEncrypted
+      epoch_private_key_encrypted: currentEpochPrivateKeyEncrypted,
     });
   }
 
@@ -178,22 +178,21 @@ export function findHigherKnownGroupEpochConflictValue(
   const incomingCreatedAtUnix = parseOptionalUnixTimestampValue(incomingCreatedAt);
   const olderHigherEpochEntry =
     incomingCreatedAtUnix === null
-      ? higherEpochEntries.find(
+      ? (higherEpochEntries.find(
           (entry) => parseOptionalUnixTimestampValue(entry.invitation_created_at) !== null
-        ) ?? null
-      : higherEpochEntries.find((entry) => {
+        ) ?? null)
+      : (higherEpochEntries.find((entry) => {
           const higherEpochCreatedAtUnix = parseOptionalUnixTimestampValue(
             entry.invitation_created_at
           );
           return (
-            higherEpochCreatedAtUnix !== null &&
-            higherEpochCreatedAtUnix <= incomingCreatedAtUnix
+            higherEpochCreatedAtUnix !== null && higherEpochCreatedAtUnix <= incomingCreatedAtUnix
           );
-        }) ?? null;
+        }) ?? null);
 
   return {
     higherEpochEntry: higherEpochEntries[0],
-    olderHigherEpochEntry
+    olderHigherEpochEntry,
   };
 }
 
@@ -316,9 +315,7 @@ export function normalizeWritableRelayUrlsValue(relays: ContactRelay[] | undefin
 
     try {
       uniqueRelays.add(normalizeRelayUrl(relayUrl));
-    } catch {
-      continue;
-    }
+    } catch {}
   }
 
   return Array.from(uniqueRelays);
@@ -330,7 +327,7 @@ export function resolveGroupPublishRelayUrlsValue(
 ): string[] {
   return normalizeRelayStatusUrlsValue([
     ...inputSanitizerService.normalizeStringArray(seedRelayUrls),
-    ...normalizeWritableRelayUrlsValue(relays)
+    ...normalizeWritableRelayUrlsValue(relays),
   ]);
 }
 
@@ -354,7 +351,7 @@ export function buildGroupInviteRequestPlanValue(options: {
   if (
     resolveIncomingChatInboxStateValue({
       chat: options.existingChat,
-      isAcceptedContact: false
+      isAcceptedContact: false,
     }) !== 'request'
   ) {
     return null;
@@ -372,7 +369,7 @@ export function buildGroupInviteRequestPlanValue(options: {
     contact_name: previewName,
     [CHAT_REQUEST_TYPE_META_KEY]: GROUP_INVITE_REQUEST_TYPE,
     [CHAT_REQUEST_MESSAGE_META_KEY]: GROUP_INVITE_REQUEST_MESSAGE,
-    [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: createdAt
+    [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: createdAt,
   };
   if (previewPicture) {
     nextMeta.picture = previewPicture;
@@ -382,7 +379,7 @@ export function buildGroupInviteRequestPlanValue(options: {
     shouldCreate: !options.existingChat,
     nextName: previewName,
     nextMeta,
-    nextUnreadCount: options.existingChat ? Number(options.existingChat.unread_count ?? 0) + 1 : 1
+    nextUnreadCount: options.existingChat ? Number(options.existingChat.unread_count ?? 0) + 1 : 1,
   };
 }
 
@@ -413,14 +410,14 @@ export function buildAcceptedGroupInviteChatPlanValue(options: {
     ...(existingChat.meta ?? {}),
     contact_name: nextName,
     inbox_state: 'accepted',
-    accepted_at: acceptedAt
+    accepted_at: acceptedAt,
   };
   delete nextMeta[CHAT_REQUEST_TYPE_META_KEY];
   delete nextMeta[CHAT_REQUEST_MESSAGE_META_KEY];
 
   return {
     nextName,
-    nextMeta
+    nextMeta,
   };
 }
 
@@ -452,7 +449,7 @@ export function buildUpdatedContactMetaValue(
   resolvedNprofile: string | null
 ): ContactMetadata {
   const meta: ContactMetadata = {
-    ...(existingMeta ?? {})
+    ...(existingMeta ?? {}),
   };
 
   const nextName = readProfileFieldValue(profile, ['name'], meta.name ?? '');
@@ -535,7 +532,7 @@ function encodeNpubValue(pubkeyHex: string): string | null {
 function encodeNprofileValue(pubkeyHex: string): string | null {
   try {
     return nip19.nprofileEncode({
-      pubkey: pubkeyHex
+      pubkey: pubkeyHex,
     });
   } catch {
     return null;
@@ -547,8 +544,7 @@ export function buildIdentifierFallbacksValue(
   existingMeta?: ContactMetadata
 ): string[] {
   const nip05Identifier = existingMeta?.nip05?.trim() ?? '';
-  const nprofileIdentifier =
-    existingMeta?.nprofile?.trim() || encodeNprofileValue(pubkeyHex) || '';
+  const nprofileIdentifier = existingMeta?.nprofile?.trim() || encodeNprofileValue(pubkeyHex) || '';
   const npubIdentifier = existingMeta?.npub?.trim() || encodeNpubValue(pubkeyHex) || '';
   const hexIdentifier = pubkeyHex;
 
@@ -573,18 +569,18 @@ export function relayEntriesFromRelayListValue(
     ...Array.from(relayList.readRelayUrls ?? [], (relay) => ({
       url: String(relay),
       read: true,
-      write: false
+      write: false,
     })),
     ...Array.from(relayList.writeRelayUrls ?? [], (relay) => ({
       url: String(relay),
       read: false,
-      write: true
+      write: true,
     })),
     ...Array.from(relayList.bothRelayUrls ?? [], (relay) => ({
       url: String(relay),
       read: true,
-      write: true
-    }))
+      write: true,
+    })),
   ]);
 }
 

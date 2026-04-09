@@ -1,9 +1,9 @@
 import {
-  NDKRelayStatus,
-  normalizeRelayUrl,
   type NDK,
   type NDKRelay,
-  type NDKRelayConnectionStats
+  type NDKRelayConnectionStats,
+  NDKRelayStatus,
+  normalizeRelayUrl,
 } from '@nostr-dev-kit/ndk';
 import type { DeveloperRelaySnapshot, DeveloperTraceLevel } from 'src/stores/nostr/types';
 
@@ -17,10 +17,7 @@ interface DeveloperRelayRuntimeDeps {
   ndk: NDK;
 }
 
-export function createDeveloperRelayRuntime({
-  logDeveloperTrace,
-  ndk
-}: DeveloperRelayRuntimeDeps) {
+export function createDeveloperRelayRuntime({ logDeveloperTrace, ndk }: DeveloperRelayRuntimeDeps) {
   function getRelayStatusName(status: number): string {
     return NDKRelayStatus[status] ?? 'UNKNOWN';
   }
@@ -29,7 +26,12 @@ export function createDeveloperRelayRuntime({
     stats: NDKRelayConnectionStats | undefined
   ): Pick<
     DeveloperRelaySnapshot,
-    'attempts' | 'success' | 'connectedAt' | 'nextReconnectAt' | 'validationRatio' | 'lastDurationMs'
+    | 'attempts'
+    | 'success'
+    | 'connectedAt'
+    | 'nextReconnectAt'
+    | 'validationRatio'
+    | 'lastDurationMs'
   > {
     if (!stats) {
       return {
@@ -38,7 +40,7 @@ export function createDeveloperRelayRuntime({
         connectedAt: null,
         nextReconnectAt: null,
         validationRatio: null,
-        lastDurationMs: null
+        lastDurationMs: null,
       };
     }
 
@@ -49,7 +51,7 @@ export function createDeveloperRelayRuntime({
       nextReconnectAt: stats.nextReconnectAt ?? null,
       validationRatio: stats.validationRatio ?? null,
       lastDurationMs:
-        stats.durations.length > 0 ? stats.durations[stats.durations.length - 1] : null
+        stats.durations.length > 0 ? stats.durations[stats.durations.length - 1] : null,
     };
   }
 
@@ -66,7 +68,7 @@ export function createDeveloperRelayRuntime({
         connectedAt: null,
         nextReconnectAt: null,
         validationRatio: null,
-        lastDurationMs: null
+        lastDurationMs: null,
       };
     }
 
@@ -76,7 +78,7 @@ export function createDeveloperRelayRuntime({
       connected: relay.connected,
       status: relay.status,
       statusName: getRelayStatusName(relay.status),
-      ...buildRelayConnectionStatsSnapshot(relay.connectionStats)
+      ...buildRelayConnectionStatsSnapshot(relay.connectionStats),
     };
   }
 
@@ -90,7 +92,7 @@ export function createDeveloperRelayRuntime({
   function logRelayLifecycle(eventName: string, relay: NDKRelay): void {
     logDeveloperTrace('info', 'relay', eventName, {
       ...buildRelaySnapshot(relay),
-      pool: ndk.pool.stats()
+      pool: ndk.pool.stats(),
     });
   }
 
@@ -106,6 +108,6 @@ export function createDeveloperRelayRuntime({
     buildRelaySnapshot,
     getRelaySnapshots,
     logMessageRelayDiagnostics,
-    logRelayLifecycle
+    logRelayLifecycle,
   };
 }

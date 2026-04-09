@@ -1,13 +1,13 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 import type {
   ContactMetadata,
   ContactRecord,
   ContactRelay,
   ContactType,
   CreateContactInput,
-  UpdateContactInput
+  UpdateContactInput,
 } from 'src/types/contact';
+import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 
 interface RawContactStoreRecord {
   id: number;
@@ -136,7 +136,7 @@ function normalizeRelayValue(value: unknown): ContactRelay | null {
     return {
       url: relayWs,
       read: true,
-      write: true
+      write: true,
     };
   }
 
@@ -153,7 +153,7 @@ function normalizeRelayValue(value: unknown): ContactRelay | null {
   const normalizedRelay: ContactRelay = {
     url: relayWs,
     read: relay.read !== false,
-    write: relay.write !== false
+    write: relay.write !== false,
   };
 
   if (!normalizedRelay.read && !normalizedRelay.write) {
@@ -195,7 +195,9 @@ function normalizeRelayList(value: unknown): ContactRelay[] {
     byUrl.set(key, relay);
   }
 
-  return Array.from(byUrl.values()).sort((first, second) => compareRelayUrls(first.url, second.url));
+  return Array.from(byUrl.values()).sort((first, second) =>
+    compareRelayUrls(first.url, second.url)
+  );
 }
 
 function relayListsEqual(first: ContactRelay[], second: ContactRelay[]): boolean {
@@ -236,7 +238,7 @@ function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null 
     given_name: givenName,
     relays: normalizeRelayList(raw.relays),
     sendMessagesToAppRelays: normalizeBooleanFlag(raw.sendMessagesToAppRelays),
-    meta: parseStoredMeta(raw.meta)
+    meta: parseStoredMeta(raw.meta),
   };
 }
 
@@ -249,7 +251,7 @@ function toContactRecord(record: ContactStoreRecord): ContactRecord {
     given_name: record.given_name,
     relays: normalizeRelayList(record.relays),
     sendMessagesToAppRelays: normalizeBooleanFlag(record.sendMessagesToAppRelays),
-    meta: parseStoredMeta(record.meta)
+    meta: parseStoredMeta(record.meta),
   };
 }
 
@@ -260,7 +262,7 @@ function compareContactsByName(first: ContactStoreRecord, second: ContactStoreRe
   }
 
   const byPublicKey = first.public_key.localeCompare(second.public_key, undefined, {
-    sensitivity: 'base'
+    sensitivity: 'base',
   });
   if (byPublicKey !== 0) {
     return byPublicKey;
@@ -384,7 +386,7 @@ class ContactsService {
       given_name: givenName,
       relays,
       sendMessagesToAppRelays,
-      meta
+      meta,
     };
 
     const db = await this.getDatabase();
@@ -399,7 +401,7 @@ class ContactsService {
 
       return toContactRecord({
         ...record,
-        id: Number(insertedId)
+        id: Number(insertedId),
       });
     } catch (error) {
       if (isConstraintError(error)) {
@@ -429,7 +431,7 @@ class ContactsService {
     }
 
     const nextRecord: ContactStoreRecord = {
-      ...existingRecord
+      ...existingRecord,
     };
     let didUpdateRecord = false;
 
@@ -532,7 +534,7 @@ class ContactsService {
     }
 
     return this.updateContact(contact.id, {
-      sendMessagesToAppRelays
+      sendMessagesToAppRelays,
     });
   }
 
@@ -583,7 +585,7 @@ class ContactsService {
           'given_name',
           'meta',
           'relays',
-          'sendMessagesToAppRelays'
+          'sendMessagesToAppRelays',
         ],
         values: contacts.map((contact) => [
           contact.id,
@@ -593,9 +595,9 @@ class ContactsService {
           contact.given_name,
           contact.meta,
           contact.relays ?? [],
-          contact.sendMessagesToAppRelays
-        ])
-      }
+          contact.sendMessagesToAppRelays,
+        ]),
+      },
     ];
   }
 
@@ -642,7 +644,7 @@ class ContactsService {
           : db.createObjectStore(CONTACTS_STORE, { keyPath: 'id', autoIncrement: true });
         if (!contactsStore.indexNames.contains(CONTACTS_PUBLIC_KEY_INDEX)) {
           contactsStore.createIndex(CONTACTS_PUBLIC_KEY_INDEX, CONTACTS_PUBLIC_KEY_INDEX, {
-            unique: true
+            unique: true,
           });
         }
       };

@@ -15,7 +15,7 @@ export function createPrivateMessagesUiRuntime({
   chatStore,
   normalizeThrottleMs,
   refreshDeveloperPendingQueues,
-  waitForPrivateMessagesIngestQueue
+  waitForPrivateMessagesIngestQueue,
 }: PrivateMessagesUiRuntimeDeps) {
   let privateMessagesUiRefreshQueue = Promise.resolve();
   let privateMessagesUiRefreshTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -23,7 +23,8 @@ export function createPrivateMessagesUiRuntime({
   let shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
   let chatChecksQueue = Promise.resolve();
   let postPrivateMessagesEoseChecksQueue = Promise.resolve();
-  let postPrivateMessagesEoseChecksTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let postPrivateMessagesEoseChecksTimeoutId: ReturnType<typeof globalThis.setTimeout> | null =
+    null;
   let shouldRunPostPrivateMessagesEoseChecks = false;
   let chatChecksTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let shouldRunChatChecksForAllChats = false;
@@ -200,7 +201,9 @@ export function createPrivateMessagesUiRuntime({
     shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
   }
 
-  function resetPrivateMessagesUiRuntimeState(options: { includeRefreshQueue?: boolean } = {}): void {
+  function resetPrivateMessagesUiRuntimeState(
+    options: { includeRefreshQueue?: boolean } = {}
+  ): void {
     clearPrivateMessagesUiRefreshState();
 
     if (chatChecksTimeoutId !== null) {
@@ -229,6 +232,6 @@ export function createPrivateMessagesUiRuntime({
     queuePrivateMessagesUiRefresh,
     resetPrivateMessagesUiRuntimeState,
     scheduleChatChecks,
-    schedulePostPrivateMessagesEoseChecks
+    schedulePostPrivateMessagesEoseChecks,
   };
 }

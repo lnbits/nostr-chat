@@ -1,13 +1,13 @@
+import type { NostrEvent } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import type {
   PendingIncomingDeletion,
   PendingIncomingReaction,
-  QueuePrivateMessageUiRefreshOptions
+  QueuePrivateMessageUiRefreshOptions,
 } from 'src/stores/nostr/types';
 import type { MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
-import type { NostrEvent } from '@nostr-dev-kit/ndk';
 
 interface MessageRelayRuntimeDeps {
   bumpDeveloperDiagnosticsVersion: () => void;
@@ -34,7 +34,7 @@ export function createMessageRelayRuntime({
   normalizeThrottleMs,
   pendingIncomingDeletions,
   pendingIncomingReactions,
-  queuePrivateMessagesUiRefresh
+  queuePrivateMessagesUiRefresh,
 }: MessageRelayRuntimeDeps) {
   async function refreshMessageInLiveState(messageId: number): Promise<void> {
     try {
@@ -60,7 +60,7 @@ export function createMessageRelayRuntime({
         reason: 'invalid-message-id',
         messageId,
         relayStatusCount: relayStatuses.length,
-        eventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null)
+        eventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null),
       });
       return;
     }
@@ -75,7 +75,7 @@ export function createMessageRelayRuntime({
         reason: 'message-not-found',
         messageId,
         relayStatusCount: relayStatuses.length,
-        eventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null)
+        eventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null),
       });
       return;
     }
@@ -89,7 +89,7 @@ export function createMessageRelayRuntime({
         messageId: currentMessage.id,
         relayStatusCount: relayStatuses.length,
         currentMessageEventId: formatSubscriptionLogValue(currentMessage.event_id),
-        optionEventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null)
+        optionEventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null),
       });
       return;
     }
@@ -102,10 +102,10 @@ export function createMessageRelayRuntime({
       event: options.event
         ? {
             ...options.event,
-            id: normalizedStoredEventId
+            id: normalizedStoredEventId,
           }
         : undefined,
-      direction: options.direction
+      direction: options.direction,
     });
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
@@ -115,12 +115,12 @@ export function createMessageRelayRuntime({
       relayStatusCount: relayStatuses.length,
       direction: options.direction ?? null,
       uiThrottleMs,
-      refreshMode: uiThrottleMs > 0 ? 'queued-ui-refresh' : 'live-state-refresh'
+      refreshMode: uiThrottleMs > 0 ? 'queued-ui-refresh' : 'live-state-refresh',
     });
     if (uiThrottleMs > 0) {
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
-        reloadMessages: true
+        reloadMessages: true,
       });
       return;
     }
@@ -136,7 +136,7 @@ export function createMessageRelayRuntime({
       direction: 'inbound',
       status: 'received',
       scope: 'subscription',
-      updated_at: updatedAt
+      updated_at: updatedAt,
     }));
   }
 
@@ -259,6 +259,6 @@ export function createMessageRelayRuntime({
     queuePendingIncomingDeletion,
     queuePendingIncomingReaction,
     refreshMessageInLiveState,
-    removePendingIncomingReaction
+    removePendingIncomingReaction,
   };
 }

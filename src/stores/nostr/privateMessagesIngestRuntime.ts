@@ -1,14 +1,14 @@
-import { NDKEvent, NDKKind, giftUnwrap } from '@nostr-dev-kit/ndk';
+import { giftUnwrap, type NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import { isPlainRecord } from 'src/stores/nostr/shared';
-import type { NostrEventDirection } from 'src/types/chat';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import type {
   GroupEpochContext,
-  PrivateMessagesIngestRuntimeDeps
+  PrivateMessagesIngestRuntimeDeps,
 } from 'src/stores/nostr/privateMessagesIngestTypes';
+import { isPlainRecord } from 'src/stores/nostr/shared';
+import type { NostrEventDirection } from 'src/types/chat';
 
 export function createPrivateMessagesIngestRuntime({
   appendRelayStatusesToMessageEvent,
@@ -55,7 +55,7 @@ export function createPrivateMessagesIngestRuntime({
   toStoredNostrEvent,
   unwrapGiftWrapSealEvent,
   upsertIncomingGroupInviteRequestChat,
-  verifyIncomingGroupEpochTicket
+  verifyIncomingGroupEpochTicket,
 }: PrivateMessagesIngestRuntimeDeps) {
   let privateMessagesIngestQueue = Promise.resolve();
 
@@ -82,7 +82,7 @@ export function createPrivateMessagesIngestRuntime({
     privateMessagesIngestQueue = privateMessagesIngestQueue
       .then(() =>
         processIncomingPrivateMessage(wrappedEvent, loggedInPubkeyHex, {
-          uiThrottleMs
+          uiThrottleMs,
         })
       )
       .catch((error) => {
@@ -104,8 +104,8 @@ export function createPrivateMessagesIngestRuntime({
         ...buildInboundTraceDetails({
           wrappedEvent,
           loggedInPubkeyHex,
-          relayUrls: wrappedRelayUrls
-        })
+          relayUrls: wrappedRelayUrls,
+        }),
       });
       return;
     }
@@ -120,8 +120,8 @@ export function createPrivateMessagesIngestRuntime({
         ...buildInboundTraceDetails({
           wrappedEvent,
           loggedInPubkeyHex,
-          relayUrls: wrappedRelayUrls
-        })
+          relayUrls: wrappedRelayUrls,
+        }),
       });
       return;
     }
@@ -136,8 +136,8 @@ export function createPrivateMessagesIngestRuntime({
         ...buildInboundTraceDetails({
           wrappedEvent,
           loggedInPubkeyHex,
-          relayUrls: wrappedRelayUrls
-        })
+          relayUrls: wrappedRelayUrls,
+        }),
       });
       return;
     }
@@ -150,8 +150,8 @@ export function createPrivateMessagesIngestRuntime({
           wrappedEvent,
           rumorEvent,
           loggedInPubkeyHex,
-          relayUrls: wrappedRelayUrls
-        })
+          relayUrls: wrappedRelayUrls,
+        }),
       });
       return;
     }
@@ -170,16 +170,15 @@ export function createPrivateMessagesIngestRuntime({
           loggedInPubkeyHex,
           senderPubkeyHex,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       return;
     }
 
-    let resolvedGroupEpochContext: GroupEpochContext | null =
-      recipientContext.groupChatPublicKey
-        ? await findGroupChatEpochContextByRecipientPubkey(recipientContext.recipientPubkey)
-        : null;
+    let resolvedGroupEpochContext: GroupEpochContext | null = recipientContext.groupChatPublicKey
+      ? await findGroupChatEpochContextByRecipientPubkey(recipientContext.recipientPubkey)
+      : null;
     let resolvedGroupChatPublicKey =
       resolvedGroupEpochContext?.chat.public_key ?? recipientContext.groupChatPublicKey;
     if (!resolvedGroupChatPublicKey) {
@@ -197,8 +196,8 @@ export function createPrivateMessagesIngestRuntime({
     const chatPubkey = resolvedGroupChatPublicKey
       ? resolvedGroupChatPublicKey
       : isSelfSentMessage
-        ? recipients.find((pubkey) => pubkey !== loggedInPubkeyHex) ??
-          (recipients.includes(loggedInPubkeyHex) ? loggedInPubkeyHex : null)
+        ? (recipients.find((pubkey) => pubkey !== loggedInPubkeyHex) ??
+          (recipients.includes(loggedInPubkeyHex) ? loggedInPubkeyHex : null))
         : senderPubkeyHex;
     if (!chatPubkey) {
       logInboundEvent('drop', {
@@ -210,8 +209,8 @@ export function createPrivateMessagesIngestRuntime({
           loggedInPubkeyHex,
           senderPubkeyHex,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       return;
     }
@@ -229,7 +228,7 @@ export function createPrivateMessagesIngestRuntime({
       chatPubkey: formatSubscriptionLogValue(chatPubkey),
       direction,
       recipientCount: recipients.length,
-      ...buildSubscriptionEventDetails(rumorEvent)
+      ...buildSubscriptionEventDetails(rumorEvent),
     });
 
     if (rumorEvent.kind === NDKKind.EventDeletion) {
@@ -243,11 +242,11 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       await processIncomingDeletionRumorEvent(rumorEvent, senderPubkeyHex, {
-        uiThrottleMs
+        uiThrottleMs,
       });
       return;
     }
@@ -263,14 +262,14 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       await processIncomingReactionRumorEvent(rumorEvent, chatPubkey, senderPubkeyHex, {
         uiThrottleMs,
         direction,
         rumorNostrEvent,
-        relayStatuses: receivedRelayStatuses
+        relayStatuses: receivedRelayStatuses,
       });
       return;
     }
@@ -284,7 +283,9 @@ export function createPrivateMessagesIngestRuntime({
         return;
       }
       const epochNumber = verificationResult.epochNumber ?? 0;
-      const epochPublicKey = derivePublicKeyFromPrivateKey(verificationResult.epochPrivateKey ?? '');
+      const epochPublicKey = derivePublicKeyFromPrivateKey(
+        verificationResult.epochPrivateKey ?? ''
+      );
 
       await contactsService.init();
       await chatDataService.init();
@@ -320,8 +321,8 @@ export function createPrivateMessagesIngestRuntime({
             senderPubkeyHex,
             chatPubkey: senderPubkeyHex,
             relayUrls: wrappedRelayUrls,
-            recipients
-          })
+            recipients,
+          }),
         });
         return;
       }
@@ -357,15 +358,15 @@ export function createPrivateMessagesIngestRuntime({
             senderPubkeyHex,
             chatPubkey: senderPubkeyHex,
             relayUrls: wrappedRelayUrls,
-            recipients
-          })
+            recipients,
+          }),
         });
         return;
       }
       const wasAcceptedGroup =
         resolveIncomingChatInboxStateValue({
           chat: existingGroupChat,
-          isAcceptedContact: isContactListedInPrivateContactList(senderContact)
+          isAcceptedContact: isContactListedInPrivateContactList(senderContact),
         }) === 'accepted';
       const fallbackGroupName =
         senderContact?.meta?.display_name?.trim() ||
@@ -392,16 +393,21 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey: senderPubkeyHex,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
 
-      await persistIncomingGroupEpochTicket(senderPubkeyHex, epochNumber, verificationResult.epochPrivateKey ?? '', {
-        fallbackName: fallbackGroupName,
-        accepted: wasAcceptedGroup,
-        invitationCreatedAt: incomingEpochCreatedAt,
-        seedRelayUrls: wrappedRelayUrls
-      });
+      await persistIncomingGroupEpochTicket(
+        senderPubkeyHex,
+        epochNumber,
+        verificationResult.epochPrivateKey ?? '',
+        {
+          fallbackName: fallbackGroupName,
+          accepted: wasAcceptedGroup,
+          invitationCreatedAt: incomingEpochCreatedAt,
+          seedRelayUrls: wrappedRelayUrls,
+        }
+      );
       queueBackgroundGroupContactRefresh(senderPubkeyHex, fallbackGroupName);
 
       if (!wasAcceptedGroup) {
@@ -411,11 +417,11 @@ export function createPrivateMessagesIngestRuntime({
           senderContact
             ? {
                 name: senderContact.name,
-                meta: senderContact.meta
+                meta: senderContact.meta,
               }
             : {
                 name: fallbackGroupName,
-                meta: {}
+                meta: {},
               }
         );
       }
@@ -430,9 +436,9 @@ export function createPrivateMessagesIngestRuntime({
           source: 'nostr',
           kind: 1014,
           group_epoch_notice: {
-            epochNumber
-          }
-        }
+            epochNumber,
+          },
+        },
       });
       if (!epochNoticeMessage) {
         return;
@@ -441,7 +447,7 @@ export function createPrivateMessagesIngestRuntime({
       if (uiThrottleMs > 0) {
         queuePrivateMessagesUiRefresh({
           throttleMs: uiThrottleMs,
-          reloadMessages: true
+          reloadMessages: true,
         });
         return;
       }
@@ -466,8 +472,8 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       return;
     }
@@ -484,13 +490,17 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       return;
     }
 
-    await Promise.all([chatDataService.init(), contactsService.init(), nostrEventDataService.init()]);
+    await Promise.all([
+      chatDataService.init(),
+      contactsService.init(),
+      nostrEventDataService.init(),
+    ]);
 
     const rumorEventId = normalizeEventId(rumorNostrEvent?.id ?? rumorEvent.id);
     if (rumorEventId) {
@@ -500,15 +510,18 @@ export function createPrivateMessagesIngestRuntime({
           event: rumorNostrEvent ?? undefined,
           direction,
           eventId: rumorEventId,
-          uiThrottleMs
+          uiThrottleMs,
         });
-        let updatedExistingMessage = await applyPendingIncomingReactionsForMessage(existingMessage, {
-          uiThrottleMs
-        });
+        let updatedExistingMessage = await applyPendingIncomingReactionsForMessage(
+          existingMessage,
+          {
+            uiThrottleMs,
+          }
+        );
         updatedExistingMessage = await applyPendingIncomingDeletionsForMessage(
           updatedExistingMessage,
           {
-            uiThrottleMs
+            uiThrottleMs,
           }
         );
         logInboundEvent('message-persisted', {
@@ -523,8 +536,8 @@ export function createPrivateMessagesIngestRuntime({
             senderPubkeyHex,
             chatPubkey,
             relayUrls: wrappedRelayUrls,
-            recipients
-          })
+            recipients,
+          }),
         });
         return;
       }
@@ -536,29 +549,29 @@ export function createPrivateMessagesIngestRuntime({
     const existingChat = await chatDataService.getChatByPublicKey(chatPubkey);
     const incomingChatInboxState = resolveIncomingChatInboxStateValue({
       chat: existingChat,
-      isAcceptedContact
+      isAcceptedContact,
     });
-    const createdChat =
-      existingChat
-        ? null
-        : await chatDataService.createChat({
-            public_key: chatPubkey,
-            ...(recipientContext.groupChatPublicKey ? { type: 'group' as const } : {}),
-            name: deriveChatName(contact, chatPubkey),
-            last_message: '',
-            last_message_at: createdAt,
-            unread_count: 0,
-            meta: {
-              ...(contact?.meta.picture ? { picture: contact.meta.picture } : {}),
-              ...(incomingChatInboxState === 'accepted'
-                ? {
-                    inbox_state: 'accepted',
-                    accepted_at: createdAt
-                  }
-                : {})
-            }
-          });
-    let chat = existingChat ?? createdChat ?? (await chatDataService.getChatByPublicKey(chatPubkey));
+    const createdChat = existingChat
+      ? null
+      : await chatDataService.createChat({
+          public_key: chatPubkey,
+          ...(recipientContext.groupChatPublicKey ? { type: 'group' as const } : {}),
+          name: deriveChatName(contact, chatPubkey),
+          last_message: '',
+          last_message_at: createdAt,
+          unread_count: 0,
+          meta: {
+            ...(contact?.meta.picture ? { picture: contact.meta.picture } : {}),
+            ...(incomingChatInboxState === 'accepted'
+              ? {
+                  inbox_state: 'accepted',
+                  accepted_at: createdAt,
+                }
+              : {}),
+          },
+        });
+    let chat =
+      existingChat ?? createdChat ?? (await chatDataService.getChatByPublicKey(chatPubkey));
     if (!chat) {
       logInboundEvent('drop', {
         reason: 'chat-create-failed',
@@ -570,8 +583,8 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       return;
     }
@@ -583,7 +596,7 @@ export function createPrivateMessagesIngestRuntime({
         chat.meta && typeof chat.meta.accepted_at === 'string' ? chat.meta.accepted_at.trim() : '';
       if (currentInboxState !== 'accepted' || !currentAcceptedAt) {
         await chatStore.acceptChat(chat.public_key, {
-          acceptedAt: currentAcceptedAt || createdAt
+          acceptedAt: currentAcceptedAt || createdAt,
         });
         chat = (await chatDataService.getChatByPublicKey(chat.public_key)) ?? chat;
       }
@@ -619,8 +632,8 @@ export function createPrivateMessagesIngestRuntime({
         source: 'nostr',
         kind: NDKKind.PrivateDirectMessage,
         wrapper_event_id: wrappedEvent.id ?? '',
-        ...(replyPreview ? { reply: replyPreview } : {})
-      }
+        ...(replyPreview ? { reply: replyPreview } : {}),
+      },
     });
     if (!createdMessage) {
       logInboundEvent('drop', {
@@ -633,25 +646,25 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
       return;
     }
 
     await chatStore.recordIncomingActivity(chat.public_key, createdAt);
     let nextMessageRow = await applyPendingIncomingReactionsForMessage(createdMessage, {
-      uiThrottleMs
+      uiThrottleMs,
     });
     nextMessageRow = await applyPendingIncomingDeletionsForMessage(nextMessageRow, {
-      uiThrottleMs
+      uiThrottleMs,
     });
 
     if (rumorNostrEvent) {
       await nostrEventDataService.upsertEvent({
         event: rumorNostrEvent,
         direction,
-        relay_statuses: receivedRelayStatuses
+        relay_statuses: receivedRelayStatuses,
       });
     }
 
@@ -660,8 +673,7 @@ export function createPrivateMessagesIngestRuntime({
       !isSelfSentMessage &&
       !isBlockedChat &&
       chatStore.visibleChatId !== chat.public_key &&
-      toComparableTimestamp(createdAt) >
-        toComparableTimestamp(effectiveLastSeenIncomingActivityAt);
+      toComparableTimestamp(createdAt) > toComparableTimestamp(effectiveLastSeenIncomingActivityAt);
     const nextUnreadCount = isSelfSentMessage
       ? currentUnreadCount
       : isBlockedChat || chatStore.visibleChatId === chat.public_key
@@ -675,14 +687,20 @@ export function createPrivateMessagesIngestRuntime({
       ? resolveCurrentGroupChatEpochEntry(chat)
       : null;
     const hasValidInvitation = Boolean(resolvedGroupEpochContext?.epochEntry);
-    const invitationCreatedAt = resolvedGroupEpochContext?.epochEntry?.invitation_created_at ?? null;
+    const invitationCreatedAt =
+      resolvedGroupEpochContext?.epochEntry?.invitation_created_at ?? null;
     const isCurrentEpochRecipient =
       Boolean(currentGroupEpochEntry?.epoch_public_key) &&
       currentGroupEpochEntry?.epoch_public_key ===
         resolvedGroupEpochContext?.epochEntry?.epoch_public_key;
 
     if (shouldUpdateChatPreview) {
-      await chatDataService.updateChatPreview(chat.public_key, messageText, createdAt, nextUnreadCount);
+      await chatDataService.updateChatPreview(
+        chat.public_key,
+        messageText,
+        createdAt,
+        nextUnreadCount
+      );
     } else if (nextUnreadCount !== currentUnreadCount) {
       await chatDataService.updateChatUnreadCount(chat.public_key, nextUnreadCount);
     }
@@ -699,7 +717,7 @@ export function createPrivateMessagesIngestRuntime({
             epochRecipientPubkey: formatSubscriptionLogValue(recipientContext.recipientPubkey),
             hasValidInvitation,
             invitationCreatedAt,
-            isCurrentEpochRecipient
+            isCurrentEpochRecipient,
           }
         : {}),
       ...buildInboundTraceDetails({
@@ -709,8 +727,8 @@ export function createPrivateMessagesIngestRuntime({
         senderPubkeyHex,
         chatPubkey,
         relayUrls: wrappedRelayUrls,
-        recipients
-      })
+        recipients,
+      }),
     });
 
     logInboundEvent('message-persisted', {
@@ -729,8 +747,8 @@ export function createPrivateMessagesIngestRuntime({
         senderPubkeyHex,
         chatPubkey,
         relayUrls: wrappedRelayUrls,
-        recipients
-      })
+        recipients,
+      }),
     });
 
     if (resolvedGroupChatPublicKey) {
@@ -752,8 +770,8 @@ export function createPrivateMessagesIngestRuntime({
           senderPubkeyHex,
           chatPubkey: resolvedGroupChatPublicKey,
           relayUrls: wrappedRelayUrls,
-          recipients
-        })
+          recipients,
+        }),
       });
     }
 
@@ -766,7 +784,7 @@ export function createPrivateMessagesIngestRuntime({
         chatPubkey: chat.public_key,
         title: deriveChatName(contact, chatPubkey),
         messageText,
-        iconUrl: contact?.meta.picture?.trim() || undefined
+        iconUrl: contact?.meta.picture?.trim() || undefined,
       });
     }
 
@@ -774,7 +792,7 @@ export function createPrivateMessagesIngestRuntime({
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
         reloadChats: true,
-        reloadMessages: true
+        reloadMessages: true,
       });
       return;
     }
@@ -789,8 +807,8 @@ export function createPrivateMessagesIngestRuntime({
           unreadCount: nextUnreadCount,
           meta: {
             ...(chat.meta ?? {}),
-            ...(contact?.meta.picture ? { picture: contact.meta.picture } : {})
-          }
+            ...(contact?.meta.picture ? { picture: contact.meta.picture } : {}),
+          },
         });
       } else if (nextUnreadCount !== currentUnreadCount) {
         await chatStore.setUnreadCount(chat.public_key, nextUnreadCount);
@@ -806,6 +824,6 @@ export function createPrivateMessagesIngestRuntime({
   return {
     getPrivateMessagesIngestQueue,
     queuePrivateMessageIngestion,
-    resetPrivateMessagesIngestRuntimeState
+    resetPrivateMessagesIngestRuntimeState,
   };
 }

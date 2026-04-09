@@ -1,23 +1,23 @@
-import { NDKEvent, NDKKind, type NDK, type NostrEvent } from '@nostr-dev-kit/ndk';
+import { type NDK, NDKEvent, NDKKind, type NostrEvent } from '@nostr-dev-kit/ndk';
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
+import { UNKNOWN_REPLY_MESSAGE_TEXT } from 'src/stores/nostr/constants';
 import type {
+  MessageRow,
   PendingIncomingDeletion,
   PendingIncomingReaction,
-  QueuePrivateMessageUiRefreshOptions
+  QueuePrivateMessageUiRefreshOptions,
 } from 'src/stores/nostr/types';
-import { UNKNOWN_REPLY_MESSAGE_TEXT } from 'src/stores/nostr/constants';
-import type { MessageRow } from 'src/stores/nostr/types';
+import type { MessageRelayStatus, MessageReplyPreview, NostrEventDirection } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 import {
   buildMetaWithReactions,
+  type MessageReaction,
   normalizeMessageReactions,
-  type MessageReaction
 } from 'src/utils/messageReactions';
-import type { MessageReplyPreview, MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
 
 interface MessageMutationRuntimeDeps {
   buildInboundTraceDetails: (options: {
@@ -44,9 +44,7 @@ interface MessageMutationRuntimeDeps {
     pendingReaction: PendingIncomingReaction
   ) => void;
   queuePrivateMessagesUiRefresh: (options?: QueuePrivateMessageUiRefreshOptions) => void;
-  readDeletionTargetEntries: (
-    event: NDKEvent
-  ) => Array<{ eventId: string; kind: number | null }>;
+  readDeletionTargetEntries: (event: NDKEvent) => Array<{ eventId: string; kind: number | null }>;
   readReactionTargetAuthorPubkey: (event: NDKEvent) => string | null;
   readReactionTargetEventId: (event: NDKEvent) => string | null;
   refreshMessageInLiveState: (messageId: number) => Promise<void>;
@@ -79,7 +77,7 @@ export function createMessageMutationRuntime({
   removePendingIncomingReaction,
   toIsoTimestampFromUnix,
   consumePendingIncomingDeletions,
-  consumePendingIncomingReactions
+  consumePendingIncomingReactions,
 }: MessageMutationRuntimeDeps) {
   function buildDeletedMessageMeta(
     deletedByPublicKey: string,
@@ -91,7 +89,9 @@ export function createMessageMutationRuntime({
       deletedAt,
       deletedByPublicKey,
       deletedEventKind,
-      ...(normalizeEventId(deleteEventId) ? { deleteEventId: normalizeEventId(deleteEventId) } : {})
+      ...(normalizeEventId(deleteEventId)
+        ? { deleteEventId: normalizeEventId(deleteEventId) }
+        : {}),
     };
   }
 
@@ -114,7 +114,10 @@ export function createMessageMutationRuntime({
     const normalizedMessageChatPubkey = inputSanitizerService.normalizeHexKey(
       messageRow.chat_public_key
     );
-    if (!normalizedMessageChatPubkey || normalizedMessageChatPubkey !== pendingReaction.chatPublicKey) {
+    if (
+      !normalizedMessageChatPubkey ||
+      normalizedMessageChatPubkey !== pendingReaction.chatPublicKey
+    ) {
       return null;
     }
 
@@ -163,7 +166,7 @@ export function createMessageMutationRuntime({
         viewedByAuthorAt:
           pendingReaction.reaction.viewedByAuthorAt ??
           existingReaction.viewedByAuthorAt ??
-          defaultViewedByAuthorAt
+          defaultViewedByAuthorAt,
       };
       const isUnchanged =
         nextReaction.emoji === existingReaction.emoji &&
@@ -191,7 +194,7 @@ export function createMessageMutationRuntime({
         await syncChatUnseenReactionCount(updatedRow.chat_public_key);
         queuePrivateMessagesUiRefresh({
           throttleMs: uiThrottleMs,
-          reloadMessages: true
+          reloadMessages: true,
         });
         return updatedRow;
       }
@@ -214,8 +217,8 @@ export function createMessageMutationRuntime({
         ...currentReactions,
         {
           ...pendingReaction.reaction,
-          ...(defaultViewedByAuthorAt ? { viewedByAuthorAt: defaultViewedByAuthorAt } : {})
-        }
+          ...(defaultViewedByAuthorAt ? { viewedByAuthorAt: defaultViewedByAuthorAt } : {}),
+        },
       ])
     );
     if (!updatedRow) {
@@ -227,7 +230,7 @@ export function createMessageMutationRuntime({
       await syncChatUnseenReactionCount(updatedRow.chat_public_key);
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
-        reloadMessages: true
+        reloadMessages: true,
       });
       return updatedRow;
     }
@@ -282,7 +285,7 @@ export function createMessageMutationRuntime({
       await syncChatUnseenReactionCount(updatedRow.chat_public_key);
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
-        reloadMessages: true
+        reloadMessages: true,
       });
       return updatedRow;
     }
@@ -314,7 +317,7 @@ export function createMessageMutationRuntime({
         deletedEventKind,
         deletedAt,
         deleteEventId
-      )
+      ),
     });
     if (!updatedRow) {
       return null;
@@ -324,7 +327,7 @@ export function createMessageMutationRuntime({
     if (uiThrottleMs > 0) {
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
-        reloadMessages: true
+        reloadMessages: true,
       });
       return updatedRow;
     }
@@ -352,7 +355,11 @@ export function createMessageMutationRuntime({
     let currentMessageRow = messageRow;
     const remainingEntries: PendingIncomingReaction[] = [];
     for (const pendingReaction of pendingEntries) {
-      const updatedRow = await upsertReactionOnMessageRow(currentMessageRow, pendingReaction, options);
+      const updatedRow = await upsertReactionOnMessageRow(
+        currentMessageRow,
+        pendingReaction,
+        options
+      );
       if (!updatedRow) {
         remainingEntries.push(pendingReaction);
         continue;
@@ -462,8 +469,8 @@ export function createMessageMutationRuntime({
           senderPubkeyHex,
           chatPubkey,
           targetEventId,
-          relayUrls
-        })
+          relayUrls,
+        }),
       });
       return;
     }
@@ -474,7 +481,7 @@ export function createMessageMutationRuntime({
       await nostrEventDataService.upsertEvent({
         event: options.rumorNostrEvent,
         direction: options.direction,
-        relay_statuses: options.relayStatuses
+        relay_statuses: options.relayStatuses,
       });
     }
 
@@ -492,8 +499,8 @@ export function createMessageMutationRuntime({
             senderPubkeyHex,
             chatPubkey,
             targetEventId,
-            relayUrls
-          })
+            relayUrls,
+          }),
         });
         await nostrEventDataService.deleteEventsByIds([reactionEventId]);
         return;
@@ -520,8 +527,8 @@ export function createMessageMutationRuntime({
 
           return {};
         })(),
-        ...(reactionEventId ? { eventId: reactionEventId } : {})
-      }
+        ...(reactionEventId ? { eventId: reactionEventId } : {}),
+      },
     };
 
     const targetMessage = await chatDataService.getMessageByEventId(targetEventId);
@@ -533,8 +540,8 @@ export function createMessageMutationRuntime({
           senderPubkeyHex,
           chatPubkey,
           targetEventId,
-          relayUrls
-        })
+          relayUrls,
+        }),
       });
       queuePendingIncomingReaction(targetEventId, pendingReaction);
       return;
@@ -549,8 +556,8 @@ export function createMessageMutationRuntime({
         senderPubkeyHex,
         chatPubkey,
         targetEventId,
-        relayUrls
-      })
+        relayUrls,
+      }),
     });
   }
 
@@ -569,7 +576,7 @@ export function createMessageMutationRuntime({
         authorName: 'Unknown',
         authorPublicKey: '',
         sentAt: '',
-        eventId: null
+        eventId: null,
       };
     }
 
@@ -582,7 +589,7 @@ export function createMessageMutationRuntime({
         authorName: 'Unknown',
         authorPublicKey: '',
         sentAt: '',
-        eventId: normalizedTargetEventId
+        eventId: normalizedTargetEventId,
       };
     }
 
@@ -599,7 +606,7 @@ export function createMessageMutationRuntime({
       authorName: isOwnTargetMessage ? 'You' : deriveChatName(replyContact, chatPubkey),
       authorPublicKey: targetAuthorPublicKey,
       sentAt: targetMessage.created_at,
-      eventId: normalizedTargetEventId
+      eventId: normalizedTargetEventId,
     };
   }
 
@@ -613,9 +620,8 @@ export function createMessageMutationRuntime({
     await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
 
     const normalizedReactionEventId = normalizeEventId(reactionEventId);
-    const normalizedDeletionAuthorPublicKey = inputSanitizerService.normalizeHexKey(
-      deletionAuthorPublicKey
-    );
+    const normalizedDeletionAuthorPublicKey =
+      inputSanitizerService.normalizeHexKey(deletionAuthorPublicKey);
     if (!normalizedReactionEventId || !normalizedDeletionAuthorPublicKey) {
       return true;
     }
@@ -625,12 +631,16 @@ export function createMessageMutationRuntime({
       const reactionAuthorPublicKey = inputSanitizerService.normalizeHexKey(
         storedReactionEvent.event.pubkey
       );
-      if (reactionAuthorPublicKey && reactionAuthorPublicKey !== normalizedDeletionAuthorPublicKey) {
+      if (
+        reactionAuthorPublicKey &&
+        reactionAuthorPublicKey !== normalizedDeletionAuthorPublicKey
+      ) {
         return true;
       }
     }
 
-    let targetMessage = await chatDataService.findMessageByReactionEventId(normalizedReactionEventId);
+    let targetMessage =
+      await chatDataService.findMessageByReactionEventId(normalizedReactionEventId);
     const reactionEmoji = storedReactionEvent?.event.content.trim() || null;
     if (!targetMessage && storedReactionEvent) {
       const reactionEvent = new NDKEvent(ndk, storedReactionEvent.event);
@@ -664,7 +674,10 @@ export function createMessageMutationRuntime({
         return normalizeEventId(reaction.eventId) === normalizedReactionEventId;
       }
     );
-    if (matchingReaction && matchingReaction.reactorPublicKey !== normalizedDeletionAuthorPublicKey) {
+    if (
+      matchingReaction &&
+      matchingReaction.reactorPublicKey !== normalizedDeletionAuthorPublicKey
+    ) {
       return true;
     }
 
@@ -699,9 +712,8 @@ export function createMessageMutationRuntime({
     const normalizedMessageAuthorPublicKey = inputSanitizerService.normalizeHexKey(
       targetMessage.author_public_key
     );
-    const normalizedDeletionAuthorPublicKey = inputSanitizerService.normalizeHexKey(
-      deletionAuthorPublicKey
-    );
+    const normalizedDeletionAuthorPublicKey =
+      inputSanitizerService.normalizeHexKey(deletionAuthorPublicKey);
     if (
       !normalizedMessageAuthorPublicKey ||
       !normalizedDeletionAuthorPublicKey ||
@@ -773,7 +785,7 @@ export function createMessageMutationRuntime({
           deletionAuthorPublicKey: senderPubkeyHex,
           deleteEventId,
           deletedAt,
-          targetKind
+          targetKind,
         });
       }
     }
@@ -785,6 +797,6 @@ export function createMessageMutationRuntime({
     buildReplyPreviewFromTargetEvent,
     processIncomingDeletionRumorEvent,
     processIncomingReactionDeletion,
-    processIncomingReactionRumorEvent
+    processIncomingReactionRumorEvent,
   };
 }

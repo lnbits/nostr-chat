@@ -10,7 +10,7 @@ export const STARTUP_STEP_DEFINITIONS = [
   { id: 'contact-cursor-data', order: 9, label: 'Per-contact cursor data' },
   { id: 'private-message-events', order: 10, label: 'Private message events' },
   { id: 'recent-chat-profiles', order: 11, label: 'Recent chat contact profiles' },
-  { id: 'recent-chat-relays', order: 12, label: 'Recent chat contact relay lists' }
+  { id: 'recent-chat-relays', order: 12, label: 'Recent chat contact relay lists' },
 ] as const;
 
 export type StartupStepId = (typeof STARTUP_STEP_DEFINITIONS)[number]['id'];
@@ -41,7 +41,7 @@ export function createInitialStartupStepSnapshots(): StartupStepSnapshot[] {
     startedAt: null,
     completedAt: null,
     durationMs: null,
-    errorMessage: null
+    errorMessage: null,
   }));
 }
 
@@ -59,7 +59,7 @@ export function beginStartupStepSnapshotValue(
     startedAt: now,
     completedAt: null,
     durationMs: null,
-    errorMessage: null
+    errorMessage: null,
   };
 }
 
@@ -74,7 +74,7 @@ export function completeStartupStepSnapshotValue(
     startedAt,
     completedAt: now,
     durationMs: Math.max(0, now - startedAt),
-    errorMessage: null
+    errorMessage: null,
   };
 }
 
@@ -90,7 +90,7 @@ export function failStartupStepSnapshotValue(
     startedAt,
     completedAt: now,
     durationMs: Math.max(0, now - startedAt),
-    errorMessage: error instanceof Error ? error.message : String(error)
+    errorMessage: error instanceof Error ? error.message : String(error),
   };
 }
 

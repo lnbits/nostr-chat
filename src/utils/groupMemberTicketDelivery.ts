@@ -13,10 +13,7 @@ function normalizeEventId(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
-export function groupMemberTicketDeliveryKey(
-  memberPublicKey: string,
-  epochNumber: number
-): string {
+export function groupMemberTicketDeliveryKey(memberPublicKey: string, epochNumber: number): string {
   return `${memberPublicKey.trim().toLowerCase()}:${Math.floor(epochNumber)}`;
 }
 
@@ -33,11 +30,15 @@ export function normalizeGroupMemberTicketDelivery(
   const epochNumber = Number('epoch_number' in value ? value.epoch_number : Number.NaN);
   const eventId = normalizeEventId('event_id' in value ? value.event_id : '');
   const createdAt =
-    'created_at' in value && typeof value.created_at === 'string'
-      ? value.created_at.trim()
-      : '';
+    'created_at' in value && typeof value.created_at === 'string' ? value.created_at.trim() : '';
 
-  if (!memberPublicKey || !Number.isInteger(epochNumber) || epochNumber < 0 || !eventId || !createdAt) {
+  if (
+    !memberPublicKey ||
+    !Number.isInteger(epochNumber) ||
+    epochNumber < 0 ||
+    !eventId ||
+    !createdAt
+  ) {
     return null;
   }
 
@@ -45,7 +46,7 @@ export function normalizeGroupMemberTicketDelivery(
     member_public_key: memberPublicKey,
     epoch_number: Math.floor(epochNumber),
     event_id: eventId,
-    created_at: createdAt
+    created_at: createdAt,
   };
 }
 
@@ -68,9 +69,7 @@ export function sortGroupMemberTicketDeliveries(
   return first.member_public_key.localeCompare(second.member_public_key);
 }
 
-export function normalizeGroupMemberTicketDeliveries(
-  value: unknown
-): GroupMemberTicketDelivery[] {
+export function normalizeGroupMemberTicketDeliveries(value: unknown): GroupMemberTicketDelivery[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -83,10 +82,7 @@ export function normalizeGroupMemberTicketDeliveries(
     }
 
     deliveriesByKey.set(
-      groupMemberTicketDeliveryKey(
-        normalizedEntry.member_public_key,
-        normalizedEntry.epoch_number
-      ),
+      groupMemberTicketDeliveryKey(normalizedEntry.member_public_key, normalizedEntry.epoch_number),
       normalizedEntry
     );
   }
@@ -98,8 +94,5 @@ export function mergeGroupMemberTicketDeliveries(
   existingDeliveries: GroupMemberTicketDelivery[],
   nextDelivery: GroupMemberTicketDelivery
 ): GroupMemberTicketDelivery[] {
-  return normalizeGroupMemberTicketDeliveries([
-    ...existingDeliveries,
-    nextDelivery
-  ]);
+  return normalizeGroupMemberTicketDeliveries([...existingDeliveries, nextDelivery]);
 }

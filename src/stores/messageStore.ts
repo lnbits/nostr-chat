@@ -1,10 +1,9 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import {
-  chatDataService,
   type ChatRow,
-  type MessageCursor as PersistedMessageCursor
+  chatDataService,
+  type MessageCursor as PersistedMessageCursor,
 } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -15,7 +14,7 @@ import type {
   Message,
   MessageReaction,
   MessageReplyPreview,
-  NostrEventEntry
+  NostrEventEntry,
 } from 'src/types/chat';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
 import {
@@ -23,8 +22,9 @@ import {
   buildMetaWithReactions,
   countUnseenReactionsForAuthor,
   markReactionsViewedByAuthor,
-  normalizeMessageReactions
+  normalizeMessageReactions,
 } from 'src/utils/messageReactions';
+import { ref } from 'vue';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 const MESSAGE_PAGE_SIZE = 50;
@@ -123,7 +123,7 @@ function buildDeletedMessageMeta(
     deletedAt,
     deletedByPublicKey,
     deletedEventKind,
-    ...(normalizeEventId(deleteEventId) ? { deleteEventId: normalizeEventId(deleteEventId) } : {})
+    ...(normalizeEventId(deleteEventId) ? { deleteEventId: normalizeEventId(deleteEventId) } : {}),
   };
 }
 
@@ -144,7 +144,7 @@ function mapMessageRowToMessage(
     authorPublicKey: authorKey,
     eventId: row.event_id,
     nostrEvent,
-    meta: row.meta
+    meta: row.meta,
   };
 }
 
@@ -157,7 +157,7 @@ function buildMessageCursorFromRow(
 
   return {
     id: row.id,
-    created_at: row.created_at
+    created_at: row.created_at,
   };
 }
 
@@ -175,7 +175,7 @@ function buildMessageCursorFromMessage(
 
   return {
     id: messageId,
-    created_at: message.sentAt
+    created_at: message.sentAt,
   };
 }
 
@@ -183,8 +183,7 @@ function compareMessageCursors(
   first: Pick<PersistedMessageCursor, 'id' | 'created_at'>,
   second: Pick<PersistedMessageCursor, 'id' | 'created_at'>
 ): number {
-  const byTime =
-    toComparableTimestamp(first.created_at) - toComparableTimestamp(second.created_at);
+  const byTime = toComparableTimestamp(first.created_at) - toComparableTimestamp(second.created_at);
   if (byTime !== 0) {
     return byTime;
   }
@@ -231,7 +230,7 @@ function buildDefaultChatMessagePaginationState(): ChatMessagePaginationState {
     hasOlder: false,
     hasNewer: false,
     isLoadingOlder: false,
-    isLoadingNewer: false
+    isLoadingNewer: false,
   };
 }
 
@@ -345,7 +344,7 @@ function buildInitialMessageWindowFromUnreadAnchor(
   return {
     rows: [...olderRows, firstUnreadRow, ...newerRows],
     hasOlder,
-    hasNewer
+    hasNewer,
   };
 }
 
@@ -353,9 +352,9 @@ function resolveChatRecipientPublicKeyFromRow(
   chat: Pick<ChatRow, 'public_key' | 'type' | 'meta'>
 ): string {
   return chat.type === 'group'
-    ? (typeof chat.meta.current_epoch_public_key === 'string'
-        ? chat.meta.current_epoch_public_key.trim().toLowerCase()
-        : '')
+    ? typeof chat.meta.current_epoch_public_key === 'string'
+      ? chat.meta.current_epoch_public_key.trim().toLowerCase()
+      : ''
     : chat.public_key;
 }
 
@@ -407,9 +406,9 @@ function resolveChatDeliveryTargetValue<T extends Pick<ChatRow, 'public_key' | '
     relayUrls: resolveSendRelayUrlsValue({
       chatPublicKey: chat.public_key,
       relayUrls: options.relayUrls,
-      recipientRelayUrls: options.recipientRelayUrls
+      recipientRelayUrls: options.recipientRelayUrls,
     }),
-    publishSelfCopy: chat.type !== 'group'
+    publishSelfCopy: chat.type !== 'group',
   };
 }
 
@@ -449,7 +448,7 @@ function applyMessageUpsert(
     return {
       ignored: false,
       messages: nextMessages,
-      paginationState: paginationState ?? buildDefaultChatMessagePaginationState()
+      paginationState: paginationState ?? buildDefaultChatMessagePaginationState(),
     };
   }
 
@@ -477,7 +476,7 @@ function applyMessageUpsert(
     return {
       ignored: true,
       messages: currentMessages,
-      paginationState: nextPaginationState
+      paginationState: nextPaginationState,
     };
   }
 
@@ -486,7 +485,7 @@ function applyMessageUpsert(
     return {
       ignored: false,
       messages: nextMessages,
-      paginationState: nextPaginationState
+      paginationState: nextPaginationState,
     };
   }
 
@@ -513,8 +512,8 @@ function applyMessageUpsert(
     messages: nextMessages,
     paginationState: {
       ...nextPaginationState,
-      ...paginationPatch
-    }
+      ...paginationPatch,
+    },
   };
 }
 
@@ -535,7 +534,7 @@ export const __messageStoreTestUtils = {
   resolveReplyTargetEventId: resolveReplyTargetEventIdValue,
   resolveSendRelayUrls: resolveSendRelayUrlsValue,
   takeLeadingRowsWithAuthor,
-  takeTrailingRowsWithAuthor
+  takeTrailingRowsWithAuthor,
 };
 
 export const useMessageStore = defineStore('messageStore', () => {
@@ -568,7 +567,9 @@ export const useMessageStore = defineStore('messageStore', () => {
       return buildDefaultChatMessagePaginationState();
     }
 
-    return paginationStateByChat.value[normalizedChatId] ?? buildDefaultChatMessagePaginationState();
+    return (
+      paginationStateByChat.value[normalizedChatId] ?? buildDefaultChatMessagePaginationState()
+    );
   }
 
   function setPaginationState(
@@ -581,8 +582,9 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     paginationStateByChat.value[normalizedChatId] = {
-      ...(paginationStateByChat.value[normalizedChatId] ?? buildDefaultChatMessagePaginationState()),
-      ...nextState
+      ...(paginationStateByChat.value[normalizedChatId] ??
+        buildDefaultChatMessagePaginationState()),
+      ...nextState,
     };
   }
 
@@ -592,7 +594,9 @@ export const useMessageStore = defineStore('messageStore', () => {
 
   async function getNostrStore(): Promise<NostrStore> {
     if (!nostrStorePromise) {
-      nostrStorePromise = import('src/stores/nostrStore').then(({ useNostrStore }) => useNostrStore());
+      nostrStorePromise = import('src/stores/nostrStore').then(({ useNostrStore }) =>
+        useNostrStore()
+      );
     }
 
     return nostrStorePromise;
@@ -613,22 +617,23 @@ export const useMessageStore = defineStore('messageStore', () => {
   async function hydrateMessageRows(rows: MessageRow[], chatId: string): Promise<Message[]> {
     const eventIds = rows
       .map((row) => row.event_id)
-      .filter((eventId): eventId is string => typeof eventId === 'string' && eventId.trim().length > 0);
+      .filter(
+        (eventId): eventId is string => typeof eventId === 'string' && eventId.trim().length > 0
+      );
     const eventsById = await nostrEventDataService.getEventsByIds(eventIds);
 
     return rows.map((row) =>
       mapMessageRowToMessage(
         row,
         chatId,
-        row.event_id ? eventsById.get(row.event_id) ?? null : null
+        row.event_id ? (eventsById.get(row.event_id) ?? null) : null
       )
     );
   }
 
   async function hydrateMessageRow(row: MessageRow, chatId?: string): Promise<Message> {
     const resolvedChatId =
-      normalizeChatIdentifier(chatId) ??
-      normalizeChatIdentifier(row.chat_public_key);
+      normalizeChatIdentifier(chatId) ?? normalizeChatIdentifier(row.chat_public_key);
     if (!resolvedChatId) {
       throw new Error('Failed to resolve message chat public key.');
     }
@@ -693,7 +698,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const [chatRow, messageRows] = await Promise.all([
       chatDataService.getChatByPublicKey(normalizedChatId),
-      chatDataService.listMessages(normalizedChatId)
+      chatDataService.listMessages(normalizedChatId),
     ]);
     const loggedInPublicKey = getLoggedInPublicKey();
     const nextUnseenReactionCount = countOwnUnseenReactions(messageRows, loggedInPublicKey);
@@ -756,7 +761,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       relayUrls,
       recipientRelayUrls: Array.isArray(relayUrls)
         ? relayUrls
-        : await resolveRecipientRelayUrls(chatPublicKey)
+        : await resolveRecipientRelayUrls(chatPublicKey),
     });
   }
 
@@ -776,7 +781,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     return resolveChatDeliveryTargetValue(chat, {
       relayUrls,
-      recipientRelayUrls: relayUrls ? relayUrls : await resolveRecipientRelayUrls(chat.public_key)
+      recipientRelayUrls: relayUrls ? relayUrls : await resolveRecipientRelayUrls(chat.public_key),
     });
   }
 
@@ -826,9 +831,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     paginationStateByChat.value[normalizedChatId] = computedUpsert.paginationState;
   }
 
-  function upsertPersistedMessage(
-    row: MessageRow
-  ): Promise<void> {
+  function upsertPersistedMessage(row: MessageRow): Promise<void> {
     const chatId = normalizeChatIdentifier(row.chat_public_key);
     if (!chatId || (!loadedChatIds.has(chatId) && !messagesByChat.value[chatId])) {
       return Promise.resolve();
@@ -861,7 +864,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     if (initialRows.length === 0 || !initialHasMore) {
       return {
         rows: initialRows,
-        hasMore: initialHasMore
+        hasMore: initialHasMore,
       };
     }
 
@@ -869,7 +872,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     if (!boundaryAuthorKey) {
       return {
         rows: initialRows,
-        hasMore: initialHasMore
+        hasMore: initialHasMore,
       };
     }
 
@@ -907,7 +910,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     return {
       rows,
-      hasMore
+      hasMore,
     };
   }
 
@@ -919,7 +922,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     if (initialRows.length === 0 || !initialHasMore) {
       return {
         rows: initialRows,
-        hasMore: initialHasMore
+        hasMore: initialHasMore,
       };
     }
 
@@ -929,7 +932,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     if (!boundaryAuthorKey) {
       return {
         rows: initialRows,
-        hasMore: initialHasMore
+        hasMore: initialHasMore,
       };
     }
 
@@ -967,7 +970,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     return {
       rows,
-      hasMore
+      hasMore,
     };
   }
 
@@ -981,7 +984,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return {
         rows: [],
         hasOlder: false,
-        hasNewer: false
+        hasNewer: false,
       };
     }
 
@@ -1008,7 +1011,7 @@ export const useMessageStore = defineStore('messageStore', () => {
               chatId,
               firstUnreadCursor,
               INITIAL_UNREAD_MESSAGE_LIMIT - 1
-            )
+            ),
           ]);
           const [olderBatch, unreadBatch] = await Promise.all([
             extendOlderEdgeRows(chatId, initialOlderBatch.rows, initialOlderBatch.has_more),
@@ -1016,7 +1019,7 @@ export const useMessageStore = defineStore('messageStore', () => {
               chatId,
               [firstUnreadRow, ...initialUnreadBatch.rows],
               initialUnreadBatch.has_more
-            )
+            ),
           ]);
 
           return buildInitialMessageWindowFromUnreadAnchor(
@@ -1039,7 +1042,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     return {
       rows: extendedLatestBatch.rows,
       hasOlder: extendedLatestBatch.hasMore,
-      hasNewer: false
+      hasNewer: false,
     };
   }
 
@@ -1074,7 +1077,7 @@ export const useMessageStore = defineStore('messageStore', () => {
           hasOlder: initialWindow.hasOlder,
           hasNewer: initialWindow.hasNewer,
           isLoadingOlder: false,
-          isLoadingNewer: false
+          isLoadingNewer: false,
         });
         loadedChatIds.add(normalizedChatId);
       } catch (error) {
@@ -1146,7 +1149,7 @@ export const useMessageStore = defineStore('messageStore', () => {
         );
         setPaginationState(normalizedChatId, {
           oldestCursor: buildMessageCursorFromRow(batch.rows[0] ?? null),
-          hasOlder: batch.hasMore
+          hasOlder: batch.hasMore,
         });
       } finally {
         setPaginationState(normalizedChatId, { isLoadingOlder: false });
@@ -1208,7 +1211,7 @@ export const useMessageStore = defineStore('messageStore', () => {
         );
         setPaginationState(normalizedChatId, {
           newestCursor: buildMessageCursorFromRow(batch.rows[batch.rows.length - 1] ?? null),
-          hasNewer: batch.hasMore
+          hasNewer: batch.hasMore,
         });
       } finally {
         setPaginationState(normalizedChatId, { isLoadingNewer: false });
@@ -1257,7 +1260,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     const replyPreview = replyTo
       ? {
           ...replyTo,
-          eventId: replyTargetEventId ?? replyTo.eventId
+          eventId: replyTargetEventId ?? replyTo.eventId,
         }
       : null;
 
@@ -1266,7 +1269,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: new Date().toISOString(),
-      ...(replyPreview ? { meta: { reply: replyPreview } } : {})
+      ...(replyPreview ? { meta: { reply: replyPreview } } : {}),
     });
     if (!created) {
       return null;
@@ -1276,23 +1279,18 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     loadedChatIds.add(normalizedChatId);
     upsertMessageInState(normalizedChatId, newMessage, {
-      allowOutsideLoadedWindow: true
+      allowOutsideLoadedWindow: true,
     });
     let sendError: unknown = null;
 
     try {
       const nostrStore = await getNostrStore();
-      await nostrStore.sendDirectMessage(
-        recipientPublicKey,
-        newMessage.text,
-        recipientRelayUrls,
-        {
-          localMessageId: created.id,
-          createdAt: created.created_at,
-          replyToEventId: replyTargetEventId,
-          publishSelfCopy: chat.type !== 'group'
-        }
-      );
+      await nostrStore.sendDirectMessage(recipientPublicKey, newMessage.text, recipientRelayUrls, {
+        localMessageId: created.id,
+        createdAt: created.created_at,
+        replyToEventId: replyTargetEventId,
+        publishSelfCopy: chat.type !== 'group',
+      });
     } catch (error) {
       sendError = error;
     }
@@ -1419,7 +1417,8 @@ export const useMessageStore = defineStore('messageStore', () => {
       String(normalizedMessageId),
       (reactions) => {
         const emojiEntry = getEmojiEntryByValue(normalizedEmoji);
-        const isOwnMessage = normalizeChatIdentifier(existingRow.author_public_key) === loggedInPublicKey;
+        const isOwnMessage =
+          normalizeChatIdentifier(existingRow.author_public_key) === loggedInPublicKey;
         const createdAt = new Date().toISOString();
         return [
           ...reactions,
@@ -1429,8 +1428,8 @@ export const useMessageStore = defineStore('messageStore', () => {
             reactorPublicKey: loggedInPublicKey,
             eventId: null,
             createdAt,
-            ...(isOwnMessage ? { viewedByAuthorAt: createdAt } : {})
-          }
+            ...(isOwnMessage ? { viewedByAuthorAt: createdAt } : {}),
+          },
         ];
       }
     );
@@ -1455,7 +1454,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       {
         createdAt,
         targetKind: updatedMessage.nostrEvent?.event.kind,
-        publishSelfCopy: shouldPublishReactionSelfCopy
+        publishSelfCopy: shouldPublishReactionSelfCopy,
       }
     );
 
@@ -1479,7 +1478,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
           return {
             ...reaction,
-            eventId: publishedReactionEventId
+            eventId: publishedReactionEventId,
           };
         });
       }
@@ -1516,7 +1515,10 @@ export const useMessageStore = defineStore('messageStore', () => {
     let reactionDeletionRelayUrls: string[] = [];
     let shouldPublishReactionDeletionSelfCopy = true;
     if (reactionEventId) {
-      const deliveryTarget = await resolveChatDeliveryTarget(existingRow.chat_public_key, undefined);
+      const deliveryTarget = await resolveChatDeliveryTarget(
+        existingRow.chat_public_key,
+        undefined
+      );
       if (deliveryTarget) {
         reactionDeletionRecipientPublicKey = deliveryTarget.recipientPublicKey;
         reactionDeletionRelayUrls = deliveryTarget.relayUrls;
@@ -1554,7 +1556,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       reactionDeletionRelayUrls,
       {
         createdAt: new Date().toISOString(),
-        publishSelfCopy: shouldPublishReactionDeletionSelfCopy
+        publishSelfCopy: shouldPublishReactionDeletionSelfCopy,
       }
     );
     await nostrEventDataService.deleteEventsByIds([reactionEventId]);
@@ -1588,9 +1590,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return getMessageFromState(normalizedChatId, String(normalizedMessageId));
     }
 
-    const targetKind = Number.isInteger(existingRow.meta.kind)
-      ? Number(existingRow.meta.kind)
-      : 14;
+    const targetKind = Number.isInteger(existingRow.meta.kind) ? Number(existingRow.meta.kind) : 14;
     let deletionRecipientPublicKey: string | null = null;
     let deletionRelayUrls: string[] = [];
     let shouldPublishDeletionSelfCopy = true;
@@ -1601,17 +1601,10 @@ export const useMessageStore = defineStore('messageStore', () => {
       shouldPublishDeletionSelfCopy = deliveryTarget.publishSelfCopy;
     }
 
-    const updatedRow = await chatDataService.updateMessageMeta(
-      normalizedMessageId,
-      {
-        ...existingRow.meta,
-        deleted: buildDeletedMessageMeta(
-          loggedInPublicKey,
-          targetKind,
-          new Date().toISOString()
-        )
-      }
-    );
+    const updatedRow = await chatDataService.updateMessageMeta(normalizedMessageId, {
+      ...existingRow.meta,
+      deleted: buildDeletedMessageMeta(loggedInPublicKey, targetKind, new Date().toISOString()),
+    });
     if (!updatedRow) {
       return null;
     }
@@ -1631,7 +1624,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       deletionRelayUrls,
       {
         createdAt: new Date().toISOString(),
-        publishSelfCopy: shouldPublishDeletionSelfCopy
+        publishSelfCopy: shouldPublishDeletionSelfCopy,
       }
     );
     const deleteEventId = normalizeEventId(deleteEvent?.id);
@@ -1639,19 +1632,16 @@ export const useMessageStore = defineStore('messageStore', () => {
       return updatedMessage;
     }
 
-    const rowWithDeleteEvent = await chatDataService.updateMessageMeta(
-      normalizedMessageId,
-      {
-        ...updatedRow.meta,
-        deleted: buildDeletedMessageMeta(
-          loggedInPublicKey,
-          targetKind,
-          (updatedRow.meta.deleted as DeletedMessageMetadata | undefined)?.deletedAt ??
-            new Date().toISOString(),
-          deleteEventId
-        )
-      }
-    );
+    const rowWithDeleteEvent = await chatDataService.updateMessageMeta(normalizedMessageId, {
+      ...updatedRow.meta,
+      deleted: buildDeletedMessageMeta(
+        loggedInPublicKey,
+        targetKind,
+        (updatedRow.meta.deleted as DeletedMessageMetadata | undefined)?.deletedAt ??
+          new Date().toISOString(),
+        deleteEventId
+      ),
+    });
     if (!rowWithDeleteEvent) {
       return updatedMessage;
     }
@@ -1661,10 +1651,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     return finalMessage;
   }
 
-  async function markMessagesReactionsViewed(
-    chatId: string,
-    messageIds: string[]
-  ): Promise<void> {
+  async function markMessagesReactionsViewed(chatId: string, messageIds: string[]): Promise<void> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     const loggedInPublicKey = getLoggedInPublicKey();
     const normalizedMessageIds = Array.from(
@@ -1687,7 +1674,10 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     for (const messageId of normalizedMessageIds) {
       const existingRow = await chatDataService.getMessageById(messageId);
-      if (!existingRow || normalizeChatIdentifier(existingRow.chat_public_key) !== normalizedChatId) {
+      if (
+        !existingRow ||
+        normalizeChatIdentifier(existingRow.chat_public_key) !== normalizedChatId
+      ) {
         continue;
       }
 
@@ -1750,9 +1740,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
   }
 
-  async function syncChatsReadStateFromSeenBoundary(
-    chatIds: string[] = []
-  ): Promise<{
+  async function syncChatsReadStateFromSeenBoundary(chatIds: string[] = []): Promise<{
     chatCount: number;
     boundaryAdvancedCount: number;
     unreadCountAdjustedCount: number;
@@ -1773,7 +1761,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       boundaryAdvancedCount: 0,
       unreadCountAdjustedCount: 0,
       reactionMessageCount: 0,
-      reactionsMarkedCount: 0
+      reactionsMarkedCount: 0,
     };
 
     await Promise.all([chatDataService.init(), contactsService.init()]);
@@ -1781,7 +1769,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     const [chatRows, messageRows, contacts] = await Promise.all([
       chatDataService.listChats(),
       chatDataService.listAllMessages(),
-      contactsService.listContacts()
+      contactsService.listContacts(),
     ]);
     const messageRowsByChat = new Map<string, MessageRow[]>();
     const seenBoundaryByChat = new Map<string, string>();
@@ -1841,7 +1829,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       ) {
         await chatDataService.updateChatMeta(normalizedChatId, {
           ...chatRow.meta,
-          last_seen_received_activity_at: boundaryAt
+          last_seen_received_activity_at: boundaryAt,
         });
         summary.boundaryAdvancedCount += 1;
       }
@@ -1889,7 +1877,7 @@ export const useMessageStore = defineStore('messageStore', () => {
           markedReactionCount += 1;
           return {
             ...reaction,
-            viewedByAuthorAt: boundaryAt
+            viewedByAuthorAt: boundaryAt,
           };
         });
 
@@ -1956,6 +1944,6 @@ export const useMessageStore = defineStore('messageStore', () => {
     syncChatUnseenReactionCount,
     removeChatMessages,
     upsertPersistedMessage,
-    refreshPersistedMessage
+    refreshPersistedMessage,
   };
 });

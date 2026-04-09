@@ -1,11 +1,10 @@
 import {
+  type NDK,
   NDKEvent,
   NDKPrivateKeySigner,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
-  type NDK
 } from '@nostr-dev-kit/ndk';
-import type { Ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -16,7 +15,7 @@ import {
   GROUP_IDENTITY_SECRET_VERSION,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_PREFERENCES_D_TAG,
-  PRIVATE_PREFERENCES_KIND
+  PRIVATE_PREFERENCES_KIND,
 } from 'src/stores/nostr/constants';
 import type {
   ContactCursorContent,
@@ -25,15 +24,16 @@ import type {
   CreateGroupChatResult,
   GroupIdentitySecretContent,
   PrivatePreferences,
-  RelaySaveStatus
+  RelaySaveStatus,
 } from 'src/stores/nostr/types';
+import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 import {
   areMessageReactionsEqual,
   buildMetaWithReactions,
   countUnseenReactionsForAuthor,
-  normalizeMessageReactions
+  normalizeMessageReactions,
 } from 'src/utils/messageReactions';
-import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
+import type { Ref } from 'vue';
 
 interface RestoreRuntimeState {
   restoreContactCursorStatePromise: Promise<void> | null;
@@ -53,15 +53,23 @@ interface PrivateStateRuntimeDeps {
     second: Pick<NDKEvent, 'created_at' | 'id'> | null | undefined
   ) => number;
   completeStartupStep: (stepId: any) => void;
-  contactRelayListsEqual: (first: ContactRelay[] | undefined, second: ContactRelay[] | undefined) => boolean;
-  createInitialGroupEpochSecretState: () => Pick<GroupIdentitySecretContent, 'epoch_number' | 'epoch_privkey'>;
+  contactRelayListsEqual: (
+    first: ContactRelay[] | undefined,
+    second: ContactRelay[] | undefined
+  ) => boolean;
+  createInitialGroupEpochSecretState: () => Pick<
+    GroupIdentitySecretContent,
+    'epoch_number' | 'epoch_privkey'
+  >;
   createStartupBatchTracker: (stepId: any) => {
     beginItem: () => void;
     finishItem: (error?: unknown) => void;
     seal: () => void;
   };
   decryptContactCursorContent: (content: string) => Promise<ContactCursorContent | null>;
-  decryptGroupIdentitySecretContent: (content: string) => Promise<GroupIdentitySecretContent | null>;
+  decryptGroupIdentitySecretContent: (
+    content: string
+  ) => Promise<GroupIdentitySecretContent | null>;
   decryptPrivatePreferencesContent: (content: string) => Promise<PrivatePreferences | null>;
   deriveContactCursorDTag: (contactPublicKey: string) => Promise<string | null>;
   encryptContactCursorContent: (cursor: ContactCursorState) => Promise<string>;
@@ -73,7 +81,9 @@ interface PrivateStateRuntimeDeps {
     profile?: { name?: string; about?: string }
   ) => Promise<boolean>;
   ensureLoggedInSignerUser: () => Promise<any>;
-  ensurePrivatePreferences: (options?: { publishIfCreated?: boolean }) => Promise<PrivatePreferences>;
+  ensurePrivatePreferences: (options?: {
+    publishIfCreated?: boolean;
+  }) => Promise<PrivatePreferences>;
   ensureRelayConnections: (relayUrls: string[]) => Promise<void>;
   failStartupStep: (stepId: any, error: unknown) => void;
   getFilterSince: () => number;
@@ -176,7 +186,7 @@ export function createPrivateStateRuntime({
   toComparableTimestamp,
   toIsoTimestampFromUnix,
   updateStoredEventSinceFromCreatedAt,
-  writePrivatePreferencesToStorage
+  writePrivatePreferencesToStorage,
 }: PrivateStateRuntimeDeps) {
   function compareContactCursorState(
     first: ContactCursorState | ContactCursorContent | null | undefined,
@@ -190,21 +200,24 @@ export function createPrivateStateRuntime({
       second && 'last_seen_incoming_activity_at' in second
         ? second.last_seen_incoming_activity_at
         : second?.at;
-    const byTimestamp = toComparableTimestamp(firstTimestamp) - toComparableTimestamp(secondTimestamp);
+    const byTimestamp =
+      toComparableTimestamp(firstTimestamp) - toComparableTimestamp(secondTimestamp);
     if (byTimestamp !== 0) {
       return byTimestamp;
     }
 
-    const firstEventId = normalizeEventId(
-      first && 'last_seen_incoming_activity_event_id' in first
-        ? first.last_seen_incoming_activity_event_id
-        : first?.eventId
-    ) ?? '';
-    const secondEventId = normalizeEventId(
-      second && 'last_seen_incoming_activity_event_id' in second
-        ? second.last_seen_incoming_activity_event_id
-        : second?.eventId
-    ) ?? '';
+    const firstEventId =
+      normalizeEventId(
+        first && 'last_seen_incoming_activity_event_id' in first
+          ? first.last_seen_incoming_activity_event_id
+          : first?.eventId
+      ) ?? '';
+    const secondEventId =
+      normalizeEventId(
+        second && 'last_seen_incoming_activity_event_id' in second
+          ? second.last_seen_incoming_activity_event_id
+          : second?.eventId
+      ) ?? '';
 
     return firstEventId.localeCompare(secondEventId);
   }
@@ -247,7 +260,7 @@ export function createPrivateStateRuntime({
       created_at: Math.floor(Date.now() / 1000),
       pubkey: user.pubkey,
       content: await encryptPrivatePreferencesContent(preferences),
-      tags: [['d', PRIVATE_PREFERENCES_D_TAG]]
+      tags: [['d', PRIVATE_PREFERENCES_D_TAG]],
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
@@ -283,10 +296,10 @@ export function createPrivateStateRuntime({
           {
             kinds: [PRIVATE_PREFERENCES_KIND],
             authors: [loggedInPubkeyHex],
-            '#d': [PRIVATE_PREFERENCES_D_TAG]
+            '#d': [PRIVATE_PREFERENCES_D_TAG],
           },
           {
-            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
           },
           relaySet
         );
@@ -353,8 +366,8 @@ export function createPrivateStateRuntime({
       content: normalizedEncryptedPrivateKey,
       tags: [
         ['d', normalizedGroupPublicKey],
-        ['t', GROUP_IDENTITY_SECRET_TAG]
-      ]
+        ['t', GROUP_IDENTITY_SECRET_TAG],
+      ],
     });
 
     const publishResult = await publishReplaceableEventWithRelayStatuses(
@@ -399,10 +412,10 @@ export function createPrivateStateRuntime({
       {
         kinds: [PRIVATE_PREFERENCES_KIND],
         authors: [loggedInPubkeyHex],
-        '#t': [GROUP_IDENTITY_SECRET_TAG]
+        '#t': [GROUP_IDENTITY_SECRET_TAG],
       },
       {
-        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
       },
       relaySet
     );
@@ -449,11 +462,7 @@ export function createPrivateStateRuntime({
           try {
             decryptedSecret = await decryptGroupIdentitySecretContent(event.content);
           } catch (error) {
-            console.warn(
-              'Failed to decrypt group identity secret event',
-              groupPublicKey,
-              error
-            );
+            console.warn('Failed to decrypt group identity secret event', groupPublicKey, error);
             continue;
           }
 
@@ -464,7 +473,7 @@ export function createPrivateStateRuntime({
           didChange =
             (await ensureGroupContactAndChat(groupPublicKey, event.content, {
               name: decryptedSecret.name,
-              about: decryptedSecret.about
+              about: decryptedSecret.about,
             })) || didChange;
           if (
             Number.isInteger(decryptedSecret.epoch_number) &&
@@ -478,7 +487,7 @@ export function createPrivateStateRuntime({
               {
                 fallbackName: decryptedSecret.name,
                 accepted: true,
-                invitationCreatedAt: toIsoTimestampFromUnix(event.created_at)
+                invitationCreatedAt: toIsoTimestampFromUnix(event.created_at),
               }
             );
           }
@@ -523,12 +532,12 @@ export function createPrivateStateRuntime({
         : {}),
       ...(typeof options.about === 'string' && options.about.trim()
         ? { about: options.about.trim() }
-        : {})
+        : {}),
     });
 
     const didChange = await ensureGroupContactAndChat(groupPublicKey, encryptedPrivateKey, {
       name: options.name,
-      about: options.about
+      about: options.about,
     });
     await persistIncomingGroupEpochTicket(
       groupPublicKey,
@@ -537,7 +546,7 @@ export function createPrivateStateRuntime({
       {
         fallbackName: options.name,
         accepted: true,
-        invitationCreatedAt: new Date().toISOString()
+        invitationCreatedAt: new Date().toISOString(),
       }
     );
     if (didChange) {
@@ -550,7 +559,7 @@ export function createPrivateStateRuntime({
       const groupContact = await contactsService.getContactByPublicKey(groupPublicKey);
       if (groupContact && !contactRelayListsEqual(groupContact.relays, relayEntries)) {
         const updatedGroupContact = await contactsService.updateContact(groupContact.id, {
-          relays: relayEntries
+          relays: relayEntries,
         });
         if (updatedGroupContact) {
           bumpContactListVersion();
@@ -571,7 +580,7 @@ export function createPrivateStateRuntime({
         publishedRelayUrls: [],
         failedRelayUrls: [],
         errorMessage:
-          error instanceof Error ? error.message : 'Failed to publish group identity secret.'
+          error instanceof Error ? error.message : 'Failed to publish group identity secret.',
       };
     }
 
@@ -595,7 +604,7 @@ export function createPrivateStateRuntime({
       groupPublicKey,
       encryptedPrivateKey,
       groupSecretSave,
-      contactListSyncError
+      contactListSyncError,
     };
   }
 
@@ -638,10 +647,10 @@ export function createPrivateStateRuntime({
         {
           kinds: [PRIVATE_PREFERENCES_KIND],
           authors: [loggedInPubkeyHex],
-          '#d': dTagBatch
+          '#d': dTagBatch,
         },
         {
-          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         },
         relaySet
       );
@@ -689,7 +698,7 @@ export function createPrivateStateRuntime({
     let didChange = false;
     const nextContactMeta: ContactMetadata = {
       ...(contact.meta ?? {}),
-      last_seen_incoming_activity_at: cursor.last_seen_incoming_activity_at
+      last_seen_incoming_activity_at: cursor.last_seen_incoming_activity_at,
     };
     if (cursor.last_seen_incoming_activity_event_id) {
       nextContactMeta.last_seen_incoming_activity_event_id =
@@ -706,7 +715,7 @@ export function createPrivateStateRuntime({
 
     if (didChangeLastSeenIncomingActivityAt) {
       await contactsService.updateContact(contact.id, {
-        meta: nextContactMeta
+        meta: nextContactMeta,
       });
       didChange = true;
     }
@@ -753,7 +762,7 @@ export function createPrivateStateRuntime({
 
           return {
             ...reaction,
-            viewedByAuthorAt: cursor.last_seen_incoming_activity_at
+            viewedByAuthorAt: cursor.last_seen_incoming_activity_at,
           };
         }
 
@@ -765,10 +774,7 @@ export function createPrivateStateRuntime({
         return reactionWithoutViewedAt;
       });
 
-      nextUnseenReactionCount += countUnseenReactionsForAuthor(
-        nextReactions,
-        loggedInPubkeyHex
-      );
+      nextUnseenReactionCount += countUnseenReactionsForAuthor(nextReactions, loggedInPubkeyHex);
 
       const didChangeReactions =
         currentReactions.length !== nextReactions.length ||
@@ -790,7 +796,7 @@ export function createPrivateStateRuntime({
     const nextChatMeta = buildChatMetaWithUnseenReactionCount(
       {
         ...chatRow.meta,
-        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: cursor.last_seen_incoming_activity_at
+        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: cursor.last_seen_incoming_activity_at,
       },
       nextUnseenReactionCount
     );
@@ -870,7 +876,7 @@ export function createPrivateStateRuntime({
           chatStore.reload(),
           import('src/stores/messageStore').then(({ useMessageStore }) =>
             useMessageStore().reloadLoadedMessages()
-          )
+          ),
         ]);
         completeStartupStep('contact-cursor-data');
       } catch (error) {
@@ -895,7 +901,7 @@ export function createPrivateStateRuntime({
     }
 
     const preferences = await ensurePrivatePreferences({
-      publishIfCreated: true
+      publishIfCreated: true,
     });
     const dTag = await sha256Hex(`${preferences.contactSecret}${normalizedContactPublicKey}`);
     const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
@@ -911,7 +917,7 @@ export function createPrivateStateRuntime({
       created_at: Math.floor(Date.now() / 1000),
       pubkey: user.pubkey,
       content: await encryptContactCursorContent(cursor),
-      tags: [['d', dTag]]
+      tags: [['d', dTag]],
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
@@ -931,7 +937,7 @@ export function createPrivateStateRuntime({
 
     const nextCursorState: ContactCursorState = {
       at: normalizedCursorAt,
-      eventId: normalizeEventId(cursor.eventId)
+      eventId: normalizeEventId(cursor.eventId),
     };
     const pendingCursor = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
     if (pendingCursor && compareContactCursorState(pendingCursor, nextCursorState) >= 0) {
@@ -974,6 +980,6 @@ export function createPrivateStateRuntime({
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
     restorePrivatePreferences,
-    scheduleContactCursorPublish
+    scheduleContactCursorPublish,
   };
 }

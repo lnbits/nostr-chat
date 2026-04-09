@@ -1,23 +1,23 @@
 import {
+  type NDK,
   NDKEvent,
+  type NDKFilter,
   NDKKind,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
+  type NDKSubscriptionOptions,
   normalizeRelayUrl,
-  type NDK,
-  type NDKFilter,
-  type NDKSubscriptionOptions
 } from '@nostr-dev-kit/ndk';
-import type { Ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
   PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS,
-  PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS
+  PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS,
 } from 'src/stores/nostr/constants';
 import type { SubscribePrivateMessagesOptions } from 'src/stores/nostr/types';
+import type { Ref } from 'vue';
 
 interface PrivateMessagesSubscriptionRuntimeDeps {
   beginStartupStep: (stepId: 'private-message-events') => void;
@@ -136,7 +136,7 @@ export function createPrivateMessagesSubscriptionRuntime({
   startPrivateMessagesStartupBackfill,
   subscribeWithReqLogging,
   updateStoredEventSinceFromCreatedAt,
-  updateStoredPrivateMessagesLastReceivedFromCreatedAt
+  updateStoredPrivateMessagesLastReceivedFromCreatedAt,
 }: PrivateMessagesSubscriptionRuntimeDeps) {
   let privateMessagesSubscription: ReturnType<NDK['subscribe']> | null = null;
   let privateMessagesSubscriptionSignature = '';
@@ -178,10 +178,13 @@ export function createPrivateMessagesSubscriptionRuntime({
       globalThis.clearTimeout(privateMessagesWatchdogTimeoutId);
     }
 
-    privateMessagesWatchdogTimeoutId = globalThis.setTimeout(() => {
-      privateMessagesWatchdogTimeoutId = null;
-      void runPrivateMessagesWatchdog();
-    }, Math.max(0, Math.floor(delayMs)));
+    privateMessagesWatchdogTimeoutId = globalThis.setTimeout(
+      () => {
+        privateMessagesWatchdogTimeoutId = null;
+        void runPrivateMessagesWatchdog();
+      },
+      Math.max(0, Math.floor(delayMs))
+    );
   }
 
   function syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls: string[]): void {
@@ -217,11 +220,14 @@ export function createPrivateMessagesSubscriptionRuntime({
     details: Record<string, unknown> = {}
   ): Promise<void> {
     const now = Date.now();
-    if (now - privateMessagesWatchdogLastRecoveryAt < PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS) {
+    if (
+      now - privateMessagesWatchdogLastRecoveryAt <
+      PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS
+    ) {
       logSubscription('private-messages', 'watchdog-recover-skipped', {
         reason,
         cooldownMs: PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS,
-        ...details
+        ...details,
       });
       return;
     }
@@ -229,10 +235,10 @@ export function createPrivateMessagesSubscriptionRuntime({
     privateMessagesWatchdogLastRecoveryAt = now;
     logSubscription('private-messages', 'watchdog-recover', {
       reason,
-      ...details
+      ...details,
     });
     await subscribePrivateMessagesForLoggedInUser(true, {
-      restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+      restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
     });
   }
 
@@ -262,7 +268,11 @@ export function createPrivateMessagesSubscriptionRuntime({
 
         const browserOffline = isBrowserOfflineForPrivateMessagesWatchdog();
         const relayUrls = normalizeRelayStatusUrls(privateMessagesSubscriptionRelayUrls.value);
-        if (!privateMessagesSubscription || !privateMessagesSubscriptionSignature || relayUrls.length === 0) {
+        if (
+          !privateMessagesSubscription ||
+          !privateMessagesSubscriptionSignature ||
+          relayUrls.length === 0
+        ) {
           if (browserOffline) {
             return;
           }
@@ -270,7 +280,7 @@ export function createPrivateMessagesSubscriptionRuntime({
           await recoverPrivateMessagesSubscriptionFromWatchdog('subscription-missing', {
             hasSubscription: Boolean(privateMessagesSubscription),
             hasSignature: Boolean(privateMessagesSubscriptionSignature),
-            relayCount: relayUrls.length
+            relayCount: relayUrls.length,
           });
           return;
         }
@@ -281,7 +291,9 @@ export function createPrivateMessagesSubscriptionRuntime({
           relayStatesBefore.set(relayUrl, Boolean(relay?.connected));
         }
 
-        const disconnectedRelayUrls = relayUrls.filter((relayUrl) => !relayStatesBefore.get(relayUrl));
+        const disconnectedRelayUrls = relayUrls.filter(
+          (relayUrl) => !relayStatesBefore.get(relayUrl)
+        );
         if (disconnectedRelayUrls.length > 0 && !browserOffline) {
           const shouldLogReconnectAttempt = disconnectedRelayUrls.some(
             (relayUrl) => privateMessagesWatchdogRelayConnectionStates.get(relayUrl) !== false
@@ -289,7 +301,7 @@ export function createPrivateMessagesSubscriptionRuntime({
           if (shouldLogReconnectAttempt) {
             logSubscription('private-messages', 'watchdog-reconnect-relays', {
               disconnectedRelayUrls,
-              ...buildSubscriptionRelayDetails(relayUrls)
+              ...buildSubscriptionRelayDetails(relayUrls),
             });
           }
           await ensureRelayConnections(relayUrls);
@@ -305,7 +317,9 @@ export function createPrivateMessagesSubscriptionRuntime({
           const before = relayStatesBefore.get(relayUrl) ?? false;
           const after = relayStatesAfter.get(relayUrl) ?? false;
           const previous = privateMessagesWatchdogRelayConnectionStates.get(relayUrl);
-          return after && ((!before && disconnectedRelayUrls.includes(relayUrl)) || previous === false);
+          return (
+            after && ((!before && disconnectedRelayUrls.includes(relayUrl)) || previous === false)
+          );
         });
 
         syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
@@ -313,13 +327,13 @@ export function createPrivateMessagesSubscriptionRuntime({
         if (reconnectedRelayUrls.length > 0) {
           await recoverPrivateMessagesSubscriptionFromWatchdog('relay-reconnected', {
             reconnectedRelayUrls,
-            ...buildSubscriptionRelayDetails(relayUrls)
+            ...buildSubscriptionRelayDetails(relayUrls),
           });
         }
       } catch (error) {
         console.warn('Private messages watchdog failed', error);
         logSubscription('private-messages', 'watchdog-error', {
-          error
+          error,
         });
       } finally {
         privateMessagesWatchdogRunPromise = null;
@@ -334,7 +348,7 @@ export function createPrivateMessagesSubscriptionRuntime({
     if (privateMessagesSubscription) {
       logSubscription('private-messages', 'stop', {
         reason,
-        signature: privateMessagesSubscriptionSignature || null
+        signature: privateMessagesSubscriptionSignature || null,
       });
       privateMessagesSubscription.stop();
       privateMessagesSubscription = null;
@@ -373,8 +387,7 @@ export function createPrivateMessagesSubscriptionRuntime({
   ): Promise<void> {
     const hasActiveStartupTracking =
       getStartupStepSnapshot('private-message-events').status === 'in_progress';
-    const shouldTrackStartupStep =
-      options.startupTrackStep === true || hasActiveStartupTracking;
+    const shouldTrackStartupStep = options.startupTrackStep === true || hasActiveStartupTracking;
     const shouldRunStartupBackfill =
       !Number.isInteger(options.sinceOverride) &&
       (options.startupTrackStep === true ||
@@ -392,7 +405,7 @@ export function createPrivateMessagesSubscriptionRuntime({
       logSubscription('private-messages', 'skip', {
         reason: 'missing-login',
         pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        authMethod: authMethod ?? null
+        authMethod: authMethod ?? null,
       });
       stopPrivateMessagesLiveSubscription('missing-login');
       if (shouldTrackStartupStep) {
@@ -411,7 +424,7 @@ export function createPrivateMessagesSubscriptionRuntime({
         logSubscription('private-messages', 'skip', {
           reason: 'no-relays',
           pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-          authMethod
+          authMethod,
         });
         stopPrivateMessagesLiveSubscription('no-relays');
         if (shouldTrackStartupStep) {
@@ -426,7 +439,7 @@ export function createPrivateMessagesSubscriptionRuntime({
         logSubscription('private-messages', 'skip', {
           reason: 'no-recipients',
           pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-          authMethod
+          authMethod,
         });
         stopPrivateMessagesLiveSubscription('no-recipients');
         if (shouldTrackStartupStep) {
@@ -443,8 +456,7 @@ export function createPrivateMessagesSubscriptionRuntime({
             ? getPrivateMessagesStartupLiveSince()
             : getFilterSince();
       const hasMatchingActiveSubscription =
-        Boolean(privateMessagesSubscription) &&
-        privateMessagesSubscriptionSignature === signature;
+        Boolean(privateMessagesSubscription) && privateMessagesSubscriptionSignature === signature;
       const currentSubscriptionSince =
         Number.isInteger(privateMessagesSubscriptionSince.value) &&
         Number(privateMessagesSubscriptionSince.value) >= 0
@@ -470,7 +482,7 @@ export function createPrivateMessagesSubscriptionRuntime({
           recipients: recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
           requestedSince: filterSince,
           currentSince: currentSubscriptionSince,
-          ...buildSubscriptionRelayDetails(relayUrls)
+          ...buildSubscriptionRelayDetails(relayUrls),
         });
         if (shouldTrackStartupStep) {
           completeStartupStep('private-message-events');
@@ -488,7 +500,7 @@ export function createPrivateMessagesSubscriptionRuntime({
         ...buildFilterSinceDetails(filterSince),
         restoreThrottleMs: normalizeThrottleMs(options.restoreThrottleMs),
         relaySnapshots: getRelaySnapshots(relayUrls),
-        ...buildSubscriptionRelayDetails(relayUrls)
+        ...buildSubscriptionRelayDetails(relayUrls),
       });
 
       await ensureRelayConnections(relayUrls);
@@ -510,7 +522,7 @@ export function createPrivateMessagesSubscriptionRuntime({
           reason: 'subscription-relays-disconnected',
           signature,
           disconnectedRelayUrls,
-          relaySnapshots
+          relaySnapshots,
         });
       }
 
@@ -525,7 +537,7 @@ export function createPrivateMessagesSubscriptionRuntime({
         restoreThrottleMs: getPrivateMessagesRestoreThrottleMs(),
         relaySnapshots,
         ...buildSubscriptionRelayDetails(relayUrls),
-        ...privateMessageTargetDetails
+        ...privateMessageTargetDetails,
       });
       privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
       privateMessagesSubscriptionSince.value = filterSince;
@@ -537,7 +549,7 @@ export function createPrivateMessagesSubscriptionRuntime({
       const privateMessagesFilters: NDKFilter = {
         kinds: [NDKKind.GiftWrap],
         '#p': recipientPubkeys,
-        since: filterSince
+        since: filterSince,
       };
       privateMessagesSubscription = subscribeWithReqLogging(
         'private-messages',
@@ -551,13 +563,16 @@ export function createPrivateMessagesSubscriptionRuntime({
             logSubscription('private-messages', 'event', {
               signature,
               ...buildSubscriptionEventDetails(wrappedEvent),
-              ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+              ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent)),
             });
             privateMessagesSubscriptionLastEventSeenAt.value = new Date().toISOString();
             privateMessagesSubscriptionLastEventId.value =
               normalizeEventId(wrappedEvent.id) ?? wrappedEvent.id ?? null;
-            privateMessagesSubscriptionLastEventCreatedAt.value =
-              Number.isInteger(wrappedEvent.created_at) ? Number(wrappedEvent.created_at) : null;
+            privateMessagesSubscriptionLastEventCreatedAt.value = Number.isInteger(
+              wrappedEvent.created_at
+            )
+              ? Number(wrappedEvent.created_at)
+              : null;
             bumpDeveloperDiagnosticsVersion();
             updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
             updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
@@ -566,7 +581,7 @@ export function createPrivateMessagesSubscriptionRuntime({
           onEose: () => {
             logSubscription('private-messages', 'eose', {
               signature,
-              restoreThrottleMs: getPrivateMessagesRestoreThrottleMs()
+              restoreThrottleMs: getPrivateMessagesRestoreThrottleMs(),
             });
             privateMessagesSubscriptionLastEoseAt.value = new Date().toISOString();
             bumpDeveloperDiagnosticsVersion();
@@ -582,7 +597,7 @@ export function createPrivateMessagesSubscriptionRuntime({
                   const contactRefreshSummary = await refreshAllStoredContacts();
                   logSubscription('private-messages', 'contacts-refresh-after-eose', {
                     signature,
-                    ...contactRefreshSummary
+                    ...contactRefreshSummary,
                   });
                 } catch (error) {
                   console.warn(
@@ -591,7 +606,7 @@ export function createPrivateMessagesSubscriptionRuntime({
                   );
                   logSubscription('private-messages', 'contacts-refresh-after-eose-error', {
                     signature,
-                    error
+                    error,
                   });
                 } finally {
                   startPrivateMessagesStartupBackfill(
@@ -603,13 +618,13 @@ export function createPrivateMessagesSubscriptionRuntime({
                 }
               })();
             }
-          }
+          },
         },
         {
           signature,
           ...buildFilterSinceDetails(filterSince),
           ...buildSubscriptionRelayDetails(relayUrls),
-          ...privateMessageTargetDetails
+          ...privateMessageTargetDetails,
         }
       );
       privateMessagesSubscriptionSignature = signature;
@@ -624,7 +639,7 @@ export function createPrivateMessagesSubscriptionRuntime({
         ...buildFilterSinceDetails(filterSince),
         restoreThrottleMs: getPrivateMessagesRestoreThrottleMs(),
         relaySnapshots,
-        ...buildSubscriptionRelayDetails(relayUrls)
+        ...buildSubscriptionRelayDetails(relayUrls),
       });
     } catch (error) {
       if (shouldTrackStartupStep) {
@@ -651,6 +666,6 @@ export function createPrivateMessagesSubscriptionRuntime({
     queuePrivateMessagesWatchdog,
     resetPrivateMessagesSubscriptionRuntimeState,
     stopPrivateMessagesLiveSubscription,
-    subscribePrivateMessagesForLoggedInUser
+    subscribePrivateMessagesForLoggedInUser,
   };
 }

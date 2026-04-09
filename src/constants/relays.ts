@@ -5,4 +5,3 @@ export const DEFAULT_RELAYS = [
   'wss://nos.lol',
   'wss://relay.snort.social',
 ];
-

@@ -39,6 +39,6 @@ export function useVisibleViewportHeight(getFallbackHeight: () => number) {
 
   return {
     visibleViewportHeight,
-    updateVisibleViewportHeight
+    updateVisibleViewportHeight,
   };
 }

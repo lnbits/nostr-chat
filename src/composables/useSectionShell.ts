@@ -1,8 +1,8 @@
-import { computed } from 'vue';
 import { useQuasar } from 'quasar';
-import { useRouter } from 'vue-router';
 import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 
 export type SectionShellRail = 'chats' | 'contacts' | 'settings';
 
@@ -15,13 +15,13 @@ interface UseSectionShellOptions {
 const sectionRouteNameByRail: Record<SectionShellRail, SectionShellRail> = {
   chats: 'chats',
   contacts: 'contacts',
-  settings: 'settings'
+  settings: 'settings',
 };
 
 export function useSectionShell({
   activeSection,
   errorContext,
-  resolveHeight
+  resolveHeight,
 }: UseSectionShellOptions) {
   const $q = useQuasar();
   const router = useRouter();
@@ -30,11 +30,14 @@ export function useSectionShell({
 
   function buildPageStyle(offset: number, height: number): Record<string, string> {
     const effectiveOffset = isMobile.value ? 0 : offset;
-    const pageHeight = Math.max((resolveHeight ? resolveHeight(height) : height) - effectiveOffset, 0);
+    const pageHeight = Math.max(
+      (resolveHeight ? resolveHeight(height) : height) - effectiveOffset,
+      0
+    );
 
     return {
       height: `${pageHeight}px`,
-      minHeight: `${pageHeight}px`
+      minHeight: `${pageHeight}px`,
     };
   }
 
@@ -54,6 +57,6 @@ export function useSectionShell({
     isMobile,
     buildPageStyle,
     handleRailSelect,
-    ...desktopSidebar
+    ...desktopSidebar,
   };
 }

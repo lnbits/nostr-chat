@@ -1,11 +1,15 @@
-import type { NDKRelayConnectionStats, NDKRelayInformation, NDKUserProfile, NostrEvent } from '@nostr-dev-kit/ndk';
-import { chatDataService } from 'src/services/chatDataService';
-import type { DeveloperTraceEntry, DeveloperTraceLevel } from 'src/services/developerTraceDataService';
 import type {
-  ChatGroupEpochKey,
-  MessageReaction,
-  MessageRelayStatus
-} from 'src/types/chat';
+  NDKRelayConnectionStats,
+  NDKRelayInformation,
+  NDKUserProfile,
+  NostrEvent,
+} from '@nostr-dev-kit/ndk';
+import type { chatDataService } from 'src/services/chatDataService';
+import type {
+  DeveloperTraceEntry,
+  DeveloperTraceLevel,
+} from 'src/services/developerTraceDataService';
+import type { ChatGroupEpochKey, MessageReaction, MessageRelayStatus } from 'src/types/chat';
 import type { ContactRecord, ContactRelay } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
@@ -317,6 +321,5 @@ export type {
   DeveloperTraceLevel,
   NDKRelayConnectionStats,
   NDKRelayInformation,
-  NDKUserProfile
+  NDKUserProfile,
 };
-

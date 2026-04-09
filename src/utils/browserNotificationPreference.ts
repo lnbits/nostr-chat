@@ -37,10 +37,7 @@ export function readBrowserNotificationsPreference(): boolean {
 }
 
 export function areBrowserNotificationsEnabled(): boolean {
-  return (
-    readBrowserNotificationsPreference() &&
-    getBrowserNotificationPermission() === 'granted'
-  );
+  return readBrowserNotificationsPreference() && getBrowserNotificationPermission() === 'granted';
 }
 
 export function saveBrowserNotificationsPreference(enabled: boolean): void {

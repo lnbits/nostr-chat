@@ -1,7 +1,7 @@
-import { computed, type ComputedRef } from 'vue';
 import type { Message, MessageRelayStatus } from 'src/types/chat';
-import { uniqueRelayUrls } from 'src/utils/relayUrls';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
+import { uniqueRelayUrls } from 'src/utils/relayUrls';
+import { type ComputedRef, computed } from 'vue';
 
 export interface StatusSegment {
   key:
@@ -63,9 +63,7 @@ function getStatusDotClassName(
 ): string {
   switch (status) {
     case 'published':
-      return scope === 'self'
-        ? 'bubble__status-list-dot--blue'
-        : 'bubble__status-list-dot--green';
+      return scope === 'self' ? 'bubble__status-list-dot--blue' : 'bubble__status-list-dot--green';
     case 'received':
       return 'bubble__status-list-dot--green';
     case 'failed':
@@ -84,7 +82,7 @@ function buildStatusListItems(
   const statusPriority: Record<'published' | 'failed' | 'pending', number> = {
     published: 0,
     failed: 1,
-    pending: 2
+    pending: 2,
   };
 
   return relayStatuses
@@ -115,7 +113,7 @@ function buildStatusListItems(
       dotClass: getStatusDotClassName(relayStatus.status, relayStatus.scope),
       scope: relayStatus.scope,
       status: relayStatus.status,
-      retryable: relayStatus.status === 'failed'
+      retryable: relayStatus.status === 'failed',
     }));
 }
 
@@ -135,21 +133,19 @@ export function useMessageBubbleStatus(options: {
       return [] as MessageRelayStatus[];
     }
 
-    return value
-      .filter(isMessageRelayStatus)
-      .sort((first, second) => {
-        const byRelayUrl = first.relay_url.localeCompare(second.relay_url);
-        if (byRelayUrl !== 0) {
-          return byRelayUrl;
-        }
+    return value.filter(isMessageRelayStatus).sort((first, second) => {
+      const byRelayUrl = first.relay_url.localeCompare(second.relay_url);
+      if (byRelayUrl !== 0) {
+        return byRelayUrl;
+      }
 
-        const byDirection = first.direction.localeCompare(second.direction);
-        if (byDirection !== 0) {
-          return byDirection;
-        }
+      const byDirection = first.direction.localeCompare(second.direction);
+      if (byDirection !== 0) {
+        return byDirection;
+      }
 
-        return first.scope.localeCompare(second.scope);
-      });
+      return first.scope.localeCompare(second.scope);
+    });
   });
 
   const outboundRelayStatuses = computed(() => {
@@ -167,7 +163,9 @@ export function useMessageBubbleStatus(options: {
     );
   });
 
-  const normalizedContactRelayUrls = computed(() => uniqueRelayUrls(options.contactRelayUrls.value));
+  const normalizedContactRelayUrls = computed(() =>
+    uniqueRelayUrls(options.contactRelayUrls.value)
+  );
 
   const inboundReceivedRelayUrls = computed(() => {
     const uniqueRelayUrlSet = new Set<string>();
@@ -218,13 +216,13 @@ export function useMessageBubbleStatus(options: {
         {
           key: 'received',
           className: getStatusSegmentClassName('received'),
-          weight: inboundReceivedRelayUrls.value.length
+          weight: inboundReceivedRelayUrls.value.length,
         },
         {
           key: 'missing',
           className: getStatusSegmentClassName('missing'),
-          weight: inboundMissingRelayUrls.value.length
-        }
+          weight: inboundMissingRelayUrls.value.length,
+        },
       ].filter((segment) => segment.weight > 0);
     }
 
@@ -250,23 +248,23 @@ export function useMessageBubbleStatus(options: {
       {
         key: 'published-recipient',
         className: getStatusSegmentClassName('published-recipient'),
-        weight: publishedRecipient
+        weight: publishedRecipient,
       },
       {
         key: 'published-self',
         className: getStatusSegmentClassName('published-self'),
-        weight: publishedSelf
+        weight: publishedSelf,
       },
       {
         key: 'pending',
         className: getStatusSegmentClassName('pending'),
-        weight: pending
+        weight: pending,
       },
       {
         key: 'failed',
         className: getStatusSegmentClassName('failed'),
-        weight: failed
-      }
+        weight: failed,
+      },
     ].filter((segment) => segment.weight > 0);
   });
 
@@ -293,12 +291,11 @@ export function useMessageBubbleStatus(options: {
       return {
         key: `${status}-contact-${relayUrl}`,
         relayUrl,
-        detail:
-          status === 'missing' ? 'This message was not received from this relay.' : undefined,
+        detail: status === 'missing' ? 'This message was not received from this relay.' : undefined,
         dotClass: getStatusDotClassName(status),
         scope: 'derived',
         status,
-        retryable: false
+        retryable: false,
       };
     });
   });
@@ -310,7 +307,7 @@ export function useMessageBubbleStatus(options: {
       dotClass: getStatusDotClassName('received'),
       scope: 'subscription',
       status: 'received',
-      retryable: false
+      retryable: false,
     }));
   });
 
@@ -326,7 +323,7 @@ export function useMessageBubbleStatus(options: {
         dotClass: getStatusDotClassName('received'),
         scope: 'subscription',
         status: 'received',
-        retryable: false
+        retryable: false,
       }));
   });
 
@@ -337,14 +334,14 @@ export function useMessageBubbleStatus(options: {
           key: 'recipient',
           title: contactRelaysTitle.value,
           items: contactStatusListItems.value,
-          emptyLabel: 'No relays'
+          emptyLabel: 'No relays',
         },
         {
           key: 'self',
           title: 'My Relays (message backup)',
           items: myStatusListItems.value,
-          emptyLabel: 'No relays'
-        }
+          emptyLabel: 'No relays',
+        },
       ];
     }
 
@@ -354,8 +351,8 @@ export function useMessageBubbleStatus(options: {
           key: 'contact',
           title: contactRelaysTitle.value,
           items: inboundContactStatusListItems.value,
-          emptyLabel: 'No relays'
-        }
+          emptyLabel: 'No relays',
+        },
       ];
 
       if (inboundExtraReceivedStatusListItems.value.length > 0) {
@@ -363,7 +360,7 @@ export function useMessageBubbleStatus(options: {
           key: 'extra-received',
           title: 'Other Received Relays',
           items: inboundExtraReceivedStatusListItems.value,
-          emptyLabel: 'No relays'
+          emptyLabel: 'No relays',
         });
       }
 
@@ -376,8 +373,8 @@ export function useMessageBubbleStatus(options: {
             key: 'received',
             title: 'Received From',
             items: inboundReceivedStatusListItems.value,
-            emptyLabel: 'No relays'
-          }
+            emptyLabel: 'No relays',
+          },
         ]
       : [];
   });
@@ -387,6 +384,6 @@ export function useMessageBubbleStatus(options: {
     hasRelayStatuses,
     statusDialogTitle,
     statusSections,
-    statusSegments
+    statusSegments,
   };
 }
