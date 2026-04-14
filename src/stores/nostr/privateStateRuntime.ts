@@ -476,6 +476,97 @@ export function createPrivateStateRuntime({
     ]);
   }
 
+  async function fetchGroupMembershipFollowSetPubkeys(
+    groupPublicKey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<string[]> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await contactsService.init();
+    const existingGroupContact =
+      await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!existingGroupContact || existingGroupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      existingGroupContact.meta.owner_public_key ?? ''
+    );
+    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can refresh the group member list.');
+    }
+
+    const encryptedGroupPrivateKey =
+      existingGroupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    if (!encryptedGroupPrivateKey) {
+      throw new Error('Encrypted group private key not found.');
+    }
+
+    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
+    if (
+      !decryptedSecret ||
+      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !==
+        normalizedGroupPublicKey
+    ) {
+      throw new Error('Failed to decrypt the group private key.');
+    }
+
+    try {
+      await refreshContactRelayList(normalizedGroupPublicKey);
+    } catch (error) {
+      console.warn(
+        'Failed to refresh group relay list before refreshing group members',
+        normalizedGroupPublicKey,
+        error
+      );
+    }
+
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const relayUrls = resolveGroupPublishRelayUrlsValue(groupContact.relays, seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot refresh group members without at least one group relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const listEvent = await ndk.fetchEvent(
+      {
+        kinds: [NDKKind.FollowSet],
+        authors: [normalizedGroupPublicKey],
+        '#d': [GROUP_MEMBERS_FOLLOW_SET_D_TAG],
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+      },
+      relaySet
+    );
+    if (!listEvent) {
+      throw new Error('Published group member list not found on relays.');
+    }
+
+    updateStoredEventSinceFromCreatedAt(listEvent.created_at);
+
+    return decryptGroupMembershipFollowSetContent(
+      decryptedSecret.group_privkey,
+      normalizedGroupPublicKey,
+      listEvent.content,
+      [normalizedOwnerPublicKey]
+    );
+  }
+
   async function publishGroupMembershipFollowSet(
     groupPublicKey: string,
     memberPublicKeys: string[],
@@ -1278,15 +1369,16 @@ export function createPrivateStateRuntime({
     pendingContactCursorPublishTimers.set(normalizedContactPublicKey, nextTimer);
   }
 
-  return {
-    applyContactCursorStateToContact,
-    buildChatMetaWithUnseenReactionCount,
-    compareContactCursorState,
-    createGroupChat,
-    fetchContactCursorEvents,
-    fetchGroupIdentitySecretEvents,
-    publishContactCursor,
-    publishGroupMembershipFollowSet,
+    return {
+      applyContactCursorStateToContact,
+      buildChatMetaWithUnseenReactionCount,
+      compareContactCursorState,
+      createGroupChat,
+      fetchContactCursorEvents,
+      fetchGroupMembershipFollowSetPubkeys,
+      fetchGroupIdentitySecretEvents,
+      publishContactCursor,
+      publishGroupMembershipFollowSet,
     publishGroupIdentitySecret,
     publishPrivatePreferences,
     restoreContactCursorState,

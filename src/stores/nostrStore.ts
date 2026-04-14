@@ -1369,6 +1369,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     createGroupChat,
     fetchContactCursorEvents,
+    fetchGroupMembershipFollowSetPubkeys,
 
     publishGroupIdentitySecret: publishGroupIdentitySecretImpl,
     publishGroupMembershipFollowSet: publishGroupMembershipFollowSetImpl,
@@ -1666,6 +1667,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensureRelayConnections,
     fetchRelayNip11Info,
     fetchMyRelayList,
+    fetchGroupMembershipFollowSetPubkeys,
     refreshContactRelayList,
     getDeveloperDiagnosticsSnapshot,
     getNip05Data,

@@ -457,9 +457,14 @@
                   color="primary"
                   label="Refresh"
                   class="profile-tab-actions__button"
-                  :disable="!normalizedHeaderPubkey || isRefreshingContact"
-                  :loading="isRefreshingContact"
-                  @click="handleRefreshContactProfile"
+                  :disable="
+                    !normalizedHeaderPubkey ||
+                    hasPendingGroupMemberChanges ||
+                    isPublishingMembersEpoch ||
+                    isRefreshingGroupMembersFromFollowSet
+                  "
+                  :loading="isRefreshingGroupMembersFromFollowSet"
+                  @click="handleRefreshGroupMembersFromFollowSet"
                 />
                 <q-btn
                   v-if="props.showPublishAction"
@@ -1011,6 +1016,7 @@ const currentGroupChat = ref<ChatRow | null>(null);
 const groupOwnerMember = ref<GroupMemberDraft | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
+const isRefreshingGroupMembersFromFollowSet = ref(false);
 const displayedPubkeyFormat = ref<PubkeyDisplayFormat>('hex');
 const pubkeyError = ref('');
 const pubkeyInfo = ref('');
@@ -1121,7 +1127,9 @@ const mobileNavGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${isGroupContact.value ? (isOwnedGroupContact.value ? 4 : 3) : 1}, minmax(0, 1fr))`
 }));
 const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
-const showMembersTabActions = computed(() => props.showHeader || props.showPublishAction);
+const showMembersTabActions = computed(() => {
+  return canEditGroupMembers.value && (props.showHeader || props.showPublishAction);
+});
 const showRelaysTabActions = computed(() => props.showHeader || props.showPublishAction);
 const hasPendingGroupMemberChanges = computed(() => pendingGroupMemberChanges.value.length > 0);
 const pendingRemovedGroupMemberPubkeys = computed(() => new Set(
@@ -1985,6 +1993,112 @@ async function handleRefreshMember(memberPublicKey: string): Promise<void> {
     };
     delete nextRefreshingState[memberPubkey];
     refreshingMemberPubkeys.value = nextRefreshingState;
+  }
+}
+
+function buildGroupMemberRefreshFallback(
+  memberPublicKey: string,
+  existingMember: GroupMemberDraft | null
+): {
+  public_key: string;
+  name: string;
+  given_name: string | null;
+  meta: ContactRecord['meta'];
+} {
+  const fallbackName = existingMember?.name?.trim() || memberPublicKey.slice(0, 16);
+
+  return {
+    public_key: memberPublicKey,
+    name: fallbackName,
+    given_name: existingMember?.given_name ?? null,
+    meta: {
+      ...(existingMember?.about?.trim() ? { about: existingMember.about.trim() } : {}),
+      ...(existingMember?.nip05?.trim() ? { nip05: existingMember.nip05.trim() } : {}),
+      ...(existingMember?.nprofile?.trim() ? { nprofile: existingMember.nprofile.trim() } : {}),
+    }
+  };
+}
+
+async function handleRefreshGroupMembersFromFollowSet(): Promise<void> {
+  const groupPublicKey = currentContact.value?.public_key?.trim() ?? '';
+  if (
+    !groupPublicKey ||
+    !canEditGroupMembers.value ||
+    hasPendingGroupMemberChanges.value ||
+    isPublishingMembersEpoch.value ||
+    isRefreshingGroupMembersFromFollowSet.value
+  ) {
+    return;
+  }
+
+  isRefreshingGroupMembersFromFollowSet.value = true;
+
+  try {
+    const existingMembersByPubkey = new Map(
+      groupMembers.value.map((member) => [member.public_key, cloneGroupMember(member)])
+    );
+    const memberPublicKeys = await nostrStore.fetchGroupMembershipFollowSetPubkeys(groupPublicKey);
+    let fallbackProfileCount = 0;
+
+    const refreshedMembers = await Promise.all(memberPublicKeys.map(async (memberPublicKey) => {
+      const existingMember = existingMembersByPubkey.get(memberPublicKey) ?? null;
+      const fallbackMember = buildGroupMemberRefreshFallback(memberPublicKey, existingMember);
+
+      try {
+        const memberPreview =
+          (await nostrStore.fetchContactPreviewByPublicKey(memberPublicKey, fallbackMember.name)) ??
+          fallbackMember;
+
+        if (memberPreview === fallbackMember) {
+          fallbackProfileCount += 1;
+        }
+
+        return buildStoredGroupMember(
+          memberPreview,
+          null,
+          memberPreview.meta?.nprofile?.trim() || fallbackMember.meta.nprofile?.trim() || null,
+          memberPreview.meta?.nip05?.trim() || fallbackMember.meta.nip05?.trim() || null
+        );
+      } catch (error) {
+        fallbackProfileCount += 1;
+        console.warn(
+          'Failed to refresh group member profile from follow set',
+          memberPublicKey,
+          error
+        );
+
+        return buildStoredGroupMember(
+          fallbackMember,
+          null,
+          fallbackMember.meta.nprofile?.trim() || null,
+          fallbackMember.meta.nip05?.trim() || null
+        );
+      }
+    }));
+
+    await persistGroupMembers(refreshedMembers);
+
+    $q.notify({
+      type: fallbackProfileCount > 0 ? 'warning' : 'positive',
+      message:
+        refreshedMembers.length > 0
+          ? `Refreshed ${refreshedMembers.length} member${refreshedMembers.length === 1 ? '' : 's'} from the published member list.`
+          : 'Group members refreshed. No members are currently published.',
+      caption:
+        fallbackProfileCount > 0
+          ? `${fallbackProfileCount} profile${fallbackProfileCount === 1 ? '' : 's'} kept local fallback data.`
+          : 'Fetched from the latest NIP-51 member list.',
+      position: 'top-right',
+      timeout: fallbackProfileCount > 0 ? 6000 : 3000
+    });
+  } catch (error) {
+    reportUiError(
+      'Failed to refresh group members from follow set',
+      error,
+      'Failed to refresh group members.'
+    );
+  } finally {
+    isRefreshingGroupMembersFromFollowSet.value = false;
   }
 }
 
