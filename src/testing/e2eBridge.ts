@@ -25,6 +25,7 @@ export interface AppE2ESessionSnapshot {
 
 export interface AppE2EBridge {
   bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot>;
+  getSessionSnapshot(): Promise<AppE2ESessionSnapshot>;
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
   logout(): Promise<void>;
   rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
@@ -104,6 +105,27 @@ async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2E
   };
 }
 
+async function getSessionSnapshot(): Promise<AppE2ESessionSnapshot> {
+  const [{ useNostrStore }, { useRelayStore }] = await Promise.all([
+    import('src/stores/nostrStore'),
+    import('src/stores/relayStore'),
+  ]);
+
+  const nostrStore = useNostrStore();
+  const relayStore = useRelayStore();
+  relayStore.init();
+  const publicKey = nostrStore.getLoggedInPublicKeyHex();
+  if (!publicKey) {
+    throw new Error('Failed to read the logged-in public key.');
+  }
+
+  return {
+    publicKey,
+    npub: nostrStore.encodeNpub(publicKey),
+    relayUrls: relayStore.relays,
+  };
+}
+
 async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void> {
   const [{ useNostrStore }, { useRelayStore }, { useChatStore }, { useMessageStore }] =
     await Promise.all([
@@ -171,6 +193,7 @@ export function installAppE2EBridge(): void {
 
   const bridge: AppE2EBridge = {
     bootstrapSession,
+    getSessionSnapshot,
     refreshSession,
     logout,
     rotateGroupEpoch,

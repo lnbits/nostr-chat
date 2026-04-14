@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import net from 'node:net';
 import { type Browser, type BrowserContext, expect, type Page } from '@playwright/test';
 
 export interface TestAccount {
@@ -5,8 +7,14 @@ export interface TestAccount {
   displayName: string;
 }
 
+export interface BrowserErrorEntry {
+  source: 'console' | 'pageerror';
+  text: string;
+}
+
 export interface BootstrappedUser {
   account: TestAccount;
+  browserErrors: BrowserErrorEntry[];
   context: BrowserContext;
   page: Page;
   session: {
@@ -18,6 +26,10 @@ export interface BootstrappedUser {
 
 export interface BootstrapUserOptions {
   relayUrls?: string[];
+}
+
+export interface BootstrapExtensionUserOptions extends BootstrapUserOptions {
+  disableBrowserNotificationsPrompt?: boolean;
 }
 
 export const E2E_RELAY_URL = process.env.E2E_RELAY_URL ?? 'ws://127.0.0.1:7000';
@@ -165,7 +177,235 @@ export const TEST_ACCOUNTS = {
     privateKey: 'e537a186c1bd3971a314c0d89d3a584cdc451c0649bb8e9152e8ef1707c4bc9b',
     displayName: 'Bob Catchup',
   },
+  inviteReloadAlice: {
+    privateKey: '05f4dc8f76fd7d74ee878ef474d72bf438aadf9b260885efc9808397a1767e21',
+    displayName: 'Alice Invite Reload',
+  },
+  inviteReloadBob: {
+    privateKey: '5a8d5cf1ecf2bf8b91b365fe786f6ebed08e575f3c047ae13e23ecf7175f6d2a',
+    displayName: 'Bob Invite Reload',
+  },
+  dedupeAlice: {
+    privateKey: '8c81c7aa41878e0d6bc0dc17338550d4b2b4d53ab8f6b5fd59f0e11de079e0fb',
+    displayName: 'Alice Dedupe',
+  },
+  dedupeBob: {
+    privateKey: '1572f0a6094f6f5a35b841af4c4414dfa195f4ba597bcdbf287d26d19b56b01b',
+    displayName: 'Bob Dedupe',
+  },
+  pendingAlice: {
+    privateKey: '3e711a787707af66dfd5fc8c9f0ac675db8b36e8607974664918db20844d8790',
+    displayName: 'Alice Pending',
+  },
+  pendingBob: {
+    privateKey: 'd50a826f2c0aa3df6e6c5271779b2a35cc2310a74ef5c4a03fe9f2bcb724ca6f',
+    displayName: 'Bob Pending',
+  },
+  groupAddOwner: {
+    privateKey: '9c7d9d7d4be1da67a61a15403d5a33ad655b2671a6ab33096a3b0a286cc94601',
+    displayName: 'Owner Add Member',
+  },
+  groupAddBob: {
+    privateKey: 'd6e5cdb44b4ff964f1c95e66c245bc0c8f0d7e0680e7e4d5ab1ca0e805a67112',
+    displayName: 'Bob Add Member',
+  },
+  groupAddCharlie: {
+    privateKey: '8b93e19a369b0d2b8d2e2740f67d9ef4e5ad78631228008b28cdbac8f4e92613',
+    displayName: 'Charlie Add Member',
+  },
+  groupRemovalReloadOwner: {
+    privateKey: '4898bf4298bd3344f8ef4e62ecf80732af868b8d632e71c3e1b5b0902efb75e5',
+    displayName: 'Owner Removal Reload',
+  },
+  groupRemovalReloadBob: {
+    privateKey: '5b285e2f96de3060a7be8221aa54ff2dcf9fd555bb23868479d5b618312ab7b6',
+    displayName: 'Bob Removal Reload',
+  },
+  groupRemovalReloadCharlie: {
+    privateKey: 'cf35636e7f76073095ebcc917fd671660fbaad12dcbe2f31466a4c8129a93f98',
+    displayName: 'Charlie Removal Reload',
+  },
+  nip07Alice: {
+    privateKey: '76ec52db82ff04779c1ebfdf67ee2e27b8e8bccfd4f0d4f6fd1fe2ac8f59b882',
+    displayName: 'Alice NIP07',
+  },
+  nip07Bob: {
+    privateKey: '49df67d0df4b2a827eb96611db2390d2f34bf220cf86cbc85d8f0dabfb84847c',
+    displayName: 'Bob NIP07',
+  },
 } as const;
+
+const dockerComposeArgs = ['compose', '-f', 'docker-compose.e2e.yml'];
+const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker';
+const relayPortsByService = {
+  relay: 7000,
+  'relay-two': 7001,
+} as const;
+
+function createRelayEntries(relayUrls: string[]) {
+  return relayUrls.map((url) => ({
+    url,
+    read: true,
+    write: true,
+  }));
+}
+
+function attachBrowserErrorTracking(page: Page): BrowserErrorEntry[] {
+  const browserErrors: BrowserErrorEntry[] = [];
+
+  page.on('console', (message) => {
+    if (message.type() !== 'error') {
+      return;
+    }
+
+    browserErrors.push({
+      source: 'console',
+      text: message.text(),
+    });
+  });
+
+  page.on('pageerror', (error) => {
+    browserErrors.push({
+      source: 'pageerror',
+      text: error.message,
+    });
+  });
+
+  return browserErrors;
+}
+
+function runDockerCompose(args: string[]): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = execFile(dockerCommand, [...dockerComposeArgs, ...args], (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+
+    child.stdin?.end();
+  });
+}
+
+function waitForTcpPort(port: number, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  return new Promise<void>((resolve, reject) => {
+    const tryConnect = () => {
+      const socket = net.createConnection({
+        host: '127.0.0.1',
+        port,
+      });
+
+      socket.once('connect', () => {
+        socket.end();
+        resolve();
+      });
+
+      socket.once('error', () => {
+        socket.destroy();
+        if (Date.now() >= deadline) {
+          reject(new Error(`Timed out waiting for relay port ${port}.`));
+          return;
+        }
+
+        globalThis.setTimeout(tryConnect, 400);
+      });
+    };
+
+    tryConnect();
+  });
+}
+
+async function seedRelayStorage(
+  context: BrowserContext,
+  relayUrls: string[],
+  options: {
+    disableBrowserNotificationsPrompt?: boolean;
+  } = {}
+): Promise<void> {
+  const relayEntries = createRelayEntries(relayUrls);
+  await context.addInitScript(
+    ({ nextRelayEntries, disableBrowserNotificationsPrompt }) => {
+      window.localStorage.setItem('relays', JSON.stringify(nextRelayEntries));
+      if (disableBrowserNotificationsPrompt) {
+        const notificationMock = Object.assign(function NotificationMock() {}, {
+          permission: 'denied' as NotificationPermission,
+          requestPermission: async (): Promise<NotificationPermission> => 'denied',
+        });
+
+        Object.defineProperty(window, 'Notification', {
+          configurable: true,
+          value: notificationMock,
+        });
+      }
+    },
+    {
+      nextRelayEntries: relayEntries,
+      disableBrowserNotificationsPrompt: options.disableBrowserNotificationsPrompt === true,
+    }
+  );
+}
+
+async function installNip07Mock(
+  context: BrowserContext,
+  account: TestAccount,
+  relayUrls: string[]
+): Promise<void> {
+  const { NDKPrivateKeySigner, NDKUser } = await import('@nostr-dev-kit/ndk');
+  const signer = new NDKPrivateKeySigner(account.privateKey);
+  const relayMap = Object.fromEntries(
+    relayUrls.map((relayUrl) => [
+      relayUrl,
+      {
+        read: true,
+        write: true,
+      },
+    ])
+  );
+
+  await context.exposeFunction('__e2eNip07GetPublicKey', async () => signer.pubkey);
+  await context.exposeFunction('__e2eNip07SignEvent', async (event: Record<string, unknown>) => {
+    const sig = await signer.sign(event as never);
+    return { sig };
+  });
+  await context.exposeFunction(
+    '__e2eNip07Encrypt',
+    async (recipientPubkey: string, value: string, scheme?: 'nip04' | 'nip44') => {
+      return signer.encrypt(new NDKUser({ pubkey: recipientPubkey }), value, scheme ?? 'nip44');
+    }
+  );
+  await context.exposeFunction(
+    '__e2eNip07Decrypt',
+    async (senderPubkey: string, value: string, scheme?: 'nip04' | 'nip44') => {
+      return signer.decrypt(new NDKUser({ pubkey: senderPubkey }), value, scheme ?? 'nip44');
+    }
+  );
+  await context.exposeFunction('__e2eNip07GetRelays', async () => relayMap);
+  await context.addInitScript(() => {
+    const nip04 = {
+      decrypt: (pubkey: string, value: string) => window.__e2eNip07Decrypt(pubkey, value, 'nip04'),
+      encrypt: (pubkey: string, value: string) => window.__e2eNip07Encrypt(pubkey, value, 'nip04'),
+    };
+    const nip44 = {
+      decrypt: (pubkey: string, value: string) => window.__e2eNip07Decrypt(pubkey, value, 'nip44'),
+      encrypt: (pubkey: string, value: string) => window.__e2eNip07Encrypt(pubkey, value, 'nip44'),
+    };
+
+    Object.defineProperty(window, 'nostr', {
+      configurable: true,
+      value: {
+        getPublicKey: () => window.__e2eNip07GetPublicKey(),
+        getRelays: () => window.__e2eNip07GetRelays(),
+        nip04,
+        nip44,
+        signEvent: (event: Record<string, unknown>) => window.__e2eNip07SignEvent(event),
+      },
+    });
+  });
+}
 
 function composerInput(page: Page) {
   return page.getByPlaceholder('Write a message');
@@ -247,10 +487,60 @@ export async function bootstrapUser(
 ): Promise<BootstrappedUser> {
   const context = await browser.newContext();
   const page = await context.newPage();
+  const browserErrors = attachBrowserErrorTracking(page);
   const session = await bootstrapSessionOnPage(page, account, options);
 
   return {
     account,
+    browserErrors,
+    context,
+    page,
+    session,
+  };
+}
+
+export async function bootstrapExtensionUser(
+  browser: Browser,
+  account: TestAccount,
+  options: BootstrapExtensionUserOptions = {}
+): Promise<BootstrappedUser> {
+  const relayUrls =
+    Array.isArray(options.relayUrls) && options.relayUrls.length > 0
+      ? options.relayUrls
+      : [E2E_RELAY_URL];
+  const context = await browser.newContext();
+  await seedRelayStorage(context, relayUrls, {
+    disableBrowserNotificationsPrompt: options.disableBrowserNotificationsPrompt !== false,
+  });
+  await installNip07Mock(context, account, relayUrls);
+  const page = await context.newPage();
+  const browserErrors = attachBrowserErrorTracking(page);
+
+  await page.goto('/#/login');
+  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Login with Extension', exact: true }).click();
+  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/settings\/status$/);
+
+  if (await page.getByText('Enable Browser Notifications', { exact: true }).isVisible()) {
+    await page.getByRole('button', { name: 'Not now', exact: true }).click();
+  }
+
+  await waitForAppBridge(page);
+  await page.goto('/#/chats');
+  await expect(page.getByTestId('start-new-chat-button')).toBeVisible();
+
+  const session = await page.evaluate(async () => {
+    const bridge = window.__appE2E__;
+    if (!bridge) {
+      throw new Error('E2E bridge is not available.');
+    }
+
+    return bridge.getSessionSnapshot();
+  });
+
+  return {
+    account,
+    browserErrors,
     context,
     page,
     session,
@@ -273,6 +563,26 @@ export async function waitForAppBridge(page: Page): Promise<void> {
   await page.waitForFunction(() => Boolean(window.__appE2E__), undefined, {
     timeout: 30_000,
   });
+}
+
+export async function reloadAndWaitForApp(page: Page): Promise<void> {
+  await page.reload();
+  await waitForAppBridge(page);
+}
+
+export async function expectNoUnexpectedBrowserErrors(
+  users: BootstrappedUser | BootstrappedUser[],
+  options: {
+    allowPatterns?: RegExp[];
+  } = {}
+): Promise<void> {
+  const allowPatterns = Array.isArray(options.allowPatterns) ? options.allowPatterns : [];
+  const userList = Array.isArray(users) ? users : [users];
+  const unexpectedErrors = userList.flatMap((user) =>
+    user.browserErrors.filter((entry) => !allowPatterns.some((pattern) => pattern.test(entry.text)))
+  );
+
+  expect(unexpectedErrors.map((entry) => `${entry.source}: ${entry.text}`)).toEqual([]);
 }
 
 export async function refreshSession(page: Page, chatId?: string): Promise<void> {
@@ -479,6 +789,43 @@ export async function waitForReaction(
 export async function deleteMessage(page: Page, text: string): Promise<void> {
   await threadMessage(page, text).locator('.bubble').click();
   await page.getByText('Delete', { exact: true }).click();
+}
+
+export async function waitForReactionCount(
+  page: Page,
+  reactionLabel: RegExp,
+  count: number
+): Promise<void> {
+  await expect(page.getByLabel(reactionLabel)).toHaveCount(count, {
+    timeout: 12_000,
+  });
+}
+
+export async function expectPendingMessageRelayStatus(page: Page, text: string): Promise<void> {
+  await expect(threadMessage(page, text).locator('.bubble__status--pending')).toBeVisible({
+    timeout: 12_000,
+  });
+}
+
+export async function openMessageRelayStatusDialog(page: Page, text: string): Promise<void> {
+  await threadMessage(page, text).locator('.bubble__status-hitbox').click();
+  await expect(page.getByText('Relay Status', { exact: true })).toBeVisible({
+    timeout: 12_000,
+  });
+}
+
+export async function retryMessageRelay(page: Page, text: string, relayUrl: string): Promise<void> {
+  await openMessageRelayStatusDialog(page, text);
+  const retryButtons = page
+    .locator('.bubble__status-list-item--dialog')
+    .filter({ hasText: relayUrl })
+    .getByRole('button', { name: 'Retry', exact: true });
+  await expect(retryButtons.first()).toBeVisible({ timeout: 12_000 });
+  await retryButtons.first().click();
+}
+
+export async function closeDialogWithEscape(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
 }
 
 export async function waitForDeletedMessageState(
@@ -791,4 +1138,15 @@ export async function establishAcceptedDirectChat(
   await waitForThreadMessage(sender.page, replyMessage, {
     chatId: recipient.session.publicKey,
   });
+}
+
+export async function pauseRelayService(service: keyof typeof relayPortsByService): Promise<void> {
+  await runDockerCompose(['pause', service]);
+}
+
+export async function unpauseRelayService(
+  service: keyof typeof relayPortsByService
+): Promise<void> {
+  await runDockerCompose(['unpause', service]);
+  await waitForTcpPort(relayPortsByService[service]);
 }

@@ -16,7 +16,19 @@
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:local": "node ./scripts/run-e2e-local.cjs"
+    "test:e2e:auth-smoke": "playwright test e2e/auth.spec.ts",
+    "test:e2e:contacts-smoke": "playwright test e2e/contacts.spec.ts",
+    "test:e2e:dm-smoke": "playwright test e2e/dm.spec.ts",
+    "test:e2e:groups-smoke": "playwright test e2e/groups.spec.ts",
+    "test:e2e:relays-smoke": "playwright test e2e/relays.spec.ts",
+    "test:e2e:session-smoke": "playwright test e2e/session.spec.ts",
+    "test:e2e:local": "node ./scripts/run-e2e-local.cjs",
+    "test:e2e:local:auth-smoke": "node ./scripts/run-e2e-local.cjs e2e/auth.spec.ts",
+    "test:e2e:local:contacts-smoke": "node ./scripts/run-e2e-local.cjs e2e/contacts.spec.ts",
+    "test:e2e:local:dm-smoke": "node ./scripts/run-e2e-local.cjs e2e/dm.spec.ts",
+    "test:e2e:local:groups-smoke": "node ./scripts/run-e2e-local.cjs e2e/groups.spec.ts",
+    "test:e2e:local:relays-smoke": "node ./scripts/run-e2e-local.cjs e2e/relays.spec.ts",
+    "test:e2e:local:session-smoke": "node ./scripts/run-e2e-local.cjs e2e/session.spec.ts"
   },
   "dependencies": {
     "@nostr-dev-kit/ndk": "^3.0.0",
