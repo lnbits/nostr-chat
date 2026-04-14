@@ -32,6 +32,14 @@ export interface MessageBatchResult {
   has_more: boolean;
 }
 
+export interface MessageSearchResult {
+  id: number;
+  chat_public_key: string;
+  message: string;
+  created_at: string;
+  event_id: string | null;
+}
+
 export interface CreateChatInput {
   public_key: string;
   type?: ChatType;
@@ -226,6 +234,32 @@ function compareMessageCursor(
   }
 
   return first.id - second.id;
+}
+
+function normalizeMessageSearchText(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isDeletedMessageMeta(meta: Record<string, unknown>): boolean {
+  const deletedMeta = meta.deleted;
+  return typeof deletedMeta === 'object' && deletedMeta !== null && !Array.isArray(deletedMeta);
+}
+
+function messageRecordMatchesSearchQuery(record: MessageRecord, normalizedQuery: string): boolean {
+  if (!normalizedQuery) {
+    return false;
+  }
+
+  const normalizedMeta = normalizeMeta(record.meta);
+  if (isDeletedMessageMeta(normalizedMeta)) {
+    return false;
+  }
+
+  return normalizeMessageSearchText(record.message).includes(normalizedQuery);
 }
 
 function createChatCreatedAtRange(chatPublicKey: string): IDBKeyRange {
@@ -597,6 +631,55 @@ class ChatDataService {
     await waitForTransaction(transaction);
 
     return records.sort(sortMessagesByCreated).map((record) => toMessageRow(record));
+  }
+
+  async searchMessages(chatPublicKey: string, query: string): Promise<MessageSearchResult[]> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    const normalizedQuery = normalizeMessageSearchText(query);
+    if (!normalizedPublicKey || !normalizedQuery) {
+      return [];
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const index = store.index(MESSAGES_CHAT_CREATED_AT_INDEX);
+    const request = index.openCursor(createChatCreatedAtRange(normalizedPublicKey), 'prev');
+
+    const matches = await new Promise<MessageSearchResult[]>((resolve, reject) => {
+      const rows: MessageSearchResult[] = [];
+
+      request.onsuccess = () => {
+        const cursorValue = request.result;
+        if (!cursorValue) {
+          resolve(rows);
+          return;
+        }
+
+        const record = cursorValue.value as MessageRecord;
+        if (
+          normalizePublicKeyValue(record.chat_public_key) === normalizedPublicKey &&
+          messageRecordMatchesSearchQuery(record, normalizedQuery)
+        ) {
+          rows.push({
+            id: record.id,
+            chat_public_key: record.chat_public_key,
+            message: record.message,
+            created_at: record.created_at,
+            event_id: normalizeEventId(record.event_id),
+          });
+        }
+
+        cursorValue.continue();
+      };
+
+      request.onerror = () => {
+        reject(request.error ?? new Error('Failed to iterate message search cursor.'));
+      };
+    });
+
+    await waitForTransaction(transaction);
+    return matches;
   }
 
   async listLatestMessages(chatPublicKey: string, limit: number): Promise<MessageBatchResult> {
@@ -1054,5 +1137,11 @@ class ChatDataService {
     return batchResult;
   }
 }
+
+export const __chatDataServiceTestUtils = {
+  isDeletedMessageMeta,
+  messageRecordMatchesSearchQuery,
+  normalizeMessageSearchText,
+};
 
 export const chatDataService = new ChatDataService();

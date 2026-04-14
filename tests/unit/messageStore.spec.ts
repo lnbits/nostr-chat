@@ -9,6 +9,7 @@ const {
   buildDeletedMessageMeta,
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
+  buildMessageCursorFromSearchResult,
   compareMessageCursors,
   countOwnUnseenReactions,
   mergeMessagesById,
@@ -173,6 +174,16 @@ describe('messageStore logic', () => {
     ).toEqual({
       id: 12,
       created_at: '2026-01-02T00:00:00.000Z',
+    });
+
+    expect(
+      buildMessageCursorFromSearchResult({
+        id: 7,
+        created_at: '2026-01-03T00:00:00.000Z',
+      } as never)
+    ).toEqual({
+      id: 7,
+      created_at: '2026-01-03T00:00:00.000Z',
     });
   });
 

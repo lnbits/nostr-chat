@@ -27,12 +27,79 @@
           flat
           dense
           round
+          icon="search"
+          aria-label="Search Messages"
+          class="thread-header__action"
+          @click="handleOpenThreadSearch"
+        />
+        <q-btn
+          flat
+          dense
+          round
           icon="badge"
           aria-label="Open Profile"
           class="thread-header__action"
           @click="handleOpenProfile"
         />
       </div>
+
+      <transition name="thread-search-bar">
+        <div v-if="isThreadSearchOpen" class="thread-search" :aria-busy="isThreadSearchBusy">
+          <q-input
+            ref="threadSearchInputRef"
+            v-model="threadSearchQuery"
+            class="tg-input thread-search__input"
+            dense
+            outlined
+            rounded
+            clearable
+            clear-icon="close"
+            placeholder="Search"
+            :loading="isThreadSearchBusy"
+            @keydown.enter.prevent="handleThreadSearchEnter"
+          >
+            <template #prepend>
+              <q-icon name="search" />
+            </template>
+          </q-input>
+
+          <div class="thread-search__meta">
+            {{ threadSearchStatusLabel }}
+          </div>
+
+          <div class="thread-search__actions">
+            <q-btn
+              flat
+              dense
+              round
+              icon="keyboard_arrow_up"
+              aria-label="Previous Search Result"
+              class="thread-search__action"
+              :disable="!canNavigateThreadSearch"
+              @click="handlePreviousThreadSearchResult"
+            />
+            <q-btn
+              flat
+              dense
+              round
+              icon="keyboard_arrow_down"
+              aria-label="Next Search Result"
+              class="thread-search__action"
+              :disable="!canNavigateThreadSearch"
+              @click="handleNextThreadSearchResult"
+            />
+            <q-btn
+              flat
+              dense
+              round
+              icon="close"
+              aria-label="Close Search"
+              class="thread-search__action"
+              @click="handleCloseThreadSearch"
+            />
+          </div>
+        </div>
+      </transition>
 
       <div
         ref="threadBodyRef"
@@ -237,6 +304,7 @@ const emit = defineEmits<{
 
 const threadBodyRef = ref<HTMLElement | null>(null);
 const composerRef = ref<{ focusInputAtEnd: () => void } | null>(null);
+const threadSearchInputRef = ref<{ focus: () => void } | null>(null);
 const stickyDayLabel = ref('');
 const activeReply = ref<MessageReplyPreview | null>(null);
 const highlightedMessageId = ref<string | null>(null);
@@ -253,6 +321,18 @@ const openedUnreadBoundaryAt = ref<string | null>(null);
 const contactRelayUrls = ref<string[]>([]);
 const selfAvatarImageUrl = ref('');
 const selfAvatarFallback = ref('YO');
+const isThreadSearchOpen = ref(false);
+const threadSearchQuery = ref('');
+const isThreadSearchBusy = ref(false);
+const threadSearchMatches = ref<
+  Array<{
+    messageId: string;
+    eventId: string | null;
+    sentAt: string;
+    text: string;
+  }>
+>([]);
+const activeThreadSearchMatchIndex = ref(-1);
 const authorIdentityByPublicKey = ref<
   Record<
     string,
@@ -270,6 +350,9 @@ let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
 let pendingSentMessageReveal = false;
 let isScrollingToBottom = false;
 let scrollToBottomRequestId = 0;
+let threadSearchDebounceId: number | null = null;
+let threadSearchRequestToken = 0;
+let threadSearchNavigationToken = 0;
 let pendingPaginationContext:
   | {
       direction: 'older' | 'newer';
@@ -375,6 +458,26 @@ const hasOlderMessages = computed(() => currentPaginationState.value.hasOlder);
 const hasNewerMessages = computed(() => currentPaginationState.value.hasNewer);
 const isLoadingOlderMessages = computed(() => currentPaginationState.value.isLoadingOlder);
 const isLoadingNewerMessages = computed(() => currentPaginationState.value.isLoadingNewer);
+const canNavigateThreadSearch = computed(() => {
+  return !isThreadSearchBusy.value && threadSearchMatches.value.length > 0;
+});
+const threadSearchStatusLabel = computed(() => {
+  const normalizedQuery = threadSearchQuery.value.trim();
+  if (!normalizedQuery) {
+    return 'Search messages';
+  }
+
+  if (isThreadSearchBusy.value) {
+    return 'Searching...';
+  }
+
+  if (threadSearchMatches.value.length === 0) {
+    return 'No matches';
+  }
+
+  const activeIndex = Math.max(0, activeThreadSearchMatchIndex.value);
+  return `${activeIndex + 1} of ${threadSearchMatches.value.length}`;
+});
 
 const showScrollJumpButton = computed(() => {
   return Boolean(
@@ -1246,6 +1349,14 @@ function queueComposerFocus(): void {
   });
 }
 
+function queueThreadSearchFocus(): void {
+  void nextTick(() => {
+    window.setTimeout(() => {
+      threadSearchInputRef.value?.focus();
+    }, 0);
+  });
+}
+
 function handleReactToMessage(payload: { message: Message; emoji: string }): void {
   try {
     emit('react', payload);
@@ -1283,6 +1394,17 @@ function clearReplyTargetHighlight(): void {
     window.clearTimeout(highlightTimerId);
     highlightTimerId = null;
   }
+}
+
+function highlightMessageTarget(messageId: string): void {
+  clearReplyTargetHighlight();
+  highlightedMessageId.value = messageId;
+  highlightTimerId = window.setTimeout(() => {
+    if (highlightedMessageId.value === messageId) {
+      highlightedMessageId.value = null;
+    }
+    highlightTimerId = null;
+  }, 1800);
 }
 
 function findThreadMessageEntry(targetId: string): HTMLElement | null {
@@ -1326,6 +1448,53 @@ async function scrollToMessageEntry(
     block
   });
 
+  return true;
+}
+
+async function revealMessageById(
+  messageId: string,
+  options: {
+    behavior?: ScrollBehavior;
+    block?: ScrollLogicalPosition;
+    ensureLoaded?: boolean;
+  } = {}
+): Promise<boolean> {
+  const currentChatId = props.chat?.id ?? null;
+  if (!messageId || (options.ensureLoaded && !currentChatId)) {
+    return false;
+  }
+
+  setAutomaticBottomScrollEnabled(false);
+  cancelPendingAutomaticThreadPosition();
+  threadSearchNavigationToken += 1;
+  const navigationToken = threadSearchNavigationToken;
+
+  if (options.ensureLoaded && currentChatId) {
+    const ensuredMessage = await messageStore.ensureMessageLoaded(currentChatId, messageId);
+    if (!ensuredMessage || navigationToken !== threadSearchNavigationToken) {
+      return false;
+    }
+  }
+
+  const didScroll = await scrollToMessageEntry(
+    messageId,
+    options.block ?? 'center',
+    options.behavior ?? 'smooth'
+  );
+  if (!didScroll || navigationToken !== threadSearchNavigationToken) {
+    return false;
+  }
+
+  highlightMessageTarget(messageId);
+  window.setTimeout(() => {
+    if (navigationToken !== threadSearchNavigationToken) {
+      return;
+    }
+
+    updateStickyDayLabel();
+    updateScrollJumpState();
+    scheduleVisibleReactionViewSync();
+  }, options.behavior === 'smooth' ? 220 : 0);
   return true;
 }
 
@@ -1590,26 +1759,150 @@ async function handleReactionJump(): Promise<void> {
 
 async function handleOpenReplyTarget(messageId: string): Promise<void> {
   try {
-    const targetEntry = findThreadMessageEntry(messageId);
-    if (!targetEntry) {
+    await revealMessageById(messageId, {
+      behavior: 'smooth',
+      block: 'center',
+      ensureLoaded: true
+    });
+  } catch (error) {
+    reportUiError('Failed to focus replied message', error);
+  }
+}
+
+function clearPendingThreadSearchDebounce(): void {
+  if (threadSearchDebounceId !== null) {
+    window.clearTimeout(threadSearchDebounceId);
+    threadSearchDebounceId = null;
+  }
+}
+
+function resetThreadSearchResults(): void {
+  clearPendingThreadSearchDebounce();
+  threadSearchRequestToken += 1;
+  threadSearchNavigationToken += 1;
+  isThreadSearchBusy.value = false;
+  threadSearchMatches.value = [];
+  activeThreadSearchMatchIndex.value = -1;
+}
+
+function handleOpenThreadSearch(): void {
+  isThreadSearchOpen.value = true;
+  queueThreadSearchFocus();
+}
+
+function handleCloseThreadSearch(): void {
+  isThreadSearchOpen.value = false;
+  threadSearchQuery.value = '';
+  resetThreadSearchResults();
+  clearReplyTargetHighlight();
+}
+
+function getWrappedThreadSearchIndex(nextIndex: number): number {
+  const matchCount = threadSearchMatches.value.length;
+  if (matchCount === 0) {
+    return -1;
+  }
+
+  return ((nextIndex % matchCount) + matchCount) % matchCount;
+}
+
+async function revealThreadSearchMatch(
+  nextIndex: number,
+  behavior: ScrollBehavior = 'smooth'
+): Promise<void> {
+  const targetIndex = getWrappedThreadSearchIndex(nextIndex);
+  if (targetIndex < 0) {
+    return;
+  }
+
+  const targetMatch = threadSearchMatches.value[targetIndex];
+  if (!targetMatch) {
+    return;
+  }
+
+  const didReveal = await revealMessageById(targetMatch.messageId, {
+    behavior,
+    block: 'center',
+    ensureLoaded: true
+  });
+  if (!didReveal) {
+    return;
+  }
+
+  activeThreadSearchMatchIndex.value = targetIndex;
+}
+
+function handleThreadSearchEnter(event: KeyboardEvent): void {
+  if (event.shiftKey) {
+    void handlePreviousThreadSearchResult();
+    return;
+  }
+
+  void handleNextThreadSearchResult();
+}
+
+async function handlePreviousThreadSearchResult(): Promise<void> {
+  if (!canNavigateThreadSearch.value) {
+    return;
+  }
+
+  const baseIndex =
+    activeThreadSearchMatchIndex.value >= 0
+      ? activeThreadSearchMatchIndex.value
+      : Math.min(1, threadSearchMatches.value.length) - 1;
+  await revealThreadSearchMatch(baseIndex - 1);
+}
+
+async function handleNextThreadSearchResult(): Promise<void> {
+  if (!canNavigateThreadSearch.value) {
+    return;
+  }
+
+  const baseIndex = activeThreadSearchMatchIndex.value >= 0 ? activeThreadSearchMatchIndex.value : -1;
+  await revealThreadSearchMatch(baseIndex + 1);
+}
+
+async function runThreadSearch(chatId: string, query: string): Promise<void> {
+  const normalizedQuery = query.trim();
+  if (!chatId || !normalizedQuery || !isThreadSearchOpen.value) {
+    resetThreadSearchResults();
+    return;
+  }
+
+  const requestToken = ++threadSearchRequestToken;
+  isThreadSearchBusy.value = true;
+
+  try {
+    const matches = await messageStore.searchMessages(chatId, normalizedQuery);
+    if (
+      requestToken !== threadSearchRequestToken ||
+      chatId !== (props.chat?.id ?? null) ||
+      !isThreadSearchOpen.value ||
+      normalizedQuery !== threadSearchQuery.value.trim()
+    ) {
       return;
     }
 
-    clearReplyTargetHighlight();
-    highlightedMessageId.value = messageId;
-    targetEntry.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center'
-    });
+    threadSearchMatches.value = matches;
+    activeThreadSearchMatchIndex.value = matches.length > 0 ? 0 : -1;
 
-    highlightTimerId = window.setTimeout(() => {
-      if (highlightedMessageId.value === messageId) {
-        highlightedMessageId.value = null;
-      }
-      highlightTimerId = null;
-    }, 1800);
+    if (matches.length > 0) {
+      await revealThreadSearchMatch(0, 'auto');
+    } else {
+      clearReplyTargetHighlight();
+    }
   } catch (error) {
-    reportUiError('Failed to focus replied message', error);
+    if (requestToken !== threadSearchRequestToken) {
+      return;
+    }
+
+    threadSearchMatches.value = [];
+    activeThreadSearchMatchIndex.value = -1;
+    reportUiError('Failed to search messages in this chat', error);
+  } finally {
+    if (requestToken === threadSearchRequestToken) {
+      isThreadSearchBusy.value = false;
+    }
   }
 }
 
@@ -1663,6 +1956,9 @@ watch(
 watch(
   () => props.chat?.id ?? null,
   (chatId) => {
+    isThreadSearchOpen.value = false;
+    threadSearchQuery.value = '';
+    resetThreadSearchResults();
     activeReply.value = null;
     clearReplyTargetHighlight();
     pendingSentMessageReveal = false;
@@ -1692,6 +1988,28 @@ watch(
     void initializeThreadPosition();
   },
   { immediate: true }
+);
+
+watch(
+  () => [props.chat?.id ?? null, isThreadSearchOpen.value, threadSearchQuery.value] as const,
+  ([chatId, isSearchOpen, searchQuery]) => {
+    clearPendingThreadSearchDebounce();
+
+    if (!chatId || !isSearchOpen) {
+      resetThreadSearchResults();
+      return;
+    }
+
+    if (!searchQuery.trim()) {
+      resetThreadSearchResults();
+      return;
+    }
+
+    threadSearchDebounceId = window.setTimeout(() => {
+      threadSearchDebounceId = null;
+      void runThreadSearch(chatId, searchQuery);
+    }, 180);
+  }
 );
 
 watch(
@@ -1752,6 +2070,7 @@ watch(
 
 onBeforeUnmount(() => {
   clearReplyTargetHighlight();
+  clearPendingThreadSearchDebounce();
   if (scrollFrameId !== null) {
     cancelAnimationFrame(scrollFrameId);
   }
@@ -1820,6 +2139,52 @@ onBeforeUnmount(() => {
 
 body.body--dark .thread-header__action {
   color: var(--tg-text-secondary) !important;
+}
+
+.thread-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--tg-border);
+  background: var(--tg-panel-header-bg);
+}
+
+.thread-search__input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.thread-search__meta {
+  flex: 0 0 auto;
+  min-width: 72px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tg-text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.thread-search__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.thread-search__action {
+  color: var(--tg-text-secondary);
+}
+
+.thread-search-bar-enter-active,
+.thread-search-bar-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.thread-search-bar-enter-from,
+.thread-search-bar-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .thread-body {
@@ -1965,6 +2330,20 @@ body.body--dark .thread-header__action {
 }
 
 @media (max-width: 1023px) {
+  .thread-search {
+    flex-wrap: wrap;
+    padding: 10px 10px 12px;
+  }
+
+  .thread-search__input {
+    flex-basis: 100%;
+  }
+
+  .thread-search__meta {
+    min-width: 0;
+    text-align: left;
+  }
+
   .thread-body {
     padding: 12px 10px calc(78px + env(safe-area-inset-bottom));
   }

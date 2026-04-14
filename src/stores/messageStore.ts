@@ -4,6 +4,7 @@ import {
   type ChatRow,
   chatDataService,
   type MessageCursor as PersistedMessageCursor,
+  type MessageSearchResult as PersistedMessageSearchResult,
 } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
@@ -41,6 +42,13 @@ interface ChatMessagePaginationState {
 
 interface RelaySendOptions {
   relayUrls?: string[];
+}
+
+interface ChatThreadSearchMatch {
+  messageId: string;
+  eventId: string | null;
+  sentAt: string;
+  text: string;
 }
 
 type NostrStoreModule = typeof import('src/stores/nostrStore');
@@ -150,6 +158,19 @@ function mapMessageRowToMessage(
 
 function buildMessageCursorFromRow(
   row: Pick<MessageRow, 'id' | 'created_at'> | null | undefined
+): PersistedMessageCursor | null {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    created_at: row.created_at,
+  };
+}
+
+function buildMessageCursorFromSearchResult(
+  row: Pick<PersistedMessageSearchResult, 'id' | 'created_at'> | null | undefined
 ): PersistedMessageCursor | null {
   if (!row) {
     return null;
@@ -538,6 +559,7 @@ export const __messageStoreTestUtils = {
   buildDefaultChatMessagePaginationState,
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
+  buildMessageCursorFromSearchResult,
   compareMessageCursors,
   countOwnUnseenReactions,
   mergeMessagesById,
@@ -1113,6 +1135,102 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     await Promise.all(chatIds.map((chatId) => loadMessages(chatId, true)));
+  }
+
+  async function searchMessages(chatId: string, query: string): Promise<ChatThreadSearchMatch[]> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedQuery = query.trim();
+    if (!normalizedChatId || !normalizedQuery) {
+      return [];
+    }
+
+    await chatDataService.init();
+    const rows = await chatDataService.searchMessages(normalizedChatId, normalizedQuery);
+    return rows.map((row) => ({
+      messageId: String(row.id),
+      eventId: row.event_id,
+      sentAt: row.created_at,
+      text: row.message,
+    }));
+  }
+
+  async function ensureMessageLoaded(chatId: string, messageId: string): Promise<Message | null> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedMessageId = Number.parseInt(messageId, 10);
+    if (!normalizedChatId || !Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0) {
+      return null;
+    }
+
+    const existingMessage = getMessageFromState(normalizedChatId, String(normalizedMessageId));
+    if (existingMessage) {
+      return existingMessage;
+    }
+
+    if (!loadedChatIds.has(normalizedChatId)) {
+      await loadMessages(normalizedChatId);
+    }
+
+    const loadedAfterInitialLoad = getMessageFromState(
+      normalizedChatId,
+      String(normalizedMessageId)
+    );
+    if (loadedAfterInitialLoad) {
+      return loadedAfterInitialLoad;
+    }
+
+    await chatDataService.init();
+    const targetRow = await chatDataService.getMessageById(normalizedMessageId);
+    if (!targetRow || normalizeChatIdentifier(targetRow.chat_public_key) !== normalizedChatId) {
+      return null;
+    }
+
+    const targetCursor = buildMessageCursorFromRow(targetRow);
+    if (!targetCursor) {
+      return null;
+    }
+
+    let iterationCount = 0;
+    while (iterationCount < 200) {
+      const currentMessage = getMessageFromState(normalizedChatId, String(normalizedMessageId));
+      if (currentMessage) {
+        return currentMessage;
+      }
+
+      const paginationState = paginationStateByChat.value[normalizedChatId];
+      const oldestCursor = paginationState?.oldestCursor ?? null;
+      const newestCursor = paginationState?.newestCursor ?? null;
+      const needsOlderLoad =
+        Boolean(oldestCursor) &&
+        compareMessageCursors(targetCursor, oldestCursor as PersistedMessageCursor) < 0;
+      const needsNewerLoad =
+        Boolean(newestCursor) &&
+        compareMessageCursors(targetCursor, newestCursor as PersistedMessageCursor) > 0;
+
+      if (needsOlderLoad && paginationState?.hasOlder) {
+        iterationCount += 1;
+        await loadOlderMessages(normalizedChatId);
+        continue;
+      }
+
+      if (needsNewerLoad && paginationState?.hasNewer) {
+        iterationCount += 1;
+        await loadNewerMessages(normalizedChatId);
+        continue;
+      }
+
+      break;
+    }
+
+    const loadedMessage = getMessageFromState(normalizedChatId, String(normalizedMessageId));
+    if (loadedMessage) {
+      return loadedMessage;
+    }
+
+    const hydratedMessage = await hydrateMessageRow(targetRow, normalizedChatId);
+    upsertMessageInState(normalizedChatId, hydratedMessage, {
+      allowOutsideLoadedWindow: true,
+    });
+    return getMessageFromState(normalizedChatId, String(normalizedMessageId)) ?? hydratedMessage;
   }
 
   async function loadOlderMessages(chatId: string): Promise<void> {
@@ -1945,6 +2063,8 @@ export const useMessageStore = defineStore('messageStore', () => {
     loadOlderMessages,
     loadNewerMessages,
     reloadLoadedMessages,
+    searchMessages,
+    ensureMessageLoaded,
     getMessages,
     getPaginationState,
     sendMessage,
