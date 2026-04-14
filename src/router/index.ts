@@ -5,6 +5,7 @@ import {
   createWebHashHistory,
   createWebHistory,
 } from 'vue-router';
+import { finalizePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import routes from './routes';
 
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
@@ -30,7 +31,11 @@ export default route(() => {
     history: createHistory(process.env.VUE_ROUTER_BASE),
   });
 
-  Router.beforeEach((to) => {
+  Router.beforeEach(async (to) => {
+    if (!process.env.SERVER) {
+      await finalizePendingLogoutCleanup();
+    }
+
     if (to.name === 'auth' || to.name === 'register') {
       return true;
     }

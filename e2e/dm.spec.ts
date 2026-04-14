@@ -7,6 +7,7 @@ import {
   disposeUsers,
   E2E_DUAL_RELAY_URLS,
   establishAcceptedDirectChat,
+  expectBrowserStorageToBeEmpty,
   expectNoUnexpectedBrowserErrors,
   logoutFromSettings,
   navigateToChat,
@@ -311,6 +312,7 @@ test('accepted DM supports reactions, deletion, and logout', async ({ browser })
     });
 
     await logoutFromSettings(alice.page);
+    await expectBrowserStorageToBeEmpty(alice.page);
     await expectNoUnexpectedBrowserErrors([alice, bob]);
   } finally {
     await disposeUsers(alice, bob);

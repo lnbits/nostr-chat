@@ -114,6 +114,7 @@ import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { schedulePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const route = useRoute();
@@ -221,6 +222,7 @@ async function handleConfirmLogout(): Promise<void> {
   try {
     await nostrStore.logout();
     await router.replace({ name: 'auth' });
+    schedulePendingLogoutCleanup();
     window.location.reload();
   } catch (error) {
     isLoggingOut.value = false;

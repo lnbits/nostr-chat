@@ -1,10 +1,5 @@
 import NDK, { NDKNip07Signer, NDKPrivateKeySigner, type NDKSigner } from '@nostr-dev-kit/ndk';
-import { chatDataService } from 'src/services/chatDataService';
-import { contactsService } from 'src/services/contactsService';
-import { developerTraceDataService } from 'src/services/developerTraceDataService';
-import { imageCacheService } from 'src/services/imageCacheService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   AUTH_METHOD_STORAGE_KEY,
   PRIVATE_KEY_STORAGE_KEY,
@@ -12,7 +7,7 @@ import {
 } from 'src/stores/nostr/constants';
 import { hasStorage } from 'src/stores/nostr/shared';
 import type { AuthMethod, SubscribePrivateMessagesOptions } from 'src/stores/nostr/types';
-import { deleteAllIndexedDbDatabases } from 'src/utils/indexedDbStorage';
+import { clearPersistedAppState } from 'src/utils/logoutCleanup';
 import type { Ref } from 'vue';
 
 interface RestoreRuntimeState {
@@ -26,11 +21,8 @@ interface AuthSessionRuntimeDeps {
   backgroundGroupContactRefreshStartedAt: { clear: () => void };
   bumpDeveloperDiagnosticsVersion: () => void;
   chatStoreClearAllComposerDrafts: () => void;
-  clearBrowserNotificationsPreference: () => void;
-  clearDarkModePreference: () => void;
   clearDeveloperTraceEntries: () => Promise<void>;
   clearNip65RelayStoreState: () => void;
-  clearPanelOpacityPreference: () => void;
   clearPrivateMessagesBackfillState: () => void;
   clearPrivatePreferencesStorage: () => void;
   clearRelayStoreState: () => void;
@@ -88,11 +80,8 @@ export function createAuthSessionRuntime({
   backgroundGroupContactRefreshStartedAt,
   bumpDeveloperDiagnosticsVersion,
   chatStoreClearAllComposerDrafts,
-  clearBrowserNotificationsPreference,
-  clearDarkModePreference,
   clearDeveloperTraceEntries,
   clearNip65RelayStoreState,
-  clearPanelOpacityPreference,
   clearPrivateMessagesBackfillState,
   clearPrivatePreferencesStorage,
   clearRelayStoreState,
@@ -286,25 +275,7 @@ export function createAuthSessionRuntime({
     clearRelayStoreState();
     clearNip65RelayStoreState();
 
-    if (hasStorage()) {
-      window.localStorage.clear();
-      if (typeof window.sessionStorage !== 'undefined') {
-        window.sessionStorage.clear();
-      }
-    }
-
-    clearDarkModePreference();
-    clearPanelOpacityPreference();
-    clearBrowserNotificationsPreference();
-
-    await Promise.all([
-      chatDataService.clearAllData(),
-      contactsService.clearAllData(),
-      developerTraceDataService.clearAllData(),
-      nostrEventDataService.clearAllData(),
-      imageCacheService.clearAllData(),
-    ]);
-    await deleteAllIndexedDbDatabases();
+    await clearPersistedAppState();
   }
 
   return {

@@ -95,8 +95,6 @@ import {
 import { useRelayStore } from 'src/stores/relayStore';
 import type { ChatGroupEpochKey, MessageRelayStatus } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
-import { clearBrowserNotificationsPreference } from 'src/utils/browserNotificationPreference';
-import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 import { ref, watch } from 'vue';
 
 export type {
@@ -367,8 +365,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     normalizeEventId,
     pendingEventSinceState,
   });
-
-  relayStore.init();
 
   watch(
     () =>
@@ -1496,11 +1492,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     backgroundGroupContactRefreshStartedAt,
     bumpDeveloperDiagnosticsVersion,
     chatStoreClearAllComposerDrafts: chatStore.clearAllComposerDrafts,
-    clearBrowserNotificationsPreference,
-    clearDarkModePreference,
     clearDeveloperTraceEntries,
     clearNip65RelayStoreState: nip65RelayStore.clear,
-    clearPanelOpacityPreference,
     clearPrivateMessagesBackfillState,
     clearPrivatePreferencesStorage,
     clearRelayStoreState: relayStore.clear,

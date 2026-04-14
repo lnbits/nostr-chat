@@ -1328,9 +1328,11 @@ export const useChatStore = defineStore('chatStore', () => {
     );
   }
 
-  void init().catch((error) => {
-    console.error('Failed to preload chats', error);
-  });
+  if (getLoggedInPublicKey()) {
+    void init().catch((error) => {
+      console.error('Failed to preload chats', error);
+    });
+  }
 
   return {
     chats,

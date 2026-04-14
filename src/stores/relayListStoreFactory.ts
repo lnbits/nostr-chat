@@ -75,7 +75,7 @@ export function createRelayListStoreSetup({
 
     function clear(): void {
       relayEntries.value = [];
-      isInitialized.value = false;
+      isInitialized.value = true;
 
       if (!hasStorage()) {
         return;

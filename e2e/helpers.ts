@@ -245,6 +245,7 @@ export const TEST_ACCOUNTS = {
 
 const dockerComposeArgs = ['compose', '-f', 'docker-compose.e2e.yml'];
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker';
+const pendingLogoutCleanupSessionKey = 'xyz-pending-logout-cleanup';
 const relayPortsByService = {
   relay: 7000,
   'relay-two': 7001,
@@ -336,8 +337,10 @@ async function seedRelayStorage(
 ): Promise<void> {
   const relayEntries = createRelayEntries(relayUrls);
   await context.addInitScript(
-    ({ nextRelayEntries, disableBrowserNotificationsPrompt }) => {
-      window.localStorage.setItem('relays', JSON.stringify(nextRelayEntries));
+    ({ nextRelayEntries, disableBrowserNotificationsPrompt, pendingLogoutCleanupKey }) => {
+      if (window.sessionStorage.getItem(pendingLogoutCleanupKey) !== '1') {
+        window.localStorage.setItem('relays', JSON.stringify(nextRelayEntries));
+      }
       if (disableBrowserNotificationsPrompt) {
         const notificationMock = Object.assign(function NotificationMock() {}, {
           permission: 'denied' as NotificationPermission,
@@ -353,6 +356,7 @@ async function seedRelayStorage(
     {
       nextRelayEntries: relayEntries,
       disableBrowserNotificationsPrompt: options.disableBrowserNotificationsPrompt === true,
+      pendingLogoutCleanupKey: pendingLogoutCleanupSessionKey,
     }
   );
 }
@@ -852,37 +856,41 @@ export async function waitForDeletedMessageState(
 }
 
 export async function logoutFromSettings(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    const bridge = window.__appE2E__;
-    if (!bridge) {
-      throw new Error('E2E bridge is not available.');
-    }
-
-    await bridge.logout();
-  });
+  await page.goto('/#/settings/profile');
+  await expect(page.getByTestId('settings-logout-item')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('settings-logout-item').click();
+  await expect(page.getByTestId('settings-logout-confirm')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('settings-logout-confirm').click();
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/(auth|login)/);
   await expect(page.getByText('Welcome')).toBeVisible({ timeout: 30_000 });
+  await waitForAppBridge(page);
 }
 
-export async function expectBrowserStorageToBeEmpty(page: Page): Promise<void> {
-  const storageSnapshot = await page.evaluate(async () => {
+async function readBrowserStorageSnapshot(page: Page) {
+  return page.evaluate(async () => {
     const localStorageKeys = Array.from({ length: window.localStorage.length }, (_, index) =>
       window.localStorage.key(index)
-    ).filter((key): key is string => typeof key === 'string' && key.length > 0);
+    )
+      .filter((key): key is string => typeof key === 'string' && key.length > 0)
+      .sort();
 
     const sessionStorageKeys = Array.from({ length: window.sessionStorage.length }, (_, index) =>
       window.sessionStorage.key(index)
-    ).filter((key): key is string => typeof key === 'string' && key.length > 0);
+    )
+      .filter((key): key is string => typeof key === 'string' && key.length > 0)
+      .sort();
 
     const indexedDbFactory = window.indexedDB as IDBFactory & {
       databases?: () => Promise<Array<{ name?: string | null }>>;
     };
     const indexedDbNames =
       typeof indexedDbFactory.databases === 'function'
-        ? (await indexedDbFactory.databases()).flatMap((database) => {
-            const name = typeof database?.name === 'string' ? database.name.trim() : '';
-            return name ? [name] : [];
-          })
+        ? (await indexedDbFactory.databases())
+            .flatMap((database) => {
+              const name = typeof database?.name === 'string' ? database.name.trim() : '';
+              return name ? [name] : [];
+            })
+            .sort()
         : [];
 
     return {
@@ -891,10 +899,23 @@ export async function expectBrowserStorageToBeEmpty(page: Page): Promise<void> {
       sessionStorageKeys,
     };
   });
+}
 
-  expect(storageSnapshot.localStorageKeys).toEqual([]);
-  expect(storageSnapshot.sessionStorageKeys).toEqual([]);
-  expect(storageSnapshot.indexedDbNames).toEqual([]);
+export async function expectBrowserStorageToBeEmpty(page: Page): Promise<void> {
+  const emptyStorageSnapshot = {
+    indexedDbNames: [],
+    localStorageKeys: [],
+    sessionStorageKeys: [],
+  };
+
+  await expect
+    .poll(() => readBrowserStorageSnapshot(page), {
+      timeout: 30_000,
+    })
+    .toEqual(emptyStorageSnapshot);
+
+  await page.waitForTimeout(250);
+  expect(await readBrowserStorageSnapshot(page)).toEqual(emptyStorageSnapshot);
 }
 
 export async function blockFirstRequest(page: Page): Promise<void> {

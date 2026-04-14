@@ -4,6 +4,7 @@ import {
   bootstrapExtensionUser,
   bootstrapUser,
   disposeUsers,
+  expectBrowserStorageToBeEmpty,
   expectNoUnexpectedBrowserErrors,
   logoutFromSettings,
   navigateToChat,
@@ -45,6 +46,7 @@ test('NIP-07 login can establish a direct chat and receive a reply', async ({ br
       chatId: bob.session.publicKey,
     });
     await logoutFromSettings(alice.page);
+    await expectBrowserStorageToBeEmpty(alice.page);
     await expectNoUnexpectedBrowserErrors([alice, bob]);
   } finally {
     await disposeUsers(alice, bob);
