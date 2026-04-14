@@ -2,7 +2,6 @@ import NDK, {
   type NDKEvent,
   NDKPrivateKeySigner,
   type NDKSigner,
-  type NostrEvent,
   normalizeRelayUrl,
 } from '@nostr-dev-kit/ndk';
 import { defineStore } from 'pinia';
@@ -67,13 +66,10 @@ import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContac
 import type {
   ContactCursorState,
   GroupIdentitySecretContent,
-  MessageRow,
   PendingIncomingDeletion,
   PendingIncomingReaction,
   PrivatePreferences,
-  PublishGroupMemberChangesResult,
   RelaySaveStatus,
-  RotateGroupEpochResult,
   SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
 import { createUserActions } from 'src/stores/nostr/userActions';
@@ -97,12 +93,7 @@ import {
   shouldPreserveExistingGroupRelaysValue,
 } from 'src/stores/nostr/valueUtils';
 import { useRelayStore } from 'src/stores/relayStore';
-import type {
-  ChatGroupEpochKey,
-  MessageRelayStatus,
-  MessageReplyPreview,
-  NostrEventDirection,
-} from 'src/types/chat';
+import type { ChatGroupEpochKey, MessageRelayStatus } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 import { clearBrowserNotificationsPreference } from 'src/utils/browserNotificationPreference';
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
@@ -200,23 +191,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const loggedInvalidGroupEpochConflictKeys = new Set<string>();
   let privateMessagesRestoreThrottleMs = 0;
   let getPrivateMessagesIngestQueueRuntime: () => Promise<void> = () => Promise.resolve();
-  let queuePrivateMessageIngestionRuntime: (
-    wrappedEvent: NDKEvent,
-    loggedInPubkeyHex: string,
-    options?: {
-      uiThrottleMs?: number;
-    }
-  ) => void = () => {
-    throw new Error('Private messages ingest runtime is not initialized.');
-  };
-  let resetPrivateMessagesIngestRuntimeState: () => void = () => {};
   let subscribePrivateMessagesForLoggedInUserRuntime: (
     force?: boolean,
     options?: SubscribePrivateMessagesOptions
   ) => Promise<void> = async () => {
     throw new Error('Private messages subscription runtime is not initialized.');
   };
-  let ensurePrivateMessagesWatchdogRuntime: () => void = () => {};
+  let _ensurePrivateMessagesWatchdogRuntime: () => void = () => {};
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
   let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
@@ -224,18 +205,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     throw new Error('Relay connection runtime is not initialized.');
   };
   let getPrivateKeyHexRuntime: () => string | null = () => {
-    throw new Error('Auth session runtime is not initialized.');
-  };
-  let savePrivateKeyHexRuntime: (hexPrivateKey: string) => boolean = () => {
-    throw new Error('Auth session runtime is not initialized.');
-  };
-  let loginWithExtensionRuntime: () => Promise<string> = async () => {
-    throw new Error('Auth session runtime is not initialized.');
-  };
-  let clearPrivateKeyRuntime: () => void = () => {
-    throw new Error('Auth session runtime is not initialized.');
-  };
-  let logoutRuntime: () => Promise<void> = async () => {
     throw new Error('Auth session runtime is not initialized.');
   };
   let refreshAllStoredContactsRuntime: () => Promise<unknown> = async () => {
@@ -268,12 +237,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     groupPublicKey: string,
     createdAt: string,
     preview?: Pick<ContactRecord, 'name' | 'meta'> | null
-  ) => Promise<void> = async () => {
-    throw new Error('Group invite runtime is not initialized.');
-  };
-  let ensureGroupInvitePubkeyIsContactRuntime: (
-    targetPubkeyHex: string,
-    fallbackName?: string
   ) => Promise<void> = async () => {
     throw new Error('Group invite runtime is not initialized.');
   };
@@ -332,7 +295,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     hasNip07Extension,
   } = createAuthIdentityRuntime({
     getOrCreateSigner,
-    getPrivateKeyHex,
+    getPrivateKeyHex: () => getPrivateKeyHexRuntime(),
     ndk,
   });
   const {
@@ -466,27 +429,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const resolveGroupChatEpochEntries = resolveGroupChatEpochEntriesValue;
   const resolveCurrentGroupChatEpochEntry = resolveCurrentGroupChatEpochEntryValue;
 
-  async function appendRelayStatusesToGroupMemberTicketEvent(
-    groupPublicKey: string,
-    memberPublicKey: string,
-    epochNumber: number,
-    relayStatuses: MessageRelayStatus[],
-    options: {
-      event?: NostrEvent;
-      direction?: NostrEventDirection;
-      eventId?: string;
-      createdAt?: string;
-    } = {}
-  ): Promise<void> {
-    return appendRelayStatusesToGroupMemberTicketEventRuntime(
-      groupPublicKey,
-      memberPublicKey,
-      epochNumber,
-      relayStatuses,
-      options
-    );
-  }
-
   const findHigherKnownGroupEpochConflict = findHigherKnownGroupEpochConflictValue;
   const findConflictingKnownGroupEpochNumber = findConflictingKnownGroupEpochNumberValue;
 
@@ -567,8 +509,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return findGroupChatEpochContextByRecipientPubkeyRuntime(epochPublicKey);
   }
 
-  async function listPrivateMessageRecipientPubkeys(): Promise<string[]> {
-    return listPrivateMessageRecipientPubkeysRuntime();
+  async function upsertIncomingGroupInviteRequestChat(
+    groupPublicKey: string,
+    createdAt: string,
+    preview: Pick<ContactRecord, 'name' | 'meta'> | null = null
+  ): Promise<void> {
+    return upsertIncomingGroupInviteRequestChatRuntime(groupPublicKey, createdAt, preview);
   }
 
   function buildRelaySaveStatus(relayStatuses: MessageRelayStatus[]): RelaySaveStatus {
@@ -611,85 +557,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   const resolveGroupDisplayName = resolveGroupDisplayNameValue;
-
-  async function ensureGroupContactAndChat(
-    groupPublicKey: string,
-    encryptedPrivateKey: string,
-    profile: {
-      name?: string;
-      about?: string;
-    } = {}
-  ): Promise<boolean> {
-    return ensureGroupContactAndChatRuntime(groupPublicKey, encryptedPrivateKey, profile);
-  }
-
-  async function ensureGroupIdentitySecretEpochState(
-    groupContact: ContactRecord,
-    seedRelayUrls: string[] = []
-  ): Promise<{
-    contact: ContactRecord;
-    secret: GroupIdentitySecretContent;
-  }> {
-    return ensureGroupIdentitySecretEpochStateRuntime(groupContact, seedRelayUrls);
-  }
-
-  async function persistIncomingGroupEpochTicket(
-    groupPublicKey: string,
-    epochNumber: number,
-    epochPrivateKey: string,
-    options: {
-      fallbackName?: string;
-      accepted?: boolean;
-      invitationCreatedAt?: string;
-      seedRelayUrls?: string[];
-    } = {}
-  ): Promise<void> {
-    return persistIncomingGroupEpochTicketRuntime(
-      groupPublicKey,
-      epochNumber,
-      epochPrivateKey,
-      options
-    );
-  }
-
-  async function rotateGroupEpochAndSendTickets(
-    groupPublicKey: string,
-    memberPublicKeys: string[],
-    seedRelayUrls: string[] = []
-  ): Promise<RotateGroupEpochResult> {
-    return rotateGroupEpochAndSendTicketsRuntime(groupPublicKey, memberPublicKeys, seedRelayUrls);
-  }
-
-  async function publishGroupMemberChanges(
-    groupPublicKey: string,
-    memberPublicKeys: string[],
-    seedRelayUrls: string[] = []
-  ): Promise<PublishGroupMemberChangesResult> {
-    return publishGroupMemberChangesRuntime(groupPublicKey, memberPublicKeys, seedRelayUrls);
-  }
-
-  async function sendGroupEpochTicket(
-    groupPublicKey: string,
-    memberPublicKey: string,
-    seedRelayUrls: string[] = []
-  ): Promise<RelaySaveStatus> {
-    return sendGroupEpochTicketRuntime(groupPublicKey, memberPublicKey, seedRelayUrls);
-  }
-
-  async function upsertIncomingGroupInviteRequestChat(
-    groupPublicKey: string,
-    createdAt: string,
-    preview: Pick<ContactRecord, 'name' | 'meta'> | null = null
-  ): Promise<void> {
-    return upsertIncomingGroupInviteRequestChatRuntime(groupPublicKey, createdAt, preview);
-  }
-
-  async function ensureGroupInvitePubkeyIsContact(
-    targetPubkeyHex: string,
-    fallbackName = ''
-  ): Promise<void> {
-    return ensureGroupInvitePubkeyIsContactRuntime(targetPubkeyHex, fallbackName);
-  }
 
   async function ensurePrivatePreferences(
     options: { publishIfCreated?: boolean } = {}
@@ -910,81 +777,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return normalizeEventIdRuntime(value);
   }
 
-  async function applyPendingIncomingReactionsForMessage(
-    messageRow: MessageRow,
-    options: {
-      uiThrottleMs?: number;
-    } = {}
-  ): Promise<MessageRow> {
-    return applyPendingIncomingReactionsForMessageRuntime(messageRow, options);
-  }
-
-  async function applyPendingIncomingDeletionsForMessage(
-    messageRow: MessageRow,
-    options: {
-      uiThrottleMs?: number;
-    } = {}
-  ): Promise<MessageRow> {
-    return applyPendingIncomingDeletionsForMessageRuntime(messageRow, options);
-  }
-
-  async function processIncomingReactionRumorEvent(
-    rumorEvent: NDKEvent,
-    chatPubkey: string,
-    senderPubkeyHex: string,
-    options: {
-      uiThrottleMs?: number;
-      direction: NostrEventDirection;
-      rumorNostrEvent: NostrEvent | null;
-      relayStatuses: MessageRelayStatus[];
-    }
-  ): Promise<void> {
-    return processIncomingReactionRumorEventRuntime(
-      rumorEvent,
-      chatPubkey,
-      senderPubkeyHex,
-      options
-    );
-  }
-
-  async function buildReplyPreviewFromTargetEvent(
-    targetEventId: string,
-    chatPubkey: string,
-    loggedInPubkeyHex: string,
-    contact?: ContactRecord | null
-  ): Promise<MessageReplyPreview> {
-    return buildReplyPreviewFromTargetEventRuntime(
-      targetEventId,
-      chatPubkey,
-      loggedInPubkeyHex,
-      contact
-    );
-  }
-
-  async function processIncomingReactionDeletion(
-    reactionEventId: string,
-    deletionAuthorPublicKey: string,
-    options: {
-      uiThrottleMs?: number;
-    } = {}
-  ): Promise<boolean> {
-    return processIncomingReactionDeletionRuntime(
-      reactionEventId,
-      deletionAuthorPublicKey,
-      options
-    );
-  }
-
-  async function processIncomingDeletionRumorEvent(
-    rumorEvent: NDKEvent,
-    senderPubkeyHex: string,
-    options: {
-      uiThrottleMs?: number;
-    } = {}
-  ): Promise<void> {
-    return processIncomingDeletionRumorEventRuntime(rumorEvent, senderPubkeyHex, options);
-  }
-
   const buildUpdatedContactMeta = buildUpdatedContactMetaValue;
   const buildIdentifierFallbacks = buildIdentifierFallbacksValue;
   const relayEntriesFromRelayList = relayEntriesFromRelayListValue;
@@ -1008,7 +800,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getHasActivatedPool: () => hasActivatedPool,
     getHasRelayStatusListeners: () => hasRelayStatusListeners,
     getLoggedInPublicKeyHex,
-    getPrivateKeyHex,
+    getPrivateKeyHex: () => getPrivateKeyHexRuntime(),
     getStoredAuthMethod,
     hasNip07Extension,
     initialConnectTimeoutMs: INITIAL_CONNECT_TIMEOUT_MS,
@@ -1141,7 +933,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     subscribeContactRelayListUpdates: (seedRelayUrls, force) =>
       subscribeContactRelayListUpdates(seedRelayUrls, force),
     subscribePrivateMessagesForLoggedInUser: (force, options) =>
-      subscribePrivateMessagesForLoggedInUser(force, options),
+      subscribePrivateMessagesForLoggedInUserRuntime(force, options),
   });
 
   const {
@@ -1173,29 +965,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relaySignature,
     resolveLoggedInPublishRelayUrls,
     resolveLoggedInReadRelayUrls,
-    subscribePrivateMessagesForLoggedInUser,
+    subscribePrivateMessagesForLoggedInUser: (force) =>
+      subscribePrivateMessagesForLoggedInUserRuntime(force),
     subscribeWithReqLogging,
     updateStoredEventSinceFromCreatedAt,
   });
 
-  function ensurePrivateMessagesWatchdog(): void {
-    ensurePrivateMessagesWatchdogRuntime();
-  }
-
-  async function subscribePrivateMessagesForLoggedInUser(
-    force = false,
-    options: SubscribePrivateMessagesOptions = {}
-  ): Promise<void> {
-    return subscribePrivateMessagesForLoggedInUserRuntime(force, options);
-  }
-
   const {
-    appendRelayStatusesToGroupMemberTicketEvent: appendRelayStatusesToGroupMemberTicketEventRuntime,
-    ensureGroupContactAndChat: ensureGroupContactAndChatRuntime,
-    ensureGroupIdentitySecretEpochState: ensureGroupIdentitySecretEpochStateRuntime,
+    appendRelayStatusesToGroupMemberTicketEvent,
+    ensureGroupContactAndChat,
+    ensureGroupIdentitySecretEpochState,
     findGroupChatEpochContextByRecipientPubkey: findGroupChatEpochContextByRecipientPubkeyRuntime,
-    listPrivateMessageRecipientPubkeys: listPrivateMessageRecipientPubkeysRuntime,
-    persistIncomingGroupEpochTicket: persistIncomingGroupEpochTicketRuntime,
+    listPrivateMessageRecipientPubkeys,
+    persistIncomingGroupEpochTicket,
   } = createGroupEpochStateRuntime({
     bumpContactListVersion,
     chatStore,
@@ -1214,38 +996,35 @@ export const useNostrStore = defineStore('nostrStore', () => {
       restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
   });
 
-  const {
-    publishGroupMemberChanges: publishGroupMemberChangesRuntime,
-    rotateGroupEpochAndSendTickets: rotateGroupEpochAndSendTicketsRuntime,
-    sendGroupEpochTicket: sendGroupEpochTicketRuntime,
-  } = createGroupEpochPublishRuntime({
-    appendRelayStatusesToGroupMemberTicketEvent: appendRelayStatusesToGroupMemberTicketEventRuntime,
-    buildFailedOutboundRelayStatuses,
-    buildPendingOutboundRelayStatuses,
-    buildRelaySaveStatus,
-    encryptGroupIdentitySecretContent,
-    ensureGroupIdentitySecretEpochState: ensureGroupIdentitySecretEpochStateRuntime,
-    ensureRelayConnections,
-    getAppRelayUrls,
-    getLoggedInPublicKeyHex,
-    giftWrapSignedEvent,
-    ndk,
-    normalizeEventId,
-    persistIncomingGroupEpochTicket: persistIncomingGroupEpochTicketRuntime,
-    publishEventWithRelayStatuses,
-    publishGroupIdentitySecret: (groupPublicKey, encryptedPrivateKey, seedRelayUrls = []) =>
-      publishGroupIdentitySecretRuntime(groupPublicKey, encryptedPrivateKey, seedRelayUrls),
-    toIsoTimestampFromUnix,
-    toStoredNostrEvent,
-  });
+  const { publishGroupMemberChanges, rotateGroupEpochAndSendTickets, sendGroupEpochTicket } =
+    createGroupEpochPublishRuntime({
+      appendRelayStatusesToGroupMemberTicketEvent,
+      buildFailedOutboundRelayStatuses,
+      buildPendingOutboundRelayStatuses,
+      buildRelaySaveStatus,
+      encryptGroupIdentitySecretContent,
+      ensureGroupIdentitySecretEpochState,
+      ensureRelayConnections,
+      getAppRelayUrls,
+      getLoggedInPublicKeyHex,
+      giftWrapSignedEvent,
+      ndk,
+      normalizeEventId,
+      persistIncomingGroupEpochTicket,
+      publishEventWithRelayStatuses,
+      publishGroupIdentitySecret: (groupPublicKey, encryptedPrivateKey, seedRelayUrls = []) =>
+        publishGroupIdentitySecretRuntime(groupPublicKey, encryptedPrivateKey, seedRelayUrls),
+      toIsoTimestampFromUnix,
+      toStoredNostrEvent,
+    });
 
   const {
-    applyPendingIncomingDeletionsForMessage: applyPendingIncomingDeletionsForMessageRuntime,
-    applyPendingIncomingReactionsForMessage: applyPendingIncomingReactionsForMessageRuntime,
-    buildReplyPreviewFromTargetEvent: buildReplyPreviewFromTargetEventRuntime,
-    processIncomingDeletionRumorEvent: processIncomingDeletionRumorEventRuntime,
-    processIncomingReactionDeletion: processIncomingReactionDeletionRuntime,
-    processIncomingReactionRumorEvent: processIncomingReactionRumorEventRuntime,
+    applyPendingIncomingDeletionsForMessage,
+    applyPendingIncomingReactionsForMessage,
+    buildReplyPreviewFromTargetEvent,
+    processIncomingDeletionRumorEvent,
+    processIncomingReactionDeletion,
+    processIncomingReactionRumorEvent,
   } = createMessageMutationRuntime({
     buildInboundTraceDetails,
     deriveChatName,
@@ -1270,8 +1049,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     getPrivateMessagesIngestQueue,
-    queuePrivateMessageIngestion: queuePrivateMessageIngestionImpl,
-    resetPrivateMessagesIngestRuntimeState: resetPrivateMessagesIngestRuntimeStateImpl,
+    queuePrivateMessageIngestion,
+    resetPrivateMessagesIngestRuntimeState,
   } = createPrivateMessagesIngestRuntime({
     appendRelayStatusesToMessageEvent,
     applyPendingIncomingDeletionsForMessage,
@@ -1322,8 +1101,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     verifyIncomingGroupEpochTicket,
   });
   getPrivateMessagesIngestQueueRuntime = getPrivateMessagesIngestQueue;
-  queuePrivateMessageIngestionRuntime = queuePrivateMessageIngestionImpl;
-  resetPrivateMessagesIngestRuntimeState = resetPrivateMessagesIngestRuntimeStateImpl;
 
   const {
     ensurePrivateMessagesWatchdog: ensurePrivateMessagesWatchdogImpl,
@@ -1396,13 +1173,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStoredEventSinceFromCreatedAt,
     updateStoredPrivateMessagesLastReceivedFromCreatedAt,
   });
-  ensurePrivateMessagesWatchdogRuntime = ensurePrivateMessagesWatchdogImpl;
+  _ensurePrivateMessagesWatchdogRuntime = ensurePrivateMessagesWatchdogImpl;
   isPrivateMessagesSubscriptionRelayTrackedRuntime = isPrivateMessagesSubscriptionRelayTracked;
   markPrivateMessagesWatchdogRelayDisconnectedRuntime =
     markPrivateMessagesWatchdogRelayDisconnected;
   queuePrivateMessagesWatchdogRuntime = queuePrivateMessagesWatchdog;
   subscribePrivateMessagesForLoggedInUserRuntime = subscribePrivateMessagesForLoggedInUserImpl;
-  ensurePrivateMessagesWatchdog();
+  ensurePrivateMessagesWatchdogImpl();
 
   const {
     restoreGroupEpochHistory: restoreGroupEpochHistoryImpl,
@@ -1562,7 +1339,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   queueBackgroundGroupContactRefreshRuntime = queueBackgroundGroupContactRefresh;
 
   const {
-    ensureGroupInvitePubkeyIsContact: ensureGroupInvitePubkeyIsContactImpl,
+    ensureGroupInvitePubkeyIsContact,
     upsertIncomingGroupInviteRequestChat: upsertIncomingGroupInviteRequestChatImpl,
   } = createGroupInviteRuntime({
     bumpContactListVersion,
@@ -1573,9 +1350,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     publishPrivateContactList,
     refreshGroupContactByPublicKey,
-    subscribePrivateMessagesForLoggedInUser,
+    subscribePrivateMessagesForLoggedInUser: (force) =>
+      subscribePrivateMessagesForLoggedInUserRuntime(force),
   });
-  ensureGroupInvitePubkeyIsContactRuntime = ensureGroupInvitePubkeyIsContactImpl;
   upsertIncomingGroupInviteRequestChatRuntime = upsertIncomingGroupInviteRequestChatImpl;
 
   const {
@@ -1645,9 +1422,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   publishGroupIdentitySecretRuntime = publishGroupIdentitySecretImpl;
   const {
     refreshAllStoredContacts: refreshAllStoredContactsImpl,
-    restoreStartupState: restoreStartupStateRuntime,
-    syncLoggedInContactProfile: syncLoggedInContactProfileRuntime,
-    syncRecentChatContacts: syncRecentChatContactsRuntime,
+    restoreStartupState,
+    syncLoggedInContactProfile,
+    syncRecentChatContacts,
   } = createStartupContactSyncRuntime({
     applyContactCursorStateToContact,
     bumpContactListVersion,
@@ -1686,43 +1463,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     subscribeContactRelayListUpdates,
     subscribeMyRelayListUpdates,
     subscribePrivateContactListUpdates,
-    subscribePrivateMessagesForLoggedInUser,
+    subscribePrivateMessagesForLoggedInUser: (force, options) =>
+      subscribePrivateMessagesForLoggedInUserRuntime(force, options),
   });
   refreshAllStoredContactsRuntime = refreshAllStoredContactsImpl;
 
   function bumpRelayStatusVersion(): void {
     relayStatusVersion.value += 1;
-  }
-
-  function stopPrivateMessagesBackfill(reason = 'replace'): void {
-    stopPrivateMessagesBackfillRuntime(reason);
-  }
-
-  function stopPrivateMessagesSubscription(reason = 'replace'): void {
-    stopPrivateMessagesBackfill(reason);
-    stopPrivateMessagesLiveSubscription(reason);
-  }
-
-  function queuePrivateMessageIngestion(
-    wrappedEvent: NDKEvent,
-    loggedInPubkeyHex: string,
-    options: {
-      uiThrottleMs?: number;
-    } = {}
-  ): void {
-    queuePrivateMessageIngestionRuntime(wrappedEvent, loggedInPubkeyHex, options);
-  }
-
-  async function restoreStartupState(seedRelayUrls: string[] = []): Promise<void> {
-    return restoreStartupStateRuntime(seedRelayUrls);
-  }
-
-  async function syncLoggedInContactProfile(relayUrls: string[]): Promise<void> {
-    return syncLoggedInContactProfileRuntime(relayUrls);
-  }
-
-  async function syncRecentChatContacts(relayUrls: string[]): Promise<void> {
-    return syncRecentChatContactsRuntime(relayUrls);
   }
 
   const {
@@ -1797,33 +1544,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setSyncRecentChatContactsPromise: (promise) => {
       syncRecentChatContactsPromise = promise;
     },
-    stopPrivateMessagesSubscription,
+    stopPrivateMessagesSubscription: (reason = 'replace') => {
+      stopPrivateMessagesBackfillRuntime(reason);
+      stopPrivateMessagesLiveSubscription(reason);
+    },
   });
   getPrivateKeyHexRuntime = getPrivateKeyHexImpl;
-  savePrivateKeyHexRuntime = savePrivateKeyHexImpl;
-  loginWithExtensionRuntime = loginWithExtensionImpl;
-  clearPrivateKeyRuntime = clearPrivateKeyImpl;
-  logoutRuntime = logoutImpl;
-
-  function getPrivateKeyHex(): string | null {
-    return getPrivateKeyHexRuntime();
-  }
-
-  function savePrivateKeyHex(hexPrivateKey: string): boolean {
-    return savePrivateKeyHexRuntime(hexPrivateKey);
-  }
-
-  async function loginWithExtension(): Promise<string> {
-    return loginWithExtensionRuntime();
-  }
-
-  function clearPrivateKey(): void {
-    clearPrivateKeyRuntime();
-  }
-
-  async function logout(): Promise<void> {
-    return logoutRuntime();
-  }
   const {
     getNip05Data,
     resolveIdentifier,
@@ -1859,7 +1585,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     readDirectMessageRecipientPubkey,
     readEpochNumberTag,
     readFirstTagValue,
-    savePrivateKeyHex,
+    savePrivateKeyHex: savePrivateKeyHexImpl,
     sendGiftWrappedRumor,
     toIsoTimestampFromUnix,
   });
@@ -1909,13 +1635,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     processIncomingReactionDeletion,
     resolveLoggedInPublishRelayUrls,
     resolveLoggedInReadRelayUrls,
-    subscribePrivateMessagesForLoggedInUser,
+    subscribePrivateMessagesForLoggedInUser: (force, options) =>
+      subscribePrivateMessagesForLoggedInUserRuntime(force, options),
     toOptionalIsoTimestampFromUnix,
   });
   refreshDeveloperPendingQueuesRuntime = refreshDeveloperPendingQueues;
 
   return {
-    clearPrivateKey,
+    clearPrivateKey: clearPrivateKeyImpl,
     createGroupChat,
     clearDeveloperTraceEntries,
     contactListVersion,
@@ -1932,14 +1659,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getNip05Data,
     hasNip07Extension,
     getLoggedInPublicKeyHex,
-    getPrivateKeyHex,
+    getPrivateKeyHex: getPrivateKeyHexRuntime,
     refreshDeveloperPendingQueues,
     refreshPrivateMessages,
     getRelayConnectionState,
     isRestoringStartupState,
     listDeveloperTraceEntries,
-    loginWithExtension,
-    logout,
+    loginWithExtension: loginWithExtensionImpl,
+    logout: logoutImpl,
     publishPrivateContactList,
     publishGroupRelayList,
     publishGroupMetadata,
@@ -1970,10 +1697,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     sendDirectMessageReaction,
     savePrivateKey,
     savePrivateKeyFromNsec,
-    savePrivateKeyHex,
+    savePrivateKeyHex: savePrivateKeyHexImpl,
     subscribeMyRelayListUpdates,
     subscribePrivateContactListUpdates,
-    subscribePrivateMessagesForLoggedInUser,
+    subscribePrivateMessagesForLoggedInUser: subscribePrivateMessagesForLoggedInUserRuntime,
     updateLoggedInUserRelayList,
     setDeveloperDiagnosticsEnabled,
     syncLoggedInContactProfile,
