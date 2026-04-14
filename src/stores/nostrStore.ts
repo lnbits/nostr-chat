@@ -2,14 +2,11 @@ import NDK, {
   type NDKEvent,
   NDKPrivateKeySigner,
   type NDKSigner,
-  type NDKUser,
   type NostrEvent,
-  nip19,
   normalizeRelayUrl,
 } from '@nostr-dev-kit/ndk';
 import { defineStore } from 'pinia';
-import { type ChatRow, chatDataService } from 'src/services/chatDataService';
-import { contactsService } from 'src/services/contactsService';
+import type { ChatRow } from 'src/services/chatDataService';
 import {
   inputSanitizerService,
   type NpubValidationResult,
@@ -19,16 +16,14 @@ import {
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
+import { createAuthIdentityRuntime } from 'src/stores/nostr/authIdentityRuntime';
 import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import {
-  AUTH_METHOD_STORAGE_KEY,
   DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS,
   DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
   INITIAL_CONNECT_TIMEOUT_MS,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
-  PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
   PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
-  PUBLIC_KEY_STORAGE_KEY,
   RELAY_CONNECT_FAILURE_COOLDOWN_MS,
   STARTUP_STEP_MIN_PROGRESS_MS,
 } from 'src/stores/nostr/constants';
@@ -50,6 +45,7 @@ import { createMessageMutationRuntime } from 'src/stores/nostr/messageMutationRu
 import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
 import { createMyRelayListRuntime } from 'src/stores/nostr/myRelayListRuntime';
 import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
+import { createPrivateContactMembershipRuntime } from 'src/stores/nostr/privateContactMembershipRuntime';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
 import { createPrivateMessagesIngestRuntime } from 'src/stores/nostr/privateMessagesIngestRuntime';
 import { createPrivateMessagesSubscriptionRuntime } from 'src/stores/nostr/privateMessagesSubscriptionRuntime';
@@ -57,7 +53,6 @@ import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessages
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
 import { createRelayConnectionRuntime } from 'src/stores/nostr/relayConnectionRuntime';
 import { createRelayPublishRuntime } from 'src/stores/nostr/relayPublishRuntime';
-import { hasStorage } from 'src/stores/nostr/shared';
 import { createStartupContactSyncRuntime } from 'src/stores/nostr/startupContactSyncRuntime';
 import { createStartupRuntime } from 'src/stores/nostr/startupRuntime';
 import {
@@ -70,7 +65,6 @@ import { createSubscriptionLoggingRuntime } from 'src/stores/nostr/subscriptionL
 import { createSubscriptionRefreshRuntime } from 'src/stores/nostr/subscriptionRefreshRuntime';
 import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContactStateRuntime';
 import type {
-  AuthMethod,
   ContactCursorState,
   GroupIdentitySecretContent,
   MessageRow,
@@ -109,7 +103,7 @@ import type {
   MessageReplyPreview,
   NostrEventDirection,
 } from 'src/types/chat';
-import type { ContactMetadata, ContactRecord } from 'src/types/contact';
+import type { ContactRecord } from 'src/types/contact';
 import { clearBrowserNotificationsPreference } from 'src/utils/browserNotificationPreference';
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 import { ref, watch } from 'vue';
@@ -226,6 +220,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
   let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
+  let getOrCreateSignerRuntime: () => Promise<NDKSigner> = async () => {
+    throw new Error('Relay connection runtime is not initialized.');
+  };
   let getPrivateKeyHexRuntime: () => string | null = () => {
     throw new Error('Auth session runtime is not initialized.');
   };
@@ -324,6 +321,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
     startupState: startupRuntimeState,
     startupSteps,
     startupStepMinProgressMs: STARTUP_STEP_MIN_PROGRESS_MS,
+  });
+  const {
+    derivePublicKeyFromPrivateKey,
+    encodeNprofile,
+    encodeNpub,
+    getLoggedInPublicKeyHex,
+    getLoggedInSignerUser,
+    getStoredAuthMethod,
+    hasNip07Extension,
+  } = createAuthIdentityRuntime({
+    getOrCreateSigner,
+    getPrivateKeyHex,
+    ndk,
   });
   const {
     bumpDeveloperDiagnosticsVersion,
@@ -549,128 +559,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
-  function derivePublicKeyFromPrivateKey(privateKey: string): string | null {
-    const normalizedPrivateKey = inputSanitizerService.normalizeHexKey(privateKey);
-    if (!normalizedPrivateKey) {
-      return null;
-    }
-
-    try {
-      return inputSanitizerService.normalizeHexKey(
-        new NDKPrivateKeySigner(normalizedPrivateKey).pubkey
-      );
-    } catch {
-      return null;
-    }
-  }
-
   const isContactListedInPrivateContactList = isContactListedInPrivateContactListValue;
-
-  async function ensureContactListedInPrivateContactList(
-    targetPubkeyHex: string,
-    options: {
-      fallbackName?: string;
-      type?: 'user' | 'group';
-    } = {}
-  ): Promise<{
-    contact: ContactRecord | null;
-    didChange: boolean;
-  }> {
-    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
-    if (!normalizedTargetPubkey) {
-      return {
-        contact: null,
-        didChange: false,
-      };
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
-    const fallbackName =
-      options.fallbackName?.trim() ||
-      existingContact?.name?.trim() ||
-      normalizedTargetPubkey.slice(0, 16);
-
-    const nextMeta: ContactMetadata = {
-      ...(existingContact?.meta ?? {}),
-      [PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY]: true,
-    };
-
-    if (!existingContact) {
-      const createdContact = await contactsService.createContact({
-        public_key: normalizedTargetPubkey,
-        ...(options.type ? { type: options.type } : {}),
-        name: fallbackName,
-        given_name: null,
-        meta: nextMeta,
-        relays: [],
-      });
-      if (createdContact) {
-        bumpContactListVersion();
-      }
-      return {
-        contact: createdContact,
-        didChange: Boolean(createdContact),
-      };
-    }
-
-    const shouldUpdateType = options.type ? existingContact.type !== options.type : false;
-    const shouldUpdateMeta =
-      JSON.stringify(inputSanitizerService.normalizeContactMetadata(existingContact.meta ?? {})) !==
-      JSON.stringify(inputSanitizerService.normalizeContactMetadata(nextMeta));
-
-    if (!shouldUpdateType && !shouldUpdateMeta) {
-      return {
-        contact: existingContact,
-        didChange: false,
-      };
-    }
-
-    const updatedContact = await contactsService.updateContact(existingContact.id, {
-      ...(shouldUpdateType ? { type: options.type } : {}),
-      ...(shouldUpdateMeta ? { meta: nextMeta } : {}),
-    });
-    if (updatedContact) {
-      bumpContactListVersion();
-    }
-
-    return {
-      contact: updatedContact ?? existingContact,
-      didChange: Boolean(updatedContact),
-    };
-  }
-
-  async function reconcileAcceptedChatFromPrivateContactList(
-    contactPublicKey: string
-  ): Promise<void> {
-    const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(contactPublicKey);
-    if (!normalizedContactPublicKey) {
-      return;
-    }
-
-    await Promise.all([chatDataService.init(), chatStore.init()]);
-    const existingChat = await chatDataService.getChatByPublicKey(normalizedContactPublicKey);
-    if (!existingChat) {
-      return;
-    }
-
-    const currentInboxState =
-      existingChat.meta && typeof existingChat.meta.inbox_state === 'string'
-        ? existingChat.meta.inbox_state.trim()
-        : '';
-    const acceptedAt =
-      existingChat.meta && typeof existingChat.meta.accepted_at === 'string'
-        ? existingChat.meta.accepted_at.trim()
-        : '';
-    if (currentInboxState === 'accepted' && acceptedAt) {
-      return;
-    }
-
-    await chatStore.acceptChat(normalizedContactPublicKey, {
-      acceptedAt: acceptedAt || new Date().toISOString(),
-    });
-  }
-
   async function findGroupChatEpochContextByRecipientPubkey(epochPublicKey: string): Promise<{
     chat: ChatRow;
     epochEntry: ChatGroupEpochKey;
@@ -926,63 +815,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  function getStoredAuthMethod(): AuthMethod | null {
-    if (!hasStorage()) {
-      return null;
-    }
-
-    const stored = window.localStorage.getItem(AUTH_METHOD_STORAGE_KEY)?.trim().toLowerCase();
-    if (stored === 'nsec' || stored === 'nip07') {
-      return stored;
-    }
-
-    return getPrivateKeyHex() ? 'nsec' : null;
-  }
-
-  function getLoggedInPublicKeyHex(): string | null {
-    if (!hasStorage()) {
-      return null;
-    }
-
-    const stored = window.localStorage.getItem(PUBLIC_KEY_STORAGE_KEY)?.trim();
-    if (!stored) {
-      return null;
-    }
-
-    const fromHex = inputSanitizerService.normalizeHexKey(stored);
-    if (fromHex) {
-      return fromHex;
-    }
-
-    return validateNpub(stored).normalizedPubkey;
-  }
-
-  function hasNip07Extension(): boolean {
-    return (
-      typeof window !== 'undefined' &&
-      typeof window.nostr?.getPublicKey === 'function' &&
-      typeof window.nostr?.signEvent === 'function'
-    );
-  }
-
-  function encodeNpub(pubkeyHex: string): string | null {
-    try {
-      return nip19.npubEncode(pubkeyHex);
-    } catch {
-      return null;
-    }
-  }
-
-  function encodeNprofile(pubkeyHex: string): string | null {
-    try {
-      return nip19.nprofileEncode({
-        pubkey: pubkeyHex,
-      });
-    } catch {
-      return null;
-    }
-  }
-
   const {
     buildFilterSinceDetails,
     buildFilterUntilDetails,
@@ -1032,6 +864,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     contactListVersion.value += 1;
   }
 
+  const { ensureContactListedInPrivateContactList, reconcileAcceptedChatFromPrivateContactList } =
+    createPrivateContactMembershipRuntime({
+      bumpContactListVersion,
+      chatStore,
+    });
+
   function toIsoTimestampFromUnix(value: number | undefined): string {
     if (!Number.isInteger(value) || Number(value) <= 0) {
       return new Date().toISOString();
@@ -1066,13 +904,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function normalizeRelayStatusUrls(relayUrls: string[]): string[] {
     return normalizeRelayStatusUrlsValue(relayUrls);
-  }
-
-  async function getLoggedInSignerUser(): Promise<NDKUser> {
-    const signer = await getOrCreateSigner();
-    const user = await signer.user();
-    user.ndk = ndk;
-    return user;
   }
 
   function normalizeEventId(value: unknown): string | null {
@@ -1164,7 +995,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const {
     ensureRelayConnections,
     fetchRelayNip11Info,
-    getOrCreateSigner: getOrCreateSignerRuntime,
+    getOrCreateSigner: getOrCreateSignerImpl,
     getRelayConnectionState,
   } = createRelayConnectionRuntime({
     authenticatedRelayUrls,
@@ -1212,6 +1043,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       hasRelayStatusListeners = value;
     },
   });
+  getOrCreateSignerRuntime = getOrCreateSignerImpl;
 
   async function getOrCreateSigner(): Promise<NDKSigner> {
     return getOrCreateSignerRuntime();
