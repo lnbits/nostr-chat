@@ -82,8 +82,7 @@ export function schedulePendingLogoutCleanup(): void {
 
 export function hasPendingLogoutCleanup(): boolean {
   return (
-    hasSessionStorage() &&
-    window.sessionStorage.getItem(PENDING_LOGOUT_CLEANUP_SESSION_KEY) === '1'
+    hasSessionStorage() && window.sessionStorage.getItem(PENDING_LOGOUT_CLEANUP_SESSION_KEY) === '1'
   );
 }
 

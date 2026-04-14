@@ -1,6 +1,6 @@
 import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
-import { ref } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 
 const chatDataServiceMock = vi.hoisted(() => ({
   init: vi.fn(async () => {}),
@@ -55,13 +55,13 @@ vi.mock('src/utils/logoutCleanup', () => ({
   clearPersistedAppState: logoutCleanupMock.clearPersistedAppState,
 }));
 
+import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import {
   AUTH_METHOD_STORAGE_KEY,
   PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
   PRIVATE_KEY_STORAGE_KEY,
   PUBLIC_KEY_STORAGE_KEY,
 } from 'src/stores/nostr/constants';
-import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import { createGroupInviteRuntime } from 'src/stores/nostr/groupInviteRuntime';
 import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
 import { createPrivateContactMembershipRuntime } from 'src/stores/nostr/privateContactMembershipRuntime';
@@ -120,8 +120,14 @@ async function flushPromises() {
 
 function createAuthSessionHarness() {
   const ndk = new NDK();
-  const pendingContactCursorPublishTimers = new Map<string, ReturnType<typeof globalThis.setTimeout>>();
-  pendingContactCursorPublishTimers.set('chat', globalThis.setTimeout(() => {}, 1000));
+  const pendingContactCursorPublishTimers = new Map<
+    string,
+    ReturnType<typeof globalThis.setTimeout>
+  >();
+  pendingContactCursorPublishTimers.set(
+    'chat',
+    globalThis.setTimeout(() => {}, 1000)
+  );
   let refreshTimerId: ReturnType<typeof globalThis.setTimeout> | null = globalThis.setTimeout(
     () => {},
     1000
@@ -352,7 +358,11 @@ describe('nostr runtime messaging logic', () => {
         eventId: EVENT_ID_B,
       },
     } as never);
-    runtime.removePendingIncomingReaction(EVENT_ID_A, EVENT_ID_B.toUpperCase(), PUBKEY_A.toUpperCase());
+    runtime.removePendingIncomingReaction(
+      EVENT_ID_A,
+      EVENT_ID_B.toUpperCase(),
+      PUBKEY_A.toUpperCase()
+    );
     expect(runtime.consumePendingIncomingReactions(EVENT_ID_A)).toEqual([]);
     expect(bumpDeveloperDiagnosticsVersion).toHaveBeenCalled();
   });

@@ -7,14 +7,8 @@ const QR_BLOCK_DATA_CODEWORDS = 27;
 const QR_ECC_CODEWORDS_PER_BLOCK = 16;
 const QR_ALIGNMENT_PATTERN_POSITIONS = [6, 34];
 const QR_FORMAT_STRINGS_M = [
-  0b101010000010010,
-  0b101000100100101,
-  0b101111001111100,
-  0b101101101001011,
-  0b100010111111001,
-  0b100000011001110,
-  0b100111110010111,
-  0b100101010100000
+  0b101010000010010, 0b101000100100101, 0b101111001111100, 0b101101101001011, 0b100010111111001,
+  0b100000011001110, 0b100111110010111, 0b100101010100000,
 ];
 
 export function buildQrCodeSvgDataUrl(value: string): string {
@@ -158,10 +152,7 @@ function buildGeneratorPolynomial(degree: number): Uint8Array {
   return polynomial.slice(1);
 }
 
-function computeErrorCorrectionCodewords(
-  dataBlock: Uint8Array,
-  generator: Uint8Array
-): Uint8Array {
+function computeErrorCorrectionCodewords(dataBlock: Uint8Array, generator: Uint8Array): Uint8Array {
   const remainder = new Uint8Array(generator.length);
 
   for (const byte of dataBlock) {
@@ -254,13 +245,7 @@ function drawAlignmentPattern(
   for (let dy = -2; dy <= 2; dy += 1) {
     for (let dx = -2; dx <= 2; dx += 1) {
       const distance = Math.max(Math.abs(dx), Math.abs(dy));
-      setFunctionModule(
-        modules,
-        functionModules,
-        centerX + dx,
-        centerY + dy,
-        distance !== 1
-      );
+      setFunctionModule(modules, functionModules, centerX + dx, centerY + dy, distance !== 1);
     }
   }
 }
@@ -484,7 +469,7 @@ function renderQrSvg(modules: boolean[][]): string {
     ' shape-rendering="crispEdges">',
     `<rect width="${sizeWithBorder}" height="${sizeWithBorder}" fill="#fff"/>`,
     `<path d="${path}" fill="#111827"/>`,
-    '</svg>'
+    '</svg>',
   ].join('');
 }
 

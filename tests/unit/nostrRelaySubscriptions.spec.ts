@@ -1,5 +1,5 @@
 import NDK, {
-  NDKEvent,
+  type NDKEvent,
   NDKKind,
   NDKRelayList,
   NDKRelaySet,
@@ -50,11 +50,16 @@ function normalizeEventId(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : null;
 }
 
-function relayEntriesFromRelayList(relayList: {
-  bothRelayUrls?: string[];
-  readRelayUrls?: string[];
-  writeRelayUrls?: string[];
-} | null | undefined) {
+function relayEntriesFromRelayList(
+  relayList:
+    | {
+        bothRelayUrls?: string[];
+        readRelayUrls?: string[];
+        writeRelayUrls?: string[];
+      }
+    | null
+    | undefined
+) {
   const entries = new Map<string, { url: string; read: boolean; write: boolean }>();
   const upsert = (url: string, read: boolean, write: boolean) => {
     const existing = entries.get(url);
@@ -154,7 +159,10 @@ describe('relay and subscription runtimes', () => {
         created_at: 123,
         pubkey: PUBKEY_A.toUpperCase(),
         content: 'hello',
-        tags: [['p', USER_KEY], ['e', 'event']],
+        tags: [
+          ['p', USER_KEY],
+          ['e', 'event'],
+        ],
       } as never)
     ).toEqual({
       id: 'abc',
@@ -167,14 +175,14 @@ describe('relay and subscription runtimes', () => {
         ['e', 'event'],
       ],
     });
-    expect(await runtime.buildTrackedContactSubscriptionTargetDetails([GROUP_KEY, USER_KEY])).toEqual(
-      {
-        userTargetCount: 1,
-        groupTargetCount: 1,
-        userTargetPubkeys: [runtime.formatSubscriptionLogValue(USER_KEY) ?? USER_KEY],
-        groupTargetPubkeys: [runtime.formatSubscriptionLogValue(GROUP_KEY) ?? GROUP_KEY],
-      }
-    );
+    expect(
+      await runtime.buildTrackedContactSubscriptionTargetDetails([GROUP_KEY, USER_KEY])
+    ).toEqual({
+      userTargetCount: 1,
+      groupTargetCount: 1,
+      userTargetPubkeys: [runtime.formatSubscriptionLogValue(USER_KEY) ?? USER_KEY],
+      groupTargetPubkeys: [runtime.formatSubscriptionLogValue(GROUP_KEY) ?? GROUP_KEY],
+    });
     expect(
       await runtime.buildPrivateMessageSubscriptionTargetDetails(
         [PUBKEY_A, EPOCH_KEY, OTHER_KEY],
@@ -252,9 +260,7 @@ describe('relay and subscription runtimes', () => {
       writable: true,
     });
 
-    const relaySetSpy = vi
-      .spyOn(NDKRelaySet, 'fromRelayUrls')
-      .mockReturnValue({} as never);
+    const relaySetSpy = vi.spyOn(NDKRelaySet, 'fromRelayUrls').mockReturnValue({} as never);
     const publishReplaceableSpy = vi
       .spyOn(NDKRelayList.prototype, 'publishReplaceable')
       .mockImplementation(async function publishReplaceable() {
@@ -290,7 +296,7 @@ describe('relay and subscription runtimes', () => {
       extractRelayUrlsFromEvent: () => ['wss://relay.one/'],
       failStartupStep,
       formatSubscriptionLogValue: (value) =>
-        value && value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value ?? null,
+        value && value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : (value ?? null),
       getFilterSince: () => 900,
       getLoggedInPublicKeyHex: () => PUBKEY_A,
       getLoggedInSignerUser,

@@ -1,7 +1,4 @@
 import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
-import { ref } from 'vue';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import {
   CONTACT_CURSOR_VERSION,
   EVENT_FILTER_LOOKBACK_SECONDS,
@@ -15,6 +12,8 @@ import {
   PRIVATE_PREFERENCES_STORAGE_KEY,
 } from 'src/stores/nostr/constants';
 import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 
 const PUBKEY_A = 'a'.repeat(64);
 const EVENT_ID_A = 'b'.repeat(64);
@@ -213,7 +212,9 @@ describe('storageSession runtime', () => {
     expect(refs.eventSince.value).toBe(5000);
     expect(pendingEventSinceState.pendingEventSinceUpdate).toBe(0);
     expect(localStorage.store.get(EVENT_SINCE_STORAGE_KEY)).toBeUndefined();
-    expect(localStorage.store.get(PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY)).toBeUndefined();
+    expect(
+      localStorage.store.get(PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY)
+    ).toBeUndefined();
     expect(localStorage.store.get(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY)).toBeUndefined();
   });
 
@@ -302,7 +303,9 @@ describe('storageSession runtime', () => {
       group_privkey: groupPrivateKey,
     });
 
-    const encryptedPrivateString = await runtime.encryptPrivateStringContent(` ${groupPrivateKey} `);
+    const encryptedPrivateString = await runtime.encryptPrivateStringContent(
+      ` ${groupPrivateKey} `
+    );
     expect(encryptedPrivateString).toBe(`enc:${groupPrivateKey}`);
     expect(await runtime.decryptPrivateStringContent(encryptedPrivateString)).toBe(groupPrivateKey);
     expect(await runtime.decryptPrivateStringContent('')).toBeNull();

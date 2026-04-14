@@ -28,6 +28,7 @@ import type {
   PrivatePreferences,
   RelaySaveStatus,
 } from 'src/stores/nostr/types';
+import { resolveGroupPublishRelayUrlsValue } from 'src/stores/nostr/valueUtils';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 import {
   buildGroupMembershipFollowSetPrivateTags,
@@ -39,7 +40,6 @@ import {
   countUnseenReactionsForAuthor,
   normalizeMessageReactions,
 } from 'src/utils/messageReactions';
-import { resolveGroupPublishRelayUrlsValue } from 'src/stores/nostr/valueUtils';
 import type { Ref } from 'vue';
 
 interface RestoreRuntimeState {
@@ -1398,16 +1398,16 @@ export function createPrivateStateRuntime({
     pendingContactCursorPublishTimers.set(normalizedContactPublicKey, nextTimer);
   }
 
-    return {
-      applyContactCursorStateToContact,
-      buildChatMetaWithUnseenReactionCount,
-      compareContactCursorState,
-      createGroupChat,
-      fetchContactCursorEvents,
-      fetchGroupMembershipFollowSetPubkeys,
-      fetchGroupIdentitySecretEvents,
-      publishContactCursor,
-      publishGroupMembershipFollowSet,
+  return {
+    applyContactCursorStateToContact,
+    buildChatMetaWithUnseenReactionCount,
+    compareContactCursorState,
+    createGroupChat,
+    fetchContactCursorEvents,
+    fetchGroupMembershipFollowSetPubkeys,
+    fetchGroupIdentitySecretEvents,
+    publishContactCursor,
+    publishGroupMembershipFollowSet,
     publishGroupIdentitySecret,
     publishPrivatePreferences,
     restoreContactCursorState,

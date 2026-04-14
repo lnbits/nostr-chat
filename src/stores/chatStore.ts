@@ -928,7 +928,10 @@ export const useChatStore = defineStore('chatStore', () => {
       !Array.isArray(existingChat.meta)
         ? (existingChat.meta as Record<string, unknown>)
         : persistedMeta;
-    const currentLastSeenReceivedActivityAt = readMetaString(currentMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY);
+    const currentLastSeenReceivedActivityAt = readMetaString(
+      currentMeta,
+      LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY
+    );
     const lastIncomingMessageAt = readMetaString(
       currentMeta,
       CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY

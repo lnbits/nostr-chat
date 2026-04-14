@@ -20,7 +20,6 @@ import type {
 import {
   buildAvatarFallbackValue,
   findConflictingKnownGroupEpochNumberValue,
-  findHigherKnownGroupEpochConflictValue,
   normalizeChatGroupEpochKeysValue,
   resolveCurrentGroupChatEpochEntryValue,
   resolveGroupChatEpochEntriesValue,

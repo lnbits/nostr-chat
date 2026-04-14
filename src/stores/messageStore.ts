@@ -25,6 +25,7 @@ import {
   markReactionsViewedByAuthor,
   normalizeMessageReactions,
 } from 'src/utils/messageReactions';
+import { resolveMessageWindowMerge } from 'src/utils/messageWindowRange';
 import { ref } from 'vue';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
@@ -1228,44 +1229,24 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const allRows = await chatDataService.listMessages(normalizedChatId);
-    const targetIndex = allRows.findIndex((row) => row.id === normalizedMessageId);
-    if (targetIndex < 0) {
+    const currentMessages = messagesByChat.value[normalizedChatId] ?? [];
+    const mergeResult = resolveMessageWindowMerge(allRows, currentMessages, normalizedMessageId);
+    if (!mergeResult) {
       return null;
     }
 
-    const currentMessages = messagesByChat.value[normalizedChatId] ?? [];
-    const currentOldestMessageId = Number.parseInt(currentMessages[0]?.id ?? '', 10);
-    const currentNewestMessageId = Number.parseInt(
-      currentMessages[currentMessages.length - 1]?.id ?? '',
-      10
-    );
-    const currentOldestIndex = allRows.findIndex((row) => row.id === currentOldestMessageId);
-    const currentNewestIndex = allRows.findIndex((row) => row.id === currentNewestMessageId);
-
-    let rowsToMerge: MessageRow[] = [allRows[targetIndex]];
     const paginationPatch: Partial<ChatMessagePaginationState> = {};
-
-    if (
-      currentMessages.length > 0 &&
-      currentOldestIndex >= 0 &&
-      currentNewestIndex >= 0 &&
-      targetIndex < currentOldestIndex
-    ) {
-      rowsToMerge = allRows.slice(targetIndex, currentOldestIndex);
-      paginationPatch.oldestCursor = buildMessageCursorFromRow(allRows[targetIndex]);
-      paginationPatch.hasOlder = targetIndex > 0;
-    } else if (
-      currentMessages.length > 0 &&
-      currentOldestIndex >= 0 &&
-      currentNewestIndex >= 0 &&
-      targetIndex > currentNewestIndex
-    ) {
-      rowsToMerge = allRows.slice(currentNewestIndex + 1, targetIndex + 1);
-      paginationPatch.newestCursor = buildMessageCursorFromRow(allRows[targetIndex]);
-      paginationPatch.hasNewer = targetIndex < allRows.length - 1;
+    if (mergeResult.oldestRow) {
+      paginationPatch.oldestCursor = buildMessageCursorFromRow(mergeResult.oldestRow);
+      paginationPatch.hasOlder = mergeResult.hasOlder ?? false;
     }
 
-    const hydratedMessages = await hydrateMessageRows(rowsToMerge, normalizedChatId);
+    if (mergeResult.newestRow) {
+      paginationPatch.newestCursor = buildMessageCursorFromRow(mergeResult.newestRow);
+      paginationPatch.hasNewer = mergeResult.hasNewer ?? false;
+    }
+
+    const hydratedMessages = await hydrateMessageRows(mergeResult.rowsToMerge, normalizedChatId);
     messagesByChat.value[normalizedChatId] = mergeMessagesById(currentMessages, hydratedMessages);
 
     if (Object.keys(paginationPatch).length > 0) {

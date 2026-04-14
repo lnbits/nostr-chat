@@ -1,5 +1,5 @@
-import { createContactProfileRuntime } from 'src/stores/nostr/contactProfileRuntime';
 import { BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS } from 'src/stores/nostr/constants';
+import { createContactProfileRuntime } from 'src/stores/nostr/contactProfileRuntime';
 import type { ContactRecord } from 'src/types/contact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,10 +18,7 @@ vi.mock('src/services/contactsService', () => ({
   contactsService: serviceMocks.contactsService,
 }));
 
-function makeContact(
-  publicKey: string,
-  overrides: Partial<ContactRecord> = {}
-): ContactRecord {
+function makeContact(publicKey: string, overrides: Partial<ContactRecord> = {}): ContactRecord {
   return {
     id: 1,
     public_key: publicKey,
@@ -61,8 +58,12 @@ function createDeps() {
     chatStore: {
       syncContactProfile: vi.fn().mockResolvedValue(undefined),
     },
-    contactMetadataEqual: vi.fn((first, second) => JSON.stringify(first) === JSON.stringify(second)),
-    contactRelayListsEqual: vi.fn((first, second) => JSON.stringify(first) === JSON.stringify(second)),
+    contactMetadataEqual: vi.fn(
+      (first, second) => JSON.stringify(first) === JSON.stringify(second)
+    ),
+    contactRelayListsEqual: vi.fn(
+      (first, second) => JSON.stringify(first) === JSON.stringify(second)
+    ),
     ensureContactListedInPrivateContactList: vi.fn().mockResolvedValue({
       contact: null,
       didChange: false,
@@ -80,7 +81,9 @@ function createDeps() {
     } as never,
     publishPrivateContactList: vi.fn().mockResolvedValue(undefined),
     refreshContactRelayList: vi.fn().mockResolvedValue([]),
-    resolveGroupDisplayName: vi.fn((groupPublicKey: string) => `Group ${groupPublicKey.slice(0, 8)}`),
+    resolveGroupDisplayName: vi.fn(
+      (groupPublicKey: string) => `Group ${groupPublicKey.slice(0, 8)}`
+    ),
     shouldPreserveExistingGroupRelays: vi.fn(() => false),
   };
 
@@ -122,18 +125,15 @@ describe('contactProfileRuntime group refresh', () => {
     serviceMocks.contactsService.init.mockResolvedValue(undefined);
     serviceMocks.contactsService.createContact.mockResolvedValue(null);
     serviceMocks.contactsService.updateContact.mockImplementation(async (id: number, input) =>
-      makeContact(
-        input.public_key ?? USER_PUBKEY,
-        {
-          id,
-          type: input.type ?? 'user',
-          name: input.name ?? `Contact ${(input.public_key ?? USER_PUBKEY).slice(0, 8)}`,
-          given_name: input.given_name ?? null,
-          meta: input.meta ?? {},
-          relays: input.relays ?? [],
-          sendMessagesToAppRelays: input.sendMessagesToAppRelays ?? false,
-        }
-      )
+      makeContact(input.public_key ?? USER_PUBKEY, {
+        id,
+        type: input.type ?? 'user',
+        name: input.name ?? `Contact ${(input.public_key ?? USER_PUBKEY).slice(0, 8)}`,
+        given_name: input.given_name ?? null,
+        meta: input.meta ?? {},
+        relays: input.relays ?? [],
+        sendMessagesToAppRelays: input.sendMessagesToAppRelays ?? false,
+      })
     );
   });
 

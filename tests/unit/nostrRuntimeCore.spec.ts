@@ -1,6 +1,6 @@
 import NDK, { NDKPrivateKeySigner, NDKRelayStatus } from '@nostr-dev-kit/ndk';
-import { ref } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 
 const developerTraceDataServiceMock = vi.hoisted(() => ({
   appendEntry: vi.fn(async () => {}),
@@ -30,11 +30,8 @@ vi.mock('src/utils/browserNotificationPreference', () => ({
   areBrowserNotificationsEnabled: browserNotificationsMock.areBrowserNotificationsEnabled,
 }));
 
-import {
-  AUTH_METHOD_STORAGE_KEY,
-  PUBLIC_KEY_STORAGE_KEY,
-} from 'src/stores/nostr/constants';
 import { createAuthIdentityRuntime } from 'src/stores/nostr/authIdentityRuntime';
+import { AUTH_METHOD_STORAGE_KEY, PUBLIC_KEY_STORAGE_KEY } from 'src/stores/nostr/constants';
 import { createDeveloperRelayRuntime } from 'src/stores/nostr/developerRelayRuntime';
 import {
   createDeveloperTraceRuntime,
@@ -286,11 +283,7 @@ describe('nostr runtime core logic', () => {
       )
     ).toEqual({
       restoreThrottleMs: 15,
-      seedRelayUrls: [
-        'wss://one.example/',
-        'wss://two.example/',
-        'wss://three.example/',
-      ],
+      seedRelayUrls: ['wss://one.example/', 'wss://two.example/', 'wss://three.example/'],
       sinceOverride: 10,
       startupTrackStep: true,
     });
@@ -469,9 +462,9 @@ describe('nostr runtime core logic', () => {
         message: 'trace failed',
       },
     });
-    expect(runtime.shouldEchoDeveloperTraceToConsole('subscription:private-messages', 'start')).toBe(
-      true
-    );
+    expect(
+      runtime.shouldEchoDeveloperTraceToConsole('subscription:private-messages', 'start')
+    ).toBe(true);
 
     runtime.logDeveloperTrace('info', 'subscription:private-messages', 'start', {
       wrappedEvent: {
@@ -535,9 +528,13 @@ describe('nostr runtime core logic', () => {
     ]);
 
     runtime.logRelayLifecycle('connected', relay as never);
-    runtime.logMessageRelayDiagnostics('appended', {
-      relayCount: 1,
-    }, 'warn');
+    runtime.logMessageRelayDiagnostics(
+      'appended',
+      {
+        relayCount: 1,
+      },
+      'warn'
+    );
 
     expect(logDeveloperTrace).toHaveBeenNthCalledWith(
       1,
@@ -551,15 +548,9 @@ describe('nostr runtime core logic', () => {
         },
       })
     );
-    expect(logDeveloperTrace).toHaveBeenNthCalledWith(
-      2,
-      'warn',
-      'message-relays',
-      'appended',
-      {
-        relayCount: 1,
-      }
-    );
+    expect(logDeveloperTrace).toHaveBeenNthCalledWith(2, 'warn', 'message-relays', 'appended', {
+      relayCount: 1,
+    });
   });
 
   it('builds inbound message presentation details and browser notifications', async () => {
@@ -603,7 +594,7 @@ describe('nostr runtime core logic', () => {
 
     const runtime = createInboundPresentationRuntime({
       formatSubscriptionLogValue: (value) =>
-        value && value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value ?? null,
+        value && value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : (value ?? null),
       getLoggedInPublicKeyHex: () => PUBKEY_A,
       getVisibleChatId: () => PUBKEY_A,
       isRestoringStartupState: ref(false),
@@ -641,9 +632,9 @@ describe('nostr runtime core logic', () => {
       )
     ).toBe('Display Name');
 
-    expect(await runtime.shouldNotifyForAcceptedChatOnly(PUBKEY_A, { inbox_state: 'blocked' })).toBe(
-      false
-    );
+    expect(
+      await runtime.shouldNotifyForAcceptedChatOnly(PUBKEY_A, { inbox_state: 'blocked' })
+    ).toBe(false);
     expect(await runtime.shouldNotifyForAcceptedChatOnly(PUBKEY_A, { accepted_at: 'now' })).toBe(
       true
     );

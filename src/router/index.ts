@@ -1,11 +1,11 @@
 import { route } from 'quasar/wrappers';
+import { finalizePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import {
   createMemoryHistory,
   createRouter,
   createWebHashHistory,
   createWebHistory,
 } from 'vue-router';
-import { finalizePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import routes from './routes';
 
 const PUBLIC_KEY_STORAGE_KEY = 'npub';

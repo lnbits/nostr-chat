@@ -1,5 +1,11 @@
 import type { ChatType } from 'src/types/chat';
 import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
+import {
+  isDeletedMessageMeta,
+  messageRecordMatchesSearchQuery,
+  normalizeMessageSearchText,
+  searchMessageRecords,
+} from 'src/utils/messageSearch';
 
 export interface ChatRow {
   id: string;
@@ -234,32 +240,6 @@ function compareMessageCursor(
   }
 
   return first.id - second.id;
-}
-
-function normalizeMessageSearchText(value: unknown): string {
-  if (typeof value !== 'string') {
-    return '';
-  }
-
-  return value.toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function isDeletedMessageMeta(meta: Record<string, unknown>): boolean {
-  const deletedMeta = meta.deleted;
-  return typeof deletedMeta === 'object' && deletedMeta !== null && !Array.isArray(deletedMeta);
-}
-
-function messageRecordMatchesSearchQuery(record: MessageRecord, normalizedQuery: string): boolean {
-  if (!normalizedQuery) {
-    return false;
-  }
-
-  const normalizedMeta = normalizeMeta(record.meta);
-  if (isDeletedMessageMeta(normalizedMeta)) {
-    return false;
-  }
-
-  return normalizeMessageSearchText(record.message).includes(normalizedQuery);
 }
 
 function createChatCreatedAtRange(chatPublicKey: string): IDBKeyRange {
@@ -635,8 +615,7 @@ class ChatDataService {
 
   async searchMessages(chatPublicKey: string, query: string): Promise<MessageSearchResult[]> {
     const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
-    const normalizedQuery = normalizeMessageSearchText(query);
-    if (!normalizedPublicKey || !normalizedQuery) {
+    if (!normalizedPublicKey || !normalizeMessageSearchText(query)) {
       return [];
     }
 
@@ -649,16 +628,13 @@ class ChatDataService {
     );
     await waitForTransaction(transaction);
 
-    return records
-      .filter((record) => messageRecordMatchesSearchQuery(record, normalizedQuery))
-      .sort((first, second) => sortMessagesByCreated(second, first))
-      .map((record) => ({
-        id: record.id,
-        chat_public_key: record.chat_public_key,
-        message: record.message,
-        created_at: record.created_at,
-        event_id: normalizeEventId(record.event_id),
-      }));
+    return searchMessageRecords(records, query, normalizeMeta).map((record) => ({
+      id: record.id,
+      chat_public_key: record.chat_public_key,
+      message: record.message,
+      created_at: record.created_at,
+      event_id: normalizeEventId(record.event_id),
+    }));
   }
 
   async listLatestMessages(chatPublicKey: string, limit: number): Promise<MessageBatchResult> {
