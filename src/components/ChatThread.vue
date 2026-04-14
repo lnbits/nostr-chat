@@ -28,6 +28,7 @@
           dense
           round
           icon="search"
+          data-testid="thread-search-open-button"
           aria-label="Search Messages"
           class="thread-header__action"
           @click="handleOpenThreadSearch"
@@ -48,6 +49,7 @@
           <q-input
             ref="threadSearchInputRef"
             v-model="threadSearchQuery"
+            data-testid="thread-search-input"
             class="tg-input thread-search__input"
             dense
             outlined
@@ -63,7 +65,7 @@
             </template>
           </q-input>
 
-          <div class="thread-search__meta">
+          <div data-testid="thread-search-status" class="thread-search__meta">
             {{ threadSearchStatusLabel }}
           </div>
 
@@ -73,6 +75,7 @@
               dense
               round
               icon="keyboard_arrow_up"
+              data-testid="thread-search-prev-button"
               aria-label="Previous Search Result"
               class="thread-search__action"
               :disable="!canNavigateThreadSearch"
@@ -83,6 +86,7 @@
               dense
               round
               icon="keyboard_arrow_down"
+              data-testid="thread-search-next-button"
               aria-label="Next Search Result"
               class="thread-search__action"
               :disable="!canNavigateThreadSearch"
@@ -93,6 +97,7 @@
               dense
               round
               icon="close"
+              data-testid="thread-search-close-button"
               aria-label="Close Search"
               class="thread-search__action"
               @click="handleCloseThreadSearch"
@@ -282,6 +287,10 @@ import {
   normalizeMessageReactions
 } from 'src/utils/messageReactions';
 import { formatCompactPublicKey } from 'src/utils/publicKeyText';
+import {
+  getWrappedThreadSearchIndex,
+  resolveThreadSearchNavigationIndex
+} from 'src/utils/threadSearch';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = withDefaults(
@@ -1816,20 +1825,11 @@ function handleCloseThreadSearch(): void {
   clearReplyTargetHighlight();
 }
 
-function getWrappedThreadSearchIndex(nextIndex: number): number {
-  const matchCount = threadSearchMatches.value.length;
-  if (matchCount === 0) {
-    return -1;
-  }
-
-  return ((nextIndex % matchCount) + matchCount) % matchCount;
-}
-
 async function revealThreadSearchMatch(
   nextIndex: number,
   behavior: ScrollBehavior = 'smooth'
 ): Promise<void> {
-  const targetIndex = getWrappedThreadSearchIndex(nextIndex);
+  const targetIndex = getWrappedThreadSearchIndex(nextIndex, threadSearchMatches.value.length);
   if (targetIndex < 0) {
     return;
   }
@@ -1867,11 +1867,12 @@ async function handlePreviousThreadSearchResult(): Promise<void> {
     return;
   }
 
-  const baseIndex =
-    activeThreadSearchMatchIndex.value >= 0
-      ? activeThreadSearchMatchIndex.value
-      : Math.min(1, threadSearchMatches.value.length) - 1;
-  await revealThreadSearchMatch(baseIndex - 1);
+  const targetIndex = resolveThreadSearchNavigationIndex(
+    activeThreadSearchMatchIndex.value,
+    threadSearchMatches.value.length,
+    'previous'
+  );
+  await revealThreadSearchMatch(targetIndex, 'smooth');
 }
 
 async function handleNextThreadSearchResult(): Promise<void> {
@@ -1879,8 +1880,12 @@ async function handleNextThreadSearchResult(): Promise<void> {
     return;
   }
 
-  const baseIndex = activeThreadSearchMatchIndex.value >= 0 ? activeThreadSearchMatchIndex.value : -1;
-  await revealThreadSearchMatch(baseIndex + 1);
+  const targetIndex = resolveThreadSearchNavigationIndex(
+    activeThreadSearchMatchIndex.value,
+    threadSearchMatches.value.length,
+    'next'
+  );
+  await revealThreadSearchMatch(targetIndex, 'smooth');
 }
 
 async function runThreadSearch(chatId: string, query: string): Promise<void> {

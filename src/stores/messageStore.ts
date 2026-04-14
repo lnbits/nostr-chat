@@ -42,6 +42,7 @@ interface ChatMessagePaginationState {
 
 interface RelaySendOptions {
   relayUrls?: string[];
+  createdAt?: string;
 }
 
 interface ChatThreadSearchMatch {
@@ -1435,12 +1436,13 @@ export const useMessageStore = defineStore('messageStore', () => {
           eventId: replyTargetEventId ?? replyTo.eventId,
         }
       : null;
+    const createdAt = typeof options.createdAt === 'string' ? options.createdAt.trim() : '';
 
     const created = await chatDataService.createMessage({
       chat_public_key: chat.public_key,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
-      created_at: new Date().toISOString(),
+      created_at: createdAt || new Date().toISOString(),
       ...(replyPreview ? { meta: { reply: replyPreview } } : {}),
     });
     if (!created) {

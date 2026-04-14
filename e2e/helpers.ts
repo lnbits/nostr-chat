@@ -169,6 +169,14 @@ export const TEST_ACCOUNTS = {
     privateKey: '431f4956e15695984eb56874ec8454ddb35260d09c6b3d1857c36b55467f2c7a',
     displayName: 'Bob DM Restart',
   },
+  threadSearchAlice: {
+    privateKey: '6f7d5ad4b06b9f9ae11e2af7c22f09d16c5b3c1d2aef8b49739b2f0c4da78561',
+    displayName: 'Alice Thread Search',
+  },
+  threadSearchBob: {
+    privateKey: '1386d7887d6a2bf6aef9bc97a0fdbf64d127af6eb9f4261d86bc8b2d4fbe2391',
+    displayName: 'Bob Thread Search',
+  },
   isolationAlice: {
     privateKey: '558033f49171bc9bbc4654b411ad5228b5ba3da15326ed16691824a9db03b628',
     displayName: 'Alice Isolation',
@@ -433,6 +441,10 @@ async function installNip07Mock(
 
 function composerInput(page: Page) {
   return page.getByPlaceholder('Write a message');
+}
+
+function threadSearchInput(page: Page) {
+  return page.getByTestId('thread-search-input');
 }
 
 function contactLookupIdentifierInput(page: Page) {
@@ -716,6 +728,67 @@ export async function sendMessage(
   await waitForThreadMessage(page, text, options);
 }
 
+export async function sendMessagesViaBridge(
+  page: Page,
+  chatId: string,
+  texts: string[],
+  options: {
+    createdAts?: string[];
+  } = {}
+): Promise<void> {
+  await page.evaluate(
+    async ({ nextChatId, nextTexts, nextCreatedAts }) => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      await bridge.sendMessages({
+        chatId: nextChatId,
+        texts: nextTexts,
+        createdAts: nextCreatedAts,
+      });
+    },
+    {
+      nextChatId: chatId,
+      nextTexts: texts,
+      nextCreatedAts: options.createdAts ?? [],
+    }
+  );
+}
+
+export async function openThreadSearch(page: Page): Promise<void> {
+  await page.getByTestId('thread-search-open-button').click();
+  await expect(threadSearchInput(page)).toBeVisible();
+}
+
+export async function searchThreadMessages(page: Page, query: string): Promise<void> {
+  await openThreadSearch(page);
+  await threadSearchInput(page).fill(query);
+}
+
+export async function waitForThreadSearchStatus(page: Page, statusText: string): Promise<void> {
+  await expect(page.getByTestId('thread-search-status')).toHaveText(statusText, {
+    timeout: 12_000,
+  });
+}
+
+export async function openPreviousThreadSearchResult(page: Page): Promise<void> {
+  await page.getByTestId('thread-search-prev-button').click();
+}
+
+export async function openNextThreadSearchResult(page: Page): Promise<void> {
+  await page.getByTestId('thread-search-next-button').click();
+}
+
+export async function waitForThreadSearchFocusedMessage(page: Page, text: string): Promise<void> {
+  const message = threadMessage(page, text);
+  await expect(message).toBeVisible({ timeout: 12_000 });
+  await expect(message).toHaveClass(/thread-message-entry--target-search/, {
+    timeout: 12_000,
+  });
+}
+
 export async function openRequests(page: Page): Promise<void> {
   const requestItem = page.getByTestId('chat-request-item');
   await page.goto('/#/chats/requests');
@@ -763,10 +836,7 @@ export async function waitForChatUnreadCount(
   );
 }
 
-export async function waitForNoChatUnreadBadge(
-  page: Page,
-  match?: string | RegExp
-): Promise<void> {
+export async function waitForNoChatUnreadBadge(page: Page, match?: string | RegExp): Promise<void> {
   await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toHaveCount(0, {
     timeout: 12_000,
   });

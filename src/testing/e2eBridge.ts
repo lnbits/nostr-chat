@@ -17,6 +17,12 @@ export interface AppE2ERotateGroupEpochOptions {
   relayUrls?: string[];
 }
 
+export interface AppE2ESendMessagesOptions {
+  chatId: string;
+  texts: string[];
+  createdAts?: string[];
+}
+
 export interface AppE2ESessionSnapshot {
   publicKey: string;
   npub: string | null;
@@ -29,6 +35,7 @@ export interface AppE2EBridge {
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
   logout(): Promise<void>;
   rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
+  sendMessages(options: AppE2ESendMessagesOptions): Promise<void>;
 }
 
 const WINDOW_BRIDGE_KEY = '__appE2E__';
@@ -186,6 +193,60 @@ async function rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise
   );
 }
 
+async function sendMessages(options: AppE2ESendMessagesOptions): Promise<void> {
+  const normalizedChatId = options.chatId.trim().toLowerCase();
+  const texts = options.texts
+    .map((entry) => String(entry ?? '').trim())
+    .filter((entry) => entry.length > 0);
+  const createdAts = Array.isArray(options.createdAts)
+    ? options.createdAts.map((entry) => String(entry ?? '').trim())
+    : [];
+
+  if (!normalizedChatId) {
+    throw new Error('A chat id is required to send e2e messages.');
+  }
+
+  if (texts.length === 0) {
+    return;
+  }
+
+  if (createdAts.length > 0 && createdAts.length !== texts.length) {
+    throw new Error('Explicit e2e message timestamps must match the number of messages.');
+  }
+
+  const [{ useChatStore }, { useMessageStore }] = await Promise.all([
+    import('src/stores/chatStore'),
+    import('src/stores/messageStore'),
+  ]);
+
+  const chatStore = useChatStore();
+  const messageStore = useMessageStore();
+
+  await Promise.all([chatStore.init(), messageStore.init()]);
+
+  for (const [index, text] of texts.entries()) {
+    const createdAt = createdAts[index];
+    const created = await messageStore.sendMessage(
+      normalizedChatId,
+      text,
+      null,
+      createdAt
+        ? {
+            createdAt,
+          }
+        : {}
+    );
+    if (!created) {
+      throw new Error(`Failed to send e2e message for chat ${normalizedChatId}.`);
+    }
+
+    await chatStore.updateChatPreview(normalizedChatId, created.text, created.sentAt);
+    await chatStore.acceptChat(normalizedChatId, {
+      lastOutgoingMessageAt: created.sentAt,
+    });
+  }
+}
+
 export function installAppE2EBridge(): void {
   if (typeof window === 'undefined') {
     return;
@@ -197,6 +258,7 @@ export function installAppE2EBridge(): void {
     refreshSession,
     logout,
     rotateGroupEpoch,
+    sendMessages,
   };
 
   Object.defineProperty(window, WINDOW_BRIDGE_KEY, {
