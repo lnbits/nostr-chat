@@ -62,8 +62,13 @@
             <q-item clickable v-close-popup @click="emitRefreshProfile">
               <q-item-section>Refresh Profile</q-item-section>
             </q-item>
-            <q-item clickable v-close-popup @click="emitRefreshChat">
-              <q-item-section>Refresh Chat</q-item-section>
+            <q-item
+              v-if="chat.type === 'group'"
+              clickable
+              v-close-popup
+              @click="emitRefreshChat"
+            >
+              <q-item-section>Refresh Group Chat</q-item-section>
             </q-item>
             <q-item clickable v-close-popup :disable="isMuted" @click="emitMute">
               <q-item-section>Mute</q-item-section>
