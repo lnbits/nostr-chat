@@ -136,7 +136,10 @@ interface PrivateStateRuntimeDeps {
     fallbackName?: string,
     lifecycle?: Record<string, any>
   ) => Promise<any>;
-  refreshContactRelayList: (pubkeyHex: string) => Promise<ContactRelay[] | null>;
+  refreshContactRelayList: (
+    pubkeyHex: string,
+    seedRelayUrls?: string[]
+  ) => Promise<ContactRelay[] | null>;
   resolveLoggedInPublishRelayUrls: (seedRelayUrls?: string[]) => Promise<string[]>;
   resolveLoggedInReadRelayUrls: (seedRelayUrls?: string[]) => Promise<string[]>;
   restoreState: RestoreRuntimeState;

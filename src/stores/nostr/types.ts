@@ -308,6 +308,7 @@ export interface DeveloperPendingQueueRefreshSummary {
 
 export interface ContactRefreshLifecycle {
   refreshRelayList?: boolean;
+  relayListSeedRelayUrls?: string[];
   onProfileFetchStart?: () => void;
   onProfileFetchEnd?: (error: unknown | null) => void;
   onRelayFetchStart?: () => void;

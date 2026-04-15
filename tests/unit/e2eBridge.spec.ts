@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const PUBKEY_HEX = 'a'.repeat(64);
+
 const moduleMocks = vi.hoisted(() => {
   const nostrStore = {
     encodeNpub: vi.fn((value: string) => `npub-${value}`),
-    getLoggedInPublicKeyHex: vi.fn(() => 'pubkey-123'),
+    getLoggedInPublicKeyHex: vi.fn(() => 'a'.repeat(64)),
     logout: vi.fn().mockResolvedValue(undefined),
     publishMyRelayList: vi.fn().mockResolvedValue(undefined),
     restoreStartupState: vi.fn().mockResolvedValue(undefined),
@@ -34,9 +36,15 @@ const moduleMocks = vi.hoisted(() => {
     reloadLoadedMessages: vi.fn().mockResolvedValue(undefined),
     sendMessage: vi.fn(),
   };
+  const contactsService = {
+    getContactByPublicKey: vi.fn(),
+    init: vi.fn().mockResolvedValue(undefined),
+    updateContact: vi.fn(),
+  };
 
   return {
     chatStore,
+    contactsService,
     messageStore,
     nip65RelayStore,
     nostrStore,
@@ -47,6 +55,12 @@ const moduleMocks = vi.hoisted(() => {
 
 vi.mock('src/services/inputSanitizerService', () => ({
   inputSanitizerService: {
+    normalizeHexKey: vi.fn((value: string) => {
+      const normalized = String(value ?? '')
+        .trim()
+        .toLowerCase();
+      return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
+    }),
     normalizeRelayEntriesFromUrls: vi.fn((relayUrls: string[]) =>
       relayUrls
         .map((url) => String(url ?? '').trim())
@@ -82,14 +96,28 @@ vi.mock('src/stores/messageStore', () => ({
   useMessageStore: () => moduleMocks.messageStore,
 }));
 
+vi.mock('src/services/contactsService', () => ({
+  contactsService: moduleMocks.contactsService,
+}));
+
 describe('e2eBridge', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
 
-    moduleMocks.nostrStore.getLoggedInPublicKeyHex.mockReturnValue('pubkey-123');
+    moduleMocks.nostrStore.getLoggedInPublicKeyHex.mockReturnValue(PUBKEY_HEX);
     moduleMocks.nostrStore.savePrivateKey.mockReturnValue({ isValid: true });
     moduleMocks.relayStore.relays = ['ws://relay.one'];
+    moduleMocks.contactsService.getContactByPublicKey.mockResolvedValue({
+      id: 7,
+      public_key: PUBKEY_HEX,
+      relays: [],
+    });
+    moduleMocks.contactsService.updateContact.mockImplementation(async (_id: number, input) => ({
+      id: 7,
+      public_key: PUBKEY_HEX,
+      relays: input.relays ?? [],
+    }));
     moduleMocks.messageStore.sendMessage.mockImplementation(
       async (
         chatId: string,
@@ -102,7 +130,7 @@ describe('e2eBridge', () => {
         text,
         sender: 'me',
         sentAt: options.createdAt ?? '2026-01-01T00:00:00.000Z',
-        authorPublicKey: 'pubkey-123',
+        authorPublicKey: PUBKEY_HEX,
         eventId: null,
         nostrEvent: null,
         meta: {},
@@ -131,8 +159,8 @@ describe('e2eBridge', () => {
     });
 
     expect(session).toEqual({
-      publicKey: 'pubkey-123',
-      npub: 'npub-pubkey-123',
+      publicKey: PUBKEY_HEX,
+      npub: `npub-${PUBKEY_HEX}`,
       relayUrls: ['ws://relay.one', 'ws://relay.two'],
     });
     expect(moduleMocks.relayStore.init).toHaveBeenCalledTimes(1);
@@ -158,8 +186,8 @@ describe('e2eBridge', () => {
 
     const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
     await expect(bridge.getSessionSnapshot()).resolves.toEqual({
-      publicKey: 'pubkey-123',
-      npub: 'npub-pubkey-123',
+      publicKey: PUBKEY_HEX,
+      npub: `npub-${PUBKEY_HEX}`,
       relayUrls: ['ws://relay.one'],
     });
   });
@@ -243,6 +271,23 @@ describe('e2eBridge', () => {
     expect(moduleMocks.chatStore.acceptChat).toHaveBeenCalledTimes(2);
   });
 
+  it('updates stored contact relays through the bridge helper', async () => {
+    const { installAppE2EBridge } = await import('src/testing/e2eBridge');
+    installAppE2EBridge();
+
+    const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
+    await bridge.updateContactRelays({
+      publicKey: ` ${PUBKEY_HEX} `,
+      relayUrls: [' ws://relay.one ', 'ws://relay.two'],
+    });
+
+    expect(moduleMocks.contactsService.init).toHaveBeenCalledTimes(1);
+    expect(moduleMocks.contactsService.getContactByPublicKey).toHaveBeenCalledWith(PUBKEY_HEX);
+    expect(moduleMocks.contactsService.updateContact).toHaveBeenCalledWith(7, {
+      relays: [{ url: 'ws://relay.one' }, { url: 'ws://relay.two' }],
+    });
+  });
+
   it('rejects invalid bootstrap and seeded-message inputs', async () => {
     const { installAppE2EBridge } = await import('src/testing/e2eBridge');
     installAppE2EBridge();
@@ -283,5 +328,12 @@ describe('e2eBridge', () => {
         createdAts: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'],
       })
     ).rejects.toThrow('Explicit e2e message timestamps must match the number of messages.');
+
+    await expect(
+      bridge.updateContactRelays({
+        publicKey: 'not-a-pubkey',
+        relayUrls: ['ws://relay.one'],
+      })
+    ).rejects.toThrow('A valid public key is required to update contact relays.');
   });
 });

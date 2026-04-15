@@ -105,7 +105,10 @@ export function createContactRelayRuntime({
     };
   }
 
-  async function refreshContactRelayList(pubkeyHex: string): Promise<ContactRelay[] | null> {
+  async function refreshContactRelayList(
+    pubkeyHex: string,
+    seedRelayUrls: string[] = []
+  ): Promise<ContactRelay[] | null> {
     const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
     if (!normalizedPubkey) {
       return null;
@@ -117,7 +120,7 @@ export function createContactRelayRuntime({
       return null;
     }
 
-    const relayList = await fetchContactRelayList(normalizedPubkey);
+    const relayList = await fetchContactRelayList(normalizedPubkey, seedRelayUrls);
     if (!relayList) {
       return existingContact.relays ?? [];
     }

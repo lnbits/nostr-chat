@@ -141,6 +141,14 @@ export const TEST_ACCOUNTS = {
     privateKey: '4ace9d0cf7d76251894bfc88418367135d12b3ed9c78b4cd191f04ac17fcec20',
     displayName: 'Bob Relay',
   },
+  groupInviteRelayAlice: {
+    privateKey: 'c0f1e2d3a4b5c697887766554433221100ffeeddccbbaa998877665544332211',
+    displayName: 'Alice Invite Relay',
+  },
+  groupInviteRelayBob: {
+    privateKey: '1f2e3d4c5b6a79888796a5b4c3d2e1f00112233445566778899aabbccddeeff0',
+    displayName: 'Bob Invite Relay',
+  },
   groupEpochAlice: {
     privateKey: 'f540818766397792222a9722e94b73b780ea7f746aaf2ac763509663246530d4',
     displayName: 'Alice Epoch',
@@ -1107,8 +1115,25 @@ export async function openGroupEpochsTab(page: Page): Promise<void> {
 }
 
 export async function openGroupRelaysTab(page: Page): Promise<void> {
-  await page.getByTestId('contact-profile-relays-tab').click();
+  const relaysTab = page.getByTestId('contact-profile-relays-tab');
+  await expect(relaysTab).toBeVisible();
+  await relaysTab.click({ force: true });
   await expect(page.locator('.profile-group-relays')).toBeVisible();
+}
+
+export async function openProfileRelaysSection(page: Page): Promise<void> {
+  const relaysSection = page.getByText('Relays (NIP-65)', { exact: true });
+  await expect(relaysSection).toBeVisible();
+
+  try {
+    await expect(page.getByText('Send via App Relays', { exact: true })).toBeVisible({
+      timeout: 1_000,
+    });
+  } catch {
+    await relaysSection.click();
+  }
+
+  await expect(page.getByText('Send via App Relays', { exact: true })).toBeVisible();
 }
 
 export async function openAppRelaysSettings(page: Page): Promise<void> {
@@ -1245,6 +1270,30 @@ export async function rotateGroupEpoch(
     {
       nextGroupPublicKey: groupPublicKey,
       nextMemberPublicKeys: memberPublicKeys,
+      nextRelayUrls: relayUrls,
+    }
+  );
+}
+
+export async function updateStoredContactRelays(
+  page: Page,
+  publicKey: string,
+  relayUrls: string[]
+): Promise<void> {
+  await page.evaluate(
+    async ({ nextPublicKey, nextRelayUrls }) => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      await bridge.updateContactRelays({
+        publicKey: nextPublicKey,
+        relayUrls: nextRelayUrls,
+      });
+    },
+    {
+      nextPublicKey: publicKey,
       nextRelayUrls: relayUrls,
     }
   );

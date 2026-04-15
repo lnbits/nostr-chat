@@ -256,6 +256,7 @@ describe('nostr runtime messaging logic', () => {
     const bumpDeveloperDiagnosticsVersion = vi.fn();
     const logMessageRelayDiagnostics = vi.fn();
     const queuePrivateMessagesUiRefresh = vi.fn();
+    const refreshPendingIncomingQueues = vi.fn(async () => {});
     const runtime = createMessageRelayRuntime({
       bumpDeveloperDiagnosticsVersion,
       formatSubscriptionLogValue: (value) => value?.trim() ?? null,
@@ -266,6 +267,7 @@ describe('nostr runtime messaging logic', () => {
       pendingIncomingDeletions: pendingIncomingDeletions as never,
       pendingIncomingReactions: pendingIncomingReactions as never,
       queuePrivateMessagesUiRefresh,
+      refreshPendingIncomingQueues,
     });
     const relayStatuses = [
       {

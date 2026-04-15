@@ -38,7 +38,8 @@ interface GroupInviteRuntimeDeps {
   publishPrivateContactList: (seedRelayUrls?: string[]) => Promise<void>;
   refreshGroupContactByPublicKey: (
     groupPublicKey: string,
-    fallbackName?: string
+    fallbackName?: string,
+    seedRelayUrls?: string[]
   ) => Promise<ContactRecord | null>;
   subscribePrivateMessagesForLoggedInUser: (force?: boolean) => Promise<void>;
 }

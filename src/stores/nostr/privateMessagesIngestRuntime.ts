@@ -373,7 +373,7 @@ export function createPrivateMessagesIngestRuntime({
           seedRelayUrls: wrappedRelayUrls,
         }
       );
-      queueBackgroundGroupContactRefresh(senderPubkeyHex, fallbackGroupName);
+      queueBackgroundGroupContactRefresh(senderPubkeyHex, fallbackGroupName, wrappedRelayUrls);
 
       if (!wasAcceptedGroup) {
         await upsertIncomingGroupInviteRequestChat(

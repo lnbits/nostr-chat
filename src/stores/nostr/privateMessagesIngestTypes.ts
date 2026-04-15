@@ -165,7 +165,11 @@ export interface PrivateMessagesIngestRuntimeDeps {
       relayStatuses: MessageRelayStatus[];
     }
   ) => Promise<void>;
-  queueBackgroundGroupContactRefresh: (groupPublicKey: string, fallbackName: string) => void;
+  queueBackgroundGroupContactRefresh: (
+    groupPublicKey: string,
+    fallbackName: string,
+    seedRelayUrls?: string[]
+  ) => void;
   queuePrivateMessagesUiRefresh: (options: {
     throttleMs?: number;
     reloadChats?: boolean;

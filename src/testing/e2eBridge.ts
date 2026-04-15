@@ -17,6 +17,11 @@ export interface AppE2ERotateGroupEpochOptions {
   relayUrls?: string[];
 }
 
+export interface AppE2EUpdateContactRelaysOptions {
+  publicKey: string;
+  relayUrls: string[];
+}
+
 export interface AppE2ESendMessagesOptions {
   chatId: string;
   texts: string[];
@@ -36,6 +41,7 @@ export interface AppE2EBridge {
   logout(): Promise<void>;
   rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
   sendMessages(options: AppE2ESendMessagesOptions): Promise<void>;
+  updateContactRelays(options: AppE2EUpdateContactRelaysOptions): Promise<void>;
 }
 
 const WINDOW_BRIDGE_KEY = '__appE2E__';
@@ -265,6 +271,32 @@ async function sendMessages(options: AppE2ESendMessagesOptions): Promise<void> {
   }
 }
 
+async function updateContactRelays(options: AppE2EUpdateContactRelaysOptions): Promise<void> {
+  const normalizedPublicKey = inputSanitizerService.normalizeHexKey(options.publicKey);
+  if (!normalizedPublicKey) {
+    throw new Error('A valid public key is required to update contact relays.');
+  }
+
+  const relayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
+    Array.isArray(options.relayUrls) ? options.relayUrls : []
+  );
+
+  const { contactsService } = await import('src/services/contactsService');
+  await contactsService.init();
+
+  const contact = await contactsService.getContactByPublicKey(normalizedPublicKey);
+  if (!contact) {
+    throw new Error(`Contact ${normalizedPublicKey} was not found.`);
+  }
+
+  const updatedContact = await contactsService.updateContact(contact.id, {
+    relays: relayEntries,
+  });
+  if (!updatedContact) {
+    throw new Error(`Failed to update relays for contact ${normalizedPublicKey}.`);
+  }
+}
+
 export function installAppE2EBridge(): void {
   if (typeof window === 'undefined') {
     return;
@@ -277,6 +309,7 @@ export function installAppE2EBridge(): void {
     logout,
     rotateGroupEpoch,
     sendMessages,
+    updateContactRelays,
   };
 
   Object.defineProperty(window, WINDOW_BRIDGE_KEY, {

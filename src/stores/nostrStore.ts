@@ -210,7 +210,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   };
   let queueBackgroundGroupContactRefreshRuntime: (
     groupPublicKey: string,
-    fallbackName: string
+    fallbackName: string,
+    seedRelayUrls?: string[]
   ) => void = () => {};
   let startPrivateMessagesStartupBackfillRuntime: (
     loggedInPubkeyHex: string,
@@ -1099,8 +1100,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     persistIncomingGroupEpochTicket,
     processIncomingDeletionRumorEvent,
     processIncomingReactionRumorEvent,
-    queueBackgroundGroupContactRefresh: (groupPublicKey, fallbackName) => {
-      queueBackgroundGroupContactRefreshRuntime(groupPublicKey, fallbackName);
+    queueBackgroundGroupContactRefresh: (groupPublicKey, fallbackName, seedRelayUrls) => {
+      queueBackgroundGroupContactRefreshRuntime(groupPublicKey, fallbackName, seedRelayUrls);
     },
     queuePrivateMessagesUiRefresh,
     readReplyTargetEventId,

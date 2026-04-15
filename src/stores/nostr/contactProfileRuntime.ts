@@ -44,7 +44,10 @@ interface ContactProfileRuntimeDeps {
   extractContactProfileEventStateFromProfile: (
     profile: NDKUserProfile | null
   ) => ContactProfileEventState | null;
-  fetchContactRelayList: (pubkeyHex: string) => Promise<ContactRelayListFetchResult | null>;
+  fetchContactRelayList: (
+    pubkeyHex: string,
+    seedRelayUrls?: string[]
+  ) => Promise<ContactRelayListFetchResult | null>;
   getAppRelayUrls: () => string[];
   getLoggedInPublicKeyHex: () => string | null;
   groupContactRefreshPromises: Map<string, Promise<ContactRecord | null>>;
@@ -59,7 +62,10 @@ interface ContactProfileRuntimeDeps {
   ) => void;
   ndk: NDK;
   publishPrivateContactList: (seedRelayUrls?: string[]) => Promise<void>;
-  refreshContactRelayList: (pubkeyHex: string) => Promise<ContactRelay[] | null>;
+  refreshContactRelayList: (
+    pubkeyHex: string,
+    seedRelayUrls?: string[]
+  ) => Promise<ContactRelay[] | null>;
   resolveGroupDisplayName: (groupPublicKey: string) => string;
   shouldPreserveExistingGroupRelays: (
     contact: Pick<ContactRecord, 'type' | 'public_key' | 'relays'> | null | undefined,
@@ -176,12 +182,17 @@ export function createContactProfileRuntime({
       existingContact?.name?.trim() ||
       fallbackContactName;
 
+    const shouldRefreshRelayList =
+      lifecycle.refreshRelayList === true || existingContact?.type === 'group';
     let explicitRelayList: ContactRelayListFetchResult | null = null;
     let relayError: unknown | null = null;
-    if (lifecycle.refreshRelayList) {
+    if (shouldRefreshRelayList) {
       lifecycle.onRelayFetchStart?.();
       try {
-        explicitRelayList = await fetchContactRelayList(normalizedTargetPubkey);
+        explicitRelayList = await fetchContactRelayList(
+          normalizedTargetPubkey,
+          lifecycle.relayListSeedRelayUrls
+        );
       } catch (error) {
         relayError = error;
         console.warn('Failed to fetch relay list for contact', normalizedTargetPubkey, error);
@@ -313,7 +324,8 @@ export function createContactProfileRuntime({
 
   async function refreshGroupContactByPublicKey(
     groupPublicKey: string,
-    fallbackName = ''
+    fallbackName = '',
+    seedRelayUrls: string[] = []
   ): Promise<ContactRecord | null> {
     const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
     if (!normalizedGroupPublicKey) {
@@ -327,7 +339,10 @@ export function createContactProfileRuntime({
 
     const refreshPromise = (async (): Promise<ContactRecord | null> => {
       try {
-        await refreshContactByPublicKey(normalizedGroupPublicKey, fallbackName);
+        await refreshContactByPublicKey(normalizedGroupPublicKey, fallbackName, {
+          refreshRelayList: true,
+          relayListSeedRelayUrls: seedRelayUrls,
+        });
       } catch (error) {
         console.warn('Failed to refresh group contact profile', normalizedGroupPublicKey, error);
       }
@@ -336,7 +351,7 @@ export function createContactProfileRuntime({
         fallbackName,
       });
       try {
-        await refreshContactRelayList(normalizedGroupPublicKey);
+        await refreshContactRelayList(normalizedGroupPublicKey, seedRelayUrls);
       } catch (error) {
         console.warn('Failed to refresh group contact relay list', normalizedGroupPublicKey, error);
       }
@@ -353,7 +368,11 @@ export function createContactProfileRuntime({
     return refreshPromise;
   }
 
-  function queueBackgroundGroupContactRefresh(groupPublicKey: string, fallbackName = ''): void {
+  function queueBackgroundGroupContactRefresh(
+    groupPublicKey: string,
+    fallbackName = '',
+    seedRelayUrls: string[] = []
+  ): void {
     const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
     if (!normalizedGroupPublicKey) {
       return;
@@ -370,7 +389,11 @@ export function createContactProfileRuntime({
     }
 
     backgroundGroupContactRefreshStartedAt.set(normalizedGroupPublicKey, now);
-    void refreshGroupContactByPublicKey(normalizedGroupPublicKey, fallbackName).catch((error) => {
+    void refreshGroupContactByPublicKey(
+      normalizedGroupPublicKey,
+      fallbackName,
+      seedRelayUrls
+    ).catch((error) => {
       console.warn(
         'Failed to refresh group contact after epoch ticket',
         normalizedGroupPublicKey,

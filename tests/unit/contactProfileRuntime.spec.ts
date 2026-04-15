@@ -178,6 +178,58 @@ describe('contactProfileRuntime group refresh', () => {
     expect(deps.groupContactRefreshPromises.size).toBe(0);
   });
 
+  it('refreshes relay lists automatically when refreshing an existing group profile', async () => {
+    const { deps, setUser } = createDeps();
+    setUser(GROUP_PUBKEY);
+    const existingGroup = makeContact(GROUP_PUBKEY, {
+      id: 2,
+      type: 'group',
+      name: 'Study Group',
+    });
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(existingGroup);
+    deps.fetchContactRelayList.mockResolvedValue({
+      createdAt: 42,
+      eventId: 'relay-event',
+      relayEntries: [{ url: 'wss://relay.example/', read: true, write: true }],
+    });
+
+    const runtime = createContactProfileRuntime(deps);
+
+    await runtime.refreshContactByPublicKey(GROUP_PUBKEY, 'Study Group');
+
+    expect(deps.fetchContactRelayList).toHaveBeenCalledWith(GROUP_PUBKEY, undefined);
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({
+        relays: [{ url: 'wss://relay.example/', read: true, write: true }],
+      })
+    );
+    expect(deps.markContactRelayListEventApplied).toHaveBeenCalledWith(GROUP_PUBKEY, {
+      createdAt: 42,
+      eventId: 'relay-event',
+    });
+  });
+
+  it('forwards seed relay urls through group contact refreshes', async () => {
+    const { deps, setUser } = createDeps();
+    setUser(GROUP_PUBKEY);
+    const existingGroup = makeContact(GROUP_PUBKEY, {
+      id: 2,
+      type: 'group',
+      name: 'Study Group',
+    });
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(existingGroup);
+
+    const runtime = createContactProfileRuntime(deps);
+
+    await runtime.refreshGroupContactByPublicKey(GROUP_PUBKEY, 'Study Group', [
+      'wss://relay.seed/',
+    ]);
+
+    expect(deps.fetchContactRelayList).toHaveBeenCalledWith(GROUP_PUBKEY, ['wss://relay.seed/']);
+    expect(deps.refreshContactRelayList).toHaveBeenCalledWith(GROUP_PUBKEY, ['wss://relay.seed/']);
+  });
+
   it('throttles background group refreshes with the runtime cooldown', async () => {
     const { deps, setUser } = createDeps();
     const groupUser = setUser(GROUP_PUBKEY);

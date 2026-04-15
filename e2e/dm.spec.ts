@@ -323,7 +323,11 @@ test('reactions surface in the chat list and deleted messages stay deleted after
     await reactToMessage(bob.page, targetMessage);
     await waitForChatReactionBadge(alice.page, 1, bob.account.displayName);
 
-    await alice.page.getByTestId('chat-item').filter({ hasText: bob.account.displayName }).first().click();
+    await alice.page
+      .getByTestId('chat-item')
+      .filter({ hasText: bob.account.displayName })
+      .first()
+      .click();
     await waitForReaction(alice.page, /thumbs up reaction/i, {
       chatId: bob.session.publicKey,
     });
