@@ -57,9 +57,14 @@ This skill is for the UI-facing side of the app: routed pages, Quasar components
 
 ## Validation
 
-- Minimum: `npm run typecheck` and `npm run test:unit`
-- For changes visible in browser workflows, run the closest e2e smoke test when feasible
-- For component changes tied to thread state, check both the UI file and the owning store tests
+- Validation is mandatory after every code change in this area.
+- Required post-change loop:
+  - `npm run quality:all`
+  - `npm run test:unit`
+  - the closest browser-facing local e2e smoke test
+- For component changes tied to thread state, check both the UI file and the owning store tests, then run the post-change loop.
+- Use `npm run test:e2e:local` when a change touches multiple user-visible surfaces or no single smoke test is enough.
+- Do not finish a UI change without either running the loop or explicitly documenting the blocker.
 
 ## References
 

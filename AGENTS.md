@@ -28,11 +28,16 @@
 
 ## Validation
 
-- Default safety check: `npm run typecheck` and `npm run test:unit`
-- Formatting/lint check: `npm run format:check`, `npm run lint`
-- Protocol, session, relay, DM, contacts, or group flows: run the matching `npm run test:e2e:local:*` smoke test when feasible
+- Validation is part of the change, not optional cleanup.
+- After every code change, run the post-change loop before considering the task complete:
+  - `npm run quality:all`
+  - `npm run test:unit`
+  - the closest matching `npm run test:e2e:local:*` smoke test
+- If the change spans multiple user-visible or relay-sensitive areas, or there is no narrow smoke test, run `npm run test:e2e:local`
+- Protocol, session, relay, DM, contacts, or group flows should default to a targeted local e2e smoke test even if unit coverage already passes
 - Web build changes: `npm run build`
 - Electron packaging changes: `npm run build:electron:dir` or a platform-specific build script
+- If a validation step cannot run, report exactly what was attempted, what was skipped, and why
 
 ## Repo Skills
 

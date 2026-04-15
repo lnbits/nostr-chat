@@ -17,6 +17,16 @@ Repo-local skill files live here:
 - `skills/chat-surface/SKILL.md`
 - `skills/validation/SKILL.md`
 
+## Validation Rule
+
+Any code change is incomplete until Codex has attempted the repo validation loop:
+
+- `npm run quality:all`
+- `npm run test:unit`
+- the closest matching `npm run test:e2e:local:*` smoke test
+
+If a change spans multiple areas or has no narrow smoke target, use `npm run test:e2e:local` instead. If a step cannot run, the blocker and the remaining unverified coverage should be called out explicitly.
+
 ## Current Reality
 
 - Stack: Quasar 2, Vue 3.5, Pinia 2, TypeScript 5, NDK 3, Vitest, Playwright, Electron Builder
@@ -124,5 +134,5 @@ Repo-local skill files live here:
 - Prefer the narrowest owning runtime or helper instead of adding more branches to `src/stores/nostrStore.ts`.
 - Preserve normalized lower-case identifiers across stores and persistence.
 - Keep `data-testid` hooks stable for shared UI unless tests are updated in the same change.
-- If behavior spans UI and runtime, update both the leaf unit tests and the smallest matching Playwright smoke test.
+- If behavior spans UI and runtime, update both the leaf unit tests and the smallest matching Playwright smoke test, then run the full post-change validation loop.
 - When the README and source disagree, trust the source tree and current tests.

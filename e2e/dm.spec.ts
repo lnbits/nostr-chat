@@ -299,16 +299,19 @@ test('thread search finds hidden DB messages and previous or next navigation use
   }
 });
 
-test.only('reactions surface in the chat list and deleted messages stay deleted after reloads', async ({
+test('reactions surface in the chat list and deleted messages stay deleted after reloads', async ({
   browser,
 }) => {
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.reactionReloadAlice);
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.reactionReloadBob);
+  const charlie = await bootstrapUser(browser, TEST_ACCOUNTS.reactionReloadCharlie);
 
   try {
     const targetMessage = `reaction-reload-${Date.now()}`;
 
     await establishAcceptedDirectChat(alice, bob);
+    await establishAcceptedDirectChat(alice, charlie);
+    await navigateToChat(alice.page, bob.session.publicKey);
     await sendMessage(alice.page, targetMessage, {
       chatId: bob.session.publicKey,
     });
@@ -316,16 +319,21 @@ test.only('reactions surface in the chat list and deleted messages stay deleted 
       chatId: alice.session.publicKey,
     });
 
-    await alice.page.goto('/#/chats');
+    await navigateToChat(alice.page, charlie.session.publicKey);
     await reactToMessage(bob.page, targetMessage);
-    await waitForChatReactionBadge(alice.page, 1);
+    await waitForChatReactionBadge(alice.page, 1, bob.account.displayName);
 
-    await alice.page.getByTestId('chat-item').first().click();
+    await alice.page.getByTestId('chat-item').filter({ hasText: bob.account.displayName }).first().click();
     await waitForReaction(alice.page, /thumbs up reaction/i, {
       chatId: bob.session.publicKey,
     });
-    await alice.page.goto('/#/chats');
-    await expect(alice.page.locator('.chat-item__reaction-badge')).toHaveCount(0);
+    await expect(
+      alice.page
+        .getByTestId('chat-item')
+        .filter({ hasText: bob.account.displayName })
+        .first()
+        .locator('.chat-item__reaction-badge')
+    ).toHaveCount(0);
 
     await navigateToChat(alice.page, bob.session.publicKey);
     await reloadAndWaitForApp(alice.page);
@@ -340,9 +348,9 @@ test.only('reactions surface in the chat list and deleted messages stay deleted 
     await waitForDeletedMessageState(bob.page, targetMessage, {
       chatId: alice.session.publicKey,
     });
-    await expectNoUnexpectedBrowserErrors([alice, bob]);
+    await expectNoUnexpectedBrowserErrors([alice, bob, charlie]);
   } finally {
-    await disposeUsers(alice, bob);
+    await disposeUsers(alice, bob, charlie);
   }
 });
 

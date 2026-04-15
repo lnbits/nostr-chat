@@ -7,13 +7,23 @@ description: Use when choosing checks to run after a change, adding tests, debug
 
 ## Overview
 
-This skill helps pick the smallest useful validation plan for a change in this repo. Use it for typecheck or lint decisions, unit-test targeting, relay-backed Playwright runs, build verification, and failure triage.
+This skill helps pick and run the required validation plan for a change in this repo. Use it for post-edit quality checks, unit-test targeting, relay-backed Playwright runs, build verification, and failure triage.
+
+## Required Post-Change Loop
+
+After every code change, Codex should treat the following as the default done-state checklist:
+
+1. Run `npm run quality:all`
+2. Run `npm run test:unit`
+3. Run the closest matching `npm run test:e2e:local:*` smoke test
+4. If the change spans multiple areas or has no narrow smoke target, run `npm run test:e2e:local`
+5. If any step cannot run, report what was attempted, what remains unverified, and the exact blocker
 
 ## Validation Rules Of Thumb
 
-- Default safety check for most code changes: `npm run typecheck` and `npm run test:unit`
-- If the change affects shared formatting or lint rules: add `npm run format:check` and `npm run lint`
-- If the change affects auth, session restore, contacts, relays, DMs, or groups: run the nearest `npm run test:e2e:local:*` smoke test when feasible
+- Default code-change loop: `npm run quality:all`, `npm run test:unit`, then the nearest `npm run test:e2e:local:*` smoke
+- If the change affects auth, session restore, contacts, relays, DMs, or groups: always include the nearest `npm run test:e2e:local:*` smoke test
+- If the change affects multiple areas at once: prefer `npm run test:e2e:local` over guessing too narrowly
 - If the change affects packaging or platform entry points: run the smallest matching build command
 
 ## E2E Notes
@@ -26,9 +36,10 @@ This skill helps pick the smallest useful validation plan for a change in this r
 ## Typical Workflow
 
 1. Map the changed files to the nearest owning tests.
-2. Run the smallest useful unit coverage first.
-3. Add an e2e smoke test only when the behavior is browser-visible or relay-timing-sensitive.
-4. If a test fails, check whether the bug belongs in UI state, runtime output, or persistence before broadening the fix.
+2. Run `npm run quality:all`.
+3. Run `npm run test:unit`.
+4. Run the nearest targeted local e2e smoke test, or the full local suite if the change spans multiple areas.
+5. If a test fails, check whether the bug belongs in UI state, runtime output, or persistence before broadening the fix.
 
 ## Build Targets
 

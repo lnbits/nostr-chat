@@ -58,9 +58,14 @@ This skill is for the protocol and runtime layer of the app. Use it when the cha
 
 ## Validation
 
-- Minimum: `npm run typecheck` and `npm run test:unit`
-- For session, DM, group, or relay changes, run the closest matching local e2e smoke test when feasible
-- When touching shared normalization or value helpers, add or update unit coverage first
+- Validation is mandatory after every code change in this area.
+- Required post-change loop:
+  - `npm run quality:all`
+  - `npm run test:unit`
+  - the closest matching local e2e smoke test, usually `auth-smoke`, `session-smoke`, `dm-smoke`, `groups-smoke`, `relays-smoke`, or `contacts-smoke`
+- Use `npm run test:e2e:local` when the change spans multiple protocol flows or there is no single obvious smoke target.
+- When touching shared normalization or value helpers, add or update unit coverage first, then still run the full post-change loop.
+- Do not stop after editing files without either running the loop or explicitly reporting why a step could not run.
 
 ## References
 

@@ -1,5 +1,17 @@
 # Validation Matrix
 
+## Definition Of Done
+
+For any code change, the default validation loop is:
+
+- `npm run quality:all`
+- `npm run test:unit`
+- the closest matching `npm run test:e2e:local:*` smoke test
+
+If the change spans multiple features or there is no narrow smoke target, replace the targeted smoke test with `npm run test:e2e:local`.
+
+If any step cannot run, report the exact blocker and which coverage remains unverified.
+
 ## Core Commands
 
 - Typecheck:
@@ -33,19 +45,19 @@
 ## File Area To Test Area
 
 - `src/stores/nostr/**`
-  - Start with `npm run typecheck` and `npm run test:unit`
-  - Add the nearest relay, DM, group, or session smoke test when the change affects async runtime behavior
+  - Run `npm run quality:all` and `npm run test:unit`
+  - Add the nearest relay, DM, group, session, auth, or contacts smoke test based on the affected runtime flow
 - `src/stores/chatStore.ts` or `src/stores/messageStore.ts`
-  - Start with `npm run typecheck` and `npm run test:unit`
+  - Run `npm run quality:all` and `npm run test:unit`
   - Add DM, contacts, or groups smoke coverage for browser-visible behavior
 - `src/components/**`, `src/pages/**`, `src/layouts/**`
-  - Start with `npm run typecheck` and `npm run test:unit`
+  - Run `npm run quality:all` and `npm run test:unit`
   - Prefer the closest browser smoke test if interaction or layout behavior changed
 - `src/services/chatDataService.ts` or IndexedDB helpers
-  - Start with `npm run typecheck` and `npm run test:unit`
-  - Consider session or DM smoke tests if persistence timing matters
+  - Run `npm run quality:all` and `npm run test:unit`
+  - Add session, DM, or contacts smoke coverage when persistence timing matters
 - `src-electron/**`
-  - Start with `npm run typecheck`
+  - Run `npm run quality:all` and `npm run test:unit` when shared app code changed too
   - Add `npm run build:electron:dir` or a platform-specific package build when feasible
 
 ## Useful Debug Clues
