@@ -20,7 +20,7 @@ Nostr Chat is a Quasar/Vue web and Electron client for Nostr private messaging. 
 - Startup and sync history view
 - Browser-notification opt-in flow
 - Developer tools for relay diagnostics, trace export, reconnects, and subscription restart
-- Web and Electron build targets
+- Web, Electron, and Android build targets
 
 ## Protocol Notes
 
@@ -155,6 +155,41 @@ npm run build:electron:mac
 npm run build:electron:win
 npm run build:electron:linux
 ```
+
+Build Android outputs:
+
+```bash
+npm run build:android:apk:debug
+npm run build:android:release
+npm run build:android:aab:release
+```
+
+Android prerequisites:
+
+- Docker with Compose support.
+- Node/npm on the host so you can run the repo scripts.
+
+Android notes:
+
+- The native project lives in `src-capacitor/android`.
+- `build:android:*` now builds inside Docker, so the host machine does not need a local JDK or Android SDK.
+- The Docker image uses the official Node Docker image plus OpenJDK 17 and Android command-line tools.
+- Docker builds default to `linux/amd64` for better Android SDK compatibility. Override with `ANDROID_DOCKER_PLATFORM` if you need a different target.
+- The helper scripts keep Gradle caches inside the repo via `.gradle-android/`, so builds do not depend on `~/.gradle`.
+- Linux container dependencies are isolated in Docker volumes instead of using your host `node_modules`.
+- If `ANDROID_KEYSTORE_PATH` is absolute, the Docker wrapper mounts that keystore file into the container automatically.
+- Release signing is picked up from these environment variables when present:
+  - `ANDROID_KEYSTORE_PATH` relative to `src-capacitor/android` or absolute
+  - `ANDROID_KEYSTORE_PASSWORD`
+  - `ANDROID_KEY_ALIAS`
+  - `ANDROID_KEY_PASSWORD`
+  - optional `ANDROID_VERSION_CODE`
+  - optional `ANDROID_VERSION_NAME`
+- Generated Android artifacts are copied into `dist/capacitor/android/`.
+- If you ever want the old host-native path, use:
+  - `npm run build:android:local:apk:debug`
+  - `npm run build:android:local:release`
+  - `npm run build:android:local:aab:release`
 
 ## Project Structure
 
