@@ -20,7 +20,7 @@ Nostr Chat is a Quasar/Vue web and Electron client for Nostr private messaging. 
 - Startup and sync history view
 - Browser-notification opt-in flow
 - Developer tools for relay diagnostics, trace export, reconnects, and subscription restart
-- Web and Electron build targets
+- Web, Electron, and Android build targets
 
 ## Protocol Notes
 
@@ -155,6 +155,32 @@ npm run build:electron:mac
 npm run build:electron:win
 npm run build:electron:linux
 ```
+
+Build Android outputs:
+
+```bash
+npm run build:android:apk:debug
+npm run build:android:release
+npm run build:android:aab:release
+```
+
+Android prerequisites:
+
+- JDK 17 or newer. Android Studio's bundled JBR works too.
+- Android SDK available through `ANDROID_HOME` or `ANDROID_SDK_ROOT`, or at the default macOS path `~/Library/Android/sdk`.
+
+Android notes:
+
+- The native project lives in `src-capacitor/android`.
+- The helper scripts keep Gradle caches inside the repo via `.gradle-android/`, so builds do not depend on `~/.gradle`.
+- Release signing is picked up from these environment variables when present:
+  - `ANDROID_KEYSTORE_PATH` relative to `src-capacitor/android` or absolute
+  - `ANDROID_KEYSTORE_PASSWORD`
+  - `ANDROID_KEY_ALIAS`
+  - `ANDROID_KEY_PASSWORD`
+  - optional `ANDROID_VERSION_CODE`
+  - optional `ANDROID_VERSION_NAME`
+- Generated Android artifacts are copied into `dist/capacitor/android/`.
 
 ## Project Structure
 
