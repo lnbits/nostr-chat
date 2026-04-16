@@ -2767,7 +2767,9 @@ async function handleRefreshContactProfile(): Promise<void> {
     pubkeyError.value = '';
     pubkeyInfo.value = '';
 
-    await nostrStore.refreshContactByPublicKey(normalizedPubkey, headerName.value);
+    await nostrStore.refreshContactByPublicKey(normalizedPubkey, headerName.value, {
+      refreshRelayList: true
+    });
     await loadContactFromPubkey(normalizedPubkey);
   } catch (error) {
     reportUiError('Failed to refresh profile', error, 'Failed to refresh profile.');

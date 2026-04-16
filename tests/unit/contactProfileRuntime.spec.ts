@@ -38,10 +38,6 @@ function makeUser(publicKey: string) {
     npub: `npub1${publicKey.slice(0, 8)}`,
     nprofile: `nprofile1${publicKey.slice(0, 8)}`,
     relayUrls: [],
-    fetchProfile: vi.fn().mockResolvedValue({
-      name: `Profile ${publicKey.slice(0, 8)}`,
-      display_name: `Display ${publicKey.slice(0, 8)}`,
-    }),
   };
 }
 
@@ -49,6 +45,14 @@ function createDeps() {
   const ndkUserByPubkey = new Map<string, ReturnType<typeof makeUser>>();
 
   const deps = {
+    applyContactProfileEventStateToMeta: vi.fn((meta, eventState) => ({
+      ...(meta ?? {}),
+      ...(eventState ? { profile_event_created_at: eventState.createdAt } : {}),
+    })),
+    applyContactRelayListEventStateToMeta: vi.fn((meta, eventState) => ({
+      ...(meta ?? {}),
+      ...(eventState ? { relay_list_event_created_at: eventState.createdAt } : {}),
+    })),
     backgroundGroupContactRefreshStartedAt: new Map<string, number>(),
     buildIdentifierFallbacks: vi.fn((pubkeyHex: string) => [pubkeyHex]),
     buildUpdatedContactMeta: vi.fn((existingMeta) => ({
@@ -68,7 +72,10 @@ function createDeps() {
       contact: null,
       didChange: false,
     }),
-    extractContactProfileEventStateFromProfile: vi.fn(() => null),
+    fetchContactProfile: vi.fn().mockResolvedValue({
+      eventState: null,
+      profile: null,
+    }),
     fetchContactRelayList: vi.fn().mockResolvedValue(null),
     getAppRelayUrls: vi.fn(() => []),
     getLoggedInPublicKeyHex: vi.fn(() => null),
@@ -80,6 +87,11 @@ function createDeps() {
       fetchUser: vi.fn(async (identifier: string) => ndkUserByPubkey.get(identifier)),
     } as never,
     publishPrivateContactList: vi.fn().mockResolvedValue(undefined),
+    readContactRelayListEventSince: vi.fn((meta) =>
+      typeof meta?.relay_list_event_created_at === 'number'
+        ? meta.relay_list_event_created_at
+        : null
+    ),
     refreshContactRelayList: vi.fn().mockResolvedValue([]),
     resolveGroupDisplayName: vi.fn(
       (groupPublicKey: string) => `Group ${groupPublicKey.slice(0, 8)}`
@@ -143,12 +155,12 @@ describe('contactProfileRuntime group refresh', () => {
 
   it('reuses the in-flight group refresh promise', async () => {
     const { deps, setUser } = createDeps();
-    const groupUser = setUser(GROUP_PUBKEY);
+    setUser(GROUP_PUBKEY);
     const profileDeferred = createDeferred<{
-      name: string;
-      display_name: string;
+      eventState: null;
+      profile: null;
     }>();
-    groupUser.fetchProfile.mockReturnValueOnce(profileDeferred.promise);
+    deps.fetchContactProfile.mockReturnValueOnce(profileDeferred.promise);
     const existingGroup = makeContact(GROUP_PUBKEY, {
       id: 2,
       type: 'group',
@@ -167,13 +179,13 @@ describe('contactProfileRuntime group refresh', () => {
     expect(deps.groupContactRefreshPromises.size).toBe(1);
 
     profileDeferred.resolve({
-      name: 'Profile study',
-      display_name: 'Display study',
+      eventState: null,
+      profile: null,
     });
     await firstRefresh;
     await secondRefresh;
 
-    expect(groupUser.fetchProfile).toHaveBeenCalledTimes(1);
+    expect(deps.fetchContactProfile).toHaveBeenCalledTimes(1);
     expect(deps.refreshContactRelayList).toHaveBeenCalledTimes(1);
     expect(deps.groupContactRefreshPromises.size).toBe(0);
   });
@@ -210,6 +222,69 @@ describe('contactProfileRuntime group refresh', () => {
     });
   });
 
+  it('refreshes relay lists for user contacts that have no stored relay-list event timestamp', async () => {
+    const { deps, setUser } = createDeps();
+    setUser(USER_PUBKEY);
+    const existingUser = makeContact(USER_PUBKEY, {
+      id: 3,
+      type: 'user',
+      name: 'Alice',
+      meta: {},
+      relays: [{ url: 'wss://relay.seed/', read: true, write: true }],
+    });
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(existingUser);
+
+    const runtime = createContactProfileRuntime(deps);
+
+    await runtime.refreshContactByPublicKey(USER_PUBKEY, 'Alice');
+
+    expect(deps.fetchContactRelayList).toHaveBeenCalledWith(USER_PUBKEY, undefined);
+  });
+
+  it('persists fetched profile and relay event timestamps in contact metadata', async () => {
+    const { deps, setUser } = createDeps();
+    setUser(USER_PUBKEY);
+    const existingUser = makeContact(USER_PUBKEY, {
+      id: 4,
+      type: 'user',
+      name: 'Alice',
+      meta: {},
+      relays: [{ url: 'wss://relay.seed/', read: true, write: true }],
+    });
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(existingUser);
+    deps.fetchContactProfile.mockResolvedValue({
+      eventState: {
+        createdAt: 11,
+        eventId: 'profile-event',
+      },
+      profile: {
+        name: 'Alice',
+      },
+    });
+    deps.fetchContactRelayList.mockResolvedValue({
+      createdAt: 22,
+      eventId: 'relay-event',
+      relayEntries: [{ url: 'wss://relay.example/', read: true, write: true }],
+    });
+
+    const runtime = createContactProfileRuntime(deps);
+
+    await runtime.refreshContactByPublicKey(USER_PUBKEY, 'Alice', {
+      refreshRelayList: true,
+    });
+
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledWith(
+      4,
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          profile_event_created_at: 11,
+          relay_list_event_created_at: 22,
+        }),
+        relays: [{ url: 'wss://relay.example/', read: true, write: true }],
+      })
+    );
+  });
+
   it('forwards seed relay urls through group contact refreshes', async () => {
     const { deps, setUser } = createDeps();
     setUser(GROUP_PUBKEY);
@@ -232,7 +307,7 @@ describe('contactProfileRuntime group refresh', () => {
 
   it('throttles background group refreshes with the runtime cooldown', async () => {
     const { deps, setUser } = createDeps();
-    const groupUser = setUser(GROUP_PUBKEY);
+    setUser(GROUP_PUBKEY);
     const existingGroup = makeContact(GROUP_PUBKEY, {
       id: 2,
       type: 'group',
@@ -253,7 +328,7 @@ describe('contactProfileRuntime group refresh', () => {
     runtime.queueBackgroundGroupContactRefresh(GROUP_PUBKEY, 'Study Group');
     await flushPromises();
 
-    expect(groupUser.fetchProfile).toHaveBeenCalledTimes(1);
+    expect(deps.fetchContactProfile).toHaveBeenCalledTimes(1);
     expect(deps.refreshContactRelayList).toHaveBeenCalledTimes(1);
 
     vi.advanceTimersByTime(BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS + 1);
@@ -262,7 +337,7 @@ describe('contactProfileRuntime group refresh', () => {
     expect(secondRefresh).toBeDefined();
     await secondRefresh;
 
-    expect(groupUser.fetchProfile).toHaveBeenCalledTimes(2);
+    expect(deps.fetchContactProfile).toHaveBeenCalledTimes(2);
     expect(deps.refreshContactRelayList).toHaveBeenCalledTimes(2);
   });
 });

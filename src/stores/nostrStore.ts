@@ -74,6 +74,8 @@ import type {
 } from 'src/stores/nostr/types';
 import { createUserActions } from 'src/stores/nostr/userActions';
 import {
+  applyContactProfileEventStateToMetaValue,
+  applyContactRelayListEventStateToMetaValue,
   buildIdentifierFallbacksValue,
   buildUpdatedContactMetaValue,
   contactMetadataEqualValue,
@@ -84,6 +86,8 @@ import {
   normalizeChatGroupEpochKeysValue,
   normalizeRelayStatusUrlsValue,
   normalizeWritableRelayUrlsValue,
+  readContactProfileEventSinceValue,
+  readContactRelayListEventSinceValue,
   relayEntriesFromRelayListValue,
   resolveCurrentGroupChatEpochEntryValue,
   resolveGroupChatEpochEntriesValue,
@@ -798,6 +802,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const relayEntriesFromRelayList = relayEntriesFromRelayListValue;
   const contactRelayListsEqual = contactRelayListsEqualValue;
   const contactMetadataEqual = contactMetadataEqualValue;
+  const applyContactProfileEventStateToMeta = applyContactProfileEventStateToMetaValue;
+  const applyContactRelayListEventStateToMeta = applyContactRelayListEventStateToMetaValue;
+  const readContactProfileEventSince = readContactProfileEventSinceValue;
+  const readContactRelayListEventSince = readContactRelayListEventSinceValue;
   const shouldPreserveExistingGroupRelays = shouldPreserveExistingGroupRelaysValue;
 
   const {
@@ -860,7 +868,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     buildPrivateContactListTags,
     decryptPrivateContactListContent,
     encryptPrivateContactListTags,
-    extractContactProfileEventStateFromProfile,
+    fetchContactProfile,
     fetchContactRelayList,
     getAppRelayUrls,
     listTrackedContactPubkeys,
@@ -877,15 +885,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resolvePrivateMessageReadRelayUrls,
     resolveTrackedContactReadRelayUrls,
   } = createContactRelayRuntime({
+    applyContactRelayListEventStateToMeta,
     bumpContactListVersion,
+    contactMetadataEqual,
     contactRelayListsEqual,
     ensureRelayConnections,
-    getFilterSince,
     getLoggedInPublicKeyHex,
     getLoggedInSignerUser,
+    markContactRelayListEventApplied,
     ndk,
     normalizeRelayStatusUrls,
     normalizeWritableRelayUrlsValue,
+    readContactProfileEventSince,
+    readContactRelayListEventSince,
     relayEntriesFromRelayList,
     relayStore,
     resolveGroupPublishRelayUrlsValue,
@@ -1240,6 +1252,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     subscribeContactProfileUpdates,
     subscribeContactRelayListUpdates,
   } = createContactSubscriptionsRuntime({
+    applyContactProfileEventStateToMeta,
+    applyContactRelayListEventStateToMeta,
     buildContactProfileEventState,
     buildContactRelayListEventState,
     buildSubscriptionEventDetails,
@@ -1333,6 +1347,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshContactByPublicKey,
     refreshGroupContactByPublicKey,
   } = createContactProfileRuntime({
+    applyContactProfileEventStateToMeta,
+    applyContactRelayListEventStateToMeta,
     backgroundGroupContactRefreshStartedAt,
     buildIdentifierFallbacks,
     buildUpdatedContactMeta,
@@ -1341,7 +1357,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     contactMetadataEqual,
     contactRelayListsEqual,
     ensureContactListedInPrivateContactList,
-    extractContactProfileEventStateFromProfile,
+    fetchContactProfile,
     fetchContactRelayList,
     getAppRelayUrls,
     getLoggedInPublicKeyHex,
@@ -1351,6 +1367,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     markContactRelayListEventApplied,
     ndk,
     publishPrivateContactList,
+    readContactRelayListEventSince,
     refreshContactRelayList,
     resolveGroupDisplayName,
     shouldPreserveExistingGroupRelays,

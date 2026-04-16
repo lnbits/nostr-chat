@@ -14,6 +14,20 @@ import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 interface ContactSubscriptionsRuntimeDeps {
+  applyContactProfileEventStateToMeta: (
+    meta: ContactMetadata | undefined,
+    eventState: {
+      createdAt: number;
+      eventId: string;
+    }
+  ) => ContactMetadata;
+  applyContactRelayListEventStateToMeta: (
+    meta: ContactMetadata | undefined,
+    eventState: {
+      createdAt: number;
+      eventId: string;
+    }
+  ) => ContactMetadata;
   buildContactProfileEventState: (event: Pick<NDKEvent, 'created_at' | 'id'>) => {
     createdAt: number;
     eventId: string;
@@ -97,6 +111,8 @@ interface ContactSubscriptionsRuntimeDeps {
 }
 
 export function createContactSubscriptionsRuntime({
+  applyContactProfileEventStateToMeta,
+  applyContactRelayListEventStateToMeta,
   buildContactProfileEventState,
   buildContactRelayListEventState,
   buildSubscriptionEventDetails,
@@ -168,20 +184,25 @@ export function createContactSubscriptionsRuntime({
       existingContact.meta.npub?.trim() || encodeNpub(normalizedPubkey) || '',
       existingContact.meta.nprofile?.trim() || encodeNprofile(normalizedPubkey) || ''
     );
+    const persistedMeta = applyContactProfileEventStateToMeta(nextMeta, nextEventState);
     const nextName =
       nextMeta.display_name?.trim() ||
       nextMeta.name?.trim() ||
       existingContact.name?.trim() ||
       normalizedPubkey.slice(0, 16);
 
-    if (existingContact.name === nextName && contactMetadataEqual(existingContact.meta, nextMeta)) {
+    if (
+      existingContact.name === nextName &&
+      contactMetadataEqual(existingContact.meta, nextMeta) &&
+      contactMetadataEqual(existingContact.meta, persistedMeta)
+    ) {
       markContactProfileEventApplied(normalizedPubkey, nextEventState);
       return;
     }
 
     const updatedContact = await contactsService.updateContact(existingContact.id, {
       name: nextName,
-      meta: nextMeta,
+      meta: persistedMeta,
     });
     if (!updatedContact) {
       return;
@@ -189,7 +210,12 @@ export function createContactSubscriptionsRuntime({
 
     await chatStore.syncContactProfile(normalizedPubkey);
     markContactProfileEventApplied(normalizedPubkey, nextEventState);
-    bumpContactListVersion();
+    if (
+      existingContact.name !== nextName ||
+      !contactMetadataEqual(existingContact.meta, nextMeta)
+    ) {
+      bumpContactListVersion();
+    }
   }
 
   function queueContactProfileEventApplication(event: NDKEvent): void {
@@ -221,22 +247,39 @@ export function createContactSubscriptionsRuntime({
       return;
     }
 
+    const persistedMeta = applyContactRelayListEventStateToMeta(
+      existingContact.meta,
+      nextEventState
+    );
+
     if (shouldPreserveExistingGroupRelays(existingContact, nextRelayEntries)) {
       console.warn('Ignoring empty group relay list event to preserve stored relays', {
         pubkey: normalizedPubkey,
         eventId: event.id ?? null,
         existingRelayCount: existingContact.relays.length,
       });
+      if (!contactMetadataEqual(existingContact.meta, persistedMeta)) {
+        const updatedContact = await contactsService.updateContact(existingContact.id, {
+          meta: persistedMeta,
+        });
+        if (!updatedContact) {
+          return;
+        }
+      }
       markContactRelayListEventApplied(normalizedPubkey, nextEventState);
       return;
     }
 
-    if (contactRelayListsEqual(existingContact.relays, nextRelayEntries)) {
+    if (
+      contactRelayListsEqual(existingContact.relays, nextRelayEntries) &&
+      contactMetadataEqual(existingContact.meta, persistedMeta)
+    ) {
       markContactRelayListEventApplied(normalizedPubkey, nextEventState);
       return;
     }
 
     const updatedContact = await contactsService.updateContact(existingContact.id, {
+      meta: persistedMeta,
       relays: nextRelayEntries,
     });
     if (!updatedContact) {
@@ -244,7 +287,9 @@ export function createContactSubscriptionsRuntime({
     }
 
     markContactRelayListEventApplied(normalizedPubkey, nextEventState);
-    bumpContactListVersion();
+    if (!contactRelayListsEqual(existingContact.relays, nextRelayEntries)) {
+      bumpContactListVersion();
+    }
   }
 
   function queueContactRelayListEventApplication(event: NDKEvent): void {

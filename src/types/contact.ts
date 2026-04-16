@@ -35,6 +35,8 @@ export interface ContactMetadata {
   avatar?: string;
   last_seen_incoming_activity_at?: string;
   last_seen_incoming_activity_event_id?: string;
+  profile_event_created_at?: number;
+  relay_list_event_created_at?: number;
   private_contact_list_member?: boolean;
   group_private_key_encrypted?: string;
   owner_public_key?: string;

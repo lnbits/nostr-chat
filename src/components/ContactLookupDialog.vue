@@ -429,7 +429,10 @@ async function createContactFromIdentifier(identifier: string): Promise<ContactR
 
   let nextContact = created;
   try {
-    await nostrStore.refreshContactByPublicKey(resolution.normalizedPubkey, fallbackName);
+    await nostrStore.refreshContactByPublicKey(resolution.normalizedPubkey, fallbackName, {
+      refreshRelayList: true,
+      relayListSeedRelayUrls: resolution.relays
+    });
     const refreshedContact = await contactsService.getContactByPublicKey(resolution.normalizedPubkey);
     if (refreshedContact) {
       nextContact = refreshedContact;

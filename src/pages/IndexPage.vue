@@ -704,7 +704,9 @@ async function handleRefreshChatProfile(chatId: string): Promise<void> {
     }
 
     const nostrStore = await getNostrStore();
-    await nostrStore.refreshContactByPublicKey(chat.publicKey, chat.name);
+    await nostrStore.refreshContactByPublicKey(chat.publicKey, chat.name, {
+      refreshRelayList: true
+    });
   } catch (error) {
     reportUiError('Failed to refresh chat contact profile', error, 'Failed to refresh profile.');
   }

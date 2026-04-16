@@ -729,7 +729,9 @@ async function handleContactMenuChat(contact: ContactRecord): Promise<void> {
 }
 
 async function refreshStoredContact(contact: ContactRecord): Promise<ContactRecord | null> {
-  await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact));
+  await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact), {
+    refreshRelayList: true
+  });
   return contactsService.getContactByPublicKey(contact.public_key);
 }
 

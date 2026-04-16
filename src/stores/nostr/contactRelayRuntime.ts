@@ -19,18 +19,31 @@ import type {
 import type { ContactRecord, ContactRelay } from 'src/types/contact';
 
 interface ContactRelayRuntimeDeps {
+  applyContactRelayListEventStateToMeta: (
+    meta: ContactRecord['meta'] | undefined,
+    eventState: ContactRelayListEventState | null | undefined
+  ) => ContactRecord['meta'];
   bumpContactListVersion: () => void;
+  contactMetadataEqual: (
+    first: ContactRecord['meta'] | undefined,
+    second: ContactRecord['meta'] | undefined
+  ) => boolean;
   contactRelayListsEqual: (
     first: ContactRelay[] | undefined,
     second: ContactRelay[] | undefined
   ) => boolean;
   ensureRelayConnections: (relayUrls: string[]) => Promise<void>;
-  getFilterSince: () => number;
   getLoggedInPublicKeyHex: () => string | null;
   getLoggedInSignerUser: () => Promise<NDKUser>;
+  markContactRelayListEventApplied: (
+    pubkeyHex: string,
+    eventState: ContactRelayListEventState
+  ) => void;
   ndk: NDK;
   normalizeRelayStatusUrls: (relayUrls: string[]) => string[];
   normalizeWritableRelayUrlsValue: (relays: ContactRelay[] | undefined) => string[];
+  readContactProfileEventSince: (meta: ContactRecord['meta'] | undefined) => number | null;
+  readContactRelayListEventSince: (meta: ContactRecord['meta'] | undefined) => number | null;
   relayEntriesFromRelayList: (relayList: NDKRelayList | null | undefined) => ContactRelay[];
   relayStore: { init: () => void; relays: string[] };
   resolveGroupPublishRelayUrlsValue: (
@@ -45,21 +58,89 @@ interface ContactRelayRuntimeDeps {
 }
 
 export function createContactRelayRuntime({
+  applyContactRelayListEventStateToMeta,
   bumpContactListVersion,
+  contactMetadataEqual,
   contactRelayListsEqual,
   ensureRelayConnections,
-  getFilterSince,
   getLoggedInPublicKeyHex,
   getLoggedInSignerUser,
+  markContactRelayListEventApplied,
   ndk,
   normalizeRelayStatusUrls,
   normalizeWritableRelayUrlsValue,
+  readContactProfileEventSince,
+  readContactRelayListEventSince,
   relayEntriesFromRelayList,
   relayStore,
   resolveGroupPublishRelayUrlsValue,
   shouldPreserveExistingGroupRelays,
   updateStoredEventSinceFromCreatedAt,
 }: ContactRelayRuntimeDeps) {
+  async function fetchContactProfile(
+    pubkeyHex: string,
+    options: {
+      relayEntries?: ContactRelay[];
+      seedRelayUrls?: string[];
+    } = {}
+  ): Promise<{
+    eventState: ContactProfileEventState | null;
+    profile: NDKUserProfile | null;
+  }> {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    if (!normalizedPubkey) {
+      return {
+        eventState: null,
+        profile: null,
+      };
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
+    const relayUrls = await resolveContactProfileReadRelayUrls(normalizedPubkey, {
+      relayEntries: options.relayEntries,
+      seedRelayUrls: options.seedRelayUrls ?? [],
+    });
+    if (relayUrls.length === 0) {
+      return {
+        eventState: null,
+        profile: null,
+      };
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const since = readContactProfileEventSince(existingContact?.meta);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
+    const profileEvent = await ndk.fetchEvent(
+      {
+        kinds: [NDKKind.Metadata],
+        authors: [normalizedPubkey],
+        ...(since !== null ? { since } : {}),
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+      },
+      relaySet
+    );
+    if (!profileEvent) {
+      return {
+        eventState: null,
+        profile: null,
+      };
+    }
+
+    updateStoredEventSinceFromCreatedAt(profileEvent.created_at);
+
+    const wrappedEvent =
+      profileEvent instanceof NDKEvent ? profileEvent : new NDKEvent(ndk, profileEvent);
+
+    return {
+      eventState: buildContactProfileEventState(wrappedEvent),
+      profile: parseContactProfileEvent(wrappedEvent),
+    };
+  }
+
   async function fetchContactRelayList(
     pubkeyHex: string,
     seedRelayUrls: string[] = []
@@ -69,6 +150,8 @@ export function createContactRelayRuntime({
       return null;
     }
 
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
     const relayUrls = await resolveContactRelayListReadRelayUrls(normalizedPubkey, seedRelayUrls);
     if (relayUrls.length === 0) {
       return null;
@@ -76,12 +159,13 @@ export function createContactRelayRuntime({
 
     await ensureRelayConnections(relayUrls);
 
+    const since = readContactRelayListEventSince(existingContact?.meta);
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const relayListEvent = await ndk.fetchEvent(
       {
         kinds: [NDKKind.RelayList],
         authors: [normalizedPubkey],
-        since: getFilterSince(),
+        ...(since !== null ? { since } : {}),
       },
       {
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
@@ -125,27 +209,50 @@ export function createContactRelayRuntime({
       return existingContact.relays ?? [];
     }
 
+    const nextEventState: ContactRelayListEventState = {
+      createdAt: relayList.createdAt,
+      eventId: relayList.eventId,
+    };
     const nextRelayEntries = relayList.relayEntries;
+    const nextMeta = applyContactRelayListEventStateToMeta(existingContact.meta, nextEventState);
     if (shouldPreserveExistingGroupRelays(existingContact, nextRelayEntries)) {
       console.warn('Preserving existing group relays after empty relay list refresh', {
         pubkey: normalizedPubkey,
         existingRelayCount: existingContact.relays.length,
       });
+      if (!contactMetadataEqual(existingContact.meta, nextMeta)) {
+        const updatedContact = await contactsService.updateContact(existingContact.id, {
+          meta: nextMeta,
+        });
+        if (!updatedContact) {
+          throw new Error('Failed to persist refreshed contact relay list metadata.');
+        }
+      }
+
+      markContactRelayListEventApplied(normalizedPubkey, nextEventState);
       return existingContact.relays ?? [];
     }
 
-    if (contactRelayListsEqual(existingContact.relays, nextRelayEntries)) {
+    if (
+      contactRelayListsEqual(existingContact.relays, nextRelayEntries) &&
+      contactMetadataEqual(existingContact.meta, nextMeta)
+    ) {
+      markContactRelayListEventApplied(normalizedPubkey, nextEventState);
       return nextRelayEntries;
     }
 
     const updatedContact = await contactsService.updateContact(existingContact.id, {
+      meta: nextMeta,
       relays: nextRelayEntries,
     });
     if (!updatedContact) {
       throw new Error('Failed to persist refreshed contact relay list.');
     }
 
-    bumpContactListVersion();
+    markContactRelayListEventApplied(normalizedPubkey, nextEventState);
+    if (!contactRelayListsEqual(existingContact.relays, nextRelayEntries)) {
+      bumpContactListVersion();
+    }
     return updatedContact.relays ?? [];
   }
 
@@ -280,9 +387,29 @@ export function createContactRelayRuntime({
 
     return normalizeRelayStatusUrls([
       ...(await resolveLoggedInReadRelayUrls(seedRelayUrls)),
-      ...(existingContact?.type === 'group'
-        ? inputSanitizerService.normalizeReadableRelayUrls(existingContact.relays)
-        : []),
+      ...inputSanitizerService.normalizeReadableRelayUrls(existingContact?.relays),
+    ]);
+  }
+
+  async function resolveContactProfileReadRelayUrls(
+    pubkeyHex: string,
+    options: {
+      relayEntries?: ContactRelay[];
+      seedRelayUrls?: string[];
+    } = {}
+  ): Promise<string[]> {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    if (!normalizedPubkey) {
+      return [];
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
+
+    return normalizeRelayStatusUrls([
+      ...(await resolveLoggedInReadRelayUrls(options.seedRelayUrls ?? [])),
+      ...inputSanitizerService.normalizeReadableRelayUrls(existingContact?.relays),
+      ...inputSanitizerService.normalizeReadableRelayUrls(options.relayEntries),
     ]);
   }
 
@@ -443,6 +570,7 @@ export function createContactRelayRuntime({
     decryptPrivateContactListContent,
     encryptPrivateContactListTags,
     extractContactProfileEventStateFromProfile,
+    fetchContactProfile,
     fetchContactRelayList,
     getAppRelayUrls,
     listTrackedContactPubkeys,

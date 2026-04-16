@@ -57,6 +57,15 @@ class InputSanitizerService {
     return normalized || undefined;
   }
 
+  normalizePositiveInteger(value: unknown): number | undefined {
+    const normalizedValue = Number(value);
+    if (!Number.isInteger(normalizedValue) || normalizedValue <= 0) {
+      return undefined;
+    }
+
+    return Math.floor(normalizedValue);
+  }
+
   normalizeHexKey(value: string): string | null {
     const normalized = value.trim().toLowerCase();
     return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
@@ -318,6 +327,10 @@ class InputSanitizerService {
     const lastSeenIncomingActivityEventId = this.readOptionalString(
       value.last_seen_incoming_activity_event_id
     );
+    const profileEventCreatedAt = this.normalizePositiveInteger(value.profile_event_created_at);
+    const relayListEventCreatedAt = this.normalizePositiveInteger(
+      value.relay_list_event_created_at
+    );
     const privateContactListMember =
       typeof value.private_contact_list_member === 'boolean'
         ? value.private_contact_list_member
@@ -399,6 +412,14 @@ class InputSanitizerService {
 
     if (lastSeenIncomingActivityEventId) {
       meta.last_seen_incoming_activity_event_id = lastSeenIncomingActivityEventId;
+    }
+
+    if (profileEventCreatedAt) {
+      meta.profile_event_created_at = profileEventCreatedAt;
+    }
+
+    if (relayListEventCreatedAt) {
+      meta.relay_list_event_created_at = relayListEventCreatedAt;
     }
 
     if (typeof privateContactListMember === 'boolean') {

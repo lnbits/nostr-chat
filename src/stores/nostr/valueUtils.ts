@@ -6,6 +6,7 @@ import {
 } from '@nostr-dev-kit/ndk';
 import type { ChatRow } from 'src/services/chatDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import type { ContactProfileEventState, ContactRelayListEventState } from 'src/stores/nostr/types';
 import type { ChatGroupEpochKey } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
@@ -526,6 +527,57 @@ export function buildUpdatedContactMetaValue(
   }
 
   return meta;
+}
+
+function normalizeStoredContactEventCreatedAtValue(value: unknown): number | null {
+  const createdAt = Number(value);
+  if (!Number.isInteger(createdAt) || createdAt <= 0) {
+    return null;
+  }
+
+  return Math.floor(createdAt);
+}
+
+export function readContactProfileEventSinceValue(
+  meta: ContactMetadata | undefined
+): number | null {
+  return normalizeStoredContactEventCreatedAtValue(meta?.profile_event_created_at);
+}
+
+export function readContactRelayListEventSinceValue(
+  meta: ContactMetadata | undefined
+): number | null {
+  return normalizeStoredContactEventCreatedAtValue(meta?.relay_list_event_created_at);
+}
+
+export function applyContactProfileEventStateToMetaValue(
+  meta: ContactMetadata | undefined,
+  eventState: ContactProfileEventState | null | undefined
+): ContactMetadata {
+  const nextMeta: ContactMetadata = {
+    ...(meta ?? {}),
+  };
+  const createdAt = normalizeStoredContactEventCreatedAtValue(eventState?.createdAt);
+  if (createdAt !== null) {
+    nextMeta.profile_event_created_at = createdAt;
+  }
+
+  return nextMeta;
+}
+
+export function applyContactRelayListEventStateToMetaValue(
+  meta: ContactMetadata | undefined,
+  eventState: ContactRelayListEventState | null | undefined
+): ContactMetadata {
+  const nextMeta: ContactMetadata = {
+    ...(meta ?? {}),
+  };
+  const createdAt = normalizeStoredContactEventCreatedAtValue(eventState?.createdAt);
+  if (createdAt !== null) {
+    nextMeta.relay_list_event_created_at = createdAt;
+  }
+
+  return nextMeta;
 }
 
 function encodeNpubValue(pubkeyHex: string): string | null {

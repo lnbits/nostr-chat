@@ -11,6 +11,20 @@ import type {
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 interface ContactProfileRuntimeDeps {
+  applyContactProfileEventStateToMeta: (
+    meta: ContactMetadata | undefined,
+    eventState: ContactProfileEventState | null | undefined
+  ) => ContactMetadata;
+  applyContactRelayListEventStateToMeta: (
+    meta: ContactMetadata | undefined,
+    eventState:
+      | {
+          createdAt: number;
+          eventId: string;
+        }
+      | null
+      | undefined
+  ) => ContactMetadata;
   backgroundGroupContactRefreshStartedAt: Map<string, number>;
   buildIdentifierFallbacks: (pubkeyHex: string, existingMeta?: ContactMetadata) => string[];
   buildUpdatedContactMeta: (
@@ -41,9 +55,16 @@ interface ContactProfileRuntimeDeps {
     contact: ContactRecord | null;
     didChange: boolean;
   }>;
-  extractContactProfileEventStateFromProfile: (
-    profile: NDKUserProfile | null
-  ) => ContactProfileEventState | null;
+  fetchContactProfile: (
+    pubkeyHex: string,
+    options?: {
+      relayEntries?: ContactRelay[];
+      seedRelayUrls?: string[];
+    }
+  ) => Promise<{
+    eventState: ContactProfileEventState | null;
+    profile: NDKUserProfile | null;
+  }>;
   fetchContactRelayList: (
     pubkeyHex: string,
     seedRelayUrls?: string[]
@@ -62,6 +83,7 @@ interface ContactProfileRuntimeDeps {
   ) => void;
   ndk: NDK;
   publishPrivateContactList: (seedRelayUrls?: string[]) => Promise<void>;
+  readContactRelayListEventSince: (meta: ContactMetadata | undefined) => number | null;
   refreshContactRelayList: (
     pubkeyHex: string,
     seedRelayUrls?: string[]
@@ -74,6 +96,8 @@ interface ContactProfileRuntimeDeps {
 }
 
 export function createContactProfileRuntime({
+  applyContactProfileEventStateToMeta,
+  applyContactRelayListEventStateToMeta,
   backgroundGroupContactRefreshStartedAt,
   buildIdentifierFallbacks,
   buildUpdatedContactMeta,
@@ -82,7 +106,7 @@ export function createContactProfileRuntime({
   contactMetadataEqual,
   contactRelayListsEqual,
   ensureContactListedInPrivateContactList,
-  extractContactProfileEventStateFromProfile,
+  fetchContactProfile,
   fetchContactRelayList,
   getAppRelayUrls,
   getLoggedInPublicKeyHex,
@@ -92,6 +116,7 @@ export function createContactProfileRuntime({
   markContactRelayListEventApplied,
   ndk,
   publishPrivateContactList,
+  readContactRelayListEventSince,
   refreshContactRelayList,
   resolveGroupDisplayName,
   shouldPreserveExistingGroupRelays,
@@ -133,24 +158,12 @@ export function createContactProfileRuntime({
     const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
     const identifiers = buildIdentifierFallbacks(normalizedTargetPubkey, existingContact?.meta);
     const resolvedUser = await resolveUserByIdentifiers(identifiers, normalizedTargetPubkey);
-    if (!resolvedUser) {
+    if (!resolvedUser && !existingContact) {
       return;
     }
 
-    let fetchedProfile: NDKUserProfile | null = null;
-    let profileError: unknown | null = null;
-    lifecycle.onProfileFetchStart?.();
-    try {
-      fetchedProfile = await resolvedUser.fetchProfile();
-    } catch (error) {
-      profileError = error;
-      console.warn('Failed to fetch profile metadata for contact', normalizedTargetPubkey, error);
-    } finally {
-      lifecycle.onProfileFetchEnd?.(profileError);
-    }
-
     let resolvedNpub = existingContact?.meta.npub?.trim() ?? '';
-    if (!resolvedNpub) {
+    if (!resolvedNpub && resolvedUser) {
       try {
         resolvedNpub = resolvedUser.npub;
       } catch {
@@ -159,7 +172,7 @@ export function createContactProfileRuntime({
     }
 
     let resolvedNprofile = existingContact?.meta.nprofile?.trim() ?? '';
-    if (!resolvedNprofile) {
+    if (!resolvedNprofile && resolvedUser) {
       try {
         resolvedNprofile = resolvedUser.nprofile;
       } catch {
@@ -167,23 +180,10 @@ export function createContactProfileRuntime({
       }
     }
 
-    const nextMeta = buildUpdatedContactMeta(
-      existingContact?.meta,
-      fetchedProfile,
-      resolvedNpub,
-      resolvedNprofile
-    );
-    const fetchedProfileEventState = extractContactProfileEventStateFromProfile(fetchedProfile);
-
-    const fallbackContactName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
-    const nextName =
-      nextMeta.display_name?.trim() ||
-      nextMeta.name?.trim() ||
-      existingContact?.name?.trim() ||
-      fallbackContactName;
-
     const shouldRefreshRelayList =
-      lifecycle.refreshRelayList === true || existingContact?.type === 'group';
+      lifecycle.refreshRelayList === true ||
+      existingContact?.type === 'group' ||
+      readContactRelayListEventSince(existingContact?.meta) === null;
     let explicitRelayList: ContactRelayListFetchResult | null = null;
     let relayError: unknown | null = null;
     if (shouldRefreshRelayList) {
@@ -200,9 +200,54 @@ export function createContactProfileRuntime({
         lifecycle.onRelayFetchEnd?.(relayError);
       }
     }
+
     const fallbackRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
-      resolvedUser.relayUrls ?? []
+      resolvedUser?.relayUrls ?? []
     );
+    let fetchedProfile: NDKUserProfile | null = null;
+    let fetchedProfileEventState: ContactProfileEventState | null = null;
+    let profileError: unknown | null = null;
+    lifecycle.onProfileFetchStart?.();
+    try {
+      const fetchedProfileResult = await fetchContactProfile(normalizedTargetPubkey, {
+        relayEntries:
+          explicitRelayList?.relayEntries ??
+          (fallbackRelayEntries.length > 0 ? fallbackRelayEntries : existingContact?.relays),
+        seedRelayUrls: lifecycle.relayListSeedRelayUrls,
+      });
+      fetchedProfile = fetchedProfileResult.profile;
+      fetchedProfileEventState = fetchedProfileResult.eventState;
+    } catch (error) {
+      profileError = error;
+      console.warn('Failed to fetch profile metadata for contact', normalizedTargetPubkey, error);
+    } finally {
+      lifecycle.onProfileFetchEnd?.(profileError);
+    }
+
+    const baseNextMeta = buildUpdatedContactMeta(
+      existingContact?.meta,
+      fetchedProfile,
+      resolvedNpub,
+      resolvedNprofile
+    );
+    const nextMetaWithProfileState = applyContactProfileEventStateToMeta(
+      baseNextMeta,
+      fetchedProfileEventState
+    );
+    const nextMeta =
+      explicitRelayList !== null
+        ? applyContactRelayListEventStateToMeta(nextMetaWithProfileState, {
+            createdAt: explicitRelayList.createdAt,
+            eventId: explicitRelayList.eventId,
+          })
+        : nextMetaWithProfileState;
+
+    const fallbackContactName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
+    const nextName =
+      baseNextMeta.display_name?.trim() ||
+      baseNextMeta.name?.trim() ||
+      existingContact?.name?.trim() ||
+      fallbackContactName;
     const nextRelays =
       explicitRelayList !== null
         ? explicitRelayList.relayEntries
@@ -216,7 +261,7 @@ export function createContactProfileRuntime({
     const didChangeContact =
       !existingContact ||
       existingContact.name !== nextName ||
-      !contactMetadataEqual(existingContact.meta, nextMeta) ||
+      !contactMetadataEqual(existingContact.meta, baseNextMeta) ||
       !contactRelayListsEqual(existingContact.relays, effectiveNextRelays);
 
     if (existingContact) {
