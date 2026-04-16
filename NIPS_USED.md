@@ -47,7 +47,7 @@ This list is based on the current app code, especially `src/stores/nostrStore.ts
 ## NIP-51
 
 - Used for private follow-set style lists.
-- The app publishes a group-authored `kind:30000` follow set with `["d", "memebrs"]` when a group is created and whenever the owner changes the effective group membership set.
+- The app publishes a group-authored `kind:30000` follow set with `["d", "members"]` when a group is created and whenever the owner changes the effective group membership set.
 - Group member pubkeys are stored only as NIP-44-encrypted private `p` items in `content`, and the latest event is used to restore the owner-side `group_members` snapshot for that group.
 
 ## NIP-59

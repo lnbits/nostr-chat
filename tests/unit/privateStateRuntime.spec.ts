@@ -412,7 +412,7 @@ describe('privateStateRuntime', () => {
     expect(memberListPublishCall?.[0]).toMatchObject({
       kind: 30000,
       pubkey: ndkMocks.groupPubkey,
-      tags: [['d', 'memebrs']],
+      tags: [['d', 'members']],
     });
     expect(String(memberListPublishCall?.[0]?.content ?? '')).toBe('encrypted:[]');
     expect(deps.persistIncomingGroupEpochTicket).toHaveBeenCalledWith(
