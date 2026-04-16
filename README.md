@@ -166,13 +166,18 @@ npm run build:android:aab:release
 
 Android prerequisites:
 
-- JDK 17 or newer. Android Studio's bundled JBR works too.
-- Android SDK available through `ANDROID_HOME` or `ANDROID_SDK_ROOT`, or at the default macOS path `~/Library/Android/sdk`.
+- Docker with Compose support.
+- Node/npm on the host so you can run the repo scripts.
 
 Android notes:
 
 - The native project lives in `src-capacitor/android`.
+- `build:android:*` now builds inside Docker, so the host machine does not need a local JDK or Android SDK.
+- The Docker image uses the official Node Docker image plus OpenJDK 17 and Android command-line tools.
+- Docker builds default to `linux/amd64` for better Android SDK compatibility. Override with `ANDROID_DOCKER_PLATFORM` if you need a different target.
 - The helper scripts keep Gradle caches inside the repo via `.gradle-android/`, so builds do not depend on `~/.gradle`.
+- Linux container dependencies are isolated in Docker volumes instead of using your host `node_modules`.
+- If `ANDROID_KEYSTORE_PATH` is absolute, the Docker wrapper mounts that keystore file into the container automatically.
 - Release signing is picked up from these environment variables when present:
   - `ANDROID_KEYSTORE_PATH` relative to `src-capacitor/android` or absolute
   - `ANDROID_KEYSTORE_PASSWORD`
@@ -181,6 +186,10 @@ Android notes:
   - optional `ANDROID_VERSION_CODE`
   - optional `ANDROID_VERSION_NAME`
 - Generated Android artifacts are copied into `dist/capacitor/android/`.
+- If you ever want the old host-native path, use:
+  - `npm run build:android:local:apk:debug`
+  - `npm run build:android:local:release`
+  - `npm run build:android:local:aab:release`
 
 ## Project Structure
 

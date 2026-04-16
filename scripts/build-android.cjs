@@ -79,10 +79,6 @@ if (command.gradleTasks.length > 0) {
 }
 
 function ensureLocalProperties() {
-  if (fs.existsSync(localPropertiesPath)) {
-    return;
-  }
-
   const sdkDir = findAndroidSdkDir();
   if (!sdkDir) {
     console.error('Android SDK not found. Set ANDROID_HOME or ANDROID_SDK_ROOT before running Android builds.');
@@ -93,7 +89,16 @@ function ensureLocalProperties() {
     .replace(/\\/g, '\\\\')
     .replace(/:/g, '\\:');
 
-  fs.writeFileSync(localPropertiesPath, `sdk.dir=${escapedSdkDir}\n`, 'utf8');
+  const desiredContent = `sdk.dir=${escapedSdkDir}\n`;
+  const currentContent = fs.existsSync(localPropertiesPath)
+    ? fs.readFileSync(localPropertiesPath, 'utf8')
+    : null;
+
+  if (currentContent === desiredContent) {
+    return;
+  }
+
+  fs.writeFileSync(localPropertiesPath, desiredContent, 'utf8');
 }
 
 function findAndroidSdkDir() {
