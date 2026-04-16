@@ -27,6 +27,9 @@ jobs:
       - name: Start local relay
         run: docker compose -f docker-compose.e2e.yml up -d
 
+      - name: Wait for relay startup
+        run: sleep 10
+
       - name: Run core DM e2e tests
         run: npm run test:e2e
 
