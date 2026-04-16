@@ -212,6 +212,7 @@ function createDeps(overrides: Record<string, unknown> = {}) {
     }),
     ensureRelayConnections: vi.fn().mockResolvedValue(undefined),
     failStartupStep: vi.fn(),
+    fetchContactPreviewByPublicKey: vi.fn().mockResolvedValue(null),
     getFilterSince: vi.fn(() => 0),
     getLoggedInPublicKeyHex: vi.fn(() => 'f'.repeat(64)),
     getStartupStepSnapshot: vi.fn(() => ({
@@ -245,7 +246,6 @@ function createDeps(overrides: Record<string, unknown> = {}) {
     }),
     queueTrackedContactSubscriptionsRefresh: vi.fn(),
     readPrivatePreferencesFromStorage: vi.fn(() => null),
-    refreshContactByPublicKey: vi.fn().mockResolvedValue(null),
     refreshContactRelayList: vi.fn().mockResolvedValue(null),
     resolveLoggedInPublishRelayUrls: vi.fn().mockResolvedValue(['wss://relay.example/']),
     resolveLoggedInReadRelayUrls: vi.fn().mockResolvedValue(['wss://relay.example/']),
@@ -458,7 +458,22 @@ describe('privateStateRuntime', () => {
   it('refreshes group members from the shared roster and persists non-owner members only', async () => {
     const deps = createDeps({
       decryptPrivateStringContent: vi.fn(async () => 'b'.repeat(64)),
-      refreshContactByPublicKey: vi.fn().mockResolvedValue(undefined),
+      fetchContactPreviewByPublicKey: vi.fn().mockImplementation(async (pubkeyHex: string) => {
+        if (pubkeyHex === 'c'.repeat(64)) {
+          return {
+            public_key: 'c'.repeat(64),
+            name: 'Charlie',
+            given_name: 'Charlie',
+            meta: {
+              about: 'New member',
+              nip05: 'charlie@example.com',
+              nprofile: 'nprofile-charlie',
+            },
+          };
+        }
+
+        return null;
+      }),
       refreshContactRelayList: vi
         .fn()
         .mockResolvedValue([{ url: 'wss://relay.example/', read: true, write: true }]),
@@ -553,18 +568,11 @@ describe('privateStateRuntime', () => {
 
     expect(result.ownerIncluded).toBe(true);
     expect(result.memberPublicKeys).toEqual(['c'.repeat(64), 'f'.repeat(64)]);
-    expect(deps.refreshContactByPublicKey).toHaveBeenCalledWith(
-      'f'.repeat(64),
-      'ffffffffffffffff',
-      expect.objectContaining({
-        relayListSeedRelayUrls: ['wss://seed.example'],
-      })
-    );
-    expect(deps.refreshContactByPublicKey).toHaveBeenCalledWith(
+    expect(deps.fetchContactPreviewByPublicKey).toHaveBeenCalledWith(
       'c'.repeat(64),
       'cccccccccccccccc',
       expect.objectContaining({
-        relayListSeedRelayUrls: ['wss://seed.example'],
+        seedRelayUrls: expect.arrayContaining(['wss://seed.example/', 'wss://relay.example/']),
       })
     );
     expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledWith(7, {
@@ -578,6 +586,7 @@ describe('privateStateRuntime', () => {
         ],
       }),
     });
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledTimes(1);
   });
 
   it('restores group members from the latest group-authored follow set and excludes owner and group pubkeys', async () => {

@@ -449,7 +449,11 @@ export function createContactProfileRuntime({
 
   async function fetchContactPreviewByPublicKey(
     targetPubkeyHex: string,
-    fallbackName = ''
+    fallbackName = '',
+    options: {
+      relayEntries?: ContactRelay[];
+      seedRelayUrls?: string[];
+    } = {}
   ): Promise<Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'> | null> {
     const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
     if (!normalizedTargetPubkey) {
@@ -461,10 +465,41 @@ export function createContactProfileRuntime({
     const identifiers = buildIdentifierFallbacks(normalizedTargetPubkey, existingContact?.meta);
     const resolvedUser = await resolveUserByIdentifiers(identifiers, normalizedTargetPubkey);
 
-    let fetchedProfile: NDKUserProfile | null = null;
-    if (resolvedUser) {
+    let explicitRelayList: ContactRelayListFetchResult | null = null;
+    if (inputSanitizerService.normalizeStringArray(options.seedRelayUrls ?? []).length > 0) {
       try {
-        fetchedProfile = await resolvedUser.fetchProfile();
+        explicitRelayList = await fetchContactRelayList(
+          normalizedTargetPubkey,
+          options.seedRelayUrls
+        );
+      } catch (error) {
+        console.warn(
+          'Failed to fetch transient relay list metadata for contact preview',
+          normalizedTargetPubkey,
+          error
+        );
+      }
+    }
+
+    let fetchedProfile: NDKUserProfile | null = null;
+    const seedRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
+      options.seedRelayUrls ?? []
+    );
+    const fallbackRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
+      resolvedUser?.relayUrls ?? []
+    );
+    const relayEntries =
+      explicitRelayList?.relayEntries ??
+      options.relayEntries ??
+      (seedRelayEntries.length > 0 ? seedRelayEntries : undefined) ??
+      (fallbackRelayEntries.length > 0 ? fallbackRelayEntries : existingContact?.relays);
+    if (resolvedUser || relayEntries) {
+      try {
+        const fetchedProfileResult = await fetchContactProfile(normalizedTargetPubkey, {
+          relayEntries,
+          seedRelayUrls: options.seedRelayUrls,
+        });
+        fetchedProfile = fetchedProfileResult.profile;
       } catch (error) {
         console.warn(
           'Failed to fetch transient profile metadata for contact preview',

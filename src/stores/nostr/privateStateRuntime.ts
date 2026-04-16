@@ -108,6 +108,14 @@ interface PrivateStateRuntimeDeps {
   }) => Promise<PrivatePreferences>;
   ensureRelayConnections: (relayUrls: string[]) => Promise<void>;
   failStartupStep: (stepId: any, error: unknown) => void;
+  fetchContactPreviewByPublicKey: (
+    pubkeyHex: string,
+    fallbackName?: string,
+    options?: {
+      relayEntries?: ContactRelay[];
+      seedRelayUrls?: string[];
+    }
+  ) => Promise<Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'> | null>;
   getFilterSince: () => number;
   getLoggedInPublicKeyHex: () => string | null;
   getStartupStepSnapshot: (stepId: any) => { status: string };
@@ -146,11 +154,6 @@ interface PrivateStateRuntimeDeps {
   ) => Promise<{ relayStatuses: any[]; error: Error | null }>;
   queueTrackedContactSubscriptionsRefresh: () => void;
   readPrivatePreferencesFromStorage: () => PrivatePreferences | null;
-  refreshContactByPublicKey: (
-    pubkeyHex: string,
-    fallbackName?: string,
-    lifecycle?: Record<string, any>
-  ) => Promise<any>;
   refreshContactRelayList: (
     pubkeyHex: string,
     seedRelayUrls?: string[]
@@ -190,6 +193,7 @@ export function createPrivateStateRuntime({
   ensurePrivatePreferences,
   ensureRelayConnections,
   failStartupStep,
+  fetchContactPreviewByPublicKey,
   getLoggedInPublicKeyHex,
   getStartupStepSnapshot,
   ndk,
@@ -205,7 +209,6 @@ export function createPrivateStateRuntime({
 
   readPrivatePreferencesFromStorage,
 
-  refreshContactByPublicKey,
   refreshContactRelayList,
   resolveLoggedInPublishRelayUrls,
   resolveLoggedInReadRelayUrls,
@@ -1111,24 +1114,10 @@ export function createPrivateStateRuntime({
     const existingMembersByPubkey = new Map(
       existingMembers.map((member) => [member.public_key, member] as const)
     );
-
-    if (normalizedOwnerPublicKey && ownerIncluded && options.refreshMemberProfiles === true) {
-      try {
-        await refreshContactByPublicKey(
-          normalizedOwnerPublicKey,
-          normalizedOwnerPublicKey.slice(0, 16),
-          {
-            relayListSeedRelayUrls: options.seedRelayUrls,
-          }
-        );
-      } catch (error) {
-        console.warn('Failed to refresh group owner profile from shared roster', {
-          groupPublicKey: normalizedGroupPublicKey,
-          ownerPublicKey: normalizedOwnerPublicKey,
-          error,
-        });
-      }
-    }
+    const previewSeedRelayUrls = resolveGroupPublishRelayUrlsValue(
+      groupContact.relays,
+      options.seedRelayUrls
+    );
 
     let refreshedProfileCount = 0;
     let fallbackProfileCount = 0;
@@ -1137,12 +1126,24 @@ export function createPrivateStateRuntime({
         const existingMember = existingMembersByPubkey.get(memberPublicKey) ?? null;
         const shouldRefreshProfile =
           options.refreshMemberProfiles === true || existingMember === null;
+        let previewContact: Pick<
+          ContactRecord,
+          'public_key' | 'name' | 'given_name' | 'meta'
+        > | null = null;
         if (shouldRefreshProfile) {
           try {
-            await refreshContactByPublicKey(memberPublicKey, memberPublicKey.slice(0, 16), {
-              relayListSeedRelayUrls: options.seedRelayUrls,
-            });
-            refreshedProfileCount += 1;
+            previewContact = await fetchContactPreviewByPublicKey(
+              memberPublicKey,
+              memberPublicKey.slice(0, 16),
+              {
+                seedRelayUrls: previewSeedRelayUrls,
+              }
+            );
+            if (previewContact) {
+              refreshedProfileCount += 1;
+            } else {
+              fallbackProfileCount += 1;
+            }
           } catch (error) {
             fallbackProfileCount += 1;
             console.warn('Failed to refresh group member profile from shared roster', {
@@ -1153,7 +1154,8 @@ export function createPrivateStateRuntime({
           }
         }
 
-        const storedContact = await contactsService.getContactByPublicKey(memberPublicKey);
+        const storedContact =
+          previewContact ?? (await contactsService.getContactByPublicKey(memberPublicKey));
         return buildStoredGroupMemberFromContact(memberPublicKey, storedContact, existingMember);
       })
     );

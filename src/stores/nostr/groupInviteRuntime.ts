@@ -5,6 +5,7 @@ import { GROUP_INVITE_REQUEST_MESSAGE } from 'src/stores/nostr/constants';
 import {
   buildAcceptedGroupInviteChatPlanValue,
   buildGroupInviteRequestPlanValue,
+  resolveCurrentGroupChatEpochEntryValue,
   resolveGroupDisplayNameValue,
 } from 'src/stores/nostr/valueUtils';
 import type { ChatMetadata } from 'src/types/chat';
@@ -41,6 +42,14 @@ interface GroupInviteRuntimeDeps {
     fallbackName?: string,
     seedRelayUrls?: string[]
   ) => Promise<ContactRecord | null>;
+  restoreGroupEpochHistory: (
+    groupPublicKey: string,
+    epochPublicKey: string,
+    options?: {
+      force?: boolean;
+      seedRelayUrls?: string[];
+    }
+  ) => Promise<void>;
   subscribePrivateMessagesForLoggedInUser: (force?: boolean) => Promise<void>;
 }
 
@@ -53,6 +62,7 @@ export function createGroupInviteRuntime({
   getLoggedInPublicKeyHex,
   publishPrivateContactList,
   refreshGroupContactByPublicKey,
+  restoreGroupEpochHistory,
   subscribePrivateMessagesForLoggedInUser,
 }: GroupInviteRuntimeDeps) {
   async function upsertIncomingGroupInviteRequestChat(
@@ -135,6 +145,7 @@ export function createGroupInviteRuntime({
       existingChat?.type === 'group' &&
       typeof existingChat.meta?.current_epoch_public_key === 'string' &&
       existingChat.meta.current_epoch_public_key.trim().length > 0;
+    let acceptedGroupEpochPublicKey = '';
     if (existingChat) {
       const acceptedChatPlan = buildAcceptedGroupInviteChatPlanValue({
         groupPublicKey: normalizedTargetPubkey,
@@ -151,10 +162,34 @@ export function createGroupInviteRuntime({
             : {}),
           meta: acceptedChatPlan.nextMeta as ChatMetadata,
         });
+
+        acceptedGroupEpochPublicKey =
+          resolveCurrentGroupChatEpochEntryValue({
+            type: 'group',
+            meta: acceptedChatPlan.nextMeta as ChatMetadata,
+          })?.epoch_public_key ?? '';
+      }
+
+      if (!acceptedGroupEpochPublicKey) {
+        acceptedGroupEpochPublicKey =
+          resolveCurrentGroupChatEpochEntryValue(existingChat)?.epoch_public_key ?? '';
       }
     }
 
-    if (!hadTrackedGroupEpochBeforeAccept) {
+    if (acceptedGroupEpochPublicKey) {
+      try {
+        await restoreGroupEpochHistory(normalizedTargetPubkey, acceptedGroupEpochPublicKey, {
+          force: true,
+        });
+      } catch (error) {
+        console.warn(
+          'Failed to restore group epoch history after accepting group invite',
+          normalizedTargetPubkey,
+          acceptedGroupEpochPublicKey,
+          error
+        );
+      }
+    } else if (!hadTrackedGroupEpochBeforeAccept) {
       try {
         await subscribePrivateMessagesForLoggedInUser(true);
       } catch (error) {

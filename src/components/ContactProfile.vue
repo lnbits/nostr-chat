@@ -1391,6 +1391,23 @@ watch(
 );
 
 watch(
+  () => nostrStore.contactListVersion,
+  () => {
+    const normalizedPubkey = normalizePubkeyInput(props.pubkey ?? '');
+    if (
+      !normalizedPubkey ||
+      isLoadingContact.value ||
+      (canEditGroupMembers.value &&
+        (activeTab.value === 'members' || hasPendingGroupMemberChanges.value))
+    ) {
+      return;
+    }
+
+    void loadContactFromPubkey(normalizedPubkey);
+  }
+);
+
+watch(
   allKnownRelays,
   (relays) => {
     pruneRelayInfoCache(relays);

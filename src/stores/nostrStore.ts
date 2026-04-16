@@ -1414,6 +1414,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     publishPrivateContactList,
     refreshGroupContactByPublicKey,
+    restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
+      restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
     subscribePrivateMessagesForLoggedInUser: (force) =>
       subscribePrivateMessagesForLoggedInUserRuntime(force),
   });
@@ -1464,6 +1466,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensurePrivatePreferences,
     ensureRelayConnections,
     failStartupStep,
+    fetchContactPreviewByPublicKey,
     getFilterSince,
     getLoggedInPublicKeyHex,
     getStartupStepSnapshot,
@@ -1480,7 +1483,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     publishReplaceableEventWithRelayStatuses,
     queueTrackedContactSubscriptionsRefresh,
     readPrivatePreferencesFromStorage,
-    refreshContactByPublicKey,
     refreshContactRelayList,
     resolveLoggedInPublishRelayUrls,
     resolveLoggedInReadRelayUrls,

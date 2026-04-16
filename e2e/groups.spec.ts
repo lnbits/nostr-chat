@@ -53,7 +53,7 @@ test('group owner can create a group, invite a member, and exchange messages bot
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
     const invitedMemberRow = alice.page
       .locator('.profile-members-list .q-item')
-      .filter({ hasText: bob.session.publicKey.slice(0, 32) })
+      .filter({ hasText: bob.session.publicKey.slice(0, 16) })
       .first();
     await expect(invitedMemberRow.getByTestId('group-member-ticket-epoch-badge')).toContainText(
       'Epoch 0'
@@ -222,9 +222,6 @@ test('group roster subscriptions update regular members and Refresh rebuilds mem
       owner.page.getByText('You must publish these changes for them to take effect')
     ).toHaveCount(0);
 
-    await bob.page.goto('/#/chats');
-    await openGroupContact(bob.page, groupPublicKey);
-    await bob.page.getByTestId('contact-profile-members-tab').click();
     await expect(bob.page.locator('.profile-members')).toContainText(charlieInitialName, {
       timeout: 12_000,
     });

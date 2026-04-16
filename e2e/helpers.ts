@@ -1243,7 +1243,7 @@ export async function publishOwnProfile(
   }
 
   await page.getByTestId('contact-profile-publish-button').click();
-  await expect(page.getByText('Profile metadata published.', { exact: true })).toBeVisible({
+  await expect(page.getByText('Profile metadata published.', { exact: true }).first()).toBeVisible({
     timeout: 12_000,
   });
 }

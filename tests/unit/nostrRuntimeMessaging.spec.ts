@@ -417,6 +417,7 @@ describe('nostr runtime messaging logic', () => {
     const subscribePrivateMessagesForLoggedInUser = vi.fn(async () => {});
     const refreshGroupContactByPublicKey = vi.fn(async () => null);
     const publishPrivateContactList = vi.fn(async () => {});
+    const restoreGroupEpochHistory = vi.fn(async () => {});
     const runtime = createGroupInviteRuntime({
       bumpContactListVersion: vi.fn(),
       chatStore,
@@ -426,6 +427,7 @@ describe('nostr runtime messaging logic', () => {
       getLoggedInPublicKeyHex: () => PUBKEY_A,
       publishPrivateContactList,
       refreshGroupContactByPublicKey,
+      restoreGroupEpochHistory,
       subscribePrivateMessagesForLoggedInUser,
     });
 
@@ -499,6 +501,69 @@ describe('nostr runtime messaging logic', () => {
     expect(chatStore.syncContactProfile).toHaveBeenCalledWith(GROUP_KEY);
     expect(publishPrivateContactList).toHaveBeenCalledWith(['wss://relay.example/']);
     expect(chatStore.reload).toHaveBeenCalled();
+  });
+
+  it('restores current group epoch history after accepting an invite with a tracked epoch', async () => {
+    const chatStore = {
+      init: vi.fn(async () => {}),
+      reload: vi.fn(async () => {}),
+      syncContactProfile: vi.fn(async () => {}),
+    };
+    const restoreGroupEpochHistory = vi.fn(async () => {});
+    const subscribePrivateMessagesForLoggedInUser = vi.fn(async () => {});
+    const runtime = createGroupInviteRuntime({
+      bumpContactListVersion: vi.fn(),
+      chatStore,
+      ensureContactListedInPrivateContactList: vi.fn(async () => ({
+        contact: buildContactRecord({
+          public_key: GROUP_KEY,
+          type: 'group',
+          name: 'Accepted Group',
+        }),
+        didChange: true,
+      })),
+      ensureContactStoredAsGroup: vi.fn(async () =>
+        buildContactRecord({
+          public_key: GROUP_KEY,
+          type: 'group',
+          name: 'Accepted Group',
+        })
+      ),
+      getAppRelayUrls: () => ['wss://relay.example/'],
+      getLoggedInPublicKeyHex: () => PUBKEY_A,
+      publishPrivateContactList: vi.fn(async () => {}),
+      refreshGroupContactByPublicKey: vi.fn(async () => null),
+      restoreGroupEpochHistory,
+      subscribePrivateMessagesForLoggedInUser,
+    });
+
+    chatDataServiceMock.getChatByPublicKey.mockResolvedValueOnce({
+      public_key: GROUP_KEY,
+      type: 'group',
+      name: 'Pending Group',
+      meta: {
+        inbox_state: 'request',
+        request_type: 'group_invite',
+        request_message: 'This is an invitation to a group.',
+        current_epoch_public_key: PUBKEY_B,
+        group_epoch_keys: [
+          {
+            epoch_number: 0,
+            epoch_public_key: PUBKEY_B,
+            epoch_private_key_encrypted: 'encrypted-epoch-private-key',
+            event_id: EVENT_ID_A,
+            created_at: '2026-01-05T00:00:00.000Z',
+          },
+        ],
+      },
+    } as never);
+
+    await runtime.ensureGroupInvitePubkeyIsContact(GROUP_KEY, 'Accepted Group');
+
+    expect(restoreGroupEpochHistory).toHaveBeenCalledWith(GROUP_KEY, PUBKEY_B, {
+      force: true,
+    });
+    expect(subscribePrivateMessagesForLoggedInUser).not.toHaveBeenCalled();
   });
 
   it('maintains private contact list membership and reconciles accepted chats', async () => {
