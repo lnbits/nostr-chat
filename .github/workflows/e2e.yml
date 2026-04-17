@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
       - name: Run quality checks
         run: npm run quality:all
 
@@ -37,6 +40,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
 
       - name: Run unit tests
         run: npm run test:unit
@@ -74,6 +80,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
