@@ -173,6 +173,10 @@ async function waitForAppReady(options: AppE2EWaitForAppReadyOptions = {}): Prom
   const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(
     options.contactPublicKey ?? ''
   );
+  if (!normalizedContactPublicKey) {
+    return;
+  }
+
   const timeoutMs =
     typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
       ? Math.max(1_000, Math.floor(options.timeoutMs))
@@ -193,10 +197,6 @@ async function waitForAppReady(options: AppE2EWaitForAppReadyOptions = {}): Prom
         window.setTimeout(resolve, 100);
       });
       continue;
-    }
-
-    if (!normalizedContactPublicKey) {
-      return;
     }
 
     const contact = await contactsService.getContactByPublicKey(normalizedContactPublicKey);
