@@ -14,6 +14,7 @@
           no-caps
           class="scroll-button profile-header__button"
           label="Edit profile"
+          @click="$emit('edit-profile')"
         />
         <q-btn
           v-else
@@ -58,6 +59,10 @@ interface Props {
   postCount: number;
   isCurrentUser: boolean;
 }
+
+defineEmits<{
+  'edit-profile': [];
+}>();
 
 defineProps<Props>();
 

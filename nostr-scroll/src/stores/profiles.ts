@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import { CURRENT_USER_PUBKEY } from '../data/mockProfiles';
 import { loadMockProfiles } from '../services/mockProfileService';
 import type { NostrProfile } from '../types/nostr';
+import { STORAGE_KEYS, readStorageItem, writeStorageItem } from '../utils/storage';
 
 export const useProfilesStore = defineStore('profiles', () => {
   const profiles = ref<NostrProfile[]>([]);
@@ -16,6 +17,10 @@ export const useProfilesStore = defineStore('profiles', () => {
     }, {}),
   );
 
+  function persistProfiles(): void {
+    writeStorageItem(STORAGE_KEYS.profiles, profiles.value);
+  }
+
   async function ensureHydrated(): Promise<void> {
     if (hydrated.value || hydrating.value) {
       return;
@@ -23,8 +28,10 @@ export const useProfilesStore = defineStore('profiles', () => {
 
     hydrating.value = true;
     try {
-      profiles.value = await loadMockProfiles();
+      const storedProfiles = readStorageItem<NostrProfile[] | null>(STORAGE_KEYS.profiles, null);
+      profiles.value = storedProfiles ?? (await loadMockProfiles());
       hydrated.value = true;
+      persistProfiles();
     } finally {
       hydrating.value = false;
     }
@@ -38,6 +45,13 @@ export const useProfilesStore = defineStore('profiles', () => {
     return profilesMap.value[pubkey] ?? null;
   }
 
+  function updateProfile(pubkey: string, updates: Partial<NostrProfile>): void {
+    profiles.value = profiles.value.map((profile) =>
+      profile.pubkey === pubkey ? { ...profile, ...updates } : profile,
+    );
+    persistProfiles();
+  }
+
   const currentUserProfile = computed(() => getProfileByPubkey(CURRENT_USER_PUBKEY));
 
   return {
@@ -47,5 +61,6 @@ export const useProfilesStore = defineStore('profiles', () => {
     currentUserProfile,
     ensureHydrated,
     getProfileByPubkey,
+    updateProfile,
   };
 });

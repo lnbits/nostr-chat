@@ -10,6 +10,7 @@
       :profile="profile"
       :post-count="postCount"
       :is-current-user="profile.pubkey === authStore.currentPubkey"
+      @edit-profile="isEditDialogOpen = true"
     />
 
     <ProfileTabs :model-value="activeTab" @update:model-value="setActiveTab" />
@@ -18,6 +19,12 @@
       :posts="activePosts"
       empty-title="Nothing here yet"
       empty-subtitle="This tab does not have any posts in the mock dataset yet."
+    />
+
+    <EditProfileDialog
+      :model-value="isEditDialogOpen"
+      :profile="profile"
+      @update:model-value="isEditDialogOpen = $event"
     />
   </q-page>
 
@@ -31,9 +38,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useFormatters } from '../composables/useFormatters';
+import EditProfileDialog from '../components/profile/EditProfileDialog.vue';
 import FeedList from '../components/feed/FeedList.vue';
 import EmptyState from '../components/feed/EmptyState.vue';
 import StickyTopBar from '../components/layout/StickyTopBar.vue';
@@ -51,6 +59,7 @@ const profilesStore = useProfilesStore();
 const feedStore = useFeedStore();
 const uiStore = useUiStore();
 const { formatCompactCount } = useFormatters();
+const isEditDialogOpen = ref(false);
 
 const resolvedPubkey = computed(
   () => (route.params.pubkey as string | undefined) ?? authStore.currentPubkey ?? '',
