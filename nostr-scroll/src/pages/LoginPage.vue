@@ -18,6 +18,16 @@
             label="Login"
             @click="openLoginOptions"
           />
+
+          <q-btn
+            no-caps
+            outline
+            color="primary"
+            class="scroll-button login-card__button"
+            icon="vpn_key"
+            label="Create Account"
+            @click="goToRegister"
+          />
         </template>
 
         <template v-else-if="loginStep === 'methods'">
@@ -163,6 +173,11 @@ function goBackToLoginOptions(): void {
 
 async function goToHome(): Promise<void> {
   await router.replace({ name: 'home' });
+}
+
+async function goToRegister(): Promise<void> {
+  clearAuthError();
+  await router.replace({ name: 'register' });
 }
 
 async function handleExtensionLogin(): Promise<void> {

@@ -1,5 +1,9 @@
 import { NDKPrivateKeySigner, nip19 } from '@nostr-dev-kit/ndk';
-import type { NostrAuthSession, PrivateKeyValidationResult } from '../types/auth';
+import type {
+  GeneratedNostrAccount,
+  NostrAuthSession,
+  PrivateKeyValidationResult,
+} from '../types/auth';
 
 type NostrWindow = Window & {
   nostr?: {
@@ -158,5 +162,16 @@ export function loginWithPrivateKey(input: string): NostrAuthSession {
     method: 'nsec',
     currentPubkey: signer.pubkey,
     privateKeyHex: validation.hexPrivateKey,
+  };
+}
+
+export function createAccount(): GeneratedNostrAccount {
+  const signer = NDKPrivateKeySigner.generate();
+
+  return {
+    publicKeyHex: signer.pubkey,
+    privateKeyHex: signer.privateKey,
+    npub: signer.npub,
+    nsec: signer.nsec,
   };
 }

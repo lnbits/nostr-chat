@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import {
+  createAccount,
   defaultAuthSession,
   hasNip07Extension,
   loginWithExtension,
@@ -8,7 +9,7 @@ import {
   normalizeStoredSession,
   validatePrivateKey,
 } from '../services/nostrAuthService';
-import type { NostrAuthSession } from '../types/auth';
+import type { GeneratedNostrAccount, NostrAuthSession } from '../types/auth';
 import {
   STORAGE_KEYS,
   readStorageItem,
@@ -69,6 +70,10 @@ export const useAuthStore = defineStore('auth', () => {
     removeStorageItem(STORAGE_KEYS.auth);
   }
 
+  function createAccountMethod(): GeneratedNostrAccount {
+    return createAccount();
+  }
+
   return {
     session,
     loading,
@@ -78,6 +83,7 @@ export const useAuthStore = defineStore('auth', () => {
     hasExtension,
     loginWithExtension: loginWithExtensionMethod,
     loginWithPrivateKey: loginWithPrivateKeyMethod,
+    createAccount: createAccountMethod,
     logout,
     restoreSession,
     validatePrivateKey,

@@ -7,6 +7,13 @@ export interface NostrAuthSession {
   privateKeyHex: string | null;
 }
 
+export interface GeneratedNostrAccount {
+  publicKeyHex: string;
+  privateKeyHex: string;
+  npub: string;
+  nsec: string;
+}
+
 export interface PrivateKeyValidationResult {
   isValid: boolean;
   hexPrivateKey: string | null;

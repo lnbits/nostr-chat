@@ -24,7 +24,7 @@ export default route(() => {
       return isAuthenticated ? { name: 'home' } : { name: 'login' };
     }
 
-    if (to.name === 'login' && isAuthenticated) {
+    if ((to.name === 'login' || to.name === 'register') && isAuthenticated) {
       return { name: 'home' };
     }
 
