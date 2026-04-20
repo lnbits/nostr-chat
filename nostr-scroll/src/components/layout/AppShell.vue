@@ -42,32 +42,35 @@ onMounted(() => {
 
 <style scoped>
 .app-shell-layout {
-  background: transparent;
+  background: var(--scroll-bg);
 }
 
 .app-shell-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 640px) minmax(280px, 340px);
+  grid-template-columns: minmax(252px, 275px) minmax(0, 600px) minmax(320px, 350px);
   gap: 0;
   justify-content: center;
-  max-width: 1280px;
+  max-width: 1265px;
   min-height: 100vh;
   margin: 0 auto;
 }
 
-.app-shell-left,
+.app-shell-left {
+  padding: 0 18px 0 8px;
+}
+
 .app-shell-right {
-  padding: 0 24px;
+  padding: 0 0 0 28px;
 }
 
 .app-shell-center {
   min-width: 0;
 }
 
-@media (max-width: 1439px) {
+@media (max-width: 1279px) {
   .app-shell-grid {
-    grid-template-columns: minmax(220px, 250px) minmax(0, 640px);
-    max-width: 980px;
+    grid-template-columns: minmax(250px, 275px) minmax(0, 600px);
+    max-width: 875px;
   }
 }
 
@@ -80,7 +83,7 @@ onMounted(() => {
   .app-shell-center {
     border-left: none;
     border-right: none;
-    padding-bottom: 84px;
+    padding-bottom: 60px;
   }
 }
 </style>

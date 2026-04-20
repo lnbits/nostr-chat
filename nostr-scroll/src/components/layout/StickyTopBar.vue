@@ -54,24 +54,25 @@ function handleBack(): void {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 58px;
-  padding: 10px 16px;
+  min-height: 53px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--scroll-border);
 }
 
 .sticky-top-bar__back {
   flex-shrink: 0;
+  color: var(--scroll-text);
 }
 
 .sticky-top-bar__title {
-  font-size: 1.15rem;
+  font-size: 1.24rem;
   font-weight: 800;
   letter-spacing: 0.01em;
 }
 
 .sticky-top-bar__subtitle {
-  color: var(--scroll-text-soft);
-  font-size: 0.79rem;
+  color: var(--scroll-text-muted);
+  font-size: 0.82rem;
   margin-top: 2px;
 }
 </style>

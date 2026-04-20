@@ -1,6 +1,6 @@
 <template>
   <div class="post-composer scroll-divider">
-    <q-avatar size="46px" class="post-composer__avatar">
+    <q-avatar size="40px" class="post-composer__avatar">
       <img :src="currentProfile?.picture" :alt="currentProfile?.displayName ?? 'Profile'" />
     </q-avatar>
 
@@ -14,18 +14,32 @@
         maxlength="280"
       />
 
-      <div class="post-composer__actions">
-        <span class="text-scroll-soft">{{ draft.length }}/280</span>
+      <div class="post-composer__footer">
+        <div class="post-composer__tools">
+          <q-btn
+            v-for="icon in composerTools"
+            :key="icon"
+            flat
+            round
+            dense
+            :icon="icon"
+            class="post-composer__tool"
+          />
+        </div>
 
-        <q-btn
-          no-caps
-          unelevated
-          class="scroll-button post-composer__submit"
-          color="primary"
-          :label="buttonLabel"
-          :disable="!canSubmit"
-          @click="submit"
-        />
+        <div class="post-composer__submit-wrap">
+          <span v-if="draft.length" class="text-scroll-soft">{{ draft.length }}/280</span>
+
+          <q-btn
+            no-caps
+            unelevated
+            :label="buttonLabel"
+            :disable="!canSubmit"
+            class="scroll-button post-composer__submit"
+            :class="{ 'post-composer__submit--active': canSubmit }"
+            @click="submit"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -58,6 +72,7 @@ const currentProfile = computed(() =>
   profilesStore.getProfileByPubkey(authStore.currentPubkey),
 );
 const canSubmit = computed(() => draft.value.trim().length > 0);
+const composerTools = ['image', 'gif_box', 'bar_chart', 'sentiment_satisfied_alt', 'event', 'location_on'];
 
 function submit(): void {
   const content = draft.value.trim();
@@ -75,7 +90,7 @@ function submit(): void {
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  padding: 18px 16px;
+  padding: 14px 16px 10px;
 }
 
 .post-composer__body {
@@ -84,21 +99,51 @@ function submit(): void {
 }
 
 .post-composer__input :deep(textarea) {
-  min-height: 74px;
+  min-height: 96px;
   color: var(--scroll-text);
-  font-size: 1.18rem;
-  line-height: 1.45;
+  font-size: 1.34rem;
+  line-height: 1.35;
 }
 
-.post-composer__actions {
+.post-composer__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--scroll-border);
+}
+
+.post-composer__tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.post-composer__tool {
+  color: var(--scroll-accent);
+}
+
+.post-composer__submit-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .post-composer__submit {
-  min-width: 88px;
+  min-width: 76px;
+  min-height: 34px;
+  background: #3b4a54;
+  color: rgba(15, 20, 25, 0.9);
+  font-weight: 800;
+}
+
+.post-composer__submit--active {
+  background: #eff3f4;
+  color: #0f1419;
+}
+
+.post-composer__submit.q-btn--disabled {
+  opacity: 1 !important;
 }
 </style>

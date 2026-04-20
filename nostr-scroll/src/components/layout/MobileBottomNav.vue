@@ -42,26 +42,24 @@ const navItems = computed(() => [
 <style scoped>
 .mobile-bottom-nav {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 30;
   display: flex;
   justify-content: space-around;
-  padding: 10px 14px;
-  background: rgba(8, 12, 18, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  backdrop-filter: blur(18px);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.36);
+  padding: 6px 14px calc(6px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.94);
+  border-top: 1px solid var(--scroll-border);
+  backdrop-filter: blur(12px);
 }
 
 .mobile-bottom-nav__button {
   color: var(--scroll-text-muted);
+  min-width: 52px;
 }
 
 .mobile-bottom-nav__button--active {
   color: var(--scroll-text);
-  background: var(--scroll-accent-soft);
 }
 </style>

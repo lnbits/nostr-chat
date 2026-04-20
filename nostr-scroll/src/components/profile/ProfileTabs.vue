@@ -33,11 +33,20 @@ defineEmits<{
 
 <style scoped>
 .profile-tabs {
-  min-height: 54px;
+  min-height: 53px;
 }
 
 .profile-tabs :deep(.q-tab) {
+  min-height: 53px;
   color: var(--scroll-text-muted);
   font-weight: 700;
+}
+
+.profile-tabs :deep(.q-tab:hover) {
+  background: var(--scroll-hover);
+}
+
+.profile-tabs :deep(.q-tab--active) {
+  color: var(--scroll-text);
 }
 </style>

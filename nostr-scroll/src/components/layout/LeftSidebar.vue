@@ -1,30 +1,32 @@
 <template>
   <div class="left-sidebar">
-    <div class="brand-mark">
-      <div class="brand-dot" />
-      <div>
-        <div class="brand-title">nostr-scroll</div>
-        <div class="brand-subtitle">mocked social client</div>
-      </div>
-    </div>
+    <button class="brand-mark" type="button" @click="router.push({ name: 'home' })">
+      <span class="brand-mark__glyph">X</span>
+    </button>
 
     <nav class="left-sidebar-nav">
-      <q-btn
+      <button
         v-for="item in navItems"
-        :key="item.name"
-        flat
-        no-caps
-        align="left"
+        :key="item.key"
         class="nav-button"
-        :class="{ 'nav-button--active': route.name === item.name }"
-        @click="router.push({ name: item.name, params: item.params })"
+        :class="{ 'nav-button--active': isActive(item) }"
+        type="button"
+        @click="handleNav(item)"
       >
-        <q-icon :name="item.icon" size="24px" />
-        <span>{{ item.label }}</span>
-      </q-btn>
+        <q-icon :name="isActive(item) ? item.activeIcon ?? item.icon : item.icon" size="30px" />
+        <span class="nav-button__label">{{ item.label }}</span>
+        <q-badge v-if="item.badge" class="nav-button__badge" color="primary">{{ item.badge }}</q-badge>
+      </button>
     </nav>
 
-    <div v-if="currentProfile" class="profile-peek scroll-card">
+    <q-btn
+      no-caps
+      unelevated
+      label="Post"
+      class="scroll-button left-sidebar__post-button"
+    />
+
+    <div v-if="currentProfile" class="profile-peek">
       <q-avatar size="52px">
         <img :src="currentProfile.picture" :alt="currentProfile.displayName" />
       </q-avatar>
@@ -32,6 +34,7 @@
         <div class="profile-peek__name">{{ currentProfile.displayName }}</div>
         <div class="profile-peek__handle text-scroll-muted">@{{ currentProfile.name }}</div>
       </div>
+      <q-btn flat round dense icon="more_horiz" class="profile-peek__more" />
     </div>
   </div>
 </template>
@@ -51,24 +54,84 @@ const currentProfile = computed(() =>
   profilesStore.getProfileByPubkey(authStore.currentPubkey),
 );
 
-const navItems = computed(() => [
+type SidebarItem = {
+  key: string;
+  label: string;
+  icon: string;
+  activeIcon?: string;
+  routeName?: string;
+  params?: Record<string, string> | undefined;
+  badge?: string;
+};
+
+const navItems = computed<SidebarItem[]>(() => [
   {
-    name: 'home',
+    key: 'home',
     label: 'Home',
     icon: 'home',
+    activeIcon: 'home',
+    routeName: 'home',
   },
   {
-    name: 'bookmarks',
+    key: 'explore',
+    label: 'Explore',
+    icon: 'search',
+  },
+  {
+    key: 'notifications',
+    label: 'Notifications',
+    icon: 'notifications_none',
+    activeIcon: 'notifications',
+  },
+  {
+    key: 'messages',
+    label: 'Messages',
+    icon: 'mail_outline',
+  },
+  {
+    key: 'grok',
+    label: 'Grok',
+    icon: 'auto_awesome',
+  },
+  {
+    key: 'bookmarks',
     label: 'Bookmarks',
     icon: 'bookmark_border',
+    activeIcon: 'bookmark',
+    routeName: 'bookmarks',
   },
   {
-    name: 'profile',
+    key: 'premium',
+    label: 'Premium',
+    icon: 'workspace_premium',
+    badge: '50% off',
+  },
+  {
+    key: 'profile',
     label: 'Profile',
-    icon: 'person',
+    icon: 'person_outline',
+    activeIcon: 'person',
+    routeName: 'profile',
     params: currentProfile.value ? { pubkey: currentProfile.value.pubkey } : undefined,
   },
+  {
+    key: 'more',
+    label: 'More',
+    icon: 'more_horiz',
+  },
 ]);
+
+function isActive(item: SidebarItem): boolean {
+  return Boolean(item.routeName && route.name === item.routeName);
+}
+
+function handleNav(item: SidebarItem): void {
+  if (!item.routeName) {
+    return;
+  }
+
+  void router.push({ name: item.routeName, params: item.params });
+}
 </script>
 
 <style scoped>
@@ -77,75 +140,113 @@ const navItems = computed(() => [
   top: 0;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 14px;
   min-height: 100vh;
-  padding: 28px 0 24px;
+  padding: 4px 0 12px;
 }
 
 .brand-mark {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 6px 8px;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 4px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--scroll-text);
+  cursor: pointer;
+  transition: background 140ms ease;
 }
 
-.brand-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #1d9bf0 0%, #74c7ff 100%);
-  box-shadow: 0 0 22px rgba(29, 155, 240, 0.42);
+.brand-mark:hover {
+  background: var(--scroll-hover);
 }
 
-.brand-title {
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
-.brand-subtitle {
-  color: var(--scroll-text-soft);
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+.brand-mark__glyph {
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.08em;
 }
 
 .left-sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 .nav-button {
-  justify-content: flex-start;
-  gap: 14px;
-  min-height: 54px;
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 56px;
+  border: none;
   border-radius: 999px;
+  background: transparent;
   color: var(--scroll-text);
-  font-size: 1.1rem;
-  font-weight: 600;
-  padding: 0 18px;
+  cursor: pointer;
+  padding: 0 18px 0 14px;
+  transition: background 140ms ease;
+}
+
+.nav-button:hover {
+  background: var(--scroll-hover);
+}
+
+.nav-button__label {
+  font-size: 1.28rem;
+  font-weight: 500;
 }
 
 .nav-button--active {
-  background: var(--scroll-accent-soft);
-  color: var(--scroll-accent-strong);
+  color: var(--scroll-text);
+}
+
+.nav-button--active .nav-button__label {
+  font-weight: 700;
+}
+
+.nav-button__badge {
+  margin-left: 2px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 6px;
+}
+
+.left-sidebar__post-button {
+  width: min(92%, 228px);
+  min-height: 52px;
+  margin-top: 8px;
+  background: #eff3f4;
+  color: #0f1419;
+  font-size: 1.04rem;
+  font-weight: 800;
 }
 
 .profile-peek {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   margin-top: auto;
-  padding: 18px;
+  padding: 12px 14px;
+  border-radius: 999px;
+  transition: background 140ms ease;
+}
+
+.profile-peek:hover {
+  background: var(--scroll-hover);
 }
 
 .profile-peek__copy {
+  flex: 1;
   min-width: 0;
 }
 
 .profile-peek__name {
-  font-size: 0.98rem;
+  font-size: 0.94rem;
   font-weight: 700;
 }
 
@@ -153,5 +254,9 @@ const navItems = computed(() => [
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.profile-peek__more {
+  color: var(--scroll-text);
 }
 </style>

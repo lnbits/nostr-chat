@@ -1,6 +1,6 @@
 <template>
   <q-page class="timeline-page">
-    <StickyTopBar title="Home" />
+    <HomeTimelineHeader />
     <PostComposer @submit="feedStore.createPost($event)" />
     <FeedList
       :posts="feedStore.homeTimeline"
@@ -17,7 +17,7 @@
 import { onMounted } from 'vue';
 import FeedList from '../components/feed/FeedList.vue';
 import PostComposer from '../components/feed/PostComposer.vue';
-import StickyTopBar from '../components/layout/StickyTopBar.vue';
+import HomeTimelineHeader from '../components/layout/HomeTimelineHeader.vue';
 import { useFeedStore } from '../stores/feed';
 
 const feedStore = useFeedStore();

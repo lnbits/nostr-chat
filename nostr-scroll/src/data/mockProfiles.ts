@@ -31,6 +31,7 @@ export const mockProfiles: NostrProfile[] = [
     pubkey: CURRENT_USER_PUBKEY,
     name: 'ada',
     displayName: 'Ada Rivera',
+    verified: true,
     about:
       'Designing fast, humane Nostr products with a bias toward clear systems and sharp interfaces.',
     initials: 'AR',
@@ -48,6 +49,7 @@ export const mockProfiles: NostrProfile[] = [
     pubkey: 'pk-nia-relay',
     name: 'niarelay',
     displayName: 'Nia Relay',
+    verified: true,
     about:
       'Observing how information moves when you remove friction, then putting the right friction back.',
     initials: 'NR',
@@ -64,6 +66,7 @@ export const mockProfiles: NostrProfile[] = [
     pubkey: 'pk-theo-epoch',
     name: 'theoepoch',
     displayName: 'Theo Epoch',
+    verified: true,
     about:
       'Group coordination, state rotation, and protocol edges that only appear once the room gets busy.',
     initials: 'TE',
@@ -79,6 +82,7 @@ export const mockProfiles: NostrProfile[] = [
     pubkey: 'pk-mina-threads',
     name: 'minathreads',
     displayName: 'Mina Threads',
+    verified: true,
     about:
       'Thread writer. Product operator. Slightly obsessed with small interaction details that make a feed feel alive.',
     initials: 'MT',
@@ -108,6 +112,7 @@ export const mockProfiles: NostrProfile[] = [
     pubkey: 'pk-priya-build',
     name: 'priyabuild',
     displayName: 'Priya Build',
+    verified: true,
     about:
       'Shipping frontends that still feel thoughtful under load. Building for mobile first, then making desktop sing.',
     initials: 'PB',
@@ -136,6 +141,7 @@ export const mockProfiles: NostrProfile[] = [
     pubkey: 'pk-sofia-notes',
     name: 'sofianotes',
     displayName: 'Sofia Notes',
+    verified: true,
     about:
       'Writing about social UX, creator tools, and the difference between loud design and memorable design.',
     initials: 'SN',

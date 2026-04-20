@@ -1,21 +1,30 @@
 :root {
-  --scroll-bg: #05080d;
-  --scroll-surface: #0c1117;
-  --scroll-surface-soft: #111821;
-  --scroll-surface-muted: #18212c;
-  --scroll-border: rgba(255, 255, 255, 0.1);
-  --scroll-border-strong: rgba(255, 255, 255, 0.16);
-  --scroll-text: #eef4ff;
-  --scroll-text-muted: #8b98a5;
-  --scroll-text-soft: #617082;
+  --scroll-bg: #000000;
+  --scroll-surface: #16181c;
+  --scroll-surface-soft: #1d1f23;
+  --scroll-surface-muted: #202327;
+  --scroll-border: #2f3336;
+  --scroll-border-strong: #536471;
+  --scroll-hover: rgba(231, 233, 234, 0.08);
+  --scroll-text: #e7e9ea;
+  --scroll-text-muted: #71767b;
+  --scroll-text-soft: #536471;
   --scroll-accent: #1d9bf0;
-  --scroll-accent-soft: rgba(29, 155, 240, 0.16);
-  --scroll-accent-strong: #6bc0ff;
-  --scroll-success: #18c07a;
-  --scroll-danger: #ff5f7a;
-  --scroll-radius: 22px;
-  --scroll-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
-  font-family: 'Avenir Next', 'Segoe UI Variable Display', 'Helvetica Neue', sans-serif;
+  --scroll-accent-soft: rgba(29, 155, 240, 0.12);
+  --scroll-accent-strong: #1d9bf0;
+  --scroll-success: #00ba7c;
+  --scroll-danger: #f91880;
+  --scroll-radius: 18px;
+  color-scheme: dark;
+  font-family:
+    TwitterChirp,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
 }
 
 html,
@@ -25,10 +34,10 @@ body,
 }
 
 body {
-  background:
-    radial-gradient(circle at top, rgba(29, 155, 240, 0.08), transparent 36%),
-    linear-gradient(180deg, #06090f 0%, #05080d 100%);
+  background: var(--scroll-bg);
   color: var(--scroll-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a {
@@ -53,8 +62,8 @@ a {
 }
 
 .scroll-elevated {
-  background: rgba(12, 17, 23, 0.84);
-  backdrop-filter: blur(16px);
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(12px);
 }
 
 .scroll-button {
@@ -68,7 +77,7 @@ a {
 }
 
 .scroll-main-column {
-  background: rgba(9, 13, 18, 0.94);
+  background: var(--scroll-bg);
   border-left: 1px solid var(--scroll-border);
   border-right: 1px solid var(--scroll-border);
   min-height: 100vh;
@@ -78,7 +87,6 @@ a {
   background: var(--scroll-surface);
   border: 1px solid var(--scroll-border);
   border-radius: var(--scroll-radius);
-  box-shadow: var(--scroll-shadow);
 }
 
 .scroll-hidden-scrollbar {

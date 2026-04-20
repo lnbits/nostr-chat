@@ -2,6 +2,7 @@ export interface NostrProfile {
   pubkey: string;
   name: string;
   displayName: string;
+  verified?: boolean;
   about: string;
   picture: string;
   banner: string;
@@ -14,12 +15,22 @@ export interface NostrProfile {
   location?: string;
 }
 
+export interface NostrNoteMedia {
+  id: string;
+  url: string;
+  alt: string;
+  aspectRatio: number;
+  durationLabel?: string;
+  eyebrow?: string;
+}
+
 export interface NostrNote {
   id: string;
   pubkey: string;
   kind: 1 | 6;
   createdAt: string;
   content: string;
+  media?: NostrNoteMedia[];
   tags: string[][];
   replyTo?: string | null;
   rootId?: string | null;

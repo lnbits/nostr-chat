@@ -1,19 +1,69 @@
 <template>
   <div class="right-news-panel">
-    <div class="scroll-card news-card">
-      <div class="news-card__header">Today's News</div>
+    <label class="right-news-panel__search">
+      <q-icon name="search" size="18px" />
+      <input type="text" placeholder="Search" />
+    </label>
+
+    <div class="scroll-card right-panel-card promo-card">
+      <div class="promo-card__header">
+        Subscribe to Premium
+        <q-badge color="green-6" class="promo-card__badge">50% off</q-badge>
+      </div>
+      <div class="promo-card__copy text-scroll-muted">
+        Get rid of ads, see your analytics, boost your replies and unlock more reach.
+      </div>
+      <q-btn no-caps unelevated label="Subscribe" class="scroll-button promo-card__button" />
+    </div>
+
+    <div class="scroll-card right-panel-card live-card">
+      <div class="card-heading">Live on X</div>
+      <div class="live-card__item">
+        <div class="live-card__copy">
+          <div class="live-card__host">
+            <q-avatar size="24px">
+              <img :src="hostAvatar" alt="Host avatar" />
+            </q-avatar>
+            <span>SignalRelay Daily</span>
+            <q-icon name="verified" size="15px" class="live-card__verified" />
+            <span class="text-scroll-muted">is hosting</span>
+          </div>
+          <div class="live-card__headline">Making Nostr UIs feel mainstream without losing their shape</div>
+        </div>
+        <div class="live-card__chip">+412</div>
+      </div>
+    </div>
+
+    <div class="scroll-card right-panel-card news-card">
+      <div class="card-heading card-heading--split">
+        <span>Today's News</span>
+        <q-btn flat round dense icon="close" class="card-heading__action" />
+      </div>
 
       <div v-if="newsItems.length" class="news-list">
-        <div v-for="item in newsItems" :key="item.id" class="news-item">
+        <div v-for="item in newsItems.slice(0, 4)" :key="item.id" class="news-item">
           <div class="news-item__category">{{ item.category }}</div>
           <div class="news-item__headline">{{ item.headline }}</div>
           <div class="news-item__meta text-scroll-muted">
-            {{ item.source }} · {{ item.timeLabel }}
+            {{ item.timeLabel }} · News · {{ item.source }}
           </div>
         </div>
       </div>
 
       <div v-else class="news-loading text-scroll-muted">Loading headlines…</div>
+    </div>
+
+    <div class="scroll-card right-panel-card trends-card">
+      <div class="card-heading">What's happening</div>
+
+      <div v-for="trend in trends" :key="trend.id" class="trend-item">
+        <div class="trend-item__row">
+          <span class="trend-item__category">{{ trend.category }}</span>
+          <q-btn flat round dense icon="more_horiz" class="trend-item__action" />
+        </div>
+        <div class="trend-item__headline">{{ trend.title }}</div>
+        <div class="trend-item__meta text-scroll-muted">{{ trend.meta }}</div>
+      </div>
     </div>
   </div>
 </template>
@@ -24,6 +74,28 @@ import { loadMockNews } from '../../services/mockNewsService';
 import type { NewsItem } from '../../types/news';
 
 const newsItems = ref<NewsItem[]>([]);
+const hostAvatar =
+  'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"%3E%3Crect width="48" height="48" rx="24" fill="%231d9bf0"/%3E%3Ctext x="50%25" y="54%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="700" fill="white"%3ESR%3C/text%3E%3C/svg%3E';
+const trends = [
+  {
+    id: 'trend-1',
+    category: 'Product · Trending',
+    title: 'Dark-mode feed refresh',
+    meta: '14.8K posts',
+  },
+  {
+    id: 'trend-2',
+    category: 'Design · Trending',
+    title: 'Timeline density',
+    meta: '7,214 posts',
+  },
+  {
+    id: 'trend-3',
+    category: 'Nostr · Trending',
+    title: 'Relay UX',
+    meta: '5,102 posts',
+  },
+];
 
 onMounted(async () => {
   newsItems.value = await loadMockNews();
@@ -34,51 +106,170 @@ onMounted(async () => {
 .right-news-panel {
   position: sticky;
   top: 0;
-  padding-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
 }
 
-.news-card {
+.right-news-panel__search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--scroll-border);
+  border-radius: 999px;
+  background: var(--scroll-bg);
+  color: var(--scroll-text-muted);
+}
+
+.right-news-panel__search:focus-within {
+  border-color: var(--scroll-accent);
+  color: var(--scroll-accent);
+}
+
+.right-news-panel__search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--scroll-text);
+  font-size: 0.96rem;
+  outline: none;
+}
+
+.right-panel-card {
   overflow: hidden;
 }
 
-.news-card__header {
-  padding: 20px 20px 10px;
-  font-size: 1.35rem;
+.card-heading {
+  padding: 16px 16px 10px;
+  font-size: 1.28rem;
   font-weight: 800;
 }
 
-.news-list {
+.card-heading--split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-heading__action {
+  color: var(--scroll-text-muted);
+}
+
+.promo-card {
+  padding: 18px 16px 16px;
+}
+
+.promo-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.28rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.promo-card__badge {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.promo-card__copy {
+  line-height: 1.45;
+  margin-bottom: 14px;
+}
+
+.promo-card__button {
+  min-height: 36px;
+  padding: 0 18px;
+  background: var(--scroll-accent);
+  color: white;
+}
+
+.live-card__item {
+  display: flex;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.live-card__copy {
+  flex: 1;
+}
+
+.live-card__host {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.live-card__verified {
+  color: var(--scroll-accent);
+}
+
+.live-card__headline {
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.live-card__chip {
+  align-self: center;
+  padding: 6px 10px;
+  border: 1px solid #f91880;
+  border-radius: 999px;
+  color: #f91880;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.news-list,
+.trends-card {
   display: flex;
   flex-direction: column;
 }
 
-.news-item {
-  padding: 16px 20px;
+.news-item,
+.trend-item {
+  padding: 14px 16px;
   border-top: 1px solid var(--scroll-border);
   transition: background 160ms ease;
 }
 
-.news-item:hover {
-  background: rgba(255, 255, 255, 0.03);
+.news-item:hover,
+.trend-item:hover {
+  background: var(--scroll-hover);
 }
 
-.news-item__category {
+.news-item__category,
+.trend-item__category {
   color: var(--scroll-text-soft);
-  font-size: 0.77rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 6px;
+  font-size: 0.82rem;
 }
 
-.news-item__headline {
+.news-item__headline,
+.trend-item__headline {
   font-size: 0.98rem;
-  line-height: 1.4;
+  line-height: 1.35;
   font-weight: 700;
-  margin-bottom: 7px;
+  margin: 3px 0 6px;
+}
+
+.trend-item__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trend-item__action {
+  color: var(--scroll-text-muted);
 }
 
 .news-loading {
-  padding: 20px;
+  padding: 16px;
 }
 </style>

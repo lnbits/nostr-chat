@@ -64,3 +64,60 @@ export function createBannerDataUri(
     </svg>
   `);
 }
+
+export function createPostMediaDataUri(
+  eyebrow: string,
+  title: string,
+  startColor: string,
+  endColor: string,
+  accentColor: string,
+): string {
+  return toDataUri(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
+      <defs>
+        <linearGradient id="mediaGradient" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${startColor}" />
+          <stop offset="100%" stop-color="${endColor}" />
+        </linearGradient>
+      </defs>
+      <rect width="1200" height="675" fill="url(#mediaGradient)" />
+      <circle cx="1040" cy="100" r="180" fill="${accentColor}" opacity="0.28" />
+      <circle cx="180" cy="560" r="220" fill="#ffffff" opacity="0.08" />
+      <path d="M130 600 L365 410 L470 492 L713 262 L950 470 L1070 395" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+      <rect x="70" y="70" width="170" height="44" rx="22" fill="rgba(0,0,0,0.34)" />
+      <text
+        x="155"
+        y="99"
+        dominant-baseline="middle"
+        text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="22"
+        font-weight="700"
+        letter-spacing="1.4"
+        fill="#ffffff"
+      >
+        ${eyebrow}
+      </text>
+      <text
+        x="76"
+        y="540"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="62"
+        font-weight="700"
+        fill="#ffffff"
+      >
+        ${title}
+      </text>
+      <text
+        x="78"
+        y="592"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="28"
+        font-weight="500"
+        fill="rgba(255,255,255,0.82)"
+      >
+        mocked media preview for nostr-scroll
+      </text>
+    </svg>
+  `);
+}

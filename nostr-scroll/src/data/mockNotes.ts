@@ -1,7 +1,32 @@
 import type { FeedPersistenceState, NostrNote, ViewerPostState } from '../types/nostr';
 import { CURRENT_USER_PUBKEY } from './mockProfiles';
+import { createPostMediaDataUri } from './mockMedia';
 
 const currentUser = CURRENT_USER_PUBKEY;
+
+const mockPostMedia = {
+  launchDeck: createPostMediaDataUri(
+    'LIVE NOW',
+    'ship smaller social surfaces first',
+    '#111827',
+    '#2563eb',
+    '#8b5cf6',
+  ),
+  fieldNotes: createPostMediaDataUri(
+    'FIELD NOTES',
+    'mapping product polish to protocol edges',
+    '#1b1024',
+    '#db2777',
+    '#38bdf8',
+  ),
+  designOps: createPostMediaDataUri(
+    'DESIGN OPS',
+    'dark timelines only work when spacing breathes',
+    '#102332',
+    '#0f766e',
+    '#f59e0b',
+  ),
+};
 
 type NoteSeed = Omit<NostrNote, 'createdAt'> & { minutesAgo: number };
 
@@ -24,6 +49,7 @@ const topLevelSeeds: NoteSeed[] = [
     minutesAgo: 5,
     content:
       'Some products only need one screen to tell you whether they respect your time. Dense, calm, legible wins every time.',
+    quotedNoteId: 'note-jules-001',
     tags: [['liked-by', 'pk-mina-threads']],
     stats: { replies: 4, reposts: 19, likes: 182, bookmarks: 38, views: 9200 },
   },
@@ -54,6 +80,16 @@ const topLevelSeeds: NoteSeed[] = [
     minutesAgo: 27,
     content:
       'Strong timeline design is mostly restraint: one accent color, one primary action, one obvious path forward.',
+    media: [
+      {
+        id: 'media-remy-001',
+        url: mockPostMedia.launchDeck,
+        alt: 'Mocked launch deck artwork',
+        aspectRatio: 16 / 9,
+        durationLabel: '0:48',
+        eyebrow: 'LIVE NOW',
+      },
+    ],
     tags: [['liked-by', 'pk-priya-build']],
     stats: { replies: 3, reposts: 14, likes: 126, bookmarks: 24, views: 6650 },
   },
@@ -144,6 +180,15 @@ const topLevelSeeds: NoteSeed[] = [
     minutesAgo: 188,
     content:
       'Every great social feed has one reliable mood. The strongest prototypes decide that mood before they design a single icon.',
+    media: [
+      {
+        id: 'media-sofia-002',
+        url: mockPostMedia.designOps,
+        alt: 'Mocked design operations artwork',
+        aspectRatio: 16 / 9,
+        eyebrow: 'DESIGN OPS',
+      },
+    ],
     tags: [['liked-by', 'pk-priya-build']],
     stats: { replies: 6, reposts: 22, likes: 336, bookmarks: 75, views: 16700 },
   },
@@ -234,6 +279,15 @@ const topLevelSeeds: NoteSeed[] = [
     minutesAgo: 701,
     content:
       'Observed a team debugging by adding more loading indicators. The actual fix was letting one restore pass finish before the next began.',
+    media: [
+      {
+        id: 'media-nia-002',
+        url: mockPostMedia.fieldNotes,
+        alt: 'Mocked field notes artwork',
+        aspectRatio: 16 / 9,
+        eyebrow: 'FIELD NOTES',
+      },
+    ],
     tags: [['liked-by', currentUser]],
     stats: { replies: 3, reposts: 12, likes: 147, bookmarks: 26, views: 6500 },
   },
