@@ -108,7 +108,7 @@
                 data-testid="contact-profile-publish-button"
                 :disable="!normalizedHeaderPubkey"
                 :loading="props.isPublishing"
-                @click="emit('publish')"
+                @click="handlePublishProfile"
               />
             </div>
 
@@ -1063,7 +1063,7 @@ const emit = defineEmits<{
   (event: 'update:send-messages-to-app-relays', value: boolean): void;
   (event: 'open-chat'): void;
   (event: 'open-relays-settings'): void;
-  (event: 'publish'): void;
+  (event: 'publish', value: ContactProfileForm): void;
 }>();
 
 const $q = useQuasar();
@@ -1215,6 +1215,13 @@ const showMembersTabActions = computed(() => {
   return props.showHeader || (canEditGroupMembers.value && props.showPublishAction);
 });
 const showRelaysTabActions = computed(() => props.showHeader || props.showPublishAction);
+const hasUnsavedLocalProfileChanges = computed(() => {
+  if (props.readOnly || props.isPublishing || currentContact.value === null) {
+    return false;
+  }
+
+  return !isSameProfile(localProfile, mapContactToProfile(currentContact.value));
+});
 const hasPendingGroupMemberChanges = computed(() => pendingGroupMemberChanges.value.length > 0);
 const pendingRemovedGroupMemberPubkeys = computed(() => new Set(
   pendingGroupMemberChanges.value
@@ -1397,6 +1404,7 @@ watch(
     if (
       !normalizedPubkey ||
       isLoadingContact.value ||
+      hasUnsavedLocalProfileChanges.value ||
       (canEditGroupMembers.value &&
         (activeTab.value === 'members' || hasPendingGroupMemberChanges.value))
     ) {
@@ -1803,6 +1811,10 @@ function normalizePubkeyInput(input: string): string | null {
 
 function toggleDisplayedPubkeyFormat(): void {
   displayedPubkeyFormat.value = displayedPubkeyFormat.value === 'npub' ? 'hex' : 'npub';
+}
+
+function handlePublishProfile(): void {
+  emit('publish', cloneProfile(localProfile));
 }
 
 function handleRelayExpand(relay: string): void {

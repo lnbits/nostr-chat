@@ -2,7 +2,7 @@ prompt
 
 
 My Relays (NIP-65)
-
+some contacts have weird relays, we should not listen there
 
 
 confety emoji
@@ -59,3 +59,8 @@ npm run test:e2e:local
 
 
 When the app runs in the browser show the unread count badge in the tab title with the number of unread chats
+
+node 24
+
+do not subscribe to all your contacts relays?
+remove xyz and tg references
