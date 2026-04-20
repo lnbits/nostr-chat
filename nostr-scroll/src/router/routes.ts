@@ -3,22 +3,22 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
-    name: 'login',
     component: () => import('../layouts/AuthLayout.vue'),
     children: [
       {
         path: '',
+        name: 'login',
         component: () => import('../pages/LoginPage.vue'),
       },
     ],
   },
   {
     path: '/register',
-    name: 'register',
     component: () => import('../layouts/AuthLayout.vue'),
     children: [
       {
         path: '',
+        name: 'register',
         component: () => import('../pages/RegisterPage.vue'),
       },
     ],
@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
         path: 'bookmarks',
         name: 'bookmarks',
         component: () => import('../pages/BookmarksPage.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'more',
+        name: 'more',
+        component: () => import('../pages/MorePage.vue'),
         meta: { requiresAuth: true },
       },
       {

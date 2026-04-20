@@ -122,6 +122,7 @@ const navItems = computed<SidebarItem[]>(() => [
     key: 'more',
     label: 'More',
     icon: 'more_horiz',
+    routeName: 'more',
   },
 ]);
 

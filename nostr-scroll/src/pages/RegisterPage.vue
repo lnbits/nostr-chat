@@ -23,12 +23,29 @@
         />
 
         <template v-else>
-          <div class="register-card__secret">
-            <div class="register-card__secret-label">Account Secret</div>
-            <div class="register-card__secret-value">
-              {{ generatedAccount?.nsec }}
-            </div>
-          </div>
+          <q-input
+            :model-value="generatedAccount?.nsec ?? ''"
+            readonly
+            outlined
+            rounded
+            dense
+            autocomplete="off"
+            spellcheck="false"
+            class="register-card__secret-input"
+            label="Account Secret"
+            :type="isSecretVisible ? 'text' : 'password'"
+          >
+            <template #append>
+              <q-btn
+                flat
+                round
+                dense
+                tabindex="-1"
+                :icon="isSecretVisible ? 'visibility_off' : 'visibility'"
+                @click="toggleSecretVisibility"
+              />
+            </template>
+          </q-input>
 
           <div class="register-card__warning">
             This secret controls the account. Store it somewhere safe before logging in.
@@ -93,6 +110,7 @@ const generatedAccount = ref<GeneratedNostrAccount | null>(null);
 const isCreatingAccount = ref(true);
 const creationProgress = ref(0);
 const isLoggingIn = ref(false);
+const isSecretVisible = ref(false);
 const registerError = ref('');
 
 let creationAnimationFrameId: number | null = null;
@@ -111,12 +129,17 @@ function clearRegisterError(): void {
   registerError.value = '';
 }
 
+function toggleSecretVisibility(): void {
+  isSecretVisible.value = !isSecretVisible.value;
+}
+
 function initializeRegisterPage(): void {
   clearCreationTimers();
   clearRegisterError();
   generatedAccount.value = null;
   isCreatingAccount.value = true;
   creationProgress.value = 0;
+  isSecretVisible.value = false;
   creationStartedAtMs = null;
   creationAnimationFrameId = window.requestAnimationFrame(updateCreationProgress);
 }
@@ -260,27 +283,27 @@ async function handleLoginNow(): Promise<void> {
   margin-bottom: 24px;
 }
 
-.register-card__secret {
-  padding: 16px 18px;
+.register-card__secret-input {
   margin-bottom: 16px;
-  border: 1px solid var(--scroll-border);
+}
+
+:deep(.register-card__secret-input .q-field__control) {
+  min-height: 64px;
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.02);
 }
 
-.register-card__secret-label {
-  margin-bottom: 8px;
+:deep(.register-card__secret-input .q-field__native) {
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+:deep(.register-card__secret-input .q-field__label) {
   color: var(--scroll-text-muted);
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.register-card__secret-value {
-  font-size: 0.94rem;
-  line-height: 1.55;
-  word-break: break-all;
 }
 
 .register-card__warning {
