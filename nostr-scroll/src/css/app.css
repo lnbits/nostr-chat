@@ -1,0 +1,90 @@
+:root {
+  --scroll-bg: #05080d;
+  --scroll-surface: #0c1117;
+  --scroll-surface-soft: #111821;
+  --scroll-surface-muted: #18212c;
+  --scroll-border: rgba(255, 255, 255, 0.1);
+  --scroll-border-strong: rgba(255, 255, 255, 0.16);
+  --scroll-text: #eef4ff;
+  --scroll-text-muted: #8b98a5;
+  --scroll-text-soft: #617082;
+  --scroll-accent: #1d9bf0;
+  --scroll-accent-soft: rgba(29, 155, 240, 0.16);
+  --scroll-accent-strong: #6bc0ff;
+  --scroll-success: #18c07a;
+  --scroll-danger: #ff5f7a;
+  --scroll-radius: 22px;
+  --scroll-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  font-family: 'Avenir Next', 'Segoe UI Variable Display', 'Helvetica Neue', sans-serif;
+}
+
+html,
+body,
+#q-app {
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at top, rgba(29, 155, 240, 0.08), transparent 36%),
+    linear-gradient(180deg, #06090f 0%, #05080d 100%);
+  color: var(--scroll-text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.text-scroll-muted {
+  color: var(--scroll-text-muted);
+}
+
+.text-scroll-soft {
+  color: var(--scroll-text-soft);
+}
+
+.bg-scroll-surface {
+  background: var(--scroll-surface);
+}
+
+.scroll-divider {
+  border-bottom: 1px solid var(--scroll-border);
+}
+
+.scroll-elevated {
+  background: rgba(12, 17, 23, 0.84);
+  backdrop-filter: blur(16px);
+}
+
+.scroll-button {
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.scroll-page-shell {
+  min-height: 100vh;
+}
+
+.scroll-main-column {
+  background: rgba(9, 13, 18, 0.94);
+  border-left: 1px solid var(--scroll-border);
+  border-right: 1px solid var(--scroll-border);
+  min-height: 100vh;
+}
+
+.scroll-card {
+  background: var(--scroll-surface);
+  border: 1px solid var(--scroll-border);
+  border-radius: var(--scroll-radius);
+  box-shadow: var(--scroll-shadow);
+}
+
+.scroll-hidden-scrollbar {
+  scrollbar-width: none;
+}
+
+.scroll-hidden-scrollbar::-webkit-scrollbar {
+  display: none;
+}

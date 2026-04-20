@@ -1,0 +1,12 @@
+{
+  "name": "nostr-scroll",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mocked Nostr-shaped social feed prototype built with Quasar and Vue.",
+  "scripts": {
+    "dev": "node ../scripts/quasar.cjs dev",
+    "build": "node ../scripts/quasar.cjs build",
+    "prepare:quasar": "node ../scripts/quasar.cjs prepare",
+    "typecheck": "node ../node_modules/vue-tsc/bin/vue-tsc.js --noEmit -p tsconfig.json"
+  }
+}
