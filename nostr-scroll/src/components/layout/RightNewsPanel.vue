@@ -6,32 +6,11 @@
     </label>
 
     <div class="scroll-card right-panel-card promo-card">
-      <div class="promo-card__header">
-        Subscribe to Premium
-        <q-badge color="green-6" class="promo-card__badge">50% off</q-badge>
-      </div>
+      <div class="promo-card__header">Buy nostr.com identifier</div>
       <div class="promo-card__copy text-scroll-muted">
-        Get rid of ads, see your analytics, boost your replies and unlock more reach.
+        Claim a short, memorable nostr.com handle and make your profile easier to find and share.
       </div>
-      <q-btn no-caps unelevated label="Subscribe" class="scroll-button promo-card__button" />
-    </div>
-
-    <div class="scroll-card right-panel-card live-card">
-      <div class="card-heading">Live on X</div>
-      <div class="live-card__item">
-        <div class="live-card__copy">
-          <div class="live-card__host">
-            <q-avatar size="24px">
-              <img :src="hostAvatar" alt="Host avatar" />
-            </q-avatar>
-            <span>SignalRelay Daily</span>
-            <q-icon name="verified" size="15px" class="live-card__verified" />
-            <span class="text-scroll-muted">is hosting</span>
-          </div>
-          <div class="live-card__headline">Making Nostr UIs feel mainstream without losing their shape</div>
-        </div>
-        <div class="live-card__chip">+412</div>
-      </div>
+      <q-btn no-caps unelevated label="Buy Now" class="scroll-button promo-card__button" />
     </div>
 
     <div class="scroll-card right-panel-card news-card">
@@ -74,8 +53,6 @@ import { loadMockNews } from '../../services/mockNewsService';
 import type { NewsItem } from '../../types/news';
 
 const newsItems = ref<NewsItem[]>([]);
-const hostAvatar =
-  'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"%3E%3Crect width="48" height="48" rx="24" fill="%231d9bf0"/%3E%3Ctext x="50%25" y="54%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="700" fill="white"%3ESR%3C/text%3E%3C/svg%3E';
 const trends = [
   {
     id: 'trend-1',
@@ -163,17 +140,9 @@ onMounted(async () => {
 }
 
 .promo-card__header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   font-size: 1.28rem;
   font-weight: 800;
   margin-bottom: 8px;
-}
-
-.promo-card__badge {
-  border-radius: 999px;
-  font-weight: 700;
 }
 
 .promo-card__copy {
@@ -186,44 +155,6 @@ onMounted(async () => {
   padding: 0 18px;
   background: var(--scroll-accent);
   color: white;
-}
-
-.live-card__item {
-  display: flex;
-  gap: 12px;
-  padding: 0 16px 16px;
-}
-
-.live-card__copy {
-  flex: 1;
-}
-
-.live-card__host {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.92rem;
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-
-.live-card__verified {
-  color: var(--scroll-accent);
-}
-
-.live-card__headline {
-  line-height: 1.45;
-  font-weight: 700;
-}
-
-.live-card__chip {
-  align-self: center;
-  padding: 6px 10px;
-  border: 1px solid #f91880;
-  border-radius: 999px;
-  color: #f91880;
-  font-size: 0.84rem;
-  font-weight: 700;
 }
 
 .news-list,

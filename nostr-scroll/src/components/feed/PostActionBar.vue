@@ -1,7 +1,13 @@
 <template>
   <div class="post-action-bar" @click.stop>
     <button class="post-action-bar__item post-action-bar__item--reply" type="button" @click="$emit('reply')">
-      <q-icon name="chat_bubble_outline" size="18px" />
+      <span class="post-action-bar__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path
+            d="M12 4.5c5.02 0 8.5 2.75 8.5 6.62 0 3.87-3.48 6.63-8.5 6.63-.8 0-1.58-.07-2.32-.22L5 20l1.12-4.18c-1.66-1.18-2.62-2.86-2.62-4.7C3.5 7.25 6.98 4.5 12 4.5Z"
+          />
+        </svg>
+      </span>
       <span v-if="formatActionCount(post.stats.replies)">{{ formatActionCount(post.stats.replies) }}</span>
     </button>
 
@@ -23,11 +29,6 @@
     >
       <q-icon :name="state.liked ? 'favorite' : 'favorite_border'" size="18px" />
       <span v-if="formatActionCount(post.stats.likes)">{{ formatActionCount(post.stats.likes) }}</span>
-    </button>
-
-    <button class="post-action-bar__item post-action-bar__item--views" type="button">
-      <q-icon name="bar_chart" size="18px" />
-      <span v-if="formatActionCount(post.stats.views)">{{ formatActionCount(post.stats.views) }}</span>
     </button>
 
     <button
@@ -97,6 +98,24 @@ function formatActionCount(value?: number): string {
   transition: background 140ms ease, color 140ms ease;
 }
 
+.post-action-bar__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.post-action-bar__icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+
 .post-action-bar__item:hover:not(:disabled) {
   background: var(--scroll-hover);
 }
@@ -107,7 +126,6 @@ function formatActionCount(value?: number): string {
 }
 
 .post-action-bar__item--reply:hover:not(:disabled),
-.post-action-bar__item--views:hover:not(:disabled),
 .post-action-bar__item--bookmark:hover:not(:disabled),
 .post-action-bar__item--share:hover:not(:disabled) {
   color: var(--scroll-accent);
