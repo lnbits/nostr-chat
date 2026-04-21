@@ -7,7 +7,7 @@
 
         <template v-if="loginStep === 'welcome'">
           <p class="login-card__subtitle">
-            Sign in with your Nostr identity and keep the same mock feed experience.
+            Sign in with your Nostr identity and browse live relay-backed notes.
           </p>
 
           <q-btn

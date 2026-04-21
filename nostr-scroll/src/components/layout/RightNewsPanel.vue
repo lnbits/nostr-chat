@@ -49,7 +49,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { loadMockNews } from '../../services/mockNewsService';
+import { loadNews } from '../../services/newsService';
 import type { NewsItem } from '../../types/news';
 
 const newsItems = ref<NewsItem[]>([]);
@@ -75,7 +75,7 @@ const trends = [
 ];
 
 onMounted(async () => {
-  newsItems.value = await loadMockNews();
+  newsItems.value = await loadNews();
 });
 </script>
 

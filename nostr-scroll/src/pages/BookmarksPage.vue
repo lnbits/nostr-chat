@@ -5,6 +5,8 @@
       :posts="feedStore.bookmarksTimeline"
       empty-title="Save posts for later"
       empty-subtitle="Bookmark interesting notes to find them here."
+      :loading="feedStore.bookmarksLoading"
+      :error-message="feedStore.bookmarksError"
     />
   </q-page>
 </template>
@@ -18,6 +20,6 @@ import { useFeedStore } from '../stores/feed';
 const feedStore = useFeedStore();
 
 onMounted(() => {
-  void feedStore.ensureHydrated();
+  void feedStore.loadBookmarks();
 });
 </script>

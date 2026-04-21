@@ -75,10 +75,12 @@
         <PostActionBar
           :post="displayPost"
           :state="postState"
+          :pending="isPending"
           @reply="openPost"
-          @repost="feedStore.toggleRepost(displayPost.id)"
-          @like="feedStore.toggleLike(displayPost.id)"
-          @bookmark="feedStore.toggleBookmark(displayPost.id)"
+          @repost="void feedStore.toggleRepost(displayPost.id)"
+          @like="void feedStore.toggleLike(displayPost.id)"
+          @bookmark="void feedStore.toggleBookmark(displayPost.id)"
+          @share="void sharePost()"
         />
       </div>
     </div>
@@ -86,6 +88,7 @@
 </template>
 
 <script setup lang="ts">
+import { copyToClipboard } from 'quasar';
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useFormatters } from '../../composables/useFormatters';
@@ -138,6 +141,7 @@ const quotedAuthor = computed(() =>
 );
 const primaryMedia = computed(() => displayPost.value.media?.[0] ?? null);
 const postState = computed(() => feedStore.getViewerPostState(displayPost.value.id));
+const isPending = computed(() => feedStore.isActionPending(displayPost.value.id));
 
 function openPost(): void {
   openPostById(displayPost.value.id);
@@ -155,6 +159,10 @@ function openProfile(pubkey: string): void {
     name: 'profile',
     params: { pubkey },
   });
+}
+
+async function sharePost(): Promise<void> {
+  await copyToClipboard(displayPost.value.permalink);
 }
 </script>
 

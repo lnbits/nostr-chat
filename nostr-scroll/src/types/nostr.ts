@@ -1,5 +1,7 @@
 export interface NostrProfile {
   pubkey: string;
+  npub: string;
+  nprofile?: string;
   name: string;
   displayName: string;
   verified?: boolean;
@@ -9,9 +11,9 @@ export interface NostrProfile {
   nip05?: string;
   website?: string;
   lud16?: string;
-  followersCount: number;
-  followingCount: number;
-  joinedAt: string;
+  followersCount?: number;
+  followingCount?: number;
+  joinedAt?: string;
   location?: string;
 }
 
@@ -36,6 +38,8 @@ export interface NostrNote {
   rootId?: string | null;
   repostOf?: string | null;
   quotedNoteId?: string | null;
+  entity: string;
+  permalink: string;
   stats: {
     replies: number;
     reposts: number;
@@ -49,12 +53,8 @@ export interface ViewerPostState {
   liked: boolean;
   reposted: boolean;
   bookmarked: boolean;
-}
-
-export interface FeedPersistenceState {
-  notes: NostrNote[];
-  viewerState: Record<string, ViewerPostState>;
-  homeVisibleCount: number;
+  likeEventIds?: string[];
+  repostEventIds?: string[];
 }
 
 export type ProfileTab = 'posts' | 'replies' | 'likes' | 'reposts';

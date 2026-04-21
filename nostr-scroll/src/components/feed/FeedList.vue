@@ -1,6 +1,16 @@
 <template>
   <div class="feed-list">
-    <template v-if="posts.length">
+    <div v-if="loading && posts.length === 0" class="feed-list__status">
+      <q-spinner color="primary" size="28px" />
+    </div>
+
+    <EmptyState
+      v-else-if="errorMessage && posts.length === 0"
+      title="Could not load posts"
+      :subtitle="errorMessage"
+    />
+
+    <template v-else-if="posts.length">
       <PostCard v-for="post in posts" :key="post.id" :post="post" />
 
       <div ref="sentinelRef" class="feed-list__sentinel">
@@ -23,11 +33,15 @@ interface Props {
   posts: NostrNote[];
   emptyTitle: string;
   emptySubtitle: string;
+  loading?: boolean;
+  errorMessage?: string;
   canLoadMore?: boolean;
   loadingMore?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  loading: false,
+  errorMessage: '',
   canLoadMore: false,
   loadingMore: false,
 });
@@ -72,6 +86,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.feed-list__status,
 .feed-list__sentinel {
   display: flex;
   justify-content: center;

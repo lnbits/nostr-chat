@@ -16,9 +16,10 @@
           no-caps
           unelevated
           label="Save"
-          :disable="!canSave"
+          :loading="profilesStore.savingCurrentUserProfile"
+          :disable="!canSave || profilesStore.savingCurrentUserProfile"
           class="scroll-button profile-edit-dialog__save"
-          @click="saveProfile"
+          @click="void saveProfile()"
         />
       </div>
 
@@ -32,7 +33,7 @@
                 flat
                 icon="photo_camera"
                 class="profile-edit-dialog__media-button"
-                @click="cycleBanner"
+                @click="editBannerUrl"
               />
               <q-btn
                 round
@@ -40,7 +41,7 @@
                 flat
                 icon="auto_awesome"
                 class="profile-edit-dialog__media-button"
-                @click="applyImagineRefresh"
+                @click="editAvatarUrl"
               />
               <q-btn
                 round
@@ -63,7 +64,7 @@
               flat
               icon="photo_camera"
               class="profile-edit-dialog__avatar-button"
-              @click="cycleAvatar"
+              @click="editAvatarUrl"
             />
           </div>
         </div>
@@ -73,17 +74,21 @@
             <img :src="draft.picture" :alt="draft.displayName || profile.displayName" />
           </q-avatar>
           <div class="profile-edit-dialog__imagine-copy">
-            <div class="profile-edit-dialog__imagine-title">Edit your photo with Imagine</div>
-            <div class="text-scroll-muted">Customize yourself in seconds</div>
+            <div class="profile-edit-dialog__imagine-title">Update your media</div>
+            <div class="text-scroll-muted">Use remote image URLs for your avatar and banner.</div>
           </div>
           <q-btn
             no-caps
             unelevated
-            icon="auto_awesome"
+            icon="link"
             label="Edit Photo"
             class="scroll-button profile-edit-dialog__imagine-button"
-            @click="applyImagineRefresh"
+            @click="editAvatarUrl"
           />
+        </div>
+
+        <div v-if="saveError" class="profile-edit-dialog__error">
+          {{ saveError }}
         </div>
 
         <label class="profile-edit-dialog__field">
@@ -112,7 +117,6 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { createAvatarDataUri, createBannerDataUri } from '../../data/mockMedia';
 import { useProfilesStore } from '../../stores/profiles';
 import type { NostrProfile } from '../../types/nostr';
 
@@ -137,25 +141,8 @@ const emit = defineEmits<{
 }>();
 
 const profilesStore = useProfilesStore();
-
-const avatarPalettes: [string, string][] = [
-  ['#1d9bf0', '#075985'],
-  ['#f97316', '#c2410c'],
-  ['#10b981', '#047857'],
-  ['#e879f9', '#9333ea'],
-  ['#f43f5e', '#9f1239'],
-];
-const bannerPalettes: [string, string, string][] = [
-  ['#0b1220', '#162234', '#1d9bf0'],
-  ['#1f1128', '#2a1436', '#e879f9'],
-  ['#091914', '#14372c', '#10b981'],
-  ['#201108', '#3a1c0d', '#f97316'],
-  ['#12121f', '#1c2440', '#60a5fa'],
-];
-
-const avatarPaletteIndex = ref(0);
-const bannerPaletteIndex = ref(0);
 const originalDraft = ref<DraftProfileState | null>(null);
+const saveError = ref('');
 const draft = reactive<DraftProfileState>({
   displayName: '',
   about: '',
@@ -201,8 +188,7 @@ function setDraftFromProfile(profile: NostrProfile): void {
 
   Object.assign(draft, nextDraft);
   originalDraft.value = { ...nextDraft };
-  avatarPaletteIndex.value = 0;
-  bannerPaletteIndex.value = 0;
+  saveError.value = '';
 }
 
 function handleDialogToggle(isOpen: boolean): void {
@@ -213,43 +199,30 @@ function closeDialog(): void {
   emit('update:modelValue', false);
 }
 
-function getInitials(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (!parts.length) {
-    return 'NS';
+function promptForUrl(label: string, currentValue: string): string | null {
+  if (typeof window === 'undefined') {
+    return null;
   }
 
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
+  return window.prompt(label, currentValue) ?? null;
 }
 
-function cycleAvatar(): void {
-  avatarPaletteIndex.value = (avatarPaletteIndex.value + 1) % avatarPalettes.length;
-  const [startColor, endColor] = avatarPalettes[avatarPaletteIndex.value];
+function editAvatarUrl(): void {
+  const nextUrl = promptForUrl('Enter the image URL for your avatar', draft.picture);
+  if (nextUrl === null) {
+    return;
+  }
 
-  draft.picture = createAvatarDataUri(
-    getInitials(draft.displayName || props.profile?.displayName || 'Nostr Scroll'),
-    startColor,
-    endColor,
-  );
+  draft.picture = nextUrl.trim() || originalDraft.value?.picture || draft.picture;
 }
 
-function cycleBanner(): void {
-  bannerPaletteIndex.value = (bannerPaletteIndex.value + 1) % bannerPalettes.length;
-  const [startColor, endColor, accentColor] = bannerPalettes[bannerPaletteIndex.value];
+function editBannerUrl(): void {
+  const nextUrl = promptForUrl('Enter the image URL for your banner', draft.banner);
+  if (nextUrl === null) {
+    return;
+  }
 
-  draft.banner = createBannerDataUri(
-    draft.displayName.trim() || props.profile?.displayName || 'Nostr Scroll',
-    startColor,
-    endColor,
-    accentColor,
-  );
+  draft.banner = nextUrl.trim() || originalDraft.value?.banner || draft.banner;
 }
 
 function resetBanner(): void {
@@ -260,25 +233,27 @@ function resetBanner(): void {
   draft.banner = originalDraft.value.banner;
 }
 
-function applyImagineRefresh(): void {
-  cycleAvatar();
-  cycleBanner();
-}
-
-function saveProfile(): void {
+async function saveProfile(): Promise<void> {
   if (!props.profile || !canSave.value) {
     return;
   }
 
-  profilesStore.updateProfile(props.profile.pubkey, {
-    displayName: draft.displayName.trim(),
-    about: draft.about.trim(),
-    location: draft.location.trim() || undefined,
-    website: draft.website.trim() || undefined,
-    picture: draft.picture,
-    banner: draft.banner,
-  });
-  closeDialog();
+  saveError.value = '';
+
+  try {
+    await profilesStore.saveProfile({
+      displayName: draft.displayName.trim(),
+      about: draft.about.trim(),
+      location: draft.location.trim() || undefined,
+      website: draft.website.trim() || undefined,
+      picture: draft.picture.trim() || undefined,
+      banner: draft.banner.trim() || undefined,
+    });
+    closeDialog();
+  } catch (error) {
+    saveError.value =
+      error instanceof Error ? error.message : 'Failed to save profile changes to relays.';
+  }
 }
 </script>
 
@@ -322,75 +297,61 @@ function saveProfile(): void {
 }
 
 .profile-edit-dialog__save {
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 18px;
   background: #eff3f4;
   color: #0f1419;
   font-weight: 800;
 }
 
-.profile-edit-dialog__save.q-btn--disabled {
-  opacity: 0.38 !important;
-}
-
 .profile-edit-dialog__body {
-  max-height: calc(min(90vh, 820px) - 60px);
   overflow-y: auto;
-  padding-bottom: 18px;
+  max-height: calc(min(90vh, 820px) - 64px);
 }
 
 .profile-edit-dialog__hero {
   position: relative;
+  margin-bottom: 88px;
 }
 
 .profile-edit-dialog__banner {
-  position: relative;
-  height: 210px;
+  height: 220px;
   background-size: cover;
   background-position: center;
 }
 
-.profile-edit-dialog__banner::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.12);
-}
-
 .profile-edit-dialog__banner-actions {
   position: absolute;
-  left: 50%;
-  bottom: 18px;
-  z-index: 1;
+  inset: 0;
   display: flex;
-  gap: 12px;
-  transform: translateX(-50%);
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(15, 20, 25, 0.26);
 }
 
 .profile-edit-dialog__media-button,
 .profile-edit-dialog__avatar-button {
-  background: rgba(15, 20, 25, 0.74);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(8px);
+  width: 42px;
+  height: 42px;
+  background: rgba(15, 20, 25, 0.68);
+  color: white;
 }
 
 .profile-edit-dialog__avatar-wrap {
   position: absolute;
-  left: 16px;
   bottom: -58px;
-  z-index: 1;
+  left: 16px;
 }
 
 .profile-edit-dialog__avatar {
-  border: 4px solid #000000;
-  background: #000000;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  border: 4px solid var(--scroll-bg);
+  background: var(--scroll-bg);
 }
 
 .profile-edit-dialog__avatar-button {
   position: absolute;
-  right: 6px;
+  right: 4px;
   bottom: 6px;
 }
 
@@ -398,85 +359,62 @@ function saveProfile(): void {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 74px 16px 12px;
-  padding: 12px 14px;
-  border: 1px solid rgba(83, 100, 113, 0.22);
-  border-radius: 14px;
-  background: #16181c;
+  margin: 0 16px 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .profile-edit-dialog__imagine-copy {
-  flex: 1;
   min-width: 0;
+  flex: 1;
 }
 
 .profile-edit-dialog__imagine-title {
-  font-weight: 800;
-  margin-bottom: 2px;
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
 .profile-edit-dialog__imagine-button {
-  flex-shrink: 0;
-  min-height: 34px;
-  padding: 0 14px;
-  background: #2f3336;
-  color: var(--scroll-text);
+  min-height: 36px;
+  padding: 0 16px;
+  background: rgba(239, 243, 244, 0.14);
+  color: white;
+}
+
+.profile-edit-dialog__error {
+  margin: 0 16px 16px;
+  color: #fda4af;
+  font-size: 0.92rem;
 }
 
 .profile-edit-dialog__field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0 16px 12px;
-  padding: 10px 14px 12px;
+  display: block;
+  margin: 0 16px 16px;
+  padding: 10px 14px;
   border: 1px solid var(--scroll-border);
-  border-radius: 6px;
-  background: #000000;
+  border-radius: 16px;
 }
 
 .profile-edit-dialog__label {
+  display: block;
+  margin-bottom: 6px;
   color: var(--scroll-text-muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 
 .profile-edit-dialog__field input,
 .profile-edit-dialog__field textarea {
   width: 100%;
-  padding: 0;
   border: none;
   background: transparent;
   color: var(--scroll-text);
   font: inherit;
+  resize: vertical;
   outline: none;
-  resize: none;
 }
 
 .profile-edit-dialog__field textarea {
-  min-height: 76px;
-  line-height: 1.45;
-}
-
-.profile-edit-dialog__field:focus-within {
-  border-color: var(--scroll-accent);
-  box-shadow: inset 0 0 0 1px var(--scroll-accent);
-}
-
-@media (max-width: 599px) {
-  .profile-edit-dialog {
-    width: 100vw;
-    max-width: 100vw;
-    max-height: 100vh;
-    min-height: 100vh;
-    border: none;
-    border-radius: 0;
-  }
-
-  .profile-edit-dialog__body {
-    max-height: calc(100vh - 60px);
-  }
-
-  .profile-edit-dialog__banner {
-    height: 180px;
-  }
+  min-height: 92px;
 }
 </style>

@@ -40,15 +40,16 @@ const feedStore = useFeedStore();
 const myRelaysStore = useMyRelaysStore();
 
 onMounted(() => {
-  authStore.restoreSession();
-  appRelaysStore.init();
-  myRelaysStore.init();
-  void profilesStore.ensureHydrated();
-  void feedStore.ensureHydrated();
+  void (async () => {
+    authStore.restoreSession();
+    appRelaysStore.init();
+    myRelaysStore.init();
 
-  if (authStore.isAuthenticated) {
-    void myRelaysStore.hydrateFromNostr();
-  }
+    if (authStore.isAuthenticated) {
+      await myRelaysStore.hydrateFromNostr();
+      await Promise.all([profilesStore.ensureHydrated(), feedStore.ensureHydrated()]);
+    }
+  })();
 });
 </script>
 

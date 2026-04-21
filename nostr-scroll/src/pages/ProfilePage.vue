@@ -18,7 +18,9 @@
     <FeedList
       :posts="activePosts"
       empty-title="Nothing here yet"
-      empty-subtitle="This tab does not have any posts in the mock dataset yet."
+      empty-subtitle="No matching posts were found on the relays queried for this tab."
+      :loading="isActiveTabLoading"
+      :error-message="activeTabError"
     />
 
     <EditProfileDialog
@@ -27,26 +29,18 @@
       @update:model-value="isEditDialogOpen = $event"
     />
   </q-page>
-
-  <q-page v-else class="timeline-page">
-    <StickyTopBar title="Profile" show-back />
-    <EmptyState
-      title="Profile not found"
-      subtitle="That mocked profile does not exist in this prototype."
-    />
-  </q-page>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useFormatters } from '../composables/useFormatters';
 import EditProfileDialog from '../components/profile/EditProfileDialog.vue';
 import FeedList from '../components/feed/FeedList.vue';
-import EmptyState from '../components/feed/EmptyState.vue';
 import StickyTopBar from '../components/layout/StickyTopBar.vue';
 import ProfileHeader from '../components/profile/ProfileHeader.vue';
 import ProfileTabs from '../components/profile/ProfileTabs.vue';
+import { normalizeProfileReference } from '../services/nostrEntityService';
 import { useAuthStore } from '../stores/auth';
 import { useFeedStore } from '../stores/feed';
 import { useProfilesStore } from '../stores/profiles';
@@ -61,12 +55,20 @@ const uiStore = useUiStore();
 const { formatCompactCount } = useFormatters();
 const isEditDialogOpen = ref(false);
 
-const resolvedPubkey = computed(
-  () => (route.params.pubkey as string | undefined) ?? authStore.currentPubkey ?? '',
-);
+const resolvedPubkey = computed(() => {
+  const routePubkey = route.params.pubkey as string | undefined;
+  const normalizedReference = normalizeProfileReference(routePubkey);
+  return normalizedReference?.pubkey ?? authStore.currentPubkey ?? '';
+});
 const profile = computed(() => profilesStore.getProfileByPubkey(resolvedPubkey.value));
 const postCount = computed(() => feedStore.getPostCountForProfile(resolvedPubkey.value));
 const activeTab = computed<ProfileTab>(() => uiStore.getProfileTab(resolvedPubkey.value));
+const isActiveTabLoading = computed(() =>
+  resolvedPubkey.value ? feedStore.isProfileTabLoading(resolvedPubkey.value, activeTab.value) : false,
+);
+const activeTabError = computed(() =>
+  resolvedPubkey.value ? feedStore.getProfileTabError(resolvedPubkey.value, activeTab.value) : '',
+);
 
 const activePosts = computed(() => {
   switch (activeTab.value) {
@@ -86,7 +88,34 @@ function setActiveTab(tab: ProfileTab): void {
   uiStore.setProfileTab(resolvedPubkey.value, tab);
 }
 
+async function loadProfileView(pubkey: string, tab: ProfileTab): Promise<void> {
+  if (!pubkey) {
+    return;
+  }
+
+  await Promise.all([
+    profilesStore.ensureProfile(pubkey, false, true),
+    feedStore.ensureProfileTabLoaded(pubkey, tab),
+  ]);
+}
+
 onMounted(() => {
-  void Promise.all([profilesStore.ensureHydrated(), feedStore.ensureHydrated()]);
+  if (!resolvedPubkey.value) {
+    return;
+  }
+
+  void loadProfileView(resolvedPubkey.value, activeTab.value);
 });
+
+watch(
+  [resolvedPubkey, activeTab],
+  ([pubkey, tab]) => {
+    if (!pubkey) {
+      return;
+    }
+
+    void loadProfileView(pubkey, tab);
+  },
+  { immediate: true },
+);
 </script>

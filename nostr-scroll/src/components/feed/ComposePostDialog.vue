@@ -53,10 +53,10 @@
                 no-caps
                 unelevated
                 label="Post"
-                :disable="!canSubmit"
+                :disable="!canSubmit || feedStore.publishingPost"
                 class="scroll-button compose-dialog__submit"
                 :class="{ 'compose-dialog__submit--active': canSubmit }"
-                @click="submit"
+                @click="void submit()"
               />
             </div>
           </div>
@@ -113,15 +113,17 @@ async function handleShow(): Promise<void> {
   composerInput.value?.focus();
 }
 
-function submit(): void {
+async function submit(): Promise<void> {
   const content = draft.value.trim();
   if (!content) {
     return;
   }
 
-  feedStore.createPost(content);
-  draft.value = '';
-  closeDialog();
+  try {
+    await feedStore.createPost(content);
+    draft.value = '';
+    closeDialog();
+  } catch {}
 }
 </script>
 
@@ -217,23 +219,5 @@ function submit(): void {
 .compose-dialog__submit--active {
   background: #eff3f4;
   color: #0f1419;
-}
-
-.compose-dialog__submit.q-btn--disabled {
-  opacity: 1 !important;
-}
-
-@media (max-width: 599px) {
-  .compose-dialog {
-    width: 100vw;
-    max-width: 100vw;
-    min-height: 100vh;
-    border: none;
-    border-radius: 0;
-  }
-
-  .compose-dialog__input :deep(textarea) {
-    min-height: 220px;
-  }
 }
 </style>

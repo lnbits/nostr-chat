@@ -38,12 +38,12 @@
       <div class="profile-header__meta text-scroll-muted">
         <span v-if="profile.location"><q-icon name="location_on" size="16px" />{{ profile.location }}</span>
         <span v-if="profile.website"><q-icon name="link" size="16px" />{{ profile.website }}</span>
-        <span><q-icon name="calendar_today" size="16px" />Joined {{ formatJoinedDate(profile.joinedAt) }}</span>
+        <span v-if="profile.joinedAt"><q-icon name="calendar_today" size="16px" />Joined {{ formatJoinedDate(profile.joinedAt) }}</span>
       </div>
 
       <div class="profile-header__stats">
-        <span><strong>{{ formatCompactCount(profile.followingCount) }}</strong> Following</span>
-        <span><strong>{{ formatCompactCount(profile.followersCount) }}</strong> Followers</span>
+        <span v-if="typeof profile.followingCount === 'number'"><strong>{{ formatCompactCount(profile.followingCount) }}</strong> Following</span>
+        <span v-if="typeof profile.followersCount === 'number'"><strong>{{ formatCompactCount(profile.followersCount) }}</strong> Followers</span>
         <span><strong>{{ formatCompactCount(postCount) }}</strong> Posts</span>
       </div>
     </div>

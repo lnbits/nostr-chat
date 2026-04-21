@@ -1,53 +1,44 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { CURRENT_USER_PUBKEY } from '../data/mockProfiles';
-import { loadMockProfiles } from '../services/mockProfileService';
-import type { NostrProfile } from '../types/nostr';
-import { STORAGE_KEYS, readStorageItem, removeStorageItem, writeStorageItem } from '../utils/storage';
+import { useAppRelaysStore } from './appRelays';
 import { useAuthStore } from './auth';
+import { useMyRelaysStore } from './myRelays';
+import { buildFallbackProfile, fetchFollowingCount, fetchProfiles, saveCurrentUserProfile } from '../services/nostrProfileService';
+import type { NostrProfile } from '../types/nostr';
 
 export const useProfilesStore = defineStore('profiles', () => {
   const authStore = useAuthStore();
-  const profiles = ref<NostrProfile[]>([]);
-  const hydrating = ref(false);
-  const hydrated = ref(false);
-  const hydratedForPubkey = ref<string | null>(null);
+  const appRelaysStore = useAppRelaysStore();
+  const myRelaysStore = useMyRelaysStore();
 
-  const profilesMap = computed(() =>
-    profiles.value.reduce<Record<string, NostrProfile>>((accumulator, profile) => {
-      accumulator[profile.pubkey] = profile;
-      return accumulator;
-    }, {}),
+  const profiles = ref<Record<string, NostrProfile>>({});
+  const loadingPubkeys = ref<Record<string, boolean>>({});
+  const loadedPubkeys = ref<Record<string, boolean>>({});
+  const errorsByPubkey = ref<Record<string, string>>({});
+  const savingCurrentUserProfile = ref(false);
+
+  const profilesMap = computed(() => profiles.value);
+  const currentUserProfile = computed(() =>
+    authStore.currentPubkey ? getProfileByPubkey(authStore.currentPubkey) : null,
   );
 
-  function persistProfiles(): void {
-    writeStorageItem(STORAGE_KEYS.profiles, profiles.value);
+  function upsertProfiles(nextProfiles: NostrProfile[]): void {
+    if (nextProfiles.length === 0) {
+      return;
+    }
+
+    profiles.value = nextProfiles.reduce<Record<string, NostrProfile>>((accumulator, profile) => {
+      accumulator[profile.pubkey] = {
+        ...(profiles.value[profile.pubkey] ?? {}),
+        ...profile,
+      };
+      return accumulator;
+    }, { ...profiles.value });
   }
 
-  async function ensureHydrated(): Promise<void> {
-    const targetPubkey = authStore.currentPubkey ?? CURRENT_USER_PUBKEY;
-    if (hydrated.value || hydrating.value) {
-      if (hydrated.value && hydratedForPubkey.value === targetPubkey) {
-        return;
-      }
-
-      if (hydrating.value) {
-        return;
-      }
-    }
-
-    hydrating.value = true;
-    try {
-      const storedProfiles = readStorageItem<NostrProfile[] | null>(STORAGE_KEYS.profiles, null);
-      const hasTargetProfile = storedProfiles?.some((profile) => profile.pubkey === targetPubkey) ?? false;
-
-      profiles.value = hasTargetProfile ? storedProfiles ?? [] : await loadMockProfiles(targetPubkey);
-      hydrated.value = true;
-      hydratedForPubkey.value = targetPubkey;
-      persistProfiles();
-    } finally {
-      hydrating.value = false;
-    }
+  function ensureRelayStoresInitialized(): void {
+    appRelaysStore.init();
+    myRelaysStore.init();
   }
 
   function getProfileByPubkey(pubkey?: string | null): NostrProfile | null {
@@ -55,36 +46,170 @@ export const useProfilesStore = defineStore('profiles', () => {
       return null;
     }
 
-    return profilesMap.value[pubkey] ?? null;
+    return profiles.value[pubkey] ?? buildFallbackProfile(pubkey);
   }
 
-  function updateProfile(pubkey: string, updates: Partial<NostrProfile>): void {
-    profiles.value = profiles.value.map((profile) =>
-      profile.pubkey === pubkey ? { ...profile, ...updates } : profile,
-    );
-    persistProfiles();
+  async function ensureProfiles(pubkeys: string[], force = false): Promise<void> {
+    const uniquePubkeys = Array.from(new Set(pubkeys.filter(Boolean)));
+    if (uniquePubkeys.length === 0) {
+      return;
+    }
+
+    if (!authStore.session.currentPubkey) {
+      upsertProfiles(uniquePubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
+      return;
+    }
+
+    ensureRelayStoresInitialized();
+
+    const pendingPubkeys = uniquePubkeys.filter((pubkey) => force || !loadedPubkeys.value[pubkey]);
+    if (pendingPubkeys.length === 0) {
+      return;
+    }
+
+    for (const pubkey of pendingPubkeys) {
+      loadingPubkeys.value = {
+        ...loadingPubkeys.value,
+        [pubkey]: true,
+      };
+      errorsByPubkey.value = {
+        ...errorsByPubkey.value,
+        [pubkey]: '',
+      };
+    }
+
+    try {
+      const fetchedProfiles = await fetchProfiles(
+        authStore.session,
+        appRelaysStore.relayEntries,
+        myRelaysStore.relayEntries,
+        pendingPubkeys,
+      );
+      upsertProfiles(fetchedProfiles);
+      loadedPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
+        (accumulator, pubkey) => {
+          accumulator[pubkey] = true;
+          return accumulator;
+        },
+        { ...loadedPubkeys.value },
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to load profile metadata from relays.';
+      errorsByPubkey.value = pendingPubkeys.reduce<Record<string, string>>(
+        (accumulator, pubkey) => {
+          accumulator[pubkey] = errorMessage;
+          return accumulator;
+        },
+        { ...errorsByPubkey.value },
+      );
+      upsertProfiles(pendingPubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
+    } finally {
+      loadingPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
+        (accumulator, pubkey) => {
+          accumulator[pubkey] = false;
+          return accumulator;
+        },
+        { ...loadingPubkeys.value },
+      );
+    }
+  }
+
+  async function ensureProfile(pubkey?: string | null, force = false, includeFollowingCount = false): Promise<void> {
+    if (!pubkey) {
+      return;
+    }
+
+    await ensureProfiles([pubkey], force);
+
+    if (!includeFollowingCount || !authStore.session.currentPubkey) {
+      return;
+    }
+
+    ensureRelayStoresInitialized();
+
+    try {
+      const followingCount = await fetchFollowingCount(
+        authStore.session,
+        appRelaysStore.relayEntries,
+        myRelaysStore.relayEntries,
+        pubkey,
+      );
+      if (typeof followingCount === 'number') {
+        upsertProfiles([
+          {
+            ...(getProfileByPubkey(pubkey) ?? buildFallbackProfile(pubkey)),
+            followingCount,
+          },
+        ]);
+      }
+    } catch {}
+  }
+
+  async function ensureHydrated(): Promise<void> {
+    if (!authStore.currentPubkey) {
+      return;
+    }
+
+    await ensureProfile(authStore.currentPubkey, false, true);
+  }
+
+  async function saveProfile(updates: {
+    displayName: string;
+    about: string;
+    location?: string;
+    website?: string;
+    picture?: string;
+    banner?: string;
+  }): Promise<void> {
+    if (!authStore.currentPubkey) {
+      return;
+    }
+
+    ensureRelayStoresInitialized();
+    savingCurrentUserProfile.value = true;
+
+    try {
+      await saveCurrentUserProfile(
+        authStore.session,
+        appRelaysStore.relayEntries,
+        myRelaysStore.relayEntries,
+        updates,
+      );
+      await ensureProfile(authStore.currentPubkey, true, true);
+    } finally {
+      savingCurrentUserProfile.value = false;
+    }
+  }
+
+  function isProfileLoading(pubkey?: string | null): boolean {
+    return pubkey ? Boolean(loadingPubkeys.value[pubkey]) : false;
+  }
+
+  function getProfileError(pubkey?: string | null): string {
+    return pubkey ? errorsByPubkey.value[pubkey] ?? '' : '';
   }
 
   function reset(): void {
-    profiles.value = [];
-    hydrated.value = false;
-    hydrating.value = false;
-    hydratedForPubkey.value = null;
-    removeStorageItem(STORAGE_KEYS.profiles);
+    profiles.value = {};
+    loadingPubkeys.value = {};
+    loadedPubkeys.value = {};
+    errorsByPubkey.value = {};
+    savingCurrentUserProfile.value = false;
   }
-
-  const currentUserProfile = computed(() =>
-    getProfileByPubkey(authStore.currentPubkey ?? CURRENT_USER_PUBKEY),
-  );
 
   return {
     profiles,
     profilesMap,
-    hydrated,
     currentUserProfile,
+    savingCurrentUserProfile,
     ensureHydrated,
+    ensureProfile,
+    ensureProfiles,
     getProfileByPubkey,
-    updateProfile,
+    getProfileError,
+    isProfileLoading,
     reset,
+    saveProfile,
   };
 });

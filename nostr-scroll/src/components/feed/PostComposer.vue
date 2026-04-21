@@ -34,7 +34,7 @@
             no-caps
             unelevated
             :label="buttonLabel"
-            :disable="!canSubmit"
+            :disable="!canSubmit || submitting"
             class="scroll-button post-composer__submit"
             :class="{ 'post-composer__submit--active': canSubmit }"
             @click="submit"
@@ -53,11 +53,13 @@ import { useProfilesStore } from '../../stores/profiles';
 interface Props {
   placeholder?: string;
   buttonLabel?: string;
+  submitting?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   placeholder: "What's happening?",
   buttonLabel: 'Post',
+  submitting: false,
 });
 
 const emit = defineEmits<{

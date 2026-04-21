@@ -15,6 +15,7 @@
       class="post-action-bar__item post-action-bar__item--repost"
       :class="{ 'post-action-bar__item--reposted': state.reposted }"
       type="button"
+      :disabled="pending"
       @click="$emit('repost')"
     >
       <q-icon name="repeat" size="18px" />
@@ -25,6 +26,7 @@
       class="post-action-bar__item post-action-bar__item--like"
       :class="{ 'post-action-bar__item--liked': state.liked }"
       type="button"
+      :disabled="pending"
       @click="$emit('like')"
     >
       <q-icon :name="state.liked ? 'favorite' : 'favorite_border'" size="18px" />
@@ -35,12 +37,18 @@
       class="post-action-bar__item post-action-bar__item--bookmark"
       :class="{ 'post-action-bar__item--bookmarked': state.bookmarked }"
       type="button"
+      :disabled="pending"
       @click="$emit('bookmark')"
     >
       <q-icon :name="state.bookmarked ? 'bookmark' : 'bookmark_border'" size="18px" />
     </button>
 
-    <button class="post-action-bar__item post-action-bar__item--share" type="button" disabled>
+    <button
+      class="post-action-bar__item post-action-bar__item--share"
+      type="button"
+      :disabled="pending"
+      @click="$emit('share')"
+    >
       <q-icon name="share" size="18px" />
     </button>
   </div>
@@ -53,6 +61,7 @@ import type { NostrNote, ViewerPostState } from '../../types/nostr';
 interface Props {
   post: NostrNote;
   state: ViewerPostState;
+  pending?: boolean;
 }
 
 defineEmits<{
@@ -60,9 +69,12 @@ defineEmits<{
   repost: [];
   like: [];
   bookmark: [];
+  share: [];
 }>();
 
-defineProps<Props>();
+withDefaults(defineProps<Props>(), {
+  pending: false,
+});
 
 const { formatCompactCount } = useFormatters();
 

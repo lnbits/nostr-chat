@@ -1,6 +1,6 @@
 import type { NewsItem } from '../types/news';
 
-export const mockNews: NewsItem[] = [
+export const newsItems: NewsItem[] = [
   {
     id: 'news-1',
     category: 'Protocol',
@@ -25,7 +25,7 @@ export const mockNews: NewsItem[] = [
   {
     id: 'news-4',
     category: 'Builders',
-    headline: 'Mock-first product teams are shipping faster experiments with fewer dead ends.',
+    headline: 'Product teams are shipping faster experiments with fewer dead ends.',
     source: 'Proto Daily',
     timeLabel: '8h ago',
   },
