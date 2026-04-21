@@ -1,7 +1,7 @@
 <template>
   <div class="thread-view">
     <PostCard v-for="post in ancestors" :key="post.id" :post="post" />
-    <PostCard :post="focusedPost" highlighted />
+    <PostCard :post="focusedPost" highlighted disable-post-navigation />
 
     <div class="thread-view__reply-heading scroll-divider">Replies</div>
     <PostCard v-for="reply in replies" :key="reply.id" :post="reply" />

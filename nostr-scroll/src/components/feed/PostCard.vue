@@ -1,7 +1,10 @@
 <template>
   <article
     class="post-card scroll-divider"
-    :class="{ 'post-card--highlighted': highlighted }"
+    :class="{
+      'post-card--highlighted': highlighted,
+      'post-card--static': disablePostNavigation,
+    }"
     @click="openPost"
   >
     <div v-if="repostedBy" class="post-card__repost text-scroll-soft">
@@ -68,17 +71,19 @@
           <div class="post-card__quoted-text">{{ quotedPost.content }}</div>
         </button>
 
-        <div
+        <button
           v-if="primaryMedia"
           class="post-card__media"
+          type="button"
           :style="{ aspectRatio: `${primaryMedia.aspectRatio}` }"
+          @click.stop="openImageDialog"
         >
           <img :src="primaryMedia.url" :alt="primaryMedia.alt" />
           <span v-if="primaryMedia.eyebrow" class="post-card__media-eyebrow">{{ primaryMedia.eyebrow }}</span>
           <span v-if="primaryMedia.durationLabel" class="post-card__media-duration">
             {{ primaryMedia.durationLabel }}
           </span>
-        </div>
+        </button>
 
         <PostActionBar
           :post="displayPost"
@@ -93,6 +98,30 @@
       </div>
     </div>
   </article>
+
+  <q-dialog
+    :model-value="isImageDialogOpen"
+    transition-show="fade"
+    transition-hide="fade"
+    @update:model-value="handleImageDialogToggle"
+  >
+    <div class="post-card__image-dialog" @click.stop>
+      <q-btn
+        flat
+        round
+        dense
+        icon="close"
+        class="post-card__image-close"
+        @click="closeImageDialog"
+      />
+      <img
+        v-if="primaryMedia"
+        :src="primaryMedia.url"
+        :alt="primaryMedia.alt"
+        class="post-card__image-full"
+      />
+    </div>
+  </q-dialog>
 </template>
 
 <script setup lang="ts">
@@ -109,11 +138,13 @@ interface Props {
   post: NostrNote;
   highlighted?: boolean;
   previewChars?: number | null;
+  disablePostNavigation?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   highlighted: false,
   previewChars: null,
+  disablePostNavigation: false,
 });
 
 const router = useRouter();
@@ -153,6 +184,7 @@ const primaryMedia = computed(() => displayPost.value.media?.[0] ?? null);
 const postState = computed(() => feedStore.getViewerPostState(displayPost.value.id));
 const isPending = computed(() => feedStore.isActionPending(displayPost.value.id));
 const isExpanded = ref(false);
+const isImageDialogOpen = ref(false);
 const contentCharacters = computed(() => Array.from(displayPost.value.content));
 const previewCharacterLimit = computed(() =>
   typeof props.previewChars === 'number' && props.previewChars > 0 ? props.previewChars : null,
@@ -175,11 +207,31 @@ const renderedContent = computed(() => {
 });
 
 function openPost(): void {
+  if (props.disablePostNavigation) {
+    return;
+  }
+
   openPostById(displayPost.value.id);
 }
 
 function expandPost(): void {
   isExpanded.value = true;
+}
+
+function openImageDialog(): void {
+  if (!primaryMedia.value) {
+    return;
+  }
+
+  isImageDialogOpen.value = true;
+}
+
+function closeImageDialog(): void {
+  isImageDialogOpen.value = false;
+}
+
+function handleImageDialogToggle(isOpen: boolean): void {
+  isImageDialogOpen.value = isOpen;
 }
 
 function openPostById(id: string): void {
@@ -214,6 +266,10 @@ async function sharePost(): Promise<void> {
 
 .post-card--highlighted {
   background: rgba(255, 255, 255, 0.03);
+}
+
+.post-card--static {
+  cursor: default;
 }
 
 .post-card__repost {
@@ -355,9 +411,11 @@ async function sharePost(): Promise<void> {
   width: 100%;
   overflow: hidden;
   margin-top: 12px;
+  padding: 0;
   border: 1px solid var(--scroll-border);
   border-radius: 18px;
   background: var(--scroll-surface);
+  cursor: zoom-in;
 }
 
 .post-card__media img {
@@ -388,5 +446,35 @@ async function sharePost(): Promise<void> {
   right: 12px;
   bottom: 12px;
   padding: 5px 9px;
+}
+
+.post-card__image-dialog {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(92vw, 1080px);
+  max-height: 92vh;
+  padding: 24px;
+  border-radius: 24px;
+  background: rgba(0, 0, 0, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+
+.post-card__image-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.post-card__image-full {
+  display: block;
+  max-width: 100%;
+  max-height: calc(92vh - 48px);
+  border-radius: 18px;
+  object-fit: contain;
 }
 </style>
