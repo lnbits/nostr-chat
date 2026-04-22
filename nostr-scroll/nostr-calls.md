@@ -182,7 +182,7 @@ Each feed has its own:
 
 `ensureHomeTimelineLoaded('all')` calls `fetchHomeTimelineBatch()` with:
 
-- Kinds: `1` (`Text`) and `6` (`Repost`)
+- Kinds: `1` (`Text`) only
 - Filter limit: `max(requestedLimit * 3, 30)`
 - Default requested limit: `15`
 - Optional `until` cursor when paginating
@@ -190,7 +190,6 @@ Each feed has its own:
 
 Post selection rule after fetch:
 
-- keep all reposts
 - drop replies from the main timeline
 - keep only notes where `getEventReplyId(event)` is empty
 - then slice to `15`
@@ -237,6 +236,13 @@ For both home tabs, after primary notes are fetched:
 - builds the id list from `replyTo`, `rootId`, `repostOf`, `quotedNoteId`
 - skips ids already present in the primary result
 - fetches ids in chunks of `40`
+
+Home timeline repost reads are no longer broad timeline queries.
+Kind `6` repost events are only fetched in targeted contexts such as:
+
+- viewer repost-state lookups for explicit note ids with `#e = chunk`
+- repost-count lookups for explicit note ids with `#e = chunk`
+- the profile `reposts` tab
 
 ## Interaction and viewer-state rules
 
@@ -448,3 +454,7 @@ These things are not currently implemented as live subscriptions:
 - live thread subscriptions
 
 The app currently uses explicit fetches on page load, tab change, pagination, and user actions.
+
+
+TODOO:
+ - for my follow list also fetch reposts (kind 6)

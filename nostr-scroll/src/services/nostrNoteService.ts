@@ -458,7 +458,7 @@ export async function fetchHomeTimelineBatch(
 ): Promise<HydratedNoteCollection> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
   const filters: NDKFilter = {
-    kinds: [NDKKind.Text, NDKKind.Repost],
+    kinds: [NDKKind.Text],
     limit: Math.max(limit * 3, 30),
   };
 
@@ -472,13 +472,7 @@ export async function fetchHomeTimelineBatch(
 
   const events = await fetchEventsFromRelays(session, relayUrls, filters);
   const primaryEvents = events
-    .filter((event) => {
-      if (event.kind === NDKKind.Repost) {
-        return true;
-      }
-
-      return !getEventReplyId(event);
-    })
+    .filter((event) => !getEventReplyId(event))
     .slice(0, limit);
 
   return hydrateEvents(session, appRelayEntries, myRelayEntries, primaryEvents, {
