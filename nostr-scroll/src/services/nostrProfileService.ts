@@ -6,6 +6,7 @@ import {
   buildReadRelayUrls,
   buildWriteRelayUrls,
   connectNdkClient,
+  createLoggedReqSubscriptionOptions,
   createNdkClient,
   createRelaySet,
   fetchEventFromRelays,
@@ -131,9 +132,17 @@ export async function fetchFollowingCount(
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
   const user = ndk.getUser({ pubkey });
+  const followFilter = {
+    kinds: [NDKKind.Contacts],
+    authors: [pubkey],
+  };
 
   try {
-    const followingSet = await user.followSet();
+    const followingSet = await user.followSet(
+      createLoggedReqSubscriptionOptions('follow-set', relayUrls, followFilter, {
+        groupable: false,
+      }),
+    );
     return followingSet.size;
   } catch {
     return undefined;
@@ -177,11 +186,20 @@ export async function saveCurrentUserProfile(
 
   const readRelayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
   const writeRelayUrls = buildWriteRelayUrls(appRelayEntries, myRelayEntries);
-  const ndk = createNdkClient(session, writeRelayUrls.length > 0 ? writeRelayUrls : readRelayUrls);
+  const profileRelayUrls = writeRelayUrls.length > 0 ? writeRelayUrls : readRelayUrls;
+  const ndk = createNdkClient(session, profileRelayUrls);
   await connectNdkClient(ndk);
   const user = ndk.getUser({ pubkey: session.currentPubkey });
-  const relaySet = createRelaySet(ndk, writeRelayUrls.length > 0 ? writeRelayUrls : readRelayUrls);
-  const existingProfile = (await user.fetchProfile(undefined, true)) ?? {};
+  const relaySet = createRelaySet(ndk, profileRelayUrls);
+  const existingProfile = (
+    await user.fetchProfile(
+      createLoggedReqSubscriptionOptions('fetch-profile', profileRelayUrls, {
+        kinds: [NDKKind.Metadata],
+        authors: [session.currentPubkey],
+      }),
+      true,
+    )
+  ) ?? {};
   const nextProfile: NDKUserProfile = {
     ...existingProfile,
     displayName: input.displayName.trim(),

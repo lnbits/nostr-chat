@@ -4,6 +4,7 @@ import NDK, {
   NDKPrivateKeySigner,
   NDKRelaySet,
   type NDKFilter,
+  type NDKSubscriptionOptions,
   type NostrEvent,
 } from '@nostr-dev-kit/ndk';
 import { DEFAULT_APP_RELAY_URLS } from '../constants/relays';
@@ -12,9 +13,73 @@ import type { RelayListEntry } from '../types/relays';
 import { normalizeReadableRelayUrls, normalizeWritableRelayUrls } from '../utils/relayList';
 
 const NOSTR_WIRE_LOG_PREFIX = '[nostr-scroll:nostr-wire]';
+let reqSubscriptionCounter = 0;
 
 function uniqueRelayUrls(relayUrls: string[]): string[] {
   return Array.from(new Set(relayUrls));
+}
+
+function normalizeReqFilters(filters: NDKFilter | NDKFilter[]): NDKFilter[] {
+  return (Array.isArray(filters) ? filters : [filters]).map(
+    (filter) => JSON.parse(JSON.stringify(filter)) as NDKFilter,
+  );
+}
+
+function buildReqFrame(subId: string, filters: NDKFilter | NDKFilter[]): unknown[] {
+  return ['REQ', subId, ...normalizeReqFilters(filters)];
+}
+
+function createReqSubId(label: string): string {
+  reqSubscriptionCounter += 1;
+  const normalizedLabel =
+    label.trim().replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '') || 'req';
+
+  return `${normalizedLabel}-${reqSubscriptionCounter.toString(36)}`;
+}
+
+function logReqFrame(relayUrls: string[], subId: string, filters: NDKFilter | NDKFilter[]): void {
+  const normalizedRelayUrls = uniqueRelayUrls(
+    relayUrls
+      .map((relayUrl) => relayUrl.trim())
+      .filter((relayUrl) => relayUrl.length > 0),
+  );
+  if (normalizedRelayUrls.length === 0) {
+    return;
+  }
+
+  const reqFrame = buildReqFrame(subId, filters);
+  console.info(
+    NOSTR_WIRE_LOG_PREFIX,
+    'REQ',
+    normalizedRelayUrls,
+    JSON.stringify(reqFrame),
+    reqFrame,
+  );
+}
+
+function toReqFilters(
+  idOrFilter: string | NDKFilter | NDKFilter[],
+): NDKFilter | NDKFilter[] {
+  if (typeof idOrFilter === 'string') {
+    return { ids: [idOrFilter] };
+  }
+
+  return idOrFilter;
+}
+
+export function createLoggedReqSubscriptionOptions(
+  label: string,
+  relayUrls: string[],
+  filters: NDKFilter | NDKFilter[],
+  options: NDKSubscriptionOptions = {},
+): NDKSubscriptionOptions {
+  const subId = options.subId ?? createReqSubId(label);
+  logReqFrame(relayUrls, subId, filters);
+
+  return {
+    ...options,
+    subId,
+  };
 }
 
 function parseWireFrame(message: string): unknown[] | null {
@@ -27,18 +92,17 @@ function parseWireFrame(message: string): unknown[] | null {
 }
 
 function logRelayTraffic(message: string, relayUrl: string, direction?: 'send' | 'recv'): void {
+  if (direction !== 'recv') {
+    return;
+  }
+
   const frame = parseWireFrame(message);
   if (!frame) {
     return;
   }
 
   const [command] = frame;
-  if (direction === 'send' && command === 'REQ') {
-    console.info(NOSTR_WIRE_LOG_PREFIX, 'REQ', relayUrl, message, frame);
-    return;
-  }
-
-  if (direction === 'recv' && command === 'EVENT') {
+  if (command === 'EVENT') {
     console.info(NOSTR_WIRE_LOG_PREFIX, 'EVENT', relayUrl, message, frame);
   }
 }
@@ -110,7 +174,11 @@ export async function fetchEventsFromRelays(
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
   const relaySet = createRelaySet(ndk, relayUrls);
-  const events = await ndk.fetchEvents(filters, undefined, relaySet);
+  const events = await ndk.fetchEvents(
+    filters,
+    createLoggedReqSubscriptionOptions('fetch-events', relayUrls, filters),
+    relaySet,
+  );
 
   return Array.from(events).sort(
     (first, second) => (second.created_at ?? 0) - (first.created_at ?? 0),
@@ -121,11 +189,21 @@ export async function fetchEventFromRelays(
   session: NostrAuthSession,
   relayUrls: string[],
   idOrFilter: string | NDKFilter | NDKFilter[],
+  options?: NDKSubscriptionOptions,
 ): Promise<NDKEvent | null> {
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
   const relaySet = createRelaySet(ndk, relayUrls);
-  return ndk.fetchEvent(idOrFilter, undefined, relaySet);
+  return ndk.fetchEvent(
+    idOrFilter,
+    createLoggedReqSubscriptionOptions(
+      'fetch-event',
+      relayUrls,
+      toReqFilters(idOrFilter),
+      options,
+    ),
+    relaySet,
+  );
 }
 
 export async function publishEventToRelays(

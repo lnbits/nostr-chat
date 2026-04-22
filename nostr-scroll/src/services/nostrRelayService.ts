@@ -14,6 +14,7 @@ import {
   normalizeRelayListEntries,
   normalizeWritableRelayUrls,
 } from '../utils/relayList';
+import { createLoggedReqSubscriptionOptions } from './nostrClientService';
 
 type NostrWindow = Window & {
   nostr?: {
@@ -106,14 +107,15 @@ export async function fetchMyRelayEntries(
   const ndk = createNdkClient(session, seedRelayUrls);
   await connectNdk(ndk);
   const relaySet = NDKRelaySet.fromRelayUrls(seedRelayUrls, ndk);
+  const relayListFilter = {
+    authors: [session.currentPubkey],
+    kinds: [NDKKind.RelayList],
+  };
   const relayListEvent = await ndk.fetchEvent(
-    {
-      authors: [session.currentPubkey],
-      kinds: [NDKKind.RelayList],
-    },
-    {
+    relayListFilter,
+    createLoggedReqSubscriptionOptions('fetch-relay-list', seedRelayUrls, relayListFilter, {
       cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
-    },
+    }),
     relaySet,
   );
 
