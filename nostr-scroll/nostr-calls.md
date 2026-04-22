@@ -62,9 +62,11 @@ On app shell mount:
 4. if authenticated:
    - hydrate `My Relays` from Nostr
    - hydrate the current user profile
-   - hydrate the home timeline default feed
+   - do not prefetch the home timeline from the app shell
 
 Current default home tab in UI state is `following`.
+
+The home timeline is loaded by `HomePage` for the currently selected tab.
 
 ## My relays rules
 

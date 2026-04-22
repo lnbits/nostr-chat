@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useFormatters } from '../composables/useFormatters';
 import EditProfileDialog from '../components/profile/EditProfileDialog.vue';
@@ -98,14 +98,6 @@ async function loadProfileView(pubkey: string, tab: ProfileTab): Promise<void> {
     feedStore.ensureProfileTabLoaded(pubkey, tab),
   ]);
 }
-
-onMounted(() => {
-  if (!resolvedPubkey.value) {
-    return;
-  }
-
-  void loadProfileView(resolvedPubkey.value, activeTab.value);
-});
 
 watch(
   [resolvedPubkey, activeTab],

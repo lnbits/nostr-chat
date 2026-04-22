@@ -25,7 +25,6 @@
 import { onMounted } from 'vue';
 import { useAppRelaysStore } from '../../stores/appRelays';
 import { useAuthStore } from '../../stores/auth';
-import { useFeedStore } from '../../stores/feed';
 import { useMyRelaysStore } from '../../stores/myRelays';
 import { useProfilesStore } from '../../stores/profiles';
 import ComposePostDialog from '../feed/ComposePostDialog.vue';
@@ -36,7 +35,6 @@ import RightNewsPanel from './RightNewsPanel.vue';
 const appRelaysStore = useAppRelaysStore();
 const authStore = useAuthStore();
 const profilesStore = useProfilesStore();
-const feedStore = useFeedStore();
 const myRelaysStore = useMyRelaysStore();
 
 onMounted(() => {
@@ -47,7 +45,7 @@ onMounted(() => {
 
     if (authStore.isAuthenticated) {
       await myRelaysStore.hydrateFromNostr();
-      await Promise.all([profilesStore.ensureHydrated(), feedStore.ensureHydrated()]);
+      await profilesStore.ensureHydrated();
     }
   })();
 });

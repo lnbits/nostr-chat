@@ -319,10 +319,6 @@ export const useFeedStore = defineStore('feed', () => {
     return homeTimelineState.value.following.followPubkeys.includes(pubkey);
   }
 
-  async function ensureHydrated(force = false): Promise<void> {
-    await ensureHomeTimelineLoaded('all', force);
-  }
-
   async function ensureHomeTimelineLoaded(tab: HomeTimelineTab, force = false): Promise<void> {
     const homeState = getHomeState(tab);
     if (homeState.loaded && !force) {
@@ -500,6 +496,9 @@ export const useFeedStore = defineStore('feed', () => {
     if (!force && profileTabIds.value[pubkey]?.[tab]) {
       return;
     }
+    if (profileTabLoading.value[pubkey]?.[tab]) {
+      return;
+    }
 
     ensureRelayStoresInitialized();
     profileTabLoading.value = {
@@ -568,6 +567,9 @@ export const useFeedStore = defineStore('feed', () => {
     }
 
     if (!force && threadStateByPostId.value[postId]?.loaded) {
+      return;
+    }
+    if (threadStateByPostId.value[postId]?.loading) {
       return;
     }
 
@@ -1094,7 +1096,6 @@ export const useFeedStore = defineStore('feed', () => {
     bookmarksLoading,
     bookmarksError,
     publishingPost,
-    ensureHydrated,
     ensureHomeTimelineLoaded,
     loadMoreHome,
     loadBookmarks,

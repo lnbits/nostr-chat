@@ -15,7 +15,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import EmptyState from '../components/feed/EmptyState.vue';
 import ReplyComposer from '../components/feed/ReplyComposer.vue';
@@ -34,14 +34,6 @@ const postId = computed(() => {
 const focusedPost = computed(() => feedStore.getPostById(postId.value));
 const ancestors = computed(() => feedStore.getThreadAncestors(postId.value));
 const replies = computed(() => feedStore.getRepliesForPost(postId.value));
-
-onMounted(() => {
-  if (!postId.value) {
-    return;
-  }
-
-  void feedStore.ensureThreadLoaded(postId.value);
-});
 
 watch(
   postId,

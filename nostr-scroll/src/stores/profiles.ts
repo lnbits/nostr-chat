@@ -10,6 +10,8 @@ export const useProfilesStore = defineStore('profiles', () => {
   const authStore = useAuthStore();
   const appRelaysStore = useAppRelaysStore();
   const myRelaysStore = useMyRelaysStore();
+  const profileFetchPromises = new Map<string, Promise<void>>();
+  const followingCountPromises = new Map<string, Promise<void>>();
 
   const profiles = ref<Record<string, NostrProfile>>({});
   const loadingPubkeys = ref<Record<string, boolean>>({});
@@ -62,8 +64,25 @@ export const useProfilesStore = defineStore('profiles', () => {
 
     ensureRelayStoresInitialized();
 
-    const pendingPubkeys = uniquePubkeys.filter((pubkey) => force || !loadedPubkeys.value[pubkey]);
+    const waits: Promise<void>[] = [];
+    const pendingPubkeys = uniquePubkeys.filter((pubkey) => {
+      if (!force && loadedPubkeys.value[pubkey]) {
+        return false;
+      }
+
+      const inflightPromise = !force ? profileFetchPromises.get(pubkey) : undefined;
+      if (inflightPromise) {
+        waits.push(inflightPromise);
+        return false;
+      }
+
+      return true;
+    });
+
     if (pendingPubkeys.length === 0) {
+      if (waits.length > 0) {
+        await Promise.all(waits);
+      }
       return;
     }
 
@@ -78,41 +97,56 @@ export const useProfilesStore = defineStore('profiles', () => {
       };
     }
 
-    try {
-      const fetchedProfiles = await fetchProfiles(
-        authStore.session,
-        appRelaysStore.relayEntries,
-        myRelaysStore.relayEntries,
-        pendingPubkeys,
-      );
-      upsertProfiles(fetchedProfiles);
-      loadedPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
-        (accumulator, pubkey) => {
-          accumulator[pubkey] = true;
-          return accumulator;
-        },
-        { ...loadedPubkeys.value },
-      );
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Failed to load profile metadata from relays.';
-      errorsByPubkey.value = pendingPubkeys.reduce<Record<string, string>>(
-        (accumulator, pubkey) => {
-          accumulator[pubkey] = errorMessage;
-          return accumulator;
-        },
-        { ...errorsByPubkey.value },
-      );
-      upsertProfiles(pendingPubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
-    } finally {
-      loadingPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
-        (accumulator, pubkey) => {
-          accumulator[pubkey] = false;
-          return accumulator;
-        },
-        { ...loadingPubkeys.value },
-      );
+    const fetchPromise = (async () => {
+      try {
+        const fetchedProfiles = await fetchProfiles(
+          authStore.session,
+          appRelaysStore.relayEntries,
+          myRelaysStore.relayEntries,
+          pendingPubkeys,
+        );
+        upsertProfiles(fetchedProfiles);
+        loadedPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
+          (accumulator, pubkey) => {
+            accumulator[pubkey] = true;
+            return accumulator;
+          },
+          { ...loadedPubkeys.value },
+        );
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Failed to load profile metadata from relays.';
+        errorsByPubkey.value = pendingPubkeys.reduce<Record<string, string>>(
+          (accumulator, pubkey) => {
+            accumulator[pubkey] = errorMessage;
+            return accumulator;
+          },
+          { ...errorsByPubkey.value },
+        );
+        upsertProfiles(pendingPubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
+      } finally {
+        loadingPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
+          (accumulator, pubkey) => {
+            accumulator[pubkey] = false;
+            return accumulator;
+          },
+          { ...loadingPubkeys.value },
+        );
+
+        for (const pubkey of pendingPubkeys) {
+          if (profileFetchPromises.get(pubkey) === fetchPromise) {
+            profileFetchPromises.delete(pubkey);
+          }
+        }
+      }
+    })();
+
+    for (const pubkey of pendingPubkeys) {
+      profileFetchPromises.set(pubkey, fetchPromise);
     }
+
+    waits.push(fetchPromise);
+    await Promise.all(waits);
   }
 
   async function ensureProfile(pubkey?: string | null, force = false, includeFollowingCount = false): Promise<void> {
@@ -126,24 +160,40 @@ export const useProfilesStore = defineStore('profiles', () => {
       return;
     }
 
+    const inflightPromise = !force ? followingCountPromises.get(pubkey) : undefined;
+    if (inflightPromise) {
+      await inflightPromise;
+      return;
+    }
+
     ensureRelayStoresInitialized();
 
-    try {
-      const followingCount = await fetchFollowingCount(
-        authStore.session,
-        appRelaysStore.relayEntries,
-        myRelaysStore.relayEntries,
-        pubkey,
-      );
-      if (typeof followingCount === 'number') {
-        upsertProfiles([
-          {
-            ...(getProfileByPubkey(pubkey) ?? buildFallbackProfile(pubkey)),
-            followingCount,
-          },
-        ]);
+    const followingCountPromise = (async () => {
+      try {
+        const followingCount = await fetchFollowingCount(
+          authStore.session,
+          appRelaysStore.relayEntries,
+          myRelaysStore.relayEntries,
+          pubkey,
+        );
+        if (typeof followingCount === 'number') {
+          upsertProfiles([
+            {
+              ...(getProfileByPubkey(pubkey) ?? buildFallbackProfile(pubkey)),
+              followingCount,
+            },
+          ]);
+        }
+      } catch {}
+      finally {
+        if (followingCountPromises.get(pubkey) === followingCountPromise) {
+          followingCountPromises.delete(pubkey);
+        }
       }
-    } catch {}
+    })();
+
+    followingCountPromises.set(pubkey, followingCountPromise);
+    await followingCountPromise;
   }
 
   async function ensureHydrated(): Promise<void> {
