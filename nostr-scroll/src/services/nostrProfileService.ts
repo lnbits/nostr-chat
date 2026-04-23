@@ -199,13 +199,14 @@ export async function fetchProfiles(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   pubkeys: string[],
+  extraReadRelayUrls: string[] = [],
 ): Promise<NostrProfile[]> {
   const uniquePubkeys = Array.from(new Set(pubkeys.filter(Boolean)));
   if (uniquePubkeys.length === 0) {
     return [];
   }
 
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const metadataEvents = await fetchEventsFromRelays(session, relayUrls, {
     kinds: [NDKKind.Metadata],
     authors: uniquePubkeys,
@@ -231,8 +232,9 @@ export async function fetchFollowingCount(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   pubkey: string,
+  extraReadRelayUrls: string[] = [],
 ): Promise<number | undefined> {
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
   const user = ndk.getUser({ pubkey });
@@ -258,8 +260,9 @@ export async function fetchFollowingPubkeys(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   pubkey: string,
+  extraReadRelayUrls: string[] = [],
 ): Promise<string[]> {
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const contactsEvent = await fetchEventFromRelays(session, relayUrls, {
     authors: [pubkey],
     kinds: [NDKKind.Contacts],

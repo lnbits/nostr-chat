@@ -18,10 +18,14 @@
         />
         <q-btn
           v-else
-          unelevated
+          :outline="isFollowing"
+          :unelevated="!isFollowing"
           no-caps
           class="scroll-button profile-header__button profile-header__button--follow"
-          label="Follow"
+          :label="isFollowing ? 'Following' : 'Follow'"
+          :loading="followPending"
+          :disable="followPending || isFollowing"
+          @click="$emit('follow')"
         />
       </div>
 
@@ -42,7 +46,14 @@
       </div>
 
       <div class="profile-header__stats">
-        <span v-if="typeof profile.followingCount === 'number'"><strong>{{ formatCompactCount(profile.followingCount) }}</strong> Following</span>
+        <button
+          v-if="typeof profile.followingCount === 'number'"
+          type="button"
+          class="profile-header__stat-button"
+          @click="$emit('open-following')"
+        >
+          <strong>{{ formatCompactCount(profile.followingCount) }}</strong> Following
+        </button>
         <span v-if="typeof profile.followersCount === 'number'"><strong>{{ formatCompactCount(profile.followersCount) }}</strong> Followers</span>
         <span><strong>{{ formatCompactCount(postCount) }}</strong> Posts</span>
       </div>
@@ -58,13 +69,20 @@ interface Props {
   profile: NostrProfile;
   postCount: number;
   isCurrentUser: boolean;
+  isFollowing?: boolean;
+  followPending?: boolean;
 }
 
 defineEmits<{
   'edit-profile': [];
+  follow: [];
+  'open-following': [];
 }>();
 
-defineProps<Props>();
+withDefaults(defineProps<Props>(), {
+  isFollowing: false,
+  followPending: false,
+});
 
 const { formatCompactCount, formatJoinedDate } = useFormatters();
 </script>
@@ -106,6 +124,11 @@ const { formatCompactCount, formatJoinedDate } = useFormatters();
   color: #0f1419;
 }
 
+.profile-header__button--follow.q-btn--outline {
+  background: transparent;
+  color: var(--scroll-text);
+}
+
 .profile-header__identity {
   margin-bottom: 14px;
 }
@@ -144,6 +167,18 @@ const { formatCompactCount, formatJoinedDate } = useFormatters();
   display: flex;
   gap: 18px;
   flex-wrap: wrap;
+}
+
+.profile-header__stat-button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--scroll-text-soft);
+  cursor: pointer;
+}
+
+.profile-header__stat-button:hover {
+  text-decoration: underline;
 }
 
 .profile-header__stats strong {

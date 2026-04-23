@@ -25,6 +25,7 @@
 import { onMounted } from 'vue';
 import { useAppRelaysStore } from '../../stores/appRelays';
 import { useAuthStore } from '../../stores/auth';
+import { useFollowsStore } from '../../stores/follows';
 import { useMyRelaysStore } from '../../stores/myRelays';
 import { useProfilesStore } from '../../stores/profiles';
 import ComposePostDialog from '../feed/ComposePostDialog.vue';
@@ -34,6 +35,7 @@ import RightNewsPanel from './RightNewsPanel.vue';
 
 const appRelaysStore = useAppRelaysStore();
 const authStore = useAuthStore();
+const followsStore = useFollowsStore();
 const profilesStore = useProfilesStore();
 const myRelaysStore = useMyRelaysStore();
 
@@ -46,6 +48,11 @@ onMounted(() => {
 
     if (authStore.isAuthenticated) {
       await myRelaysStore.hydrateFromNostr();
+      try {
+        await followsStore.ensureHydrated();
+      } catch (error) {
+        console.warn('Failed to hydrate the current user follow list on startup.', error);
+      }
       await profilesStore.ensureHydrated();
     }
   })();

@@ -3,9 +3,9 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { useAppRelaysStore } from './appRelays';
 import { useAuthStore } from './auth';
+import { useFollowsStore } from './follows';
 import { useMyRelaysStore } from './myRelays';
 import { useProfilesStore } from './profiles';
-import { fetchFollowingPubkeys } from '../services/nostrProfileService';
 import {
   fetchBookmarksCollection,
   mapRawEventToNote,
@@ -75,6 +75,7 @@ function defaultHomeTimelineState(): HomeTimelineState {
 export const useFeedStore = defineStore('feed', () => {
   const authStore = useAuthStore();
   const appRelaysStore = useAppRelaysStore();
+  const followsStore = useFollowsStore();
   const myRelaysStore = useMyRelaysStore();
   const profilesStore = useProfilesStore();
 
@@ -339,19 +340,47 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   function shouldIncludeAuthorInFollowingTimeline(pubkey: string): boolean {
-    return homeTimelineState.value.following.followPubkeys.includes(pubkey);
+    return followsStore.isCurrentUserFollowing(pubkey);
   }
 
   async function ensureHomeTimelineLoaded(tab: HomeTimelineTab, force = false): Promise<void> {
     const homeState = getHomeState(tab);
-    if (homeState.loaded && !force) {
-      return;
-    }
-    if (homeState.loading) {
+    if (!authStore.currentPubkey) {
       return;
     }
 
-    if (!authStore.currentPubkey) {
+    let followPubkeys: string[] = [];
+    let hasFollowListChanged = false;
+
+    if (tab === 'following') {
+      try {
+        await followsStore.ensureFollowList(authStore.currentPubkey, {
+          force,
+        });
+      } catch (error) {
+        const cachedFollowPubkeys = followsStore.getFollowedPubkeys(authStore.currentPubkey);
+        if (cachedFollowPubkeys.length === 0) {
+          setHomeState('following', {
+            loading: false,
+            loaded: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Failed to load the following home timeline from relays.',
+          });
+          return;
+        }
+      }
+      followPubkeys = followsStore.getFollowedPubkeys(authStore.currentPubkey);
+      hasFollowListChanged =
+        followPubkeys.join(',') !== homeState.followPubkeys.join(',')
+        || (followPubkeys.length === 0) !== homeState.followListEmpty;
+    }
+
+    if (homeState.loaded && !force && !(tab === 'following' && hasFollowListChanged)) {
+      return;
+    }
+    if (homeState.loading) {
       return;
     }
 
@@ -369,13 +398,6 @@ export const useFeedStore = defineStore('feed', () => {
       let authors: string[] | undefined;
 
       if (tab === 'following') {
-        const followPubkeys = await fetchFollowingPubkeys(
-          authStore.session,
-          appRelaysStore.relayEntries,
-          myRelaysStore.relayEntries,
-          authStore.currentPubkey,
-        );
-
         if (followPubkeys.length === 0) {
           setHomeState('following', {
             ids: [],
@@ -511,7 +533,12 @@ export const useFeedStore = defineStore('feed', () => {
     }
   }
 
-  async function ensureProfileTabLoaded(pubkey: string, tab: ProfileTab, force = false): Promise<void> {
+  async function ensureProfileTabLoaded(
+    pubkey: string,
+    tab: ProfileTab,
+    force = false,
+    extraReadRelayUrls: string[] = [],
+  ): Promise<void> {
     if (!authStore.currentPubkey) {
       return;
     }
@@ -546,6 +573,8 @@ export const useFeedStore = defineStore('feed', () => {
         myRelaysStore.relayEntries,
         pubkey,
         tab,
+        20,
+        extraReadRelayUrls,
       );
       upsertNotes([...collection.primaryNotes, ...collection.relatedNotes]);
       upsertRawEvents(collection.rawEvents);
@@ -1090,6 +1119,23 @@ export const useFeedStore = defineStore('feed', () => {
     return homeTimelineState.value.following.followListEmpty;
   }
 
+  function invalidateFollowingTimeline(): void {
+    const followPubkeys = authStore.currentPubkey
+      ? followsStore.getFollowedPubkeys(authStore.currentPubkey)
+      : [];
+    setHomeState('following', {
+      ids: [],
+      loading: false,
+      loaded: false,
+      error: '',
+      loadingMore: false,
+      nextCursor: null,
+      hasMore: true,
+      followPubkeys,
+      followListEmpty: followPubkeys.length === 0,
+    });
+  }
+
   function reset(): void {
     notesById.value = {};
     viewerState.value = {};
@@ -1148,6 +1194,7 @@ export const useFeedStore = defineStore('feed', () => {
     isHomeTimelineLoadingMore,
     canLoadMoreHome,
     isFollowingListEmpty,
+    invalidateFollowingTimeline,
     getThreadError,
     isThreadLoading,
     isActionPending,

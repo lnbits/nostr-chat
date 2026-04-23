@@ -4,7 +4,7 @@ import { useAppRelaysStore } from './appRelays';
 import { useAuthStore } from './auth';
 import { useMyRelaysStore } from './myRelays';
 import { profileCacheService } from '../services/profileCacheService';
-import { buildFallbackProfile, fetchFollowingCount, fetchProfiles, saveCurrentUserProfile } from '../services/nostrProfileService';
+import { buildFallbackProfile, fetchProfiles, saveCurrentUserProfile } from '../services/nostrProfileService';
 import type { NostrProfile } from '../types/nostr';
 
 export const useProfilesStore = defineStore('profiles', () => {
@@ -12,7 +12,6 @@ export const useProfilesStore = defineStore('profiles', () => {
   const appRelaysStore = useAppRelaysStore();
   const myRelaysStore = useMyRelaysStore();
   const profileFetchPromises = new Map<string, Promise<void>>();
-  const followingCountPromises = new Map<string, Promise<void>>();
   let hasHydratedCache = false;
   let cacheHydrationPromise: Promise<void> | null = null;
 
@@ -33,9 +32,18 @@ export const useProfilesStore = defineStore('profiles', () => {
     }
 
     profiles.value = nextProfiles.reduce<Record<string, NostrProfile>>((accumulator, profile) => {
+      const existingProfile = profiles.value[profile.pubkey] ?? null;
       accumulator[profile.pubkey] = {
-        ...(profiles.value[profile.pubkey] ?? {}),
+        ...(existingProfile ?? {}),
         ...profile,
+        followingCount:
+          typeof profile.followingCount === 'number'
+            ? profile.followingCount
+            : existingProfile?.followingCount,
+        followersCount:
+          typeof profile.followersCount === 'number'
+            ? profile.followersCount
+            : existingProfile?.followersCount,
       };
       return accumulator;
     }, { ...profiles.value });
@@ -74,7 +82,11 @@ export const useProfilesStore = defineStore('profiles', () => {
     return profiles.value[pubkey] ?? buildFallbackProfile(pubkey);
   }
 
-  async function ensureProfiles(pubkeys: string[], force = false): Promise<void> {
+  async function ensureProfiles(
+    pubkeys: string[],
+    force = false,
+    extraReadRelayUrls: string[] = [],
+  ): Promise<void> {
     const uniquePubkeys = Array.from(new Set(pubkeys.filter(Boolean)));
     if (uniquePubkeys.length === 0) {
       return;
@@ -132,9 +144,12 @@ export const useProfilesStore = defineStore('profiles', () => {
           appRelaysStore.relayEntries,
           myRelaysStore.relayEntries,
           pendingPubkeys,
+          extraReadRelayUrls,
         );
         upsertProfiles(fetchedProfiles);
-        await profileCacheService.saveProfiles(fetchedProfiles);
+        await profileCacheService.saveProfiles(
+          fetchedProfiles.map((profile) => profiles.value[profile.pubkey] ?? profile),
+        );
         loadedPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
           (accumulator, pubkey) => {
             accumulator[pubkey] = true;
@@ -181,51 +196,30 @@ export const useProfilesStore = defineStore('profiles', () => {
     await Promise.all(waits);
   }
 
-  async function ensureProfile(pubkey?: string | null, force = false, includeFollowingCount = false): Promise<void> {
+  async function ensureProfile(
+    pubkey?: string | null,
+    force = false,
+    _includeFollowingCount = false,
+    extraReadRelayUrls: string[] = [],
+  ): Promise<void> {
     if (!pubkey) {
       return;
     }
 
-    await ensureProfiles([pubkey], force);
+    await ensureProfiles([pubkey], force, extraReadRelayUrls);
+  }
 
-    if (!includeFollowingCount || !authStore.session.currentPubkey) {
+  function setFollowingCount(pubkey?: string | null, followingCount?: number): void {
+    if (!pubkey || typeof followingCount !== 'number' || Number.isNaN(followingCount)) {
       return;
     }
 
-    const inflightPromise = !force ? followingCountPromises.get(pubkey) : undefined;
-    if (inflightPromise) {
-      await inflightPromise;
-      return;
-    }
-
-    ensureRelayStoresInitialized();
-
-    const followingCountPromise = (async () => {
-      try {
-        const followingCount = await fetchFollowingCount(
-          authStore.session,
-          appRelaysStore.relayEntries,
-          myRelaysStore.relayEntries,
-          pubkey,
-        );
-        if (typeof followingCount === 'number') {
-          const updatedProfile = {
-            ...(getProfileByPubkey(pubkey) ?? buildFallbackProfile(pubkey)),
-            followingCount,
-          };
-          upsertProfiles([updatedProfile]);
-          await profileCacheService.saveProfiles([updatedProfile]);
-        }
-      } catch {}
-      finally {
-        if (followingCountPromises.get(pubkey) === followingCountPromise) {
-          followingCountPromises.delete(pubkey);
-        }
-      }
-    })();
-
-    followingCountPromises.set(pubkey, followingCountPromise);
-    await followingCountPromise;
+    const updatedProfile = {
+      ...(getProfileByPubkey(pubkey) ?? buildFallbackProfile(pubkey)),
+      followingCount: Math.max(0, Math.trunc(followingCount)),
+    };
+    upsertProfiles([updatedProfile]);
+    void profileCacheService.saveProfiles([updatedProfile]);
   }
 
   async function ensureHydrated(): Promise<void> {
@@ -235,7 +229,7 @@ export const useProfilesStore = defineStore('profiles', () => {
       return;
     }
 
-    await ensureProfile(authStore.currentPubkey, false, true);
+    await ensureProfile(authStore.currentPubkey);
   }
 
   async function saveProfile(updates: {
@@ -260,7 +254,7 @@ export const useProfilesStore = defineStore('profiles', () => {
         myRelaysStore.relayEntries,
         updates,
       );
-      await ensureProfile(authStore.currentPubkey, true, true);
+      await ensureProfile(authStore.currentPubkey, true);
     } finally {
       savingCurrentUserProfile.value = false;
     }
@@ -298,5 +292,6 @@ export const useProfilesStore = defineStore('profiles', () => {
     isProfileLoading,
     reset,
     saveProfile,
+    setFollowingCount,
   };
 });

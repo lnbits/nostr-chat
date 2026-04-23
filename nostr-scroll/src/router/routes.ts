@@ -52,6 +52,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
+        path: 'profile/:pubkey/following',
+        name: 'profile-following',
+        component: () => import('../pages/ProfileFollowingPage.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
         path: 'profile/:pubkey?',
         name: 'profile',
         component: () => import('../pages/ProfilePage.vue'),

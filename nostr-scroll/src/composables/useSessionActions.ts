@@ -2,6 +2,7 @@ import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useAppRelaysStore } from '../stores/appRelays';
 import { useFeedStore } from '../stores/feed';
+import { useFollowsStore } from '../stores/follows';
 import { useMyRelaysStore } from '../stores/myRelays';
 import { useProfilesStore } from '../stores/profiles';
 import { useUiStore } from '../stores/ui';
@@ -11,6 +12,7 @@ export function useSessionActions() {
   const appRelaysStore = useAppRelaysStore();
   const authStore = useAuthStore();
   const feedStore = useFeedStore();
+  const followsStore = useFollowsStore();
   const myRelaysStore = useMyRelaysStore();
   const profilesStore = useProfilesStore();
   const uiStore = useUiStore();
@@ -19,6 +21,7 @@ export function useSessionActions() {
     authStore.logout();
     appRelaysStore.init();
     feedStore.reset();
+    followsStore.reset();
     myRelaysStore.reset();
     profilesStore.reset();
     uiStore.reset();

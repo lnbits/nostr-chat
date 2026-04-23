@@ -286,6 +286,7 @@ async function buildViewerState(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   displayNoteIds: string[],
+  extraReadRelayUrls: string[] = [],
 ): Promise<Record<string, ViewerPostState>> {
   const bookmarkIds = await fetchBookmarkIds(session, appRelayEntries, myRelayEntries);
   const bookmarkedIdSet = new Set(bookmarkIds);
@@ -305,7 +306,7 @@ async function buildViewerState(
     return viewerState;
   }
 
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const filterChunks: string[][] = [];
   const chunkSize = 24;
   for (let index = 0; index < displayNoteIds.length; index += chunkSize) {
@@ -361,6 +362,7 @@ async function applyInteractionStats(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   notes: NostrNote[],
+  extraReadRelayUrls: string[] = [],
 ): Promise<{
   notes: NostrNote[];
   viewerState: Record<string, ViewerPostState>;
@@ -373,7 +375,7 @@ async function applyInteractionStats(
       .map((note) => note.repostOf ?? note.id)
       .filter((value): value is string => Boolean(value && noteMap.has(value))),
   );
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const repliesCountById = new Map<string, number>();
   const repostCountById = new Map<string, number>();
   const likeCountById = new Map<string, number>();
@@ -390,7 +392,13 @@ async function applyInteractionStats(
   const relaySet = createRelaySet(ndk, relayUrls);
 
   if (!relaySet) {
-    const viewerState = await buildViewerState(session, appRelayEntries, myRelayEntries, displayNoteIds);
+    const viewerState = await buildViewerState(
+      session,
+      appRelayEntries,
+      myRelayEntries,
+      displayNoteIds,
+      extraReadRelayUrls,
+    );
     return {
       notes,
       viewerState,
@@ -455,7 +463,13 @@ async function applyInteractionStats(
     }
   }
 
-  const viewerState = await buildViewerState(session, appRelayEntries, myRelayEntries, displayNoteIds);
+  const viewerState = await buildViewerState(
+    session,
+    appRelayEntries,
+    myRelayEntries,
+    displayNoteIds,
+    extraReadRelayUrls,
+  );
 
   return {
     notes: notes.map((note) =>
@@ -484,19 +498,26 @@ async function hydrateEvents(
     hasMore?: boolean;
     nextCursor?: number | null;
   } = {},
+  extraReadRelayUrls: string[] = [],
 ): Promise<HydratedNoteCollection> {
   const primaryNotes = primaryEvents
     .map((event) => mapEventToNote(event))
     .filter((note): note is NostrNote => note !== null);
   const rawEvents = primaryEvents.map((event) => toRawEvent(event));
   const primaryIds = new Set(primaryNotes.map((note) => note.id));
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const relatedEvents = await fetchRelatedEvents(session, relayUrls, primaryNotes, primaryIds);
   const relatedNotes = relatedEvents
     .map((event) => mapEventToNote(event))
     .filter((note): note is NostrNote => note !== null);
   const allNotes = mergeNotesById([...primaryNotes, ...relatedNotes]);
-  const notesWithStats = await applyInteractionStats(session, appRelayEntries, myRelayEntries, allNotes);
+  const notesWithStats = await applyInteractionStats(
+    session,
+    appRelayEntries,
+    myRelayEntries,
+    allNotes,
+    extraReadRelayUrls,
+  );
 
   return {
     primaryNotes: notesWithStats.notes.filter((note) => primaryIds.has(note.id)),
@@ -673,13 +694,14 @@ export async function fetchNotesByIds(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   ids: string[],
+  extraReadRelayUrls: string[] = [],
 ): Promise<HydratedNoteCollection> {
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const events = await fetchEventsInChunks(session, relayUrls, unique(ids));
   return hydrateEvents(session, appRelayEntries, myRelayEntries, events, {
     hasMore: false,
     nextCursor: null,
-  });
+  }, extraReadRelayUrls);
 }
 
 export async function fetchProfileTab(
@@ -689,8 +711,9 @@ export async function fetchProfileTab(
   pubkey: string,
   tab: 'posts' | 'replies' | 'likes' | 'reposts',
   limit = 20,
+  extraReadRelayUrls: string[] = [],
 ): Promise<HydratedNoteCollection> {
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
 
   if (tab === 'likes') {
     const reactionEvents = await fetchEventsFromRelays(session, relayUrls, {
@@ -706,7 +729,13 @@ export async function fetchProfileTab(
         .map((event) => targetEventIdFromTag(event.tags))
         .filter((value): value is string => Boolean(value)),
     ).slice(0, limit);
-    return fetchNotesByIds(session, appRelayEntries, myRelayEntries, targetIds);
+    return fetchNotesByIds(
+      session,
+      appRelayEntries,
+      myRelayEntries,
+      targetIds,
+      extraReadRelayUrls,
+    );
   }
 
   if (tab === 'reposts') {
@@ -717,7 +746,7 @@ export async function fetchProfileTab(
     });
     return hydrateEvents(session, appRelayEntries, myRelayEntries, repostEvents, {
       hasMore: repostEvents.length === limit,
-    });
+    }, extraReadRelayUrls);
   }
 
   const textEvents = await fetchEventsFromRelays(session, relayUrls, {
@@ -731,7 +760,7 @@ export async function fetchProfileTab(
 
   return hydrateEvents(session, appRelayEntries, myRelayEntries, filteredEvents, {
     hasMore: filteredEvents.length === limit,
-  });
+  }, extraReadRelayUrls);
 }
 
 export async function fetchThreadCollection(
@@ -739,8 +768,15 @@ export async function fetchThreadCollection(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   postId: string,
+  extraReadRelayUrls: string[] = [],
 ): Promise<ThreadCollection> {
-  const focusedCollection = await fetchNotesByIds(session, appRelayEntries, myRelayEntries, [postId]);
+  const focusedCollection = await fetchNotesByIds(
+    session,
+    appRelayEntries,
+    myRelayEntries,
+    [postId],
+    extraReadRelayUrls,
+  );
   const focusedPost = focusedCollection.primaryNotes[0] ?? focusedCollection.relatedNotes[0] ?? null;
   if (!focusedPost) {
     return {
@@ -753,11 +789,17 @@ export async function fetchThreadCollection(
     };
   }
 
-  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const ancestorIds = unique([focusedPost.rootId, focusedPost.replyTo].filter((value): value is string => Boolean(value)));
   const ancestorCollection =
     ancestorIds.length > 0
-      ? await fetchNotesByIds(session, appRelayEntries, myRelayEntries, ancestorIds)
+      ? await fetchNotesByIds(
+          session,
+          appRelayEntries,
+          myRelayEntries,
+          ancestorIds,
+          extraReadRelayUrls,
+        )
       : {
           primaryNotes: [],
           relatedNotes: [],
@@ -781,6 +823,7 @@ export async function fetchThreadCollection(
       hasMore: false,
       nextCursor: null,
     },
+    extraReadRelayUrls,
   );
   const ancestors = sortOldest(
     ancestorCollection.primaryNotes.filter((note) => note.id !== focusedPost.id),

@@ -60,6 +60,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { encodeProfileReference } from '../../services/nostrEntityService';
 import { loadNews } from '../../services/newsService';
 import { resolveProfileSearchInput, type ProfileSearchResolution } from '../../services/nostrProfileService';
 import { useAppRelaysStore } from '../../stores/appRelays';
@@ -125,7 +126,10 @@ async function handleProfileSearch(): Promise<void> {
     await router.push({
       name: 'profile',
       params: {
-        pubkey: resolution.normalizedPubkey,
+        pubkey:
+          resolution.relayHints.length > 0
+            ? encodeProfileReference(resolution.normalizedPubkey, resolution.relayHints)
+            : resolution.normalizedPubkey,
       },
     });
   } catch (error) {

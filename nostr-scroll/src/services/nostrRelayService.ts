@@ -50,6 +50,51 @@ function relayEntriesFromRelayList(relayList: NDKRelayList | null | undefined): 
   ]);
 }
 
+function normalizeRelayHintUrls(relayHints: string[]): string[] {
+  return normalizeReadableRelayUrls(
+    normalizeRelayListEntries(
+      relayHints.map((url) => ({
+        url,
+        read: true,
+        write: false,
+      })),
+    ),
+  );
+}
+
+async function fetchPublicRelayEntriesForPubkey(
+  session: NostrAuthSession,
+  pubkey: string,
+  seedRelayUrls: string[],
+): Promise<RelayListEntry[]> {
+  if (!pubkey || seedRelayUrls.length === 0) {
+    return [];
+  }
+
+  const ndk = createNdkClient(session, seedRelayUrls);
+  await connectNdk(ndk);
+  const relaySet = NDKRelaySet.fromRelayUrls(seedRelayUrls, ndk);
+  const relayListFilter = {
+    authors: [pubkey],
+    kinds: [NDKKind.RelayList],
+  };
+  const relayListEvent = await ndk.fetchEvent(
+    relayListFilter,
+    createLoggedReqSubscriptionOptions('fetch-relay-list', seedRelayUrls, relayListFilter, {
+      cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+    }),
+    relaySet,
+  );
+
+  return relayListEvent
+    ? relayEntriesFromRelayList(
+        NDKRelayList.from(
+          relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent),
+        ),
+      )
+    : [];
+}
+
 export async function fetchPrivateRelayEntries(
   session: NostrAuthSession,
 ): Promise<RelayListEntry[]> {
@@ -104,28 +149,11 @@ export async function fetchMyRelayEntries(
     };
   }
 
-  const ndk = createNdkClient(session, seedRelayUrls);
-  await connectNdk(ndk);
-  const relaySet = NDKRelaySet.fromRelayUrls(seedRelayUrls, ndk);
-  const relayListFilter = {
-    authors: [session.currentPubkey],
-    kinds: [NDKKind.RelayList],
-  };
-  const relayListEvent = await ndk.fetchEvent(
-    relayListFilter,
-    createLoggedReqSubscriptionOptions('fetch-relay-list', seedRelayUrls, relayListFilter, {
-      cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
-    }),
-    relaySet,
+  const publicRelayEntries = await fetchPublicRelayEntriesForPubkey(
+    session,
+    session.currentPubkey,
+    seedRelayUrls,
   );
-
-  const publicRelayEntries = relayListEvent
-    ? relayEntriesFromRelayList(
-        NDKRelayList.from(
-          relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent),
-        ),
-      )
-    : [];
 
   return {
     mergedRelayEntries: normalizeRelayListEntries([
@@ -135,6 +163,29 @@ export async function fetchMyRelayEntries(
     privateRelayEntries,
     publicRelayEntries,
   };
+}
+
+export async function fetchUserRelayEntries(
+  session: NostrAuthSession,
+  appRelayEntries: RelayListEntry[] = [],
+  myRelayEntries: RelayListEntry[] = [],
+  targetPubkey: string,
+  relayHints: string[] = [],
+): Promise<RelayListEntry[]> {
+  if (!targetPubkey) {
+    return [];
+  }
+
+  const seedRelayUrls = Array.from(
+    new Set([
+      ...DEFAULT_APP_RELAY_URLS,
+      ...normalizeReadableRelayUrls(appRelayEntries),
+      ...normalizeReadableRelayUrls(myRelayEntries),
+      ...normalizeRelayHintUrls(relayHints),
+    ]),
+  );
+
+  return fetchPublicRelayEntriesForPubkey(session, targetPubkey, seedRelayUrls);
 }
 
 export async function publishMyRelayEntries(
