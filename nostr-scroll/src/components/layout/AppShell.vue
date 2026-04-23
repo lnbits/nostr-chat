@@ -42,6 +42,7 @@ onMounted(() => {
     authStore.restoreSession();
     appRelaysStore.init();
     myRelaysStore.init();
+    await profilesStore.hydrateCachedProfiles();
 
     if (authStore.isAuthenticated) {
       await myRelaysStore.hydrateFromNostr();

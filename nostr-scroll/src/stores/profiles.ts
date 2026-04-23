@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import { useAppRelaysStore } from './appRelays';
 import { useAuthStore } from './auth';
 import { useMyRelaysStore } from './myRelays';
+import { profileCacheService } from '../services/profileCacheService';
 import { buildFallbackProfile, fetchFollowingCount, fetchProfiles, saveCurrentUserProfile } from '../services/nostrProfileService';
 import type { NostrProfile } from '../types/nostr';
 
@@ -12,6 +13,8 @@ export const useProfilesStore = defineStore('profiles', () => {
   const myRelaysStore = useMyRelaysStore();
   const profileFetchPromises = new Map<string, Promise<void>>();
   const followingCountPromises = new Map<string, Promise<void>>();
+  let hasHydratedCache = false;
+  let cacheHydrationPromise: Promise<void> | null = null;
 
   const profiles = ref<Record<string, NostrProfile>>({});
   const loadingPubkeys = ref<Record<string, boolean>>({});
@@ -43,6 +46,26 @@ export const useProfilesStore = defineStore('profiles', () => {
     myRelaysStore.init();
   }
 
+  async function hydrateCachedProfiles(): Promise<void> {
+    if (hasHydratedCache) {
+      return;
+    }
+
+    if (cacheHydrationPromise) {
+      return cacheHydrationPromise;
+    }
+
+    cacheHydrationPromise = (async () => {
+      const cachedProfiles = await profileCacheService.listProfiles();
+      upsertProfiles(cachedProfiles);
+      hasHydratedCache = true;
+    })().finally(() => {
+      cacheHydrationPromise = null;
+    });
+
+    return cacheHydrationPromise;
+  }
+
   function getProfileByPubkey(pubkey?: string | null): NostrProfile | null {
     if (!pubkey) {
       return null;
@@ -57,8 +80,13 @@ export const useProfilesStore = defineStore('profiles', () => {
       return;
     }
 
+    await hydrateCachedProfiles();
+
     if (!authStore.session.currentPubkey) {
-      upsertProfiles(uniquePubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
+      const missingPubkeys = uniquePubkeys.filter((pubkey) => !profiles.value[pubkey]);
+      if (missingPubkeys.length > 0) {
+        upsertProfiles(missingPubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
+      }
       return;
     }
 
@@ -106,6 +134,7 @@ export const useProfilesStore = defineStore('profiles', () => {
           pendingPubkeys,
         );
         upsertProfiles(fetchedProfiles);
+        await profileCacheService.saveProfiles(fetchedProfiles);
         loadedPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
           (accumulator, pubkey) => {
             accumulator[pubkey] = true;
@@ -123,7 +152,10 @@ export const useProfilesStore = defineStore('profiles', () => {
           },
           { ...errorsByPubkey.value },
         );
-        upsertProfiles(pendingPubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
+        const missingPubkeys = pendingPubkeys.filter((pubkey) => !profiles.value[pubkey]);
+        if (missingPubkeys.length > 0) {
+          upsertProfiles(missingPubkeys.map((pubkey) => buildFallbackProfile(pubkey)));
+        }
       } finally {
         loadingPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
           (accumulator, pubkey) => {
@@ -177,12 +209,12 @@ export const useProfilesStore = defineStore('profiles', () => {
           pubkey,
         );
         if (typeof followingCount === 'number') {
-          upsertProfiles([
-            {
-              ...(getProfileByPubkey(pubkey) ?? buildFallbackProfile(pubkey)),
-              followingCount,
-            },
-          ]);
+          const updatedProfile = {
+            ...(getProfileByPubkey(pubkey) ?? buildFallbackProfile(pubkey)),
+            followingCount,
+          };
+          upsertProfiles([updatedProfile]);
+          await profileCacheService.saveProfiles([updatedProfile]);
         }
       } catch {}
       finally {
@@ -197,6 +229,8 @@ export const useProfilesStore = defineStore('profiles', () => {
   }
 
   async function ensureHydrated(): Promise<void> {
+    await hydrateCachedProfiles();
+
     if (!authStore.currentPubkey) {
       return;
     }
@@ -246,6 +280,8 @@ export const useProfilesStore = defineStore('profiles', () => {
     loadedPubkeys.value = {};
     errorsByPubkey.value = {};
     savingCurrentUserProfile.value = false;
+    hasHydratedCache = false;
+    cacheHydrationPromise = null;
   }
 
   return {
@@ -253,6 +289,7 @@ export const useProfilesStore = defineStore('profiles', () => {
     profilesMap,
     currentUserProfile,
     savingCurrentUserProfile,
+    hydrateCachedProfiles,
     ensureHydrated,
     ensureProfile,
     ensureProfiles,

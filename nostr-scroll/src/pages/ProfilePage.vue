@@ -13,6 +13,10 @@
       @edit-profile="isEditDialogOpen = true"
     />
 
+    <div v-if="profileError" class="profile-page__status scroll-divider">
+      {{ profileError }}
+    </div>
+
     <ProfileTabs :model-value="activeTab" @update:model-value="setActiveTab" />
 
     <FeedList
@@ -61,6 +65,9 @@ const resolvedPubkey = computed(() => {
   return normalizedReference?.pubkey ?? authStore.currentPubkey ?? '';
 });
 const profile = computed(() => profilesStore.getProfileByPubkey(resolvedPubkey.value));
+const profileError = computed(() =>
+  resolvedPubkey.value ? profilesStore.getProfileError(resolvedPubkey.value) : '',
+);
 const postCount = computed(() => feedStore.getPostCountForProfile(resolvedPubkey.value));
 const activeTab = computed<ProfileTab>(() => uiStore.getProfileTab(resolvedPubkey.value));
 const isActiveTabLoading = computed(() =>
@@ -111,3 +118,11 @@ watch(
   { immediate: true },
 );
 </script>
+
+<style scoped>
+.profile-page__status {
+  padding: 12px 16px;
+  color: var(--scroll-danger);
+  font-size: 0.95rem;
+}
+</style>
