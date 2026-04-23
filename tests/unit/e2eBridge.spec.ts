@@ -8,6 +8,8 @@ const moduleMocks = vi.hoisted(() => {
     getLoggedInPublicKeyHex: vi.fn(() => 'a'.repeat(64)),
     logout: vi.fn().mockResolvedValue(undefined),
     publishMyRelayList: vi.fn().mockResolvedValue(undefined),
+    restoreGroupEpochHistory: vi.fn().mockResolvedValue(undefined),
+    restorePrivateMessagesForRecipient: vi.fn().mockResolvedValue(undefined),
     restoreStartupState: vi.fn().mockResolvedValue(undefined),
     rotateGroupEpochAndSendTickets: vi.fn().mockResolvedValue(undefined),
     savePrivateKey: vi.fn(() => ({ isValid: true })),
@@ -26,6 +28,12 @@ const moduleMocks = vi.hoisted(() => {
   };
   const chatStore = {
     acceptChat: vi.fn().mockResolvedValue(undefined),
+    chats: [] as Array<{
+      id: string;
+      publicKey: string;
+      type: 'user' | 'group';
+      epochPublicKey: string | null;
+    }>,
     init: vi.fn().mockResolvedValue(undefined),
     reload: vi.fn().mockResolvedValue(undefined),
     updateChatPreview: vi.fn().mockResolvedValue(undefined),
@@ -108,6 +116,7 @@ describe('e2eBridge', () => {
     moduleMocks.nostrStore.getLoggedInPublicKeyHex.mockReturnValue(PUBKEY_HEX);
     moduleMocks.nostrStore.savePrivateKey.mockReturnValue({ isValid: true });
     moduleMocks.relayStore.relays = ['ws://relay.one'];
+    moduleMocks.chatStore.chats = [];
     moduleMocks.contactsService.getContactByPublicKey.mockResolvedValue({
       id: 7,
       public_key: PUBKEY_HEX,
@@ -195,13 +204,30 @@ describe('e2eBridge', () => {
   it('refreshes either one chat or every loaded chat depending on the options', async () => {
     const { installAppE2EBridge } = await import('src/testing/e2eBridge');
     installAppE2EBridge();
+    moduleMocks.chatStore.chats = [
+      {
+        id: 'chat-id',
+        publicKey: PUBKEY_HEX,
+        type: 'group',
+        epochPublicKey: 'b'.repeat(64),
+      },
+    ];
 
     const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
     await bridge.refreshSession({ chatId: '  Chat-Id  ' });
     expect(moduleMocks.nostrStore.subscribePrivateMessagesForLoggedInUser).toHaveBeenCalledWith(
       true
     );
-    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(1);
+    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(2);
+    expect(moduleMocks.nostrStore.restorePrivateMessagesForRecipient).toHaveBeenCalledWith(
+      PUBKEY_HEX,
+      { force: true }
+    );
+    expect(moduleMocks.nostrStore.restoreGroupEpochHistory).toHaveBeenCalledWith(
+      PUBKEY_HEX,
+      'b'.repeat(64),
+      { force: true }
+    );
     expect(moduleMocks.messageStore.loadMessages).toHaveBeenCalledWith('chat-id', true);
     expect(moduleMocks.messageStore.reloadLoadedMessages).not.toHaveBeenCalled();
 

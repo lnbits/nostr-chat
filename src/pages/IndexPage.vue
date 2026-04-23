@@ -6,6 +6,13 @@
       :class="{ 'home-shell--mobile': isMobile }"
       :style="shellStyle"
     >
+      <div v-if="isReconnectHealing" class="home-shell__sync-status" aria-live="polite">
+        <span class="home-shell__sync-pill">
+          <q-icon name="sync" class="home-shell__sync-icon" />
+          <span>Catching up...</span>
+        </span>
+      </div>
+
       <aside v-if="!isMobile || !isMobileThreadOpen" class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-top__row" :class="{ 'sidebar-top__row--mobile': isMobile }">
@@ -236,13 +243,13 @@ import type { ContactRecord } from 'src/types/contact';
 import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
+import { useNostrStore } from 'src/stores/nostrStore';
 
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
 const ChatRequestsPage = defineAsyncComponent(() => import('src/components/ChatRequestsPage.vue'));
 const ChatThread = defineAsyncComponent(() => import('src/components/ChatThread.vue'));
 
-type NostrStoreModule = typeof import('src/stores/nostrStore');
-type NostrStore = ReturnType<NostrStoreModule['useNostrStore']>;
+type NostrStore = ReturnType<typeof useNostrStore>;
 type RelayStoreModule = typeof import('src/stores/relayStore');
 type RelayStore = ReturnType<RelayStoreModule['useRelayStore']>;
 
@@ -251,6 +258,7 @@ const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
+const nostrStore = useNostrStore();
 const { visibleViewportHeight } = useVisibleViewportHeight(() => $q.screen.height);
 const {
   isMobile,
@@ -344,6 +352,7 @@ const chatIdSignature = computed(() => chatStore.chats.map((chat) => chat.id).jo
 const isThreadInitializing = computed(() => {
   return !chatStore.isLoaded;
 });
+const isReconnectHealing = computed(() => nostrStore.isReconnectHealing);
 
 const currentMessages = computed(() => {
   return messageStore.getMessages(activeChatId.value || null);
@@ -358,7 +367,7 @@ let relayStorePromise: Promise<RelayStore> | null = null;
 
 async function getNostrStore(): Promise<NostrStore> {
   if (!nostrStorePromise) {
-    nostrStorePromise = import('src/stores/nostrStore').then(({ useNostrStore }) => useNostrStore());
+    nostrStorePromise = Promise.resolve(nostrStore);
   }
 
   return nostrStorePromise;
@@ -999,6 +1008,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 }
 
 .home-shell {
+  position: relative;
   display: grid;
   grid-template-columns: var(--desktop-sidebar-width, 360px) 0px minmax(0, 1fr);
   gap: 0;
@@ -1011,6 +1021,34 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 
 .home-shell--mobile {
   grid-template-columns: 1fr;
+}
+
+.home-shell__sync-status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.home-shell__sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--q-primary) 25%, var(--tg-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tg-panel-header-bg) 88%, white 12%);
+  color: var(--tg-text-primary);
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.home-shell__sync-icon {
+  color: var(--q-primary);
+  animation: home-shell-sync-spin 1.2s linear infinite;
 }
 
 .sidebar,
@@ -1120,6 +1158,16 @@ body.body--dark .q-btn.sidebar-top__action {
 
   .thread-panel--mobile {
     border-bottom: 0;
+  }
+}
+
+@keyframes home-shell-sync-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

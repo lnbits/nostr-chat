@@ -51,6 +51,7 @@ import { createPrivateMessagesIngestRuntime } from 'src/stores/nostr/privateMess
 import { createPrivateMessagesSubscriptionRuntime } from 'src/stores/nostr/privateMessagesSubscriptionRuntime';
 import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessagesUiRuntime';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
+import { createReconnectHealingRuntime } from 'src/stores/nostr/reconnectHealingRuntime';
 import { createRelayConnectionRuntime } from 'src/stores/nostr/relayConnectionRuntime';
 import { createRelayPublishRuntime } from 'src/stores/nostr/relayPublishRuntime';
 import { createStartupContactSyncRuntime } from 'src/stores/nostr/startupContactSyncRuntime';
@@ -159,6 +160,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const privateMessagesSubscriptionLastEventId = ref<string | null>(null);
   const privateMessagesSubscriptionLastEventCreatedAt = ref<number | null>(null);
   const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
+  const isReconnectHealing = ref(false);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
   const configuredRelayUrls = new Set<string>();
@@ -212,7 +214,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
   let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
+  let queueOutboundMessageReplayRuntime: (reason: string, delayMs?: number) => void = () => {};
   let notifyOutboundMessageReplayRelayConnectedRuntime: () => void = () => {};
+  let notifyReconnectHealingRelayConnectedRuntime: () => void = () => {};
+  let notifyReconnectHealingRelayListChangedRuntime: () => void = () => {};
+  let resetReconnectHealingRuntimeStateRuntime: () => void = () => {};
   let resetOutboundMessageReplayRuntimeStateRuntime: () => void = () => {};
   let startOutboundMessageReplayRuntime: () => Promise<void> = async () => {};
   let getOrCreateSignerRuntime: () => Promise<NDKSigner> = async () => {
@@ -406,6 +412,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ),
     () => {
       queueTrackedContactSubscriptionsRefresh();
+      notifyReconnectHealingRelayListChangedRuntime();
     }
   );
 
@@ -845,6 +852,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     queueOutboundMessageReplay: () => {
       notifyOutboundMessageReplayRelayConnectedRuntime();
+    },
+    queueReconnectHealing: () => {
+      notifyReconnectHealingRelayConnectedRuntime();
     },
     relayAuthFailureListenerUrls,
     relayConnectFailureCooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
@@ -1612,6 +1622,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       resetOutboundMessageReplayRuntimeStateRuntime();
     },
     resetPrivateContactListRuntimeState,
+    resetReconnectHealingRuntimeState: () => {
+      resetReconnectHealingRuntimeStateRuntime();
+    },
     resetPrivateMessagesIngestRuntimeState,
     resetPrivateMessagesSubscriptionRuntimeState,
     resetPrivateMessagesUiRuntimeState,
@@ -1690,6 +1703,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     toIsoTimestampFromUnix,
   });
   const {
+    queueOutboundMessageReplay: queueOutboundMessageReplayImpl,
     notifyRelayConnected: notifyOutboundMessageReplayRelayConnectedImpl,
     resetOutboundMessageReplayRuntimeState: resetOutboundMessageReplayRuntimeStateImpl,
     startOutboundMessageReplay: startOutboundMessageReplayImpl,
@@ -1698,9 +1712,67 @@ export const useNostrStore = defineStore('nostrStore', () => {
     logMessageRelayDiagnostics,
     retryDirectMessageRelay,
   });
+  queueOutboundMessageReplayRuntime = queueOutboundMessageReplayImpl;
   notifyOutboundMessageReplayRelayConnectedRuntime = notifyOutboundMessageReplayRelayConnectedImpl;
   resetOutboundMessageReplayRuntimeStateRuntime = resetOutboundMessageReplayRuntimeStateImpl;
   startOutboundMessageReplayRuntime = startOutboundMessageReplayImpl;
+
+  const {
+    notifyRelayConnected: notifyReconnectHealingRelayConnectedImpl,
+    notifyRelayListChanged: notifyReconnectHealingRelayListChangedImpl,
+    resetReconnectHealingRuntimeState: resetReconnectHealingRuntimeStateImpl,
+    startReconnectHealing: startReconnectHealingImpl,
+  } = createReconnectHealingRuntime({
+    getLoggedInPublicKeyHex,
+    getVisibleChatTarget: () => {
+      if (!chatStore.visibleChatId) {
+        return null;
+      }
+
+      const chat = chatStore.chats.find((entry) => entry.id === chatStore.visibleChatId) ?? null;
+      if (!chat) {
+        return null;
+      }
+
+      return {
+        id: chat.id,
+        publicKey: chat.publicKey,
+        type: chat.type,
+        epochPublicKey: chat.epochPublicKey,
+      };
+    },
+    isRestoringStartupState,
+    listRecentDirectMessageChatTargets: (limit, excludeChatIds = []) => {
+      const excludedChatIds = new Set(excludeChatIds);
+      return chatStore.inboxChats
+        .filter((chat) => chat.type === 'user' && !excludedChatIds.has(chat.id))
+        .slice(0, limit)
+        .map((chat) => ({
+          id: chat.id,
+          publicKey: chat.publicKey,
+          type: chat.type,
+          epochPublicKey: chat.epochPublicKey,
+        }));
+    },
+    queueOutboundMessageReplay: (reason, delayMs) => {
+      queueOutboundMessageReplayRuntime(reason, delayMs);
+    },
+    queuePrivateMessagesWatchdog: (delayMs) => {
+      queuePrivateMessagesWatchdogRuntime(delayMs);
+    },
+    refreshDeveloperPendingQueues: () => refreshDeveloperPendingQueuesRuntime(),
+    restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
+      restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
+    restorePrivateMessagesForRecipient: (recipientPubkey, options) =>
+      restorePrivateMessagesForRecipientRuntime(recipientPubkey, options),
+    setIsReconnectHealing: (value) => {
+      isReconnectHealing.value = value;
+    },
+  });
+  notifyReconnectHealingRelayConnectedRuntime = notifyReconnectHealingRelayConnectedImpl;
+  notifyReconnectHealingRelayListChangedRuntime = notifyReconnectHealingRelayListChangedImpl;
+  resetReconnectHealingRuntimeStateRuntime = resetReconnectHealingRuntimeStateImpl;
+  startReconnectHealingImpl();
 
   const {
     getDeveloperDiagnosticsSnapshot,
@@ -1777,6 +1849,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshDeveloperPendingQueues,
     refreshPrivateMessages,
     getRelayConnectionState,
+    isReconnectHealing,
     isRestoringStartupState,
     listDeveloperTraceEntries,
     loginWithExtension: loginWithExtensionImpl,

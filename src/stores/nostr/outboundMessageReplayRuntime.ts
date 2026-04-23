@@ -30,7 +30,12 @@ interface OutboundMessageReplayRuntimeDeps {
   ) => Promise<void>;
 }
 
-type OutboundReplayReason = 'startup' | 'browser-online' | 'relay-connected' | 'periodic-sweep';
+type OutboundReplayReason =
+  | 'startup'
+  | 'browser-online'
+  | 'relay-connected'
+  | 'periodic-sweep'
+  | 'reconnect-healing';
 
 function isBrowserOffline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false;

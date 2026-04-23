@@ -239,6 +239,17 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
     typeof options.chatId === 'string' ? options.chatId.trim().toLowerCase() : '';
 
   if (normalizedChatId) {
+    const chat = chatStore.chats.find((entry) => entry.id === normalizedChatId) ?? null;
+    if (chat?.type === 'group') {
+      await nostrStore.restorePrivateMessagesForRecipient(chat.publicKey, { force: true });
+      if (chat.epochPublicKey) {
+        await nostrStore.restoreGroupEpochHistory(chat.publicKey, chat.epochPublicKey, {
+          force: true,
+        });
+      }
+      await chatStore.reload();
+    }
+
     await messageStore.loadMessages(normalizedChatId, true);
     return;
   }
