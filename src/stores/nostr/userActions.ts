@@ -99,6 +99,12 @@ interface UserActionsDeps {
   ndk: NDK;
   normalizeEventId: (value: unknown) => string | null;
   normalizeRelayStatusUrl: (value: string) => string | null;
+  logMessageRelayDiagnostics: (
+    phase: string,
+    details: Record<string, unknown>,
+    level?: 'info' | 'warn' | 'error'
+  ) => void;
+  pendingDirectMessageRelayRetryPromises: Map<string, Promise<void>>;
   publishEventWithRelayStatuses: (
     event: { kind: number },
     relayUrls: string[],
@@ -126,6 +132,10 @@ interface UserActionsDeps {
   toIsoTimestampFromUnix: (value: number | undefined) => string;
 }
 
+interface RetryDirectMessageRelayOptions {
+  trigger?: string;
+}
+
 export function createUserActions({
   appendRelayStatusesToGroupMemberTicketEvent,
   appendRelayStatusesToMessageEvent,
@@ -144,6 +154,8 @@ export function createUserActions({
   ndk,
   normalizeEventId,
   normalizeRelayStatusUrl,
+  logMessageRelayDiagnostics,
+  pendingDirectMessageRelayRetryPromises,
   publishEventWithRelayStatuses,
   readDirectMessageRecipientPubkey,
   readEpochNumberTag,
@@ -409,10 +421,12 @@ export function createUserActions({
   async function retryDirectMessageRelay(
     messageId: number,
     relayUrl: string,
-    scope: 'recipient' | 'self'
+    scope: 'recipient' | 'self',
+    options: RetryDirectMessageRelayOptions = {}
   ): Promise<void> {
     const normalizedMessageId = Number(messageId);
     const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
+    const trigger = options.trigger?.trim() || 'manual';
     if (
       !Number.isInteger(normalizedMessageId) ||
       normalizedMessageId <= 0 ||
@@ -422,81 +436,53 @@ export function createUserActions({
       throw new Error('Invalid relay retry input.');
     }
 
-    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
-
-    const message = await chatDataService.getMessageById(normalizedMessageId);
-    if (!message?.event_id) {
-      throw new Error('Message is missing a persisted event id.');
-    }
-
-    const storedEvent = await nostrEventDataService.getEventById(message.event_id);
-    if (!storedEvent || storedEvent.direction !== 'out') {
-      throw new Error('No outbound nostr event found for this message.');
-    }
-
-    const rumorEvent = createStoredDirectMessageRumorEvent(storedEvent.event);
-    if (!rumorEvent) {
-      throw new Error('Failed to rebuild the direct message event for retry.');
-    }
-
-    const signer = await getOrCreateSigner();
-    const recipientPubkey = readDirectMessageRecipientPubkey(storedEvent.event);
-    if (!recipientPubkey) {
-      throw new Error('Stored direct message event is missing a recipient.');
-    }
-
-    await appendRelayStatusesToMessageEvent(
-      normalizedMessageId,
-      buildPendingOutboundRelayStatuses([normalizedRelayUrl], scope),
-      {
-        event: storedEvent.event,
-        direction: 'out',
-        eventId: message.event_id,
-      }
-    );
-
-    try {
-      await ensureRelayConnections([normalizedRelayUrl]);
-      const recipient =
-        scope === 'self'
-          ? new NDKUser({ pubkey: signer.pubkey })
-          : new NDKUser({ pubkey: recipientPubkey });
-      const giftWrapEvent = await giftWrap(rumorEvent, recipient, signer as any, {
-        rumorKind: NDKKind.PrivateDirectMessage,
+    const retryKey = `${normalizedMessageId}|${scope}|${normalizedRelayUrl}`;
+    const existingRetryPromise = pendingDirectMessageRelayRetryPromises.get(retryKey);
+    if (existingRetryPromise) {
+      logMessageRelayDiagnostics('retry-join-existing', {
+        messageId: normalizedMessageId,
+        relayUrl: normalizedRelayUrl,
+        scope,
+        trigger,
       });
-      const publishResult = await publishEventWithRelayStatuses(
-        giftWrapEvent as { kind: number },
-        [normalizedRelayUrl],
-        scope
-      );
+      return existingRetryPromise;
+    }
 
-      await appendRelayStatusesToMessageEvent(normalizedMessageId, publishResult.relayStatuses, {
-        event: storedEvent.event,
-        direction: 'out',
-        eventId: message.event_id,
-      });
+    const retryPromise = (async () => {
+      await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
 
-      if (publishResult.error) {
-        const failedRelayStatus = publishResult.relayStatuses.find(
-          (relayStatus) =>
-            relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
-        );
-        const detail = failedRelayStatus?.detail?.trim();
-        if (detail) {
-          throw new Error(detail);
-        }
-
-        throw publishResult.error;
+      const message = await chatDataService.getMessageById(normalizedMessageId);
+      if (!message?.event_id) {
+        throw new Error('Message is missing a persisted event id.');
       }
-    } catch (error) {
-      const retryFailureDetail =
-        error instanceof Error && error.message.trim()
-          ? error.message.trim()
-          : 'Failed to publish event.';
+
+      const storedEvent = await nostrEventDataService.getEventById(message.event_id);
+      if (!storedEvent || storedEvent.direction !== 'out') {
+        throw new Error('No outbound nostr event found for this message.');
+      }
+
+      const rumorEvent = createStoredDirectMessageRumorEvent(storedEvent.event);
+      if (!rumorEvent) {
+        throw new Error('Failed to rebuild the direct message event for retry.');
+      }
+
+      const signer = await getOrCreateSigner();
+      const recipientPubkey = readDirectMessageRecipientPubkey(storedEvent.event);
+      if (!recipientPubkey) {
+        throw new Error('Stored direct message event is missing a recipient.');
+      }
+
+      logMessageRelayDiagnostics('retry-start', {
+        messageId: normalizedMessageId,
+        eventId: message.event_id,
+        relayUrl: normalizedRelayUrl,
+        scope,
+        trigger,
+      });
 
       await appendRelayStatusesToMessageEvent(
         normalizedMessageId,
-        buildFailedOutboundRelayStatuses([normalizedRelayUrl], scope, retryFailureDetail),
+        buildPendingOutboundRelayStatuses([normalizedRelayUrl], scope),
         {
           event: storedEvent.event,
           direction: 'out',
@@ -504,8 +490,84 @@ export function createUserActions({
         }
       );
 
-      throw error;
-    }
+      try {
+        await ensureRelayConnections([normalizedRelayUrl]);
+        const recipient =
+          scope === 'self'
+            ? new NDKUser({ pubkey: signer.pubkey })
+            : new NDKUser({ pubkey: recipientPubkey });
+        const giftWrapEvent = await giftWrap(rumorEvent, recipient, signer as any, {
+          rumorKind: NDKKind.PrivateDirectMessage,
+        });
+        const publishResult = await publishEventWithRelayStatuses(
+          giftWrapEvent as { kind: number },
+          [normalizedRelayUrl],
+          scope
+        );
+
+        await appendRelayStatusesToMessageEvent(normalizedMessageId, publishResult.relayStatuses, {
+          event: storedEvent.event,
+          direction: 'out',
+          eventId: message.event_id,
+        });
+
+        if (publishResult.error) {
+          const failedRelayStatus = publishResult.relayStatuses.find(
+            (relayStatus) =>
+              relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
+          );
+          const detail = failedRelayStatus?.detail?.trim();
+          if (detail) {
+            throw new Error(detail);
+          }
+
+          throw publishResult.error;
+        }
+
+        logMessageRelayDiagnostics('retry-success', {
+          messageId: normalizedMessageId,
+          eventId: message.event_id,
+          relayUrl: normalizedRelayUrl,
+          scope,
+          trigger,
+        });
+      } catch (error) {
+        const retryFailureDetail =
+          error instanceof Error && error.message.trim()
+            ? error.message.trim()
+            : 'Failed to publish event.';
+
+        await appendRelayStatusesToMessageEvent(
+          normalizedMessageId,
+          buildFailedOutboundRelayStatuses([normalizedRelayUrl], scope, retryFailureDetail),
+          {
+            event: storedEvent.event,
+            direction: 'out',
+            eventId: message.event_id,
+          }
+        );
+
+        logMessageRelayDiagnostics(
+          'retry-failed',
+          {
+            messageId: normalizedMessageId,
+            eventId: message.event_id,
+            relayUrl: normalizedRelayUrl,
+            scope,
+            trigger,
+            error: retryFailureDetail,
+          },
+          'warn'
+        );
+
+        throw error;
+      }
+    })().finally(() => {
+      pendingDirectMessageRelayRetryPromises.delete(retryKey);
+    });
+
+    pendingDirectMessageRelayRetryPromises.set(retryKey, retryPromise);
+    return retryPromise;
   }
 
   async function retryGroupEpochTicketRelay(eventId: string, relayUrl: string): Promise<void> {

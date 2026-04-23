@@ -44,6 +44,7 @@ interface RelayConnectionRuntimeDeps {
   relayConnectFailureCooldownMs: number;
   relayConnectFailureCooldownUntilByUrl: Map<string, number>;
   relayConnectPromises: Map<string, Promise<void>>;
+  queueOutboundMessageReplay: () => void;
   setCachedSigner: (signer: NDKSigner | null) => void;
   setCachedSignerSessionKey: (sessionKey: string | null) => void;
   setConnectPromise: (promise: Promise<void> | null) => void;
@@ -76,6 +77,7 @@ export function createRelayConnectionRuntime({
   relayConnectFailureCooldownMs,
   relayConnectFailureCooldownUntilByUrl,
   relayConnectPromises,
+  queueOutboundMessageReplay,
   setCachedSigner,
   setCachedSignerSessionKey,
   setConnectPromise,
@@ -176,6 +178,9 @@ export function createRelayConnectionRuntime({
       authenticatedRelayUrls.delete(relay.url);
       bumpRelayStatusVersion();
       logRelayLifecycle('connect', relay);
+      if (getLoggedInPublicKeyHex()) {
+        queueOutboundMessageReplay();
+      }
       if (isPrivateMessagesSubscriptionRelayTracked(relay.url)) {
         queuePrivateMessagesWatchdog(0);
       }

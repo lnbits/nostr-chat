@@ -192,6 +192,8 @@ function createDeps() {
     normalizeRelayStatusUrl: vi.fn((value: string) =>
       typeof value === 'string' && value.trim() ? value.trim() : null
     ),
+    logMessageRelayDiagnostics: vi.fn(),
+    pendingDirectMessageRelayRetryPromises: new Map<string, Promise<void>>(),
     publishEventWithRelayStatuses: vi.fn().mockResolvedValue({
       relayStatuses: [makeRelayStatus()],
       error: null,
@@ -392,6 +394,28 @@ describe('userActions runtime', () => {
         direction: 'out',
         eventId: 'event-1',
       })
+    );
+    expect(deps.logMessageRelayDiagnostics).toHaveBeenCalledWith(
+      'retry-start',
+      expect.objectContaining({
+        messageId: 7,
+        eventId: 'event-1',
+        relayUrl: 'wss://relay.example',
+        scope: 'recipient',
+        trigger: 'manual',
+      })
+    );
+    expect(deps.logMessageRelayDiagnostics).toHaveBeenCalledWith(
+      'retry-failed',
+      expect.objectContaining({
+        messageId: 7,
+        eventId: 'event-1',
+        relayUrl: 'wss://relay.example',
+        scope: 'recipient',
+        trigger: 'manual',
+        error: 'relay down',
+      }),
+      'warn'
     );
   });
 

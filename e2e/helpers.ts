@@ -1069,6 +1069,19 @@ export async function retryMessageRelay(page: Page, text: string, relayUrl: stri
   await retryButtons.first().click();
 }
 
+export async function waitForMessageRelayRetryToResolve(
+  page: Page,
+  text: string,
+  relayUrl: string
+): Promise<void> {
+  await openMessageRelayStatusDialog(page, text);
+  const retryButtons = page
+    .locator('.bubble__status-list-item--dialog')
+    .filter({ hasText: relayUrl })
+    .getByRole('button', { name: 'Retry', exact: true });
+  await expect(retryButtons.first()).not.toBeVisible({ timeout: 25_000 });
+}
+
 export async function closeDialogWithEscape(page: Page): Promise<void> {
   await page.keyboard.press('Escape');
 }

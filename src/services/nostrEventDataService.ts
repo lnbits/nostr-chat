@@ -198,6 +198,32 @@ class NostrEventDataService {
     return eventsById;
   }
 
+  async listEventsByDirection(direction?: NostrEventDirection): Promise<NostrEventEntry[]> {
+    const normalizedDirection =
+      direction === undefined ? undefined : normalizeDirection(direction as unknown);
+    if (direction !== undefined && !normalizedDirection) {
+      return [];
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(EVENTS_STORE, 'readonly');
+    const store = transaction.objectStore(EVENTS_STORE);
+    const records = await requestToPromise<NostrEventStoreRecord[]>(
+      store.getAll() as IDBRequest<NostrEventStoreRecord[]>
+    );
+    await waitForTransaction(transaction);
+
+    return records
+      .map((record) => toNostrEventEntry(record))
+      .filter((entry): entry is NostrEventEntry => {
+        if (!entry) {
+          return false;
+        }
+
+        return normalizedDirection ? entry.direction === normalizedDirection : true;
+      });
+  }
+
   async upsertEvent(input: UpsertNostrEventInput): Promise<NostrEventEntry | null> {
     const event = normalizeEvent(input.event);
     const direction = normalizeDirection(input.direction);

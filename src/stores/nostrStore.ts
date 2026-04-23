@@ -12,7 +12,6 @@ import {
   type NsecValidationResult,
   type PrivateKeyValidationResult,
 } from 'src/services/inputSanitizerService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { createAuthIdentityRuntime } from 'src/stores/nostr/authIdentityRuntime';
@@ -44,6 +43,7 @@ import { createMessageEventRuntime } from 'src/stores/nostr/messageEventRuntime'
 import { createMessageMutationRuntime } from 'src/stores/nostr/messageMutationRuntime';
 import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
 import { createMyRelayListRuntime } from 'src/stores/nostr/myRelayListRuntime';
+import { createOutboundMessageReplayRuntime } from 'src/stores/nostr/outboundMessageReplayRuntime';
 import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
 import { createPrivateContactMembershipRuntime } from 'src/stores/nostr/privateContactMembershipRuntime';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
@@ -164,6 +164,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const configuredRelayUrls = new Set<string>();
   const relayConnectPromises = new Map<string, Promise<void>>();
   const relayConnectFailureCooldownUntilByUrl = new Map<string, number>();
+  const pendingDirectMessageRelayRetryPromises = new Map<string, Promise<void>>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
@@ -211,6 +212,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
   let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
+  let notifyOutboundMessageReplayRelayConnectedRuntime: () => void = () => {};
+  let resetOutboundMessageReplayRuntimeStateRuntime: () => void = () => {};
+  let startOutboundMessageReplayRuntime: () => Promise<void> = async () => {};
   let getOrCreateSignerRuntime: () => Promise<NDKSigner> = async () => {
     throw new Error('Relay connection runtime is not initialized.');
   };
@@ -702,21 +706,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
   });
 
-  async function resolveStalePendingOutboundMessageRelayStatuses(): Promise<void> {
-    await nostrEventDataService.init();
-    const updatedStatusCount = await nostrEventDataService.resolvePendingOutboundRelayStatuses();
-    if (updatedStatusCount <= 0) {
-      return;
-    }
-
-    try {
-      const { useMessageStore } = await import('src/stores/messageStore');
-      await useMessageStore().reloadLoadedMessages();
-    } catch (error) {
-      console.warn('Failed to reload messages after resolving stale relay statuses', error);
-    }
-  }
-
   const {
     buildFilterSinceDetails,
     buildFilterUntilDetails,
@@ -853,6 +842,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ndk,
     queuePrivateMessagesWatchdog: (delayMs) => {
       queuePrivateMessagesWatchdogRuntime(delayMs);
+    },
+    queueOutboundMessageReplay: () => {
+      notifyOutboundMessageReplayRelayConnectedRuntime();
     },
     relayAuthFailureListenerUrls,
     relayConnectFailureCooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
@@ -1547,12 +1539,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshContactByPublicKey,
     refreshGroupRelayListsOnStartup,
     resetStartupStepTracking,
-    resolveStalePendingOutboundMessageRelayStatuses,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
     restoreMyRelayList,
     restorePrivateContactList,
     restorePrivatePreferences,
+    startOutboundMessageReplay: () => startOutboundMessageReplayRuntime(),
     setRestoreStartupStatePromise: (promise) => {
       restoreStartupStatePromise = promise;
     },
@@ -1616,6 +1608,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resetEventSinceForFreshLogin,
     resetGroupRosterSubscriptionRuntimeState,
     resetMyRelayListRuntimeState,
+    resetOutboundMessageReplayRuntimeState: () => {
+      resetOutboundMessageReplayRuntimeStateRuntime();
+    },
     resetPrivateContactListRuntimeState,
     resetPrivateMessagesIngestRuntimeState,
     resetPrivateMessagesSubscriptionRuntimeState,
@@ -1681,9 +1676,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     getOrCreateSigner,
     giftWrapSignedEvent,
+    logMessageRelayDiagnostics,
     ndk,
     normalizeEventId,
     normalizeRelayStatusUrl,
+    pendingDirectMessageRelayRetryPromises,
     publishEventWithRelayStatuses,
     readDirectMessageRecipientPubkey,
     readEpochNumberTag,
@@ -1692,6 +1689,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
     sendGiftWrappedRumor,
     toIsoTimestampFromUnix,
   });
+  const {
+    notifyRelayConnected: notifyOutboundMessageReplayRelayConnectedImpl,
+    resetOutboundMessageReplayRuntimeState: resetOutboundMessageReplayRuntimeStateImpl,
+    startOutboundMessageReplay: startOutboundMessageReplayImpl,
+  } = createOutboundMessageReplayRuntime({
+    getLoggedInPublicKeyHex,
+    logMessageRelayDiagnostics,
+    retryDirectMessageRelay,
+  });
+  notifyOutboundMessageReplayRelayConnectedRuntime = notifyOutboundMessageReplayRelayConnectedImpl;
+  resetOutboundMessageReplayRuntimeStateRuntime = resetOutboundMessageReplayRuntimeStateImpl;
+  startOutboundMessageReplayRuntime = startOutboundMessageReplayImpl;
 
   const {
     getDeveloperDiagnosticsSnapshot,
