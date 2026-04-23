@@ -53,6 +53,82 @@ interface RelayConnectionRuntimeDeps {
   setHasRelayStatusListeners: (value: boolean) => void;
 }
 
+const RELAY_SOCKET_CONNECTING = 0;
+const RELAY_SOCKET_OPEN = 1;
+
+type RelaySocketLike = {
+  close: () => void;
+  readyState: number;
+};
+
+type RelayConnectivityState = {
+  _status?: NDKRelayStatus;
+  connectTimeout?: ReturnType<typeof globalThis.setTimeout> | null;
+  ws?: RelaySocketLike;
+};
+
+type GuardedRelay = NDKRelay & {
+  __nostrChatConnectPromise?: Promise<void> | null;
+  __nostrChatSingleSocketGuardInstalled?: boolean;
+};
+
+function closeGuardedRelaySocket(relay: NDKRelay, connectivity: RelayConnectivityState): void {
+  if (connectivity.connectTimeout) {
+    clearTimeout(connectivity.connectTimeout);
+    connectivity.connectTimeout = null;
+  }
+
+  if (connectivity.ws) {
+    try {
+      connectivity.ws.close();
+    } catch {
+      // Ignore stale socket close failures and continue with a fresh connect.
+    }
+
+    connectivity.ws = undefined;
+  }
+
+  if (relay.status < NDKRelayStatus.CONNECTED) {
+    connectivity._status = NDKRelayStatus.DISCONNECTED;
+  }
+}
+
+export function ensureSingleSocketRelayConnectGuard(relay: NDKRelay | null | undefined): void {
+  const guardedRelay = relay as GuardedRelay | null | undefined;
+  if (!guardedRelay || guardedRelay.__nostrChatSingleSocketGuardInstalled) {
+    return;
+  }
+
+  const originalConnect = relay.connect.bind(relay);
+  guardedRelay.__nostrChatSingleSocketGuardInstalled = true;
+  guardedRelay.__nostrChatConnectPromise = null;
+  guardedRelay.connect = ((timeoutMs?: number, reconnect = true) => {
+    const connectivity = relay.connectivity as unknown as RelayConnectivityState;
+    const existingPromise = guardedRelay.__nostrChatConnectPromise ?? null;
+    const readyState = connectivity.ws?.readyState;
+
+    if (
+      existingPromise &&
+      (readyState === RELAY_SOCKET_CONNECTING || readyState === RELAY_SOCKET_OPEN)
+    ) {
+      return existingPromise;
+    }
+
+    if (readyState !== undefined && readyState !== RELAY_SOCKET_OPEN) {
+      closeGuardedRelaySocket(relay, connectivity);
+    }
+
+    const connectPromise = Promise.resolve(originalConnect(timeoutMs, reconnect)).finally(() => {
+      if (guardedRelay.__nostrChatConnectPromise === connectPromise) {
+        guardedRelay.__nostrChatConnectPromise = null;
+      }
+    });
+
+    guardedRelay.__nostrChatConnectPromise = connectPromise;
+    return connectPromise;
+  }) as typeof relay.connect;
+}
+
 export function createRelayConnectionRuntime({
   authenticatedRelayUrls,
   buildRelaySnapshot,
@@ -258,6 +334,7 @@ export function createRelayConnectionRuntime({
     normalizedRelayUrl: string,
     mode: 'connect' | 'reconnect'
   ): Promise<void> | null {
+    ensureSingleSocketRelayConnectGuard(relay);
     ensureRelayAuthFailureListener(relay);
     if (!relay || relay.connected || relay.status !== NDKRelayStatus.DISCONNECTED) {
       return null;
@@ -284,7 +361,7 @@ export function createRelayConnectionRuntime({
     );
 
     const connectPromise = relay
-      .connect(initialConnectTimeoutMs)
+      .connect(initialConnectTimeoutMs, false)
       .catch((error) => {
         relayConnectFailureCooldownUntilByUrl.set(
           normalizedRelayUrl,
@@ -332,7 +409,7 @@ export function createRelayConnectionRuntime({
         continue;
       }
 
-      ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
+      ndk.addExplicitRelay(normalizedRelayUrl, undefined, false);
       configuredRelayUrls.add(normalizedRelayUrl);
       const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
       const connectPromise = connectRelayForEnsureRelayConnections(

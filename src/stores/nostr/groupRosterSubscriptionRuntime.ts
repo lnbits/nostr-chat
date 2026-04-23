@@ -199,7 +199,7 @@ export function createGroupRosterSubscriptionRuntime({
       ...buildSubscriptionContextDetails(contexts),
     });
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const filters: NDKFilter = {
       kinds: [NDKKind.FollowSet],
       authors: contexts.map((context) => context.groupPublicKey),

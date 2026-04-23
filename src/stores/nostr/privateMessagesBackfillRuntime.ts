@@ -211,7 +211,7 @@ export function createPrivateMessagesBackfillRuntime({
       };
 
       try {
-        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
         logSubscription('private-messages', 'backfill-window-subscribe', {
           signature: options.signature,
           ...buildFilterSinceDetails(options.since),
@@ -310,7 +310,7 @@ export function createPrivateMessagesBackfillRuntime({
       };
 
       try {
-        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
         logSubscription('private-messages', 'epoch-history-subscribe', {
           subscriptionTargetType: 'epoch',
           groupChatPubkeys: [formatSubscriptionLogValue(options.groupPublicKey)],
@@ -414,7 +414,7 @@ export function createPrivateMessagesBackfillRuntime({
       };
 
       try {
-        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
         logSubscription('private-messages', 'private-message-recipient-subscribe', {
           recipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
           recipientCount: 1,

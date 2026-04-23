@@ -112,7 +112,7 @@ export function createMyRelayListRuntime({
       .filter((relay) => !relay.read && relay.write)
       .map((relay) => relay.url);
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     await relayListEvent.publishReplaceable(relaySet);
     updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
   }
@@ -170,7 +170,7 @@ export function createMyRelayListRuntime({
     await ensureRelayConnections(relayUrls);
 
     const user = await getLoggedInSignerUser();
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const relayListEvent = await ndk.fetchEvent(
       {
         kinds: [NDKKind.RelayList],
@@ -305,7 +305,7 @@ export function createMyRelayListRuntime({
       relaySnapshots: getRelaySnapshots(relayUrls),
     });
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const myRelayListFilters: NDKFilter = {
       kinds: [NDKKind.RelayList],
       authors: [loggedInPubkeyHex],

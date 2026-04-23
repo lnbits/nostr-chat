@@ -237,7 +237,7 @@ export function createPrivateContactListRuntime({
         ],
       });
 
-      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
       await listEvent.publishReplaceable(relaySet);
       updateStoredEventSinceFromCreatedAt(listEvent.created_at);
       markPrivateContactListEventApplied(listEvent);
@@ -269,7 +269,7 @@ export function createPrivateContactListRuntime({
         await ensureRelayConnections(relayUrls);
         await getLoggedInSignerUser();
 
-        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
         const listEvent = await ndk.fetchEvent(
           {
             kinds: [NDKKind.FollowSet],
@@ -370,7 +370,7 @@ export function createPrivateContactListRuntime({
       ...buildSubscriptionRelayDetails(relayUrls),
     });
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const privateContactListFilters: NDKFilter = {
       kinds: [NDKKind.FollowSet],
       authors: [loggedInPubkeyHex],

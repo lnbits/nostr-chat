@@ -340,6 +340,11 @@ describe('privateStateRuntime', () => {
 
     expect(deps.beginStartupStep).toHaveBeenCalledWith('private-preferences');
     expect(deps.ensureRelayConnections).toHaveBeenCalledWith(['wss://relay.example/']);
+    expect(ndkMocks.relaySetFromRelayUrls).toHaveBeenCalledWith(
+      ['wss://relay.example/'],
+      deps.ndk,
+      false
+    );
     expect(deps.decryptPrivatePreferencesContent).toHaveBeenCalledWith('encrypted-preferences');
     expect(deps.writePrivatePreferencesToStorage).toHaveBeenCalledWith({
       contactSecret: 'secret-value',

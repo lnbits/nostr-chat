@@ -426,6 +426,6 @@ describe('relay and subscription runtimes', () => {
 
     runtime.resetMyRelayListRuntimeState('logout');
     expect(subscriptionStop).toHaveBeenCalledTimes(1);
-    expect(relaySetSpy).toHaveBeenCalled();
+    expect(relaySetSpy).toHaveBeenCalledWith(['wss://relay.one/'], ndk, false);
   });
 });

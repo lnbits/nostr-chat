@@ -316,7 +316,7 @@ export function createPrivateStateRuntime({
       tags: [['d', PRIVATE_PREFERENCES_D_TAG]],
     });
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     await preferencesEvent.publishReplaceable(relaySet);
     updateStoredEventSinceFromCreatedAt(preferencesEvent.created_at);
   }
@@ -344,7 +344,7 @@ export function createPrivateStateRuntime({
         await ensureRelayConnections(relayUrls);
         await ensureLoggedInSignerUser();
 
-        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
         const preferencesEvent = await ndk.fetchEvent(
           {
             kinds: [PRIVATE_PREFERENCES_KIND],
@@ -800,7 +800,7 @@ export function createPrivateStateRuntime({
 
     await ensureRelayConnections(relayUrls);
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const listEvent = await ndk.fetchEvent(
       {
         kinds: [NDKKind.FollowSet],
@@ -845,7 +845,7 @@ export function createPrivateStateRuntime({
     );
     await ensureRelayConnections(context.relayUrls);
 
-    const relaySet = NDKRelaySet.fromRelayUrls(context.relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(context.relayUrls, ndk, false);
     const listEvent = await ndk.fetchEvent(
       {
         kinds: [NDKKind.FollowSet],
@@ -1453,7 +1453,7 @@ export function createPrivateStateRuntime({
 
     await ensureRelayConnections(relayUrls);
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const listEvent = await ndk.fetchEvent(
       {
         kinds: [NDKKind.FollowSet],
@@ -1531,7 +1531,7 @@ export function createPrivateStateRuntime({
     await ensureRelayConnections(relayUrls);
     await ensureLoggedInSignerUser();
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const events = await ndk.fetchEvents(
       {
         kinds: [PRIVATE_PREFERENCES_KIND],
@@ -1801,7 +1801,7 @@ export function createPrivateStateRuntime({
     await ensureRelayConnections(relayUrls);
     await ensureLoggedInSignerUser();
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const eventsByDTag = new Map<string, ContactCursorContent>();
 
     for (const dTagBatch of chunkValues(normalizedContactDTags, CONTACT_CURSOR_FETCH_BATCH_SIZE)) {
@@ -2111,7 +2111,7 @@ export function createPrivateStateRuntime({
       tags: [['d', dTag]],
     });
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     await cursorEvent.publishReplaceable(relaySet);
     updateStoredEventSinceFromCreatedAt(cursorEvent.created_at);
   }

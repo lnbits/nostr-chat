@@ -155,7 +155,7 @@ export function createRelayPublishRuntime({
       };
     }
 
-    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk, false);
 
     try {
       const publishedToRelays = await event.publish(relaySet);
@@ -228,7 +228,7 @@ export function createRelayPublishRuntime({
       };
     }
 
-    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk, false);
 
     try {
       const publishedToRelays = await event.publishReplaceable(relaySet);
