@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 const appBaseUrl = process.env.APP_BASE_URL ?? 'http://127.0.0.1:4100';
 const isCi = Boolean(process.env.CI);
+const configuredWorkers = Number.parseInt(process.env.PLAYWRIGHT_WORKERS ?? '', 10);
 const webServerCommand = `${JSON.stringify(process.execPath)} ./scripts/quasar.cjs dev --port 4100 --hostname 127.0.0.1`;
 
 export default defineConfig({
@@ -10,7 +11,8 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: isCi,
   retries: isCi ? 1 : 0,
-  workers: isCi ? 1 : 5,
+  workers:
+    Number.isInteger(configuredWorkers) && configuredWorkers > 0 ? configuredWorkers : isCi ? 1 : 2,
   expect: {
     timeout: 15_000,
   },

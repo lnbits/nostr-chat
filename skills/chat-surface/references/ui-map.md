@@ -66,9 +66,9 @@
   - Search indexing behavior
 - `e2e/contacts.spec.ts`
   - Contact and profile flows
-- `e2e/dm.spec.ts`
+- `e2e/dm/*.spec.ts`
   - Direct-message chat UX
-- `e2e/groups.spec.ts`
+- `e2e/groups/*.spec.ts`
   - Group chat UX
 - `e2e/auth.spec.ts`
   - Login and auth surface

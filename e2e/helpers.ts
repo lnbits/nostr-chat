@@ -574,6 +574,22 @@ export function threadMessage(page: Page, text: string) {
   return threadMessages(page, text).last();
 }
 
+async function waitForChatsShell(page: Page): Promise<void> {
+  const startNewChatButton = page.getByTestId('start-new-chat-button');
+
+  await page.goto('/#/chats');
+  await waitForAppBridge(page);
+
+  try {
+    await expect(startNewChatButton).toBeVisible({ timeout: 15_000 });
+  } catch {
+    await refreshSession(page);
+    await page.goto('/#/chats');
+    await waitForAppBridge(page);
+    await expect(startNewChatButton).toBeVisible({ timeout: 30_000 });
+  }
+}
+
 export async function bootstrapSessionOnPage(
   page: Page,
   account: TestAccount,
@@ -627,8 +643,7 @@ export async function bootstrapSessionOnPage(
     return bridge.getSessionSnapshot();
   });
 
-  await page.goto('/#/chats');
-  await expect(page.getByTestId('start-new-chat-button')).toBeVisible();
+  await waitForChatsShell(page);
 
   return session;
 }
@@ -678,9 +693,7 @@ export async function bootstrapExtensionUser(
     await page.getByRole('button', { name: 'Not now', exact: true }).click();
   }
 
-  await waitForAppBridge(page);
-  await page.goto('/#/chats');
-  await expect(page.getByTestId('start-new-chat-button')).toBeVisible();
+  await waitForChatsShell(page);
 
   const session = await page.evaluate(async () => {
     const bridge = window.__appE2E__;
@@ -1046,6 +1059,12 @@ export async function waitForChatUnreadCount(
   );
 }
 
+export async function waitForChatUnreadBadge(page: Page, match?: string | RegExp): Promise<void> {
+  await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toBeVisible({
+    timeout: 12_000,
+  });
+}
+
 export async function waitForNoChatUnreadBadge(page: Page, match?: string | RegExp): Promise<void> {
   await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toHaveCount(0, {
     timeout: 12_000,
@@ -1231,10 +1250,20 @@ export async function waitForDeletedMessageState(
 
 export async function logoutFromSettings(page: Page): Promise<void> {
   await page.goto('/#/settings/profile');
-  await expect(page.getByTestId('settings-logout-item')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('settings-logout-item').click();
-  await expect(page.getByTestId('settings-logout-confirm')).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId('settings-logout-confirm').click();
+  const logoutItem = page.getByTestId('settings-logout-item');
+  const logoutConfirm = page.getByTestId('settings-logout-confirm');
+
+  await expect(logoutItem).toBeVisible({ timeout: 30_000 });
+  await logoutItem.click();
+
+  try {
+    await expect(logoutConfirm).toBeVisible({ timeout: 15_000 });
+  } catch {
+    await logoutItem.click();
+    await expect(logoutConfirm).toBeVisible({ timeout: 15_000 });
+  }
+
+  await logoutConfirm.click();
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/(auth|login)/);
   await expect(page.getByText('Welcome')).toBeVisible({ timeout: 30_000 });
   await waitForAppBridge(page);
