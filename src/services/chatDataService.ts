@@ -894,6 +894,31 @@ class ChatDataService {
     return record ? toMessageRow(record) : null;
   }
 
+  async deleteMessageByEventId(eventId: string): Promise<boolean> {
+    const normalizedEventId = normalizeEventId(eventId);
+    if (!normalizedEventId) {
+      return false;
+    }
+
+    const existingMessage = await this.getMessageByEventId(normalizedEventId);
+    if (!existingMessage) {
+      return false;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readwrite');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    store.delete(existingMessage.id);
+
+    try {
+      await waitForTransaction(transaction);
+      return true;
+    } catch (error) {
+      console.error('Failed to delete message row from IndexedDB.', error);
+      return false;
+    }
+  }
+
   async findMessageByReactionEventId(eventId: string): Promise<MessageRow | null> {
     const normalizedEventId = normalizeEventId(eventId);
     if (!normalizedEventId) {

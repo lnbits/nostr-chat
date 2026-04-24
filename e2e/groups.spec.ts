@@ -14,20 +14,25 @@ import {
   openGroupEpochsTab,
   openGroupRelaysTab,
   openProfileRelaysSection,
+  openReplyPreview,
   openRequests,
   publishOwnProfile,
   readGroupEpochNumbers,
   reloadAndWaitForApp,
   removeGroupMemberAndPublish,
   removeGroupRelayAndPublish,
+  removeStoredMessageByEventId,
   replaceStoredGroupMembers,
+  replyToMessage,
   rotateGroupEpoch,
   sendMessage,
+  sendMessagesViaBridge,
   TEST_ACCOUNTS,
   threadMessage,
   updateStoredContactRelays,
   waitForAppBridge,
   waitForNoThreadMessage,
+  waitForReplyPreviewText,
   waitForThreadMessage,
 } from './helpers';
 
@@ -540,6 +545,87 @@ test('member restart restores group history from both the current and prior epoc
     await expectNoUnexpectedBrowserErrors([alice, bob]);
   } finally {
     await disposeUsers(alice, bob);
+  }
+});
+
+test('missing prior-epoch reply targets can still be repaired after restart', async ({
+  browser,
+}) => {
+  test.slow();
+
+  const owner = await bootstrapUser(browser, TEST_ACCOUNTS.groupReplyRepairOwner);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupReplyRepairBob);
+
+  try {
+    const groupPublicKey = await createGroup(owner.page, {
+      name: `Reply Repair Group ${Date.now()}`,
+      about: 'Prior epoch reply repair coverage',
+    });
+    const epochZeroMessage = `epoch-zero-reply-target-${Date.now()}`;
+    const epochOneReplyMessage = `epoch-one-reply-${Date.now()}`;
+    const epochZeroCreatedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
+    await addGroupMemberAndPublish(owner.page, bob.session.publicKey);
+    await openRequests(bob.page);
+    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page);
+
+    await navigateToChat(owner.page, groupPublicKey);
+    const [seededTarget] = await sendMessagesViaBridge(
+      owner.page,
+      groupPublicKey,
+      [epochZeroMessage],
+      {
+        createdAts: [epochZeroCreatedAt],
+      }
+    );
+    if (!seededTarget?.eventId) {
+      throw new Error('Expected the seeded group reply target to have an event id.');
+    }
+
+    await navigateToChat(bob.page, groupPublicKey);
+    await waitForThreadMessage(bob.page, epochZeroMessage, {
+      chatId: groupPublicKey,
+    });
+
+    await rotateGroupEpoch(owner.page, groupPublicKey, [bob.session.publicKey], [E2E_RELAY_URL]);
+    await removeStoredMessageByEventId(bob.page, groupPublicKey, seededTarget.eventId);
+    await waitForNoThreadMessage(bob.page, epochZeroMessage, {
+      chatId: groupPublicKey,
+      refresh: false,
+      timeoutMs: 6_000,
+    });
+
+    await navigateToChat(owner.page, groupPublicKey);
+    await waitForThreadMessage(owner.page, epochZeroMessage, {
+      chatId: groupPublicKey,
+    });
+    await replyToMessage(owner.page, epochZeroMessage, epochOneReplyMessage, {
+      chatId: groupPublicKey,
+    });
+    await waitForThreadMessage(bob.page, epochOneReplyMessage, {
+      chatId: groupPublicKey,
+    });
+
+    await reloadAndWaitForApp(bob.page);
+    await navigateToChat(bob.page, groupPublicKey);
+    await waitForThreadMessage(bob.page, epochOneReplyMessage, {
+      chatId: groupPublicKey,
+    });
+    await waitForReplyPreviewText(bob.page, epochOneReplyMessage, 'Unkown message.');
+
+    await openReplyPreview(bob.page, epochOneReplyMessage);
+    await expect(threadMessage(bob.page, epochZeroMessage)).toBeVisible({
+      timeout: 45_000,
+    });
+    await expect(
+      threadMessage(bob.page, epochOneReplyMessage).locator('.bubble__reply-preview-text')
+    ).toContainText(epochZeroMessage, {
+      timeout: 45_000,
+    });
+    await expectNoUnexpectedBrowserErrors([owner, bob]);
+  } finally {
+    await disposeUsers(owner, bob);
   }
 });
 

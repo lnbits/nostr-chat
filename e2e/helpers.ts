@@ -26,6 +26,15 @@ export interface BootstrappedUser {
   };
 }
 
+export interface SeededMessageSnapshot {
+  id: string;
+  chatId: string;
+  text: string;
+  sentAt: string;
+  authorPublicKey: string;
+  eventId: string | null;
+}
+
 export interface BootstrapUserOptions {
   relayUrls?: string[];
 }
@@ -262,6 +271,30 @@ export const TEST_ACCOUNTS = {
   pendingBob: {
     privateKey: 'd50a826f2c0aa3df6e6c5271779b2a35cc2310a74ef5c4a03fe9f2bcb724ca6f',
     displayName: 'Bob Pending',
+  },
+  replyRepairAlice: {
+    privateKey: '111122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000',
+    displayName: 'Alice Reply Repair',
+  },
+  replyRepairBob: {
+    privateKey: '0000ffffeeeeddddccccbbbbaaaa999988887777666655554444333322221111',
+    displayName: 'Bob Reply Repair',
+  },
+  reactionRepairAlice: {
+    privateKey: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    displayName: 'Alice Reaction Repair',
+  },
+  reactionRepairBob: {
+    privateKey: 'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321',
+    displayName: 'Bob Reaction Repair',
+  },
+  groupReplyRepairOwner: {
+    privateKey: '0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210',
+    displayName: 'Owner Reply Repair',
+  },
+  groupReplyRepairBob: {
+    privateKey: '89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567',
+    displayName: 'Bob Group Reply Repair',
   },
   groupAddOwner: {
     privateKey: '9c7d9d7d4be1da67a61a15403d5a33ad655b2671a6ab33096a3b0a286cc94601',
@@ -886,15 +919,15 @@ export async function sendMessagesViaBridge(
   options: {
     createdAts?: string[];
   } = {}
-): Promise<void> {
-  await page.evaluate(
+): Promise<SeededMessageSnapshot[]> {
+  return page.evaluate(
     async ({ nextChatId, nextTexts, nextCreatedAts }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {
         throw new Error('E2E bridge is not available.');
       }
 
-      await bridge.sendMessages({
+      return bridge.sendMessages({
         chatId: nextChatId,
         texts: nextTexts,
         createdAts: nextCreatedAts,
@@ -906,6 +939,32 @@ export async function sendMessagesViaBridge(
       nextCreatedAts: options.createdAts ?? [],
     }
   );
+}
+
+export async function removeStoredMessageByEventId(
+  page: Page,
+  chatId: string,
+  eventId: string
+): Promise<void> {
+  const removed = await page.evaluate(
+    async ({ nextChatId, nextEventId }) => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      return bridge.removeStoredMessageByEventId({
+        chatId: nextChatId,
+        eventId: nextEventId,
+      });
+    },
+    {
+      nextChatId: chatId,
+      nextEventId: eventId,
+    }
+  );
+
+  expect(removed).toBe(true);
 }
 
 export async function openThreadSearch(page: Page): Promise<void> {
@@ -1067,6 +1126,37 @@ export async function waitForReaction(
   }
 
   await expect(reaction).toBeVisible({ timeout: 12_000 });
+}
+
+export async function replyToMessage(
+  page: Page,
+  targetText: string,
+  replyText: string,
+  options: {
+    chatId?: string;
+  } = {}
+): Promise<void> {
+  await threadMessage(page, targetText).locator('.bubble').click();
+  await page.getByText('Reply', { exact: true }).click();
+  await expect(page.locator('.composer__reply')).toBeVisible({ timeout: 12_000 });
+  await sendMessage(page, replyText, options);
+}
+
+export async function openReplyPreview(page: Page, replyText: string): Promise<void> {
+  await threadMessage(page, replyText).locator('.bubble__reply-preview').click();
+}
+
+export async function waitForReplyPreviewText(
+  page: Page,
+  replyText: string,
+  previewText: string
+): Promise<void> {
+  await expect(threadMessage(page, replyText).locator('.bubble__reply-preview-text')).toContainText(
+    previewText,
+    {
+      timeout: 12_000,
+    }
+  );
 }
 
 export async function deleteMessage(page: Page, text: string): Promise<void> {
