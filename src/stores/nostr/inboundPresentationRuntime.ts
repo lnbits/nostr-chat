@@ -23,6 +23,7 @@ interface InboundPresentationRuntimeDeps {
   formatSubscriptionLogValue: (value: string | null | undefined) => string | null;
   getLoggedInPublicKeyHex: () => string | null;
   getVisibleChatId: () => string | null;
+  isAppForeground: Ref<boolean>;
   isRestoringStartupState: Ref<boolean>;
   logDeveloperTrace: (
     level: 'info' | 'warn' | 'error',
@@ -37,6 +38,7 @@ export function createInboundPresentationRuntime({
   formatSubscriptionLogValue,
   getLoggedInPublicKeyHex,
   getVisibleChatId,
+  isAppForeground,
   isRestoringStartupState,
   logDeveloperTrace,
   normalizeEventId,
@@ -150,15 +152,7 @@ export function createInboundPresentationRuntime({
       return true;
     }
 
-    if (typeof document === 'undefined') {
-      return false;
-    }
-
-    return (
-      document.visibilityState === 'visible' &&
-      document.hasFocus() &&
-      getVisibleChatId() === chatPubkey
-    );
+    return isAppForeground.value && getVisibleChatId() === chatPubkey;
   }
 
   async function shouldNotifyForAcceptedChatOnly(

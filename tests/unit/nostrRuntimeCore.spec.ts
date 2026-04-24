@@ -616,12 +616,14 @@ describe('nostr runtime core logic', () => {
     };
     process.env.VUE_ROUTER_BASE = '/app';
     process.env.VUE_ROUTER_MODE = 'hash';
+    const isAppForeground = ref(true);
 
     const runtime = createInboundPresentationRuntime({
       formatSubscriptionLogValue: (value) =>
         value && value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : (value ?? null),
       getLoggedInPublicKeyHex: () => PUBKEY_A,
       getVisibleChatId: () => PUBKEY_A,
+      isAppForeground,
       isRestoringStartupState: ref(false),
       logDeveloperTrace: vi.fn(),
       normalizeEventId: (value) =>
@@ -680,9 +682,7 @@ describe('nostr runtime core logic', () => {
     });
     expect(notifications).toHaveLength(0);
 
-    (globalThis as { document: { hasFocus: () => boolean } }).document.hasFocus = vi.fn(
-      () => false
-    );
+    isAppForeground.value = false;
     runtime.showIncomingMessageBrowserNotification({
       chatPubkey: PUBKEY_B,
       title: 'New message',

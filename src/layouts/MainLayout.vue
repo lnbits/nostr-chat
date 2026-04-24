@@ -78,6 +78,8 @@ import {
   loadSettingsPage
 } from 'src/router/pageLoaders';
 import { useChatStore } from 'src/stores/chatStore';
+import { useNostrStore } from 'src/stores/nostrStore';
+import { useRelayStore } from 'src/stores/relayStore';
 import { formatUnreadChatBadgeLabel } from 'src/utils/unreadChatBadge';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -85,6 +87,8 @@ const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
+const nostrStore = useNostrStore();
+const relayStore = useRelayStore();
 const isMobile = computed(() => $q.screen.lt.md);
 
 type NavigationSection = 'chats' | 'contacts' | 'settings';
@@ -114,31 +118,6 @@ const routeLoaders: Record<NavigationSection, RouteLoader> = {
 const unreadChatCount = computed(() => chatStore.unreadChatCount);
 const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadChatCount.value));
 
-function readIsDocumentVisible(): boolean {
-  if (typeof document === 'undefined') {
-    return false;
-  }
-
-  return document.visibilityState === 'visible';
-}
-
-function readIsWindowFocused(): boolean {
-  if (typeof document === 'undefined') {
-    return false;
-  }
-
-  return typeof document.hasFocus === 'function' ? document.hasFocus() : true;
-}
-
-const isDocumentVisible = ref(readIsDocumentVisible());
-const isWindowFocused = ref(readIsWindowFocused());
-const isAppForeground = computed(() => isDocumentVisible.value && isWindowFocused.value);
-
-function syncAppForegroundState(): void {
-  isDocumentVisible.value = readIsDocumentVisible();
-  isWindowFocused.value = readIsWindowFocused();
-}
-
 function hasActivePubkeyParam(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.some((entry) => typeof entry === 'string' && entry.trim().length > 0);
@@ -167,11 +146,7 @@ const showMobileNav = computed(() => {
   return false;
 });
 
-const visibleChatId = computed(() => {
-  if (!isAppForeground.value) {
-    return null;
-  }
-
+const routeChatId = computed(() => {
   if (route.name !== 'chats') {
     return null;
   }
@@ -185,9 +160,9 @@ const visibleChatId = computed(() => {
 });
 
 watch(
-  visibleChatId,
+  routeChatId,
   (chatId) => {
-    chatStore.setVisibleChatId(chatId);
+    nostrStore.setAppLifecycleRouteChatId(chatId);
   },
   { immediate: true }
 );
@@ -211,10 +186,7 @@ let mobilePreloadTimeoutId: number | null = null;
 let startupRestoreFrameId: number | null = null;
 
 onMounted(() => {
-  syncAppForegroundState();
-  document.addEventListener('visibilitychange', syncAppForegroundState);
-  window.addEventListener('focus', syncAppForegroundState);
-  window.addEventListener('blur', syncAppForegroundState);
+  nostrStore.startAppLifecycleRuntime();
 
   startupRestoreFrameId = window.requestAnimationFrame(() => {
     startupRestoreFrameId = null;
@@ -232,9 +204,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener('visibilitychange', syncAppForegroundState);
-  window.removeEventListener('focus', syncAppForegroundState);
-  window.removeEventListener('blur', syncAppForegroundState);
+  nostrStore.stopAppLifecycleRuntime();
   removeAfterEachHook();
 
   if (mobilePreloadTimeoutId !== null) {
@@ -248,13 +218,8 @@ onBeforeUnmount(() => {
 
 async function restoreStartupState(): Promise<void> {
   try {
-    const [{ useNostrStore }, { useRelayStore }] = await Promise.all([
-      import('src/stores/nostrStore'),
-      import('src/stores/relayStore')
-    ]);
-    const relayStore = useRelayStore();
     relayStore.init();
-    await useNostrStore().restoreStartupState(relayStore.relays);
+    await nostrStore.restoreStartupState(relayStore.relays);
   } catch (error) {
     console.error('Failed to restore app state on startup', error);
   }

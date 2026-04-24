@@ -58,10 +58,6 @@ function hasWindow(): boolean {
   return typeof window !== 'undefined';
 }
 
-function hasDocument(): boolean {
-  return typeof document !== 'undefined';
-}
-
 function isBrowserOffline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
@@ -152,10 +148,6 @@ export function createReconnectHealingRuntime({
   let reconnectHealingLastStartedAt = 0;
   let reconnectHealingLastBlurAt = 0;
   let reconnectHealingLastHiddenAt = 0;
-  let hasReconnectHealingBlurListener = false;
-  let hasReconnectHealingOnlineListener = false;
-  let hasReconnectHealingFocusListener = false;
-  let hasReconnectHealingVisibilityListener = false;
 
   function clearReconnectHealingTimer(): void {
     if (reconnectHealingTimeoutId !== null) {
@@ -180,7 +172,7 @@ export function createReconnectHealingRuntime({
     }
   }
 
-  function handleReconnectHealingBrowserOnline(): void {
+  function notifyBrowserOnline(): void {
     if (!getLoggedInPublicKeyHex()) {
       return;
     }
@@ -188,7 +180,7 @@ export function createReconnectHealingRuntime({
     queueReconnectHealing('browser-online');
   }
 
-  function handleReconnectHealingWindowBlur(): void {
+  function notifyWindowBlur(): void {
     reconnectHealingLastBlurAt = Date.now();
   }
 
@@ -198,7 +190,7 @@ export function createReconnectHealingRuntime({
     );
   }
 
-  function handleReconnectHealingWindowFocus(): void {
+  function notifyWindowFocus(): void {
     if (!getLoggedInPublicKeyHex()) {
       return;
     }
@@ -211,13 +203,12 @@ export function createReconnectHealingRuntime({
     queueReconnectHealing('window-focus');
   }
 
-  function handleReconnectHealingVisibilityChange(): void {
-    if (document.visibilityState === 'hidden') {
-      reconnectHealingLastHiddenAt = Date.now();
-      return;
-    }
+  function notifyVisibilityHidden(): void {
+    reconnectHealingLastHiddenAt = Date.now();
+  }
 
-    if (!getLoggedInPublicKeyHex() || document.visibilityState !== 'visible') {
+  function notifyVisibilityRegain(): void {
+    if (!getLoggedInPublicKeyHex()) {
       return;
     }
 
@@ -226,32 +217,6 @@ export function createReconnectHealingRuntime({
     }
 
     queueReconnectHealing('visibility-regain');
-  }
-
-  function startReconnectHealing(): void {
-    if (!hasWindow()) {
-      return;
-    }
-
-    if (!hasReconnectHealingOnlineListener) {
-      window.addEventListener('online', handleReconnectHealingBrowserOnline);
-      hasReconnectHealingOnlineListener = true;
-    }
-
-    if (!hasReconnectHealingBlurListener) {
-      window.addEventListener('blur', handleReconnectHealingWindowBlur);
-      hasReconnectHealingBlurListener = true;
-    }
-
-    if (!hasReconnectHealingFocusListener) {
-      window.addEventListener('focus', handleReconnectHealingWindowFocus);
-      hasReconnectHealingFocusListener = true;
-    }
-
-    if (hasDocument() && !hasReconnectHealingVisibilityListener) {
-      document.addEventListener('visibilitychange', handleReconnectHealingVisibilityChange);
-      hasReconnectHealingVisibilityListener = true;
-    }
   }
 
   function queueReconnectHealing(
@@ -454,34 +419,18 @@ export function createReconnectHealingRuntime({
     reconnectHealingLastBlurAt = 0;
     reconnectHealingLastHiddenAt = 0;
     setIsReconnectHealing(false);
-
-    if (hasWindow() && hasReconnectHealingOnlineListener) {
-      window.removeEventListener('online', handleReconnectHealingBrowserOnline);
-      hasReconnectHealingOnlineListener = false;
-    }
-
-    if (hasWindow() && hasReconnectHealingBlurListener) {
-      window.removeEventListener('blur', handleReconnectHealingWindowBlur);
-      hasReconnectHealingBlurListener = false;
-    }
-
-    if (hasWindow() && hasReconnectHealingFocusListener) {
-      window.removeEventListener('focus', handleReconnectHealingWindowFocus);
-      hasReconnectHealingFocusListener = false;
-    }
-
-    if (hasDocument() && hasReconnectHealingVisibilityListener) {
-      document.removeEventListener('visibilitychange', handleReconnectHealingVisibilityChange);
-      hasReconnectHealingVisibilityListener = false;
-    }
   }
 
   return {
+    notifyBrowserOnline,
     notifyRelayConnected,
     notifyRelayListChanged,
+    notifyVisibilityHidden,
+    notifyVisibilityRegain,
+    notifyWindowBlur,
+    notifyWindowFocus,
     queueReconnectHealing,
     resetReconnectHealingRuntimeState,
     runReconnectHealing,
-    startReconnectHealing,
   };
 }

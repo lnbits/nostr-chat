@@ -14,6 +14,7 @@ import {
 } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
+import { createAppLifecycleRuntime } from 'src/stores/nostr/appLifecycleRuntime';
 import { createAuthIdentityRuntime } from 'src/stores/nostr/authIdentityRuntime';
 import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import {
@@ -161,6 +162,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const privateMessagesSubscriptionLastEventId = ref<string | null>(null);
   const privateMessagesSubscriptionLastEventCreatedAt = ref<number | null>(null);
   const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
+  const isAppForeground = ref(false);
   const isReconnectHealing = ref(false);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
@@ -217,9 +219,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
   let queueOutboundMessageReplayRuntime: (reason: string, delayMs?: number) => void = () => {};
   let notifyOutboundMessageReplayRelayConnectedRuntime: () => void = () => {};
+  let notifyReconnectHealingBrowserOnlineRuntime: () => void = () => {};
+  let notifyReconnectHealingVisibilityHiddenRuntime: () => void = () => {};
+  let notifyReconnectHealingVisibilityRegainRuntime: () => void = () => {};
+  let notifyReconnectHealingWindowBlurRuntime: () => void = () => {};
+  let notifyReconnectHealingWindowFocusRuntime: () => void = () => {};
   let notifyReconnectHealingRelayConnectedRuntime: () => void = () => {};
   let notifyReconnectHealingRelayListChangedRuntime: () => void = () => {};
+  let resetAppLifecycleRuntimeStateRuntime: () => void = () => {};
   let resetReconnectHealingRuntimeStateRuntime: () => void = () => {};
+  let setAppLifecycleRouteChatIdRuntime: (chatId: string | null) => void = () => {};
+  let startAppLifecycleRuntimeRuntime: () => void = () => {};
   let resetOutboundMessageReplayRuntimeStateRuntime: () => void = () => {};
   let startOutboundMessageReplayRuntime: () => Promise<void> = async () => {};
   let getOrCreateSignerRuntime: () => Promise<NDKSigner> = async () => {
@@ -754,6 +764,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   const {
+    resetAppLifecycleRuntimeState: resetAppLifecycleRuntimeStateImpl,
+    setRouteChatId: setAppLifecycleRouteChatIdImpl,
+    startAppLifecycleRuntime: startAppLifecycleRuntimeImpl,
+  } = createAppLifecycleRuntime({
+    notifyReconnectHealingBrowserOnline: () => {
+      notifyReconnectHealingBrowserOnlineRuntime();
+    },
+    notifyReconnectHealingVisibilityHidden: () => {
+      notifyReconnectHealingVisibilityHiddenRuntime();
+    },
+    notifyReconnectHealingVisibilityRegain: () => {
+      notifyReconnectHealingVisibilityRegainRuntime();
+    },
+    notifyReconnectHealingWindowBlur: () => {
+      notifyReconnectHealingWindowBlurRuntime();
+    },
+    notifyReconnectHealingWindowFocus: () => {
+      notifyReconnectHealingWindowFocusRuntime();
+    },
+    setIsAppForeground: (value) => {
+      isAppForeground.value = value;
+    },
+    setVisibleChatId: (chatId) => {
+      chatStore.setVisibleChatId(chatId);
+    },
+  });
+  resetAppLifecycleRuntimeStateRuntime = resetAppLifecycleRuntimeStateImpl;
+  setAppLifecycleRouteChatIdRuntime = setAppLifecycleRouteChatIdImpl;
+  startAppLifecycleRuntimeRuntime = startAppLifecycleRuntimeImpl;
+
+  const {
     buildInboundTraceDetails,
     deriveChatName,
     logInboundEvent,
@@ -763,6 +804,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     formatSubscriptionLogValue,
     getLoggedInPublicKeyHex,
     getVisibleChatId: () => chatStore.visibleChatId,
+    isAppForeground,
     isRestoringStartupState,
     logDeveloperTrace,
     normalizeEventId,
@@ -1744,10 +1786,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
   startOutboundMessageReplayRuntime = startOutboundMessageReplayImpl;
 
   const {
+    notifyBrowserOnline: notifyReconnectHealingBrowserOnlineImpl,
     notifyRelayConnected: notifyReconnectHealingRelayConnectedImpl,
     notifyRelayListChanged: notifyReconnectHealingRelayListChangedImpl,
+    notifyVisibilityHidden: notifyReconnectHealingVisibilityHiddenImpl,
+    notifyVisibilityRegain: notifyReconnectHealingVisibilityRegainImpl,
+    notifyWindowBlur: notifyReconnectHealingWindowBlurImpl,
+    notifyWindowFocus: notifyReconnectHealingWindowFocusImpl,
     resetReconnectHealingRuntimeState: resetReconnectHealingRuntimeStateImpl,
-    startReconnectHealing: startReconnectHealingImpl,
   } = createReconnectHealingRuntime({
     getLoggedInPublicKeyHex,
     getVisibleChatTarget: () => {
@@ -1795,10 +1841,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
       isReconnectHealing.value = value;
     },
   });
+  notifyReconnectHealingBrowserOnlineRuntime = notifyReconnectHealingBrowserOnlineImpl;
+  notifyReconnectHealingVisibilityHiddenRuntime = notifyReconnectHealingVisibilityHiddenImpl;
+  notifyReconnectHealingVisibilityRegainRuntime = notifyReconnectHealingVisibilityRegainImpl;
+  notifyReconnectHealingWindowBlurRuntime = notifyReconnectHealingWindowBlurImpl;
+  notifyReconnectHealingWindowFocusRuntime = notifyReconnectHealingWindowFocusImpl;
   notifyReconnectHealingRelayConnectedRuntime = notifyReconnectHealingRelayConnectedImpl;
   notifyReconnectHealingRelayListChangedRuntime = notifyReconnectHealingRelayListChangedImpl;
   resetReconnectHealingRuntimeStateRuntime = resetReconnectHealingRuntimeStateImpl;
-  startReconnectHealingImpl();
 
   const {
     getDeveloperDiagnosticsSnapshot,
@@ -1875,6 +1925,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshDeveloperPendingQueues,
     refreshPrivateMessages,
     getRelayConnectionState,
+    isAppForeground,
     isReconnectHealing,
     isRestoringStartupState,
     listDeveloperTraceEntries,
@@ -1901,6 +1952,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restorePrivateContactList,
     restorePrivatePreferences,
     restoreStartupState,
+    setAppLifecycleRouteChatId: (chatId: string | null) => {
+      setAppLifecycleRouteChatIdRuntime(chatId);
+    },
     reconnectAllDeveloperRelays,
     reconnectDeveloperRelay,
     repairMissingMessageDependency: (
@@ -1922,6 +1976,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     subscribeMyRelayListUpdates,
     subscribePrivateContactListUpdates,
     subscribePrivateMessagesForLoggedInUser: subscribePrivateMessagesForLoggedInUserRuntime,
+    startAppLifecycleRuntime: () => {
+      startAppLifecycleRuntimeRuntime();
+    },
+    stopAppLifecycleRuntime: () => {
+      resetAppLifecycleRuntimeStateRuntime();
+    },
     updateLoggedInUserRelayList,
     setDeveloperDiagnosticsEnabled,
     syncLoggedInContactProfile,

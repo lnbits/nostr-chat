@@ -17,15 +17,7 @@ describe('reconnectHealingRuntime', () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.stubGlobal('window', {
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    });
-    vi.stubGlobal('document', {
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      visibilityState: 'visible',
-    });
+    vi.stubGlobal('window', {});
     vi.stubGlobal('navigator', {
       onLine: true,
     });
@@ -164,36 +156,16 @@ describe('reconnectHealingRuntime', () => {
     );
   });
 
-  it('registers browser listeners and runs healing on window focus', async () => {
+  it('runs healing when a window-focus notifier follows a long enough background period', async () => {
     const { refreshDeveloperPendingQueues, runtime } = createRuntime();
 
-    runtime.startReconnectHealing();
-    const blurHandler = vi
-      .mocked(window.addEventListener)
-      .mock.calls.find(([eventName]) => eventName === 'blur')?.[1] as (() => void) | undefined;
-    const focusHandler = vi
-      .mocked(window.addEventListener)
-      .mock.calls.find(([eventName]) => eventName === 'focus')?.[1] as (() => void) | undefined;
-
-    expect(window.addEventListener).toHaveBeenCalledWith('online', expect.any(Function));
-    expect(window.addEventListener).toHaveBeenCalledWith('blur', expect.any(Function));
-    expect(window.addEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
-    expect(document.addEventListener).toHaveBeenCalledWith(
-      'visibilitychange',
-      expect.any(Function)
-    );
-    expect(blurHandler).toBeTypeOf('function');
-    expect(focusHandler).toBeTypeOf('function');
-
-    blurHandler?.();
+    runtime.notifyWindowBlur();
     await vi.advanceTimersByTimeAsync(3000);
-    focusHandler?.();
+    runtime.notifyWindowFocus();
     await vi.advanceTimersByTimeAsync(750);
     await vi.runAllTicks();
     runtime.resetReconnectHealingRuntimeState();
 
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
-    expect(window.removeEventListener).toHaveBeenCalledWith('blur', blurHandler);
-    expect(window.removeEventListener).toHaveBeenCalledWith('focus', focusHandler);
   });
 });
