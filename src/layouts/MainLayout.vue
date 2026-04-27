@@ -77,6 +77,7 @@ import {
   loadContactsPage,
   loadSettingsPage
 } from 'src/router/pageLoaders';
+import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
@@ -184,9 +185,21 @@ const removeAfterEachHook = router.afterEach(() => {
 });
 let mobilePreloadTimeoutId: number | null = null;
 let startupRestoreFrameId: number | null = null;
+let removeDesktopNotificationOpenListener: (() => void) | null = null;
 
 onMounted(() => {
   nostrStore.startAppLifecycleRuntime();
+
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.desktopRuntime?.onOpenChatFromNotification === 'function'
+  ) {
+    removeDesktopNotificationOpenListener = window.desktopRuntime.onOpenChatFromNotification(
+      (chatPubkey) => {
+        void openChatFromDesktopNotification(chatPubkey);
+      }
+    );
+  }
 
   startupRestoreFrameId = window.requestAnimationFrame(() => {
     startupRestoreFrameId = null;
@@ -206,6 +219,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   nostrStore.stopAppLifecycleRuntime();
   removeAfterEachHook();
+  removeDesktopNotificationOpenListener?.();
+  removeDesktopNotificationOpenListener = null;
 
   if (mobilePreloadTimeoutId !== null) {
     window.clearTimeout(mobilePreloadTimeoutId);
@@ -234,6 +249,29 @@ async function preloadMobileSections(): Promise<void> {
   const failedCount = results.filter((result) => result.status === 'rejected').length;
   if (failedCount > 0) {
     console.warn(`Failed to preload ${failedCount} mobile navigation page(s).`);
+  }
+}
+
+async function openChatFromDesktopNotification(chatPubkey: string): Promise<void> {
+  const normalizedChatPubkey = inputSanitizerService.normalizeHexKey(chatPubkey);
+  if (!normalizedChatPubkey) {
+    console.warn('Ignored desktop notification open request for invalid chat pubkey.');
+    return;
+  }
+
+  if (route.name === 'chats' && routeChatId.value === normalizedChatPubkey) {
+    return;
+  }
+
+  try {
+    await router.push({
+      name: 'chats',
+      params: {
+        pubkey: normalizedChatPubkey,
+      },
+    });
+  } catch (error) {
+    reportUiError('Failed to open chat from desktop notification', error);
   }
 }
 

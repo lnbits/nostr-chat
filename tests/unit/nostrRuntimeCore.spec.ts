@@ -581,6 +581,7 @@ describe('nostr runtime core logic', () => {
   it('builds inbound message presentation details and browser notifications', async () => {
     const localStorage = createMockStorage();
     const assign = vi.fn();
+    const desktopNotification = vi.fn();
     const focus = vi.fn();
     const notifications: Array<{
       title: string;
@@ -603,6 +604,13 @@ describe('nostr runtime core logic', () => {
 
     (globalThis as Record<string, unknown>).window = {
       Notification: FakeNotification,
+      desktopRuntime: {
+        isElectron: true,
+        platform: 'darwin',
+        setUnreadChatBadge: vi.fn(),
+        showIncomingMessageNotification: desktopNotification,
+        onOpenChatFromNotification: vi.fn(() => () => {}),
+      },
       focus,
       localStorage: localStorage.api,
       location: {
@@ -689,8 +697,23 @@ describe('nostr runtime core logic', () => {
       messageText: 'x'.repeat(200),
       iconUrl: 'https://example.com/icon.png',
     });
+    expect(desktopNotification).toHaveBeenCalledWith({
+      chatPubkey: PUBKEY_B,
+      title: 'New message',
+      body: `${'x'.repeat(137)}...`,
+    });
+    expect(notifications).toHaveLength(0);
+
+    delete (window as typeof window & { desktopRuntime?: unknown }).desktopRuntime;
+    runtime.showIncomingMessageBrowserNotification({
+      chatPubkey: PUBKEY_B,
+      title: 'Browser fallback',
+      messageText: 'fallback message',
+      iconUrl: 'https://example.com/icon.png',
+    });
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]?.options.body).toBe(`${'x'.repeat(137)}...`);
+    expect(notifications[0]?.title).toBe('Browser fallback');
+    expect(notifications[0]?.options.body).toBe('fallback message');
     notifications[0]?.onclick?.();
     expect(focus).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledWith(

@@ -43,6 +43,7 @@ build/Release
 node_modules/
 .quasar/
 .gradle-android/
+.android-release/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)

@@ -1,6 +1,7 @@
 import {
   getBrowserNotificationPermission,
   isBrowserNotificationSupported,
+  readBrowserNotificationsPreference,
   requestBrowserNotificationsAfterLogin,
   saveBrowserNotificationsPreference,
 } from 'src/utils/browserNotificationPreference';
@@ -35,6 +36,21 @@ export function useBrowserNotificationsLoginPrompt() {
     }
 
     const permission = getBrowserNotificationPermission();
+    if (permission === 'native') {
+      if (readBrowserNotificationsPreference()) {
+        return;
+      }
+
+      const shouldEnableNotifications = await openDialog();
+      if (!shouldEnableNotifications) {
+        saveBrowserNotificationsPreference(false);
+        return;
+      }
+
+      await requestBrowserNotificationsAfterLogin();
+      return;
+    }
+
     if (permission === 'granted') {
       saveBrowserNotificationsPreference(true);
       return;

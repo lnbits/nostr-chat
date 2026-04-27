@@ -90,3 +90,29 @@ Expand chaos testing. The next missing tests are long offline periods, relay fla
 
 If We Prioritize Ruthlessly
 Start with durable outbox + auto replay, then targeted gap repair on resume/reconnect, then logical-message dedupe + multi-device convergence. Those three would move nostr-chat the most toward Telegram’s “it just catches up and does the right thing” feel.
+
+Do you want to rerun the local groups Playwright check with Docker and Node explicitly on PATH?
+export PATH=/Applications/Docker.app/Contents/Resources/bin:/Users/moto/.nvm/versions/node/v24.15.0/bin:$PATH; /Users/moto/.nvm/versions/node/v24.15.0/bin/node ./scripts/run-e2e-local.cjs e2e/groups.spec.ts
+
+
+
+So I’d use this order now:
+
+Shared lifecycle/runtime consolidation
+Pull foreground/background/resume logic into one runtime instead of splitting it between MainLayout, reconnect healing, and notification suppression.
+Add a clean cross-platform app-state API for web, electron, and capacitor.
+Native notifications
+Electron desktop notifications with click-to-open-chat.
+Keep browser notifications as-is, but route them through the same shared policy.
+This is now more important than “browser hidden-tab notifications” because that part already exists.
+Android native app-state + notifications
+Wire Capacitor app lifecycle into the shared runtime.
+Add Android notification channels, tap-to-open-chat, and badge/unread behavior.
+I’d prioritize this before tray work if Android matters.
+Push wakeups / background delivery
+Android push first via FCM-style wakeups.
+Web service worker/push later.
+This replaces the old generic “service worker + push backend” phase, because Android is the more realistic first target here.
+Tray / minimize-to-tray as an optional desktop UX pass
+I would no longer keep tray bundled with Electron notifications by default.
+Notifications are core reliability UX; tray is useful, but more opinionated.

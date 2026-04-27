@@ -740,9 +740,80 @@ export async function waitForAppBridge(page: Page): Promise<void> {
   });
 }
 
+function isRetryableReloadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('ERR_CONNECTION_REFUSED') ||
+    message.includes('ERR_CONNECTION_RESET') ||
+    message.includes('ERR_ABORTED')
+  );
+}
+
+function isRetryableExecutionContextError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('Execution context was destroyed') ||
+    message.includes('Cannot find context with specified id') ||
+    message.includes('Most likely because of a navigation')
+  );
+}
+
+async function evaluateWithAppBridgeRetry<Arg, Result>(
+  page: Page,
+  pageFunction: (arg: Arg) => Promise<Result> | Result,
+  arg: Arg
+): Promise<Result> {
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await waitForAppBridge(page);
+
+    try {
+      return await page.evaluate(pageFunction as never, arg);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableExecutionContextError(error) || attempt === 2) {
+        throw error;
+      }
+
+      await page.waitForTimeout(250 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to evaluate in the app bridge context.');
+}
+
 export async function reloadAndWaitForApp(page: Page): Promise<void> {
-  await page.reload();
-  await waitForAppBridge(page);
+  const currentUrl = page.url();
+  const fallbackUrl = currentUrl && currentUrl !== 'about:blank' ? currentUrl : '/';
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      if (attempt === 0) {
+        await page.reload();
+      } else {
+        await page.goto(fallbackUrl, {
+          waitUntil: 'load',
+        });
+      }
+      await waitForAppBridge(page);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableReloadError(error) || attempt === 2) {
+        throw error;
+      }
+
+      await page.waitForTimeout(500 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to reload and wait for the app.');
 }
 
 export async function expectNoUnexpectedBrowserErrors(
@@ -761,7 +832,8 @@ export async function expectNoUnexpectedBrowserErrors(
 }
 
 export async function refreshSession(page: Page, chatId?: string): Promise<void> {
-  await page.evaluate(
+  await evaluateWithAppBridgeRetry(
+    page,
     async ({ nextChatId }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {
@@ -933,7 +1005,8 @@ export async function sendMessagesViaBridge(
     createdAts?: string[];
   } = {}
 ): Promise<SeededMessageSnapshot[]> {
-  return page.evaluate(
+  return evaluateWithAppBridgeRetry(
+    page,
     async ({ nextChatId, nextTexts, nextCreatedAts }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {
@@ -959,7 +1032,8 @@ export async function removeStoredMessageByEventId(
   chatId: string,
   eventId: string
 ): Promise<void> {
-  const removed = await page.evaluate(
+  const removed = await evaluateWithAppBridgeRetry(
+    page,
     async ({ nextChatId, nextEventId }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {

@@ -1,4 +1,5 @@
 import NDK from '@nostr-dev-kit/ndk';
+import { MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS } from 'src/stores/nostr/constants';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -205,6 +206,59 @@ describe('privateMessagesBackfillRuntime', () => {
       expect.any(Object),
       expect.any(Object)
     );
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('promotes reply-open repairs to the widest history window immediately', async () => {
+    vi.setSystemTime(new Date('2026-04-24T12:00:00.000Z'));
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      public_key: GROUP_CHAT_PUBLIC_KEY,
+      type: 'group',
+      meta: {},
+    });
+
+    const referenceCreatedAt = Math.floor(Date.now() / 1000);
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      expect(requestLabel).toBe('private-messages-epoch-history');
+      expect(filters).toEqual(
+        expect.objectContaining({
+          '#p': [GROUP_EPOCH_A],
+          since:
+            referenceCreatedAt -
+            MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS[
+              MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS.length - 1
+            ],
+          until: referenceCreatedAt,
+        })
+      );
+      Promise.resolve().then(() => {
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { runtime } = createRuntime({
+      subscribeWithReqLogging,
+      resolveGroupChatEpochEntries: () => [
+        {
+          epoch_public_key: GROUP_EPOCH_A,
+        },
+      ],
+    });
+
+    await expect(
+      runtime.repairMissingMessageDependency(GROUP_CHAT_PUBLIC_KEY, TARGET_EVENT_ID, {
+        reason: 'reply-open',
+        immediate: true,
+        force: true,
+        referenceCreatedAt,
+      })
+    ).resolves.toBe(false);
+
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
 
     runtime.resetPrivateMessagesBackfillRuntimeState();
   });

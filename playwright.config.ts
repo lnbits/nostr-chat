@@ -28,9 +28,9 @@ export default defineConfig({
       height: 960,
     },
     testIdAttribute: 'data-testid',
-    trace: 'on',
-    screenshot: 'on',
-    video: 'on',
+    trace: isCi ? 'on-first-retry' : 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
   webServer: {
     command: webServerCommand,

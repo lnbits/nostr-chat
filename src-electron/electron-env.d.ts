@@ -11,6 +11,12 @@ interface DesktopRuntimeInfo {
   isElectron: true;
   platform: NodeJS.Platform;
   setUnreadChatBadge: (count: number, label: string) => void;
+  showIncomingMessageNotification: (input: {
+    chatPubkey: string;
+    title: string;
+    body: string;
+  }) => void;
+  onOpenChatFromNotification: (listener: (chatPubkey: string) => void) => () => void;
 }
 
 interface Window {

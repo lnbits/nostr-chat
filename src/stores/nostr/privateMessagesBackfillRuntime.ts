@@ -51,6 +51,10 @@ interface MissingMessageDependencyRepairState {
   cancelled: boolean;
 }
 
+function getAggressiveMissingMessageDependencyRepairAttemptIndex(): number {
+  return Math.max(0, MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS.length - 1);
+}
+
 interface PrivateMessagesBackfillRuntimeDeps {
   buildFilterSinceDetails: (since: number | undefined) => Record<string, unknown>;
   buildFilterUntilDetails: (until: number | undefined) => Record<string, unknown>;
@@ -612,6 +616,16 @@ export function createPrivateMessagesBackfillRuntime({
     };
   }
 
+  function resolveInitialMissingMessageDependencyRepairAttemptIndex(
+    options: RepairMissingMessageDependencyOptions
+  ): number {
+    if (options.reason === 'reply-open' && options.force === true) {
+      return getAggressiveMissingMessageDependencyRepairAttemptIndex();
+    }
+
+    return 0;
+  }
+
   function scheduleMissingMessageDependencyRepair(
     state: MissingMessageDependencyRepairState,
     delayMs: number
@@ -889,7 +903,7 @@ export function createPrivateMessagesBackfillRuntime({
         scheduledAt: null,
         seedRelayUrls: mergeSeedRelayUrls([], options.seedRelayUrls),
         timerId: null,
-        attemptIndex: 0,
+        attemptIndex: resolveInitialMissingMessageDependencyRepairAttemptIndex(options),
         runningPromise: null,
         cancelled: false,
       };
@@ -923,7 +937,7 @@ export function createPrivateMessagesBackfillRuntime({
     });
 
     if (options.force === true && state.runningPromise === null) {
-      state.attemptIndex = 0;
+      state.attemptIndex = resolveInitialMissingMessageDependencyRepairAttemptIndex(options);
     }
 
     if (state.runningPromise) {

@@ -1,8 +1,8 @@
 <template>
   <AppDialog
     v-model="dialogModel"
-    title="Enable Browser Notifications"
-    subtitle="Get notified when new messages arrive. If you continue, your browser will ask for permission next."
+    :title="dialogTitle"
+    :subtitle="dialogSubtitle"
     :persistent="true"
     :show-close="false"
     max-width="440px"
@@ -36,6 +36,18 @@ const dialogModel = computed({
   get: () => props.modelValue,
   set: (value: boolean) => emit('update:modelValue', value)
 });
+
+const isDesktopRuntime = computed(
+  () => typeof window !== 'undefined' && Boolean(window.desktopRuntime?.isElectron)
+);
+const dialogTitle = computed(() =>
+  isDesktopRuntime.value ? 'Enable Notifications' : 'Enable Browser Notifications'
+);
+const dialogSubtitle = computed(() =>
+  isDesktopRuntime.value
+    ? 'Get notified when new messages arrive. If you continue, desktop notifications will be enabled for this app.'
+    : 'Get notified when new messages arrive. If you continue, your browser will ask for permission next.'
+);
 
 function handleEnable(): void {
   emit('update:modelValue', false);
