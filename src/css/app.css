@@ -63,6 +63,8 @@
   --tg-mobile-header-title-line-height: 24px;
   --tg-mobile-header-subtitle-font-size: 14px;
   --tg-mobile-header-subtitle-line-height: 18px;
+  --tg-visual-viewport-height: 100vh;
+  --tg-mobile-keyboard-inset: 0px;
   --tg-btn-radius: 12px;
   --tg-btn-soft-bg: transparent;
   --tg-btn-soft-border: transparent;
@@ -261,6 +263,18 @@ body.native-mobile.mobile .home-shell__sync-status {
 
 body.native-mobile.mobile .thread-more--top {
   top: calc(var(--tg-native-app-safe-area-top) + 44px);
+}
+
+body.native-mobile.mobile.tg-native-keyboard-visible .q-dialog__inner {
+  padding-bottom: var(--tg-mobile-keyboard-inset) !important;
+}
+
+body.native-mobile.mobile.tg-native-keyboard-visible .app-dialog {
+  max-height: calc(var(--tg-visual-viewport-height) - var(--tg-native-app-safe-area-top) - 12px);
+}
+
+body.native-mobile.mobile.tg-native-keyboard-visible .app-dialog__body {
+  overflow-y: auto;
 }
 
 ::selection {

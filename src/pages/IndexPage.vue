@@ -161,6 +161,8 @@
           :messages="currentMessages"
           :is-initializing="isThreadInitializing"
           :show-back-button="isMobile"
+          :keyboard-visible="isVisualViewportKeyboardVisible"
+          :mobile-viewport-height="visibleViewportHeight"
           @send="handleSend"
           @back="handleBackToChatList"
           @open-profile="handleOpenProfile"

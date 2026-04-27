@@ -77,6 +77,7 @@ import {
   loadContactsPage,
   loadSettingsPage
 } from 'src/router/pageLoaders';
+import { useVisibleViewportHeight } from 'src/composables/useVisibleViewportHeight';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -91,9 +92,35 @@ const chatStore = useChatStore();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
 const isMobile = computed(() => $q.screen.lt.md);
+const isNativeMobile = computed(() => $q.platform.is.nativeMobile === true);
+const NATIVE_KEYBOARD_INSET_THRESHOLD_PX = 80;
+const nativeViewportBaselineHeight = ref(0);
+const hasNativeFocusedTextControl = ref(false);
+const {
+  visibleViewportHeight,
+  visibleViewportKeyboardInset,
+  isVisualViewportKeyboardVisible
+} = useVisibleViewportHeight(() => $q.screen.height);
+const nativeLayoutKeyboardInset = computed(() => {
+  return Math.max(0, nativeViewportBaselineHeight.value - readGlobalViewportHeight());
+});
+const isNativeKeyboardVisible = computed(() => {
+  if (!isMobile.value || !isNativeMobile.value) {
+    return false;
+  }
+
+  return (
+    isVisualViewportKeyboardVisible.value ||
+    (hasNativeFocusedTextControl.value &&
+      nativeLayoutKeyboardInset.value >= NATIVE_KEYBOARD_INSET_THRESHOLD_PX)
+  );
+});
 
 type NavigationSection = 'chats' | 'contacts' | 'settings';
 type RouteLoader = () => Promise<unknown>;
+
+const NATIVE_KEYBOARD_VISIBLE_CLASS = 'tg-native-keyboard-visible';
+const pendingDialogFocusTimeoutIds = new Set<number>();
 
 const activeSection = computed<NavigationSection>(() => {
   const routeName = String(route.name ?? '');
@@ -185,10 +212,14 @@ const removeAfterEachHook = router.afterEach(() => {
 });
 let mobilePreloadTimeoutId: number | null = null;
 let startupRestoreFrameId: number | null = null;
+let nativeFocusOutTimeoutId: number | null = null;
 let removeDesktopNotificationOpenListener: (() => void) | null = null;
 
 onMounted(() => {
   nostrStore.startAppLifecycleRuntime();
+  syncNativeViewportCssVariables();
+  document.addEventListener('focusin', handleNativeDialogFocusIn);
+  document.addEventListener('focusout', handleNativeFocusOut);
 
   if (
     typeof window !== 'undefined' &&
@@ -221,6 +252,10 @@ onBeforeUnmount(() => {
   removeAfterEachHook();
   removeDesktopNotificationOpenListener?.();
   removeDesktopNotificationOpenListener = null;
+  document.removeEventListener('focusin', handleNativeDialogFocusIn);
+  document.removeEventListener('focusout', handleNativeFocusOut);
+  clearPendingDialogFocusScrolls();
+  resetNativeViewportCssVariables();
 
   if (mobilePreloadTimeoutId !== null) {
     window.clearTimeout(mobilePreloadTimeoutId);
@@ -229,7 +264,176 @@ onBeforeUnmount(() => {
   if (startupRestoreFrameId !== null) {
     window.cancelAnimationFrame(startupRestoreFrameId);
   }
+
+  if (nativeFocusOutTimeoutId !== null) {
+    window.clearTimeout(nativeFocusOutTimeoutId);
+    nativeFocusOutTimeoutId = null;
+  }
 });
+
+watch(
+  [
+    isMobile,
+    isNativeMobile,
+    hasNativeFocusedTextControl,
+    visibleViewportHeight,
+    visibleViewportKeyboardInset,
+    isVisualViewportKeyboardVisible
+  ],
+  () => {
+    syncNativeViewportCssVariables();
+  },
+  { immediate: true }
+);
+
+watch(isNativeKeyboardVisible, (isVisible) => {
+  if (isVisible) {
+    scheduleFocusedDialogControlIntoView(document.activeElement);
+  }
+});
+
+function readGlobalViewportHeight(): number {
+  if (typeof window === 'undefined') {
+    return $q.screen.height;
+  }
+
+  return visibleViewportHeight.value ?? window.visualViewport?.height ?? window.innerHeight ?? $q.screen.height;
+}
+
+function syncNativeViewportCssVariables(): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  updateNativeViewportBaseline();
+
+  const viewportHeight = Math.max(0, Math.round(readGlobalViewportHeight()));
+  const keyboardInset = isMobile.value
+    ? Math.max(0, Math.round(visibleViewportKeyboardInset.value))
+    : 0;
+  const effectiveKeyboardInset = isNativeKeyboardVisible.value ? keyboardInset : 0;
+
+  document.documentElement.style.setProperty('--tg-visual-viewport-height', `${viewportHeight}px`);
+  document.documentElement.style.setProperty('--tg-mobile-keyboard-inset', `${effectiveKeyboardInset}px`);
+  document.documentElement.classList.toggle(NATIVE_KEYBOARD_VISIBLE_CLASS, isNativeKeyboardVisible.value);
+  document.body.classList.toggle(NATIVE_KEYBOARD_VISIBLE_CLASS, isNativeKeyboardVisible.value);
+}
+
+function resetNativeViewportCssVariables(): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  document.documentElement.style.removeProperty('--tg-visual-viewport-height');
+  document.documentElement.style.removeProperty('--tg-mobile-keyboard-inset');
+  document.documentElement.classList.remove(NATIVE_KEYBOARD_VISIBLE_CLASS);
+  document.body.classList.remove(NATIVE_KEYBOARD_VISIBLE_CLASS);
+}
+
+function clearPendingDialogFocusScrolls(): void {
+  pendingDialogFocusTimeoutIds.forEach((timeoutId) => {
+    window.clearTimeout(timeoutId);
+  });
+  pendingDialogFocusTimeoutIds.clear();
+}
+
+function scheduleFocusedDialogControlIntoView(target: EventTarget | null): void {
+  if (!isMobile.value || !isNativeMobile.value || typeof window === 'undefined') {
+    return;
+  }
+
+  const targetElement = target instanceof HTMLElement ? target : null;
+  const focusedElement =
+    targetElement ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const dialogElement = focusedElement?.closest<HTMLElement>('.q-dialog');
+  if (!focusedElement || !dialogElement) {
+    return;
+  }
+
+  const scrollTarget = focusedElement.closest<HTMLElement>('.q-field') ?? focusedElement;
+  clearPendingDialogFocusScrolls();
+
+  [80, 220, 420].forEach((delay) => {
+    const timeoutId = window.setTimeout(() => {
+      pendingDialogFocusTimeoutIds.delete(timeoutId);
+      scrollTarget.scrollIntoView({
+        block: 'center',
+        inline: 'nearest',
+        behavior: 'smooth'
+      });
+    }, delay);
+    pendingDialogFocusTimeoutIds.add(timeoutId);
+  });
+}
+
+function handleNativeDialogFocusIn(event: FocusEvent): void {
+  updateNativeFocusedTextControl(event.target);
+  scheduleFocusedDialogControlIntoView(event.target);
+}
+
+function handleNativeFocusOut(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (nativeFocusOutTimeoutId !== null) {
+    window.clearTimeout(nativeFocusOutTimeoutId);
+  }
+
+  nativeFocusOutTimeoutId = window.setTimeout(() => {
+    nativeFocusOutTimeoutId = null;
+    updateNativeFocusedTextControl(document.activeElement);
+    syncNativeViewportCssVariables();
+  }, 0);
+}
+
+function isTextInputElement(element: HTMLElement): boolean {
+  const tagName = element.tagName.toLowerCase();
+  if (tagName === 'input' || tagName === 'textarea') {
+    return true;
+  }
+
+  return element.isContentEditable || element.closest('[contenteditable="true"]') !== null;
+}
+
+function updateNativeFocusedTextControl(target: EventTarget | null): void {
+  if (!isMobile.value || !isNativeMobile.value || typeof document === 'undefined') {
+    hasNativeFocusedTextControl.value = false;
+    return;
+  }
+
+  const targetElement = target instanceof HTMLElement ? target : null;
+  const focusedElement =
+    targetElement ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  hasNativeFocusedTextControl.value = Boolean(focusedElement && isTextInputElement(focusedElement));
+}
+
+function updateNativeViewportBaseline(): void {
+  const viewportHeight = Math.max(0, Math.round(readGlobalViewportHeight()));
+  if (!isMobile.value || !isNativeMobile.value) {
+    nativeViewportBaselineHeight.value = viewportHeight;
+    return;
+  }
+
+  if (nativeViewportBaselineHeight.value <= 0) {
+    nativeViewportBaselineHeight.value = viewportHeight;
+    return;
+  }
+
+  if (!hasNativeFocusedTextControl.value && !isVisualViewportKeyboardVisible.value) {
+    nativeViewportBaselineHeight.value = viewportHeight;
+    return;
+  }
+
+  const layoutKeyboardInset = Math.max(0, nativeViewportBaselineHeight.value - viewportHeight);
+  const shouldHoldBaseline =
+    hasNativeFocusedTextControl.value &&
+    layoutKeyboardInset >= NATIVE_KEYBOARD_INSET_THRESHOLD_PX;
+
+  if (!shouldHoldBaseline && viewportHeight > nativeViewportBaselineHeight.value) {
+    nativeViewportBaselineHeight.value = viewportHeight;
+  }
+}
 
 async function restoreStartupState(): Promise<void> {
   try {
