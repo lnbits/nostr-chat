@@ -6,14 +6,22 @@
    fill="none"
    version="1.1"
    id="svg2"
-   sodipodi:docname="lnbits_chat.svg"
+   sodipodi:docname="nostr_chat.svg"
    inkscape:version="1.4.2 (ebf0e940, 2025-05-08)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns="http://www.w3.org/2000/svg"
    xmlns:svg="http://www.w3.org/2000/svg">
   <defs
-     id="defs2" />
+     id="defs2">
+    <inkscape:perspective
+       sodipodi:type="inkscape:persp3d"
+       inkscape:vp_x="0 : 480 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_z="960 : 480 : 1"
+       inkscape:persp3d-origin="480 : 320 : 1"
+       id="perspective4" />
+  </defs>
   <sodipodi:namedview
      id="namedview2"
      pagecolor="#ffffff"
@@ -25,13 +33,20 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="0.62263566"
      inkscape:cx="450.50423"
-     inkscape:cy="449.7012"
-     inkscape:window-width="1336"
-     inkscape:window-height="721"
+     inkscape:cy="449.70119"
+     inkscape:window-width="1384"
+     inkscape:window-height="839"
      inkscape:window-x="0"
      inkscape:window-y="30"
      inkscape:window-maximized="0"
      inkscape:current-layer="svg2" />
+  <rect
+     style="fill:#1e1e1e;stroke-width:1.2456"
+     id="rect9"
+     width="960"
+     height="960"
+     x="0"
+     y="-960" />
   <path
      d="M 320,-60 V -281 C 252.66667,-286.33333 195.83333,-313.66667 149.5,-363 103.16667,-412.33333 80,-471.33333 80,-540 c 0,-72.66667 25.16667,-134.16667 75.5,-184.5 50.33333,-50.33333 111.83333,-75.5 184.5,-75.5 h 27 l -63,-64 56,-56 160,160 -160,160 -56,-56 63,-64 h -27 c -50,0 -92.5,17.5 -127.5,52.5 -35,35 -52.5,77.5 -52.5,127.5 0,50 17.5,92.5 52.5,127.5 35,35 77.5,52.5 127.5,52.5 h 92.5498 L 400,-253 507,-360 h 113 c 50,0 92.5,-17.5 127.5,-52.5 35,-35 52.5,-77.5 52.5,-127.5 0,-50 -17.5,-92.5 -52.5,-127.5 -35,-35 -77.5,-52.5 -127.5,-52.5 h -20 v -80 h 20 c 72.66667,0 134.16667,25.16667 184.5,75.5 50.33333,50.33333 75.5,111.83333 75.5,184.5 0,72.66667 -25.16667,134.16667 -75.5,184.5 -50.33333,50.33333 -111.83333,75.5 -184.5,75.5 h -80 z"
      fill="#e3e3e3"
