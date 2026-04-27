@@ -37,11 +37,21 @@ jobs:
             exit 1
           fi
 
-          git fetch --force origin +refs/heads/main:refs/remotes/origin/main
+          git fetch --force origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/dev:refs/remotes/origin/dev
           commit="$(git rev-list -n 1 "${tag}")"
 
-          if ! git merge-base --is-ancestor "${commit}" refs/remotes/origin/main; then
-            echo "Tag ${tag} points to ${commit}, which is not reachable from origin/main." >&2
+          is_allowed_commit=false
+          for allowed_ref in refs/remotes/origin/main refs/remotes/origin/dev; do
+            if git merge-base --is-ancestor "${commit}" "${allowed_ref}"; then
+              is_allowed_commit=true
+              break
+            fi
+          done
+
+          if [[ "${is_allowed_commit}" != true ]]; then
+            echo "Tag ${tag} points to ${commit}, which is not reachable from origin/main or origin/dev." >&2
             exit 1
           fi
 
