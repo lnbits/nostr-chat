@@ -628,6 +628,7 @@ defineExpose({
 @media (max-width: 1023px) {
   .composer {
     gap: 5px;
+    font-family: var(--tg-mobile-font);
     padding: 3px 10px calc(6px + env(safe-area-inset-bottom));
     border-top: 0;
     background: transparent;
@@ -641,6 +642,19 @@ defineExpose({
     box-shadow: 0 8px 24px rgba(23, 35, 52, 0.08);
   }
 
+  .composer__reply-title,
+  .composer__reply-text,
+  .composer__emoji-option-label,
+  .composer__emoji-empty {
+    font-size: var(--tg-mobile-caption-font-size);
+    line-height: var(--tg-mobile-caption-line-height);
+    letter-spacing: 0;
+  }
+
+  .composer__reply-title {
+    font-weight: 600;
+  }
+
   .composer__row {
     align-items: flex-end;
     gap: 5px;
@@ -652,7 +666,7 @@ defineExpose({
   }
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__control) {
-    min-height: 34px !important;
+    min-height: 36px !important;
     padding-left: 4px !important;
     border-radius: 18px !important;
     background: transparent !important;
@@ -660,7 +674,7 @@ defineExpose({
   }
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__control-container) {
-    min-height: 34px;
+    min-height: 36px;
     padding-left: 8px !important;
     padding-top: 0 !important;
     padding-bottom: 0 !important;
@@ -681,16 +695,21 @@ defineExpose({
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__native),
   .composer__input.q-textarea.q-field--dense :deep(.q-field__input) {
-    min-height: 18px !important;
+    min-height: var(--tg-mobile-ui-line-height) !important;
     padding-top: 0 !important;
     padding-bottom: 0 !important;
-    font-size: 13px;
-    line-height: 18px !important;
+    font-family: var(--tg-mobile-font);
+    font-size: var(--tg-mobile-ui-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-ui-line-height) !important;
+    letter-spacing: 0;
     display: block;
   }
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__native::placeholder),
   .composer__input.q-textarea.q-field--dense :deep(.q-field__input::placeholder) {
+    font-size: var(--tg-mobile-ui-font-size);
+    font-weight: 400;
     color: #98a4af;
     opacity: 1;
   }

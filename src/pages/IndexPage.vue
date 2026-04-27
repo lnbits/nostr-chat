@@ -1152,6 +1152,10 @@ body.body--dark .q-btn.sidebar-top__action {
 }
 
 @media (max-width: 1023px) {
+  .sidebar-top {
+    font-family: var(--tg-mobile-font);
+  }
+
   .sidebar {
     border-right: 0;
   }

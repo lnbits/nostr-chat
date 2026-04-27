@@ -42,6 +42,27 @@
     'Segoe UI',
     'Manrope',
     sans-serif;
+  --tg-mobile-font:
+    -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Text',
+    'SF UI Text',
+    Roboto,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+  --tg-mobile-message-font-size: 16px;
+  --tg-mobile-message-line-height: 20px;
+  --tg-mobile-ui-font-size: 16px;
+  --tg-mobile-ui-line-height: 20px;
+  --tg-mobile-caption-font-size: 13px;
+  --tg-mobile-caption-line-height: 17px;
+  --tg-mobile-small-font-size: 12px;
+  --tg-mobile-small-line-height: 15px;
+  --tg-mobile-header-title-font-size: 20px;
+  --tg-mobile-header-title-line-height: 24px;
+  --tg-mobile-header-subtitle-font-size: 14px;
+  --tg-mobile-header-subtitle-line-height: 18px;
   --tg-btn-radius: 12px;
   --tg-btn-soft-bg: transparent;
   --tg-btn-soft-border: transparent;
@@ -184,8 +205,26 @@ body {
 
 @media (max-width: 1023px), (pointer: coarse) {
   body {
+    font-family: var(--tg-mobile-font);
     background: var(--tg-app-background-mobile);
     background-attachment: scroll;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .tg-input.q-field--dense .q-field__native,
+  .tg-input.q-field--dense .q-field__input {
+    font-family: var(--tg-mobile-font);
+    font-size: var(--tg-mobile-ui-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-ui-line-height) !important;
+    letter-spacing: 0;
+  }
+
+  .tg-input.q-field--dense .q-field__native::placeholder,
+  .tg-input.q-field--dense .q-field__input::placeholder {
+    font-size: var(--tg-mobile-ui-font-size);
+    font-weight: 400;
   }
 }
 

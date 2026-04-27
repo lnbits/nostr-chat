@@ -1341,8 +1341,9 @@ onBeforeUnmount(() => {
     display: block;
     width: auto;
     max-width: 100%;
+    font-family: var(--tg-mobile-font);
     border-radius: 16px;
-    padding: 10px 36px 10px 12px;
+    padding: 8px 42px 7px 11px;
     box-shadow: none;
   }
 
@@ -1379,7 +1380,10 @@ onBeforeUnmount(() => {
   }
 
   .bubble-row--show-author-mobile .bubble__author-name {
-    font-size: 12px;
+    font-size: var(--tg-mobile-caption-font-size);
+    font-weight: 600;
+    line-height: var(--tg-mobile-caption-line-height);
+    letter-spacing: 0;
   }
 
   .bubble__content {
@@ -1393,6 +1397,34 @@ onBeforeUnmount(() => {
     padding: 6px 8px;
     border-radius: 12px;
     background: var(--tg-surface-soft-strong);
+  }
+
+  .bubble__reply-preview-title,
+  .bubble__reply-preview-text {
+    font-size: var(--tg-mobile-caption-font-size);
+    line-height: var(--tg-mobile-caption-line-height);
+    letter-spacing: 0;
+  }
+
+  .bubble__reply-preview-title {
+    font-weight: 600;
+  }
+
+  .bubble__text {
+    font-size: var(--tg-mobile-message-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-message-line-height);
+    letter-spacing: 0;
+  }
+
+  .bubble__text--emoji {
+    font-size: clamp(2.4rem, 12vw, 3.8rem);
+    line-height: 1.1;
+  }
+
+  .bubble__more {
+    font-size: var(--tg-mobile-caption-font-size);
+    line-height: var(--tg-mobile-caption-line-height);
   }
 
   .bubble__reactions {
@@ -1413,6 +1445,15 @@ onBeforeUnmount(() => {
 .bubble__time {
   font-size: 11px;
   color: var(--tg-text-secondary);
+}
+
+@media (max-width: 1023px) {
+  .bubble__time {
+    font-size: var(--tg-mobile-small-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-small-line-height);
+    letter-spacing: 0;
+  }
 }
 
 .bubble__status {

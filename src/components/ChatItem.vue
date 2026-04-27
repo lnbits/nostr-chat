@@ -406,4 +406,38 @@ function emitDeleteChat(): void {
 .chat-item--active .chat-item__reaction-icon-shell {
   background: rgba(255, 255, 255, 0.22);
 }
+
+@media (max-width: 1023px) {
+  .chat-item {
+    font-family: var(--tg-mobile-font);
+  }
+
+  .chat-item__name {
+    font-size: var(--tg-mobile-ui-font-size);
+    font-weight: 600;
+    line-height: var(--tg-mobile-ui-line-height);
+    letter-spacing: 0;
+  }
+
+  .chat-item__caption {
+    font-size: var(--tg-mobile-caption-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-caption-line-height);
+    letter-spacing: 0;
+  }
+
+  .chat-item__time {
+    font-size: var(--tg-mobile-small-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-small-line-height);
+    letter-spacing: 0;
+  }
+
+  .chat-item__reaction-count,
+  .chat-item :deep(.q-badge) {
+    font-size: var(--tg-mobile-small-font-size);
+    line-height: 1;
+    letter-spacing: 0;
+  }
+}
 </style>

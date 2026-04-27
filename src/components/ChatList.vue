@@ -148,4 +148,24 @@ function formatRequestCount(value: number): string {
   color: var(--tg-active-text);
   background: rgba(255, 255, 255, 0.18);
 }
+
+@media (max-width: 1023px) {
+  .requests-row {
+    font-family: var(--tg-mobile-font);
+  }
+
+  .requests-row__title {
+    font-size: var(--tg-mobile-ui-font-size);
+    font-weight: 600;
+    line-height: var(--tg-mobile-ui-line-height);
+    letter-spacing: 0;
+  }
+
+  .requests-row__caption {
+    font-size: var(--tg-mobile-caption-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-caption-line-height);
+    letter-spacing: 0;
+  }
+}
 </style>
