@@ -473,11 +473,34 @@ describe('nostr runtime core logic', () => {
         id: EVENT_ID_A,
       },
     });
+    runtime.logDeveloperTrace('info', 'subscription:private-messages', 'req', {
+      relayUrls: ['wss://relay.one', 'wss://relay.two'],
+      reqStatement: ['REQ', 'private-messages-1', '{"kinds":[4],"limit":100}'],
+      subId: 'private-messages-1',
+    });
     await flushPromises();
 
-    expect(developerTraceDataServiceMock.appendEntry).toHaveBeenCalledTimes(1);
-    expect(developerTraceVersion.value).toBe(1);
-    expect(console.info).toHaveBeenCalled();
+    expect(
+      runtime.buildConsoleTracePrefixArgs('subscription:private-messages', 'req', {
+        relayUrls: ['wss://relay.one', 'wss://relay.two'],
+        reqStatement: ['REQ', 'private-messages-1', '{"kinds":[4],"limit":100}'],
+      })
+    ).toEqual([
+      'relays=wss://relay.one, wss://relay.two',
+      'reqStatement=["REQ","private-messages-1","{\\"kinds\\":[4],\\"limit\\":100}"]',
+    ]);
+    expect(developerTraceDataServiceMock.appendEntry).toHaveBeenCalledTimes(2);
+    expect(developerTraceVersion.value).toBe(2);
+    expect(console.info).toHaveBeenCalledWith(
+      '[subscription:private-messages] req',
+      'relays=wss://relay.one, wss://relay.two',
+      'reqStatement=["REQ","private-messages-1","{\\"kinds\\":[4],\\"limit\\":100}"]',
+      expect.objectContaining({
+        relayUrls: ['wss://relay.one', 'wss://relay.two'],
+        reqStatement: ['REQ', 'private-messages-1', '{"kinds":[4],"limit":100}'],
+        subId: 'private-messages-1',
+      })
+    );
 
     runtime.setDeveloperDiagnosticsEnabled(false);
     await flushPromises();
@@ -558,6 +581,7 @@ describe('nostr runtime core logic', () => {
   it('builds inbound message presentation details and browser notifications', async () => {
     const localStorage = createMockStorage();
     const assign = vi.fn();
+    const desktopNotification = vi.fn();
     const focus = vi.fn();
     const notifications: Array<{
       title: string;
@@ -580,6 +604,13 @@ describe('nostr runtime core logic', () => {
 
     (globalThis as Record<string, unknown>).window = {
       Notification: FakeNotification,
+      desktopRuntime: {
+        isElectron: true,
+        platform: 'darwin',
+        setUnreadChatBadge: vi.fn(),
+        showIncomingMessageNotification: desktopNotification,
+        onOpenChatFromNotification: vi.fn(() => () => {}),
+      },
       focus,
       localStorage: localStorage.api,
       location: {
@@ -593,12 +624,14 @@ describe('nostr runtime core logic', () => {
     };
     process.env.VUE_ROUTER_BASE = '/app';
     process.env.VUE_ROUTER_MODE = 'hash';
+    const isAppForeground = ref(true);
 
     const runtime = createInboundPresentationRuntime({
       formatSubscriptionLogValue: (value) =>
         value && value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : (value ?? null),
       getLoggedInPublicKeyHex: () => PUBKEY_A,
       getVisibleChatId: () => PUBKEY_A,
+      isAppForeground,
       isRestoringStartupState: ref(false),
       logDeveloperTrace: vi.fn(),
       normalizeEventId: (value) =>
@@ -657,17 +690,30 @@ describe('nostr runtime core logic', () => {
     });
     expect(notifications).toHaveLength(0);
 
-    (globalThis as { document: { hasFocus: () => boolean } }).document.hasFocus = vi.fn(
-      () => false
-    );
+    isAppForeground.value = false;
     runtime.showIncomingMessageBrowserNotification({
       chatPubkey: PUBKEY_B,
       title: 'New message',
       messageText: 'x'.repeat(200),
       iconUrl: 'https://example.com/icon.png',
     });
+    expect(desktopNotification).toHaveBeenCalledWith({
+      chatPubkey: PUBKEY_B,
+      title: 'New message',
+      body: `${'x'.repeat(137)}...`,
+    });
+    expect(notifications).toHaveLength(0);
+
+    delete (window as typeof window & { desktopRuntime?: unknown }).desktopRuntime;
+    runtime.showIncomingMessageBrowserNotification({
+      chatPubkey: PUBKEY_B,
+      title: 'Browser fallback',
+      messageText: 'fallback message',
+      iconUrl: 'https://example.com/icon.png',
+    });
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]?.options.body).toBe(`${'x'.repeat(137)}...`);
+    expect(notifications[0]?.title).toBe('Browser fallback');
+    expect(notifications[0]?.options.body).toBe('fallback message');
     notifications[0]?.onclick?.();
     expect(focus).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledWith(

@@ -15,10 +15,10 @@ import {
   pauseRelayService,
   reloadAndWaitForApp,
   removeRelayFromSettings,
-  retryMessageRelay,
   sendMessage,
   TEST_ACCOUNTS,
   unpauseRelayService,
+  waitForMessageRelayRetryToResolve,
   waitForThreadMessage,
 } from './helpers';
 
@@ -64,7 +64,7 @@ test('editing app relays survives hard reload and direct messages still arrive o
   }
 });
 
-test('pending outbound message survives reload and relay retry resolves after relay recovery', async ({
+test('pending outbound message survives reload and auto-replays after relay recovery', async ({
   browser,
 }) => {
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.pendingAlice, {
@@ -107,7 +107,7 @@ test('pending outbound message survives reload and relay retry resolves after re
     await closeDialogWithEscape(alice.page);
 
     await unpauseRelayService('relay-two');
-    await retryMessageRelay(alice.page, pendingMessage, E2E_RELAY_URL_TWO);
+    await waitForMessageRelayRetryToResolve(alice.page, pendingMessage, E2E_RELAY_URL_TWO);
     await closeDialogWithEscape(alice.page);
     await waitForThreadMessage(alice.page, pendingMessage, {
       chatId: bob.session.publicKey,

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PUBKEY_HEX = 'a'.repeat(64);
 
@@ -8,6 +8,8 @@ const moduleMocks = vi.hoisted(() => {
     getLoggedInPublicKeyHex: vi.fn(() => 'a'.repeat(64)),
     logout: vi.fn().mockResolvedValue(undefined),
     publishMyRelayList: vi.fn().mockResolvedValue(undefined),
+    restoreGroupEpochHistory: vi.fn().mockResolvedValue(undefined),
+    restorePrivateMessagesForRecipient: vi.fn().mockResolvedValue(undefined),
     restoreStartupState: vi.fn().mockResolvedValue(undefined),
     rotateGroupEpochAndSendTickets: vi.fn().mockResolvedValue(undefined),
     savePrivateKey: vi.fn(() => ({ isValid: true })),
@@ -26,6 +28,12 @@ const moduleMocks = vi.hoisted(() => {
   };
   const chatStore = {
     acceptChat: vi.fn().mockResolvedValue(undefined),
+    chats: [] as Array<{
+      id: string;
+      publicKey: string;
+      type: 'user' | 'group';
+      epochPublicKey: string | null;
+    }>,
     init: vi.fn().mockResolvedValue(undefined),
     reload: vi.fn().mockResolvedValue(undefined),
     updateChatPreview: vi.fn().mockResolvedValue(undefined),
@@ -33,20 +41,32 @@ const moduleMocks = vi.hoisted(() => {
   const messageStore = {
     init: vi.fn().mockResolvedValue(undefined),
     loadMessages: vi.fn().mockResolvedValue(undefined),
+    removeChatMessages: vi.fn(),
     reloadLoadedMessages: vi.fn().mockResolvedValue(undefined),
     sendMessage: vi.fn(),
+  };
+  const chatDataService = {
+    deleteMessageByEventId: vi.fn(),
+    init: vi.fn().mockResolvedValue(undefined),
   };
   const contactsService = {
     getContactByPublicKey: vi.fn(),
     init: vi.fn().mockResolvedValue(undefined),
     updateContact: vi.fn(),
   };
+  const nostrEventDataService = {
+    deleteEventsByIds: vi.fn().mockResolvedValue(undefined),
+    getEventById: vi.fn(),
+    init: vi.fn().mockResolvedValue(undefined),
+  };
 
   return {
+    chatDataService,
     chatStore,
     contactsService,
     messageStore,
     nip65RelayStore,
+    nostrEventDataService,
     nostrStore,
     relayStore,
     saveBrowserNotificationsPreference: vi.fn(),
@@ -96,11 +116,23 @@ vi.mock('src/stores/messageStore', () => ({
   useMessageStore: () => moduleMocks.messageStore,
 }));
 
+vi.mock('src/services/chatDataService', () => ({
+  chatDataService: moduleMocks.chatDataService,
+}));
+
 vi.mock('src/services/contactsService', () => ({
   contactsService: moduleMocks.contactsService,
 }));
 
+vi.mock('src/services/nostrEventDataService', () => ({
+  nostrEventDataService: moduleMocks.nostrEventDataService,
+}));
+
 describe('e2eBridge', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -108,6 +140,8 @@ describe('e2eBridge', () => {
     moduleMocks.nostrStore.getLoggedInPublicKeyHex.mockReturnValue(PUBKEY_HEX);
     moduleMocks.nostrStore.savePrivateKey.mockReturnValue({ isValid: true });
     moduleMocks.relayStore.relays = ['ws://relay.one'];
+    moduleMocks.chatStore.chats = [];
+    moduleMocks.chatDataService.deleteMessageByEventId.mockResolvedValue(true);
     moduleMocks.contactsService.getContactByPublicKey.mockResolvedValue({
       id: 7,
       public_key: PUBKEY_HEX,
@@ -131,11 +165,12 @@ describe('e2eBridge', () => {
         sender: 'me',
         sentAt: options.createdAt ?? '2026-01-01T00:00:00.000Z',
         authorPublicKey: PUBKEY_HEX,
-        eventId: null,
+        eventId: 'b'.repeat(64),
         nostrEvent: null,
         meta: {},
       })
     );
+    moduleMocks.nostrEventDataService.getEventById.mockResolvedValue(null);
 
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
@@ -180,6 +215,36 @@ describe('e2eBridge', () => {
     expect(moduleMocks.messageStore.reloadLoadedMessages).toHaveBeenCalledTimes(1);
   });
 
+  it('retries transient relay publish failures during bootstrap', async () => {
+    vi.useFakeTimers();
+    moduleMocks.nostrStore.publishMyRelayList
+      .mockRejectedValueOnce(
+        new Error('Not enough relays received the event (0 published, 1 required)')
+      )
+      .mockRejectedValueOnce(
+        new Error('Not enough relays received the event (0 published, 1 required)')
+      )
+      .mockResolvedValue(undefined);
+
+    const { installAppE2EBridge } = await import('src/testing/e2eBridge');
+    installAppE2EBridge();
+
+    const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
+    const bootstrapPromise = bridge.bootstrapSession({
+      privateKey: 'private-key',
+      relayUrls: ['ws://relay.one'],
+    });
+
+    await vi.advanceTimersByTimeAsync(900);
+
+    await expect(bootstrapPromise).resolves.toEqual({
+      publicKey: PUBKEY_HEX,
+      npub: `npub-${PUBKEY_HEX}`,
+      relayUrls: ['ws://relay.one'],
+    });
+    expect(moduleMocks.nostrStore.publishMyRelayList).toHaveBeenCalledTimes(3);
+  });
+
   it('returns the current session snapshot from the mocked stores', async () => {
     const { installAppE2EBridge } = await import('src/testing/e2eBridge');
     installAppE2EBridge();
@@ -195,13 +260,30 @@ describe('e2eBridge', () => {
   it('refreshes either one chat or every loaded chat depending on the options', async () => {
     const { installAppE2EBridge } = await import('src/testing/e2eBridge');
     installAppE2EBridge();
+    moduleMocks.chatStore.chats = [
+      {
+        id: 'chat-id',
+        publicKey: PUBKEY_HEX,
+        type: 'group',
+        epochPublicKey: 'b'.repeat(64),
+      },
+    ];
 
     const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
     await bridge.refreshSession({ chatId: '  Chat-Id  ' });
     expect(moduleMocks.nostrStore.subscribePrivateMessagesForLoggedInUser).toHaveBeenCalledWith(
       true
     );
-    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(1);
+    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(2);
+    expect(moduleMocks.nostrStore.restorePrivateMessagesForRecipient).toHaveBeenCalledWith(
+      PUBKEY_HEX,
+      { force: true }
+    );
+    expect(moduleMocks.nostrStore.restoreGroupEpochHistory).toHaveBeenCalledWith(
+      PUBKEY_HEX,
+      'b'.repeat(64),
+      { force: true }
+    );
     expect(moduleMocks.messageStore.loadMessages).toHaveBeenCalledWith('chat-id', true);
     expect(moduleMocks.messageStore.reloadLoadedMessages).not.toHaveBeenCalled();
 
@@ -243,11 +325,30 @@ describe('e2eBridge', () => {
     installAppE2EBridge();
 
     const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
-    await bridge.sendMessages({
-      chatId: '  CHAT-ID  ',
-      texts: [' first ', ' ', 'second'],
-      createdAts: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'],
-    });
+    await expect(
+      bridge.sendMessages({
+        chatId: '  CHAT-ID  ',
+        texts: [' first ', ' ', 'second'],
+        createdAts: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'],
+      })
+    ).resolves.toEqual([
+      {
+        id: '1',
+        chatId: 'chat-id',
+        text: 'first',
+        sentAt: '2026-01-01T00:00:00.000Z',
+        authorPublicKey: PUBKEY_HEX,
+        eventId: 'b'.repeat(64),
+      },
+      {
+        id: '1',
+        chatId: 'chat-id',
+        text: 'second',
+        sentAt: '2026-01-02T00:00:00.000Z',
+        authorPublicKey: PUBKEY_HEX,
+        eventId: 'b'.repeat(64),
+      },
+    ]);
 
     expect(moduleMocks.messageStore.sendMessage).toHaveBeenNthCalledWith(
       1,
@@ -269,6 +370,38 @@ describe('e2eBridge', () => {
     );
     expect(moduleMocks.chatStore.updateChatPreview).toHaveBeenCalledTimes(2);
     expect(moduleMocks.chatStore.acceptChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes a locally stored message row and backing event through the bridge helper', async () => {
+    const { installAppE2EBridge } = await import('src/testing/e2eBridge');
+    installAppE2EBridge();
+    moduleMocks.nostrEventDataService.getEventById.mockResolvedValue({
+      direction: 'in',
+      event: {
+        id: 'c'.repeat(64),
+        pubkey: PUBKEY_HEX,
+        content: '',
+        created_at: 1,
+        tags: [],
+      },
+      relay_statuses: [],
+    });
+
+    const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
+    await expect(
+      bridge.removeStoredMessageByEventId({
+        chatId: ` ${'b'.repeat(64)} `,
+        eventId: ` ${'c'.repeat(64)} `,
+      })
+    ).resolves.toBe(true);
+
+    expect(moduleMocks.chatDataService.deleteMessageByEventId).toHaveBeenCalledWith('c'.repeat(64));
+    expect(moduleMocks.nostrEventDataService.deleteEventsByIds).toHaveBeenCalledWith([
+      'c'.repeat(64),
+    ]);
+    expect(moduleMocks.messageStore.removeChatMessages).toHaveBeenCalledWith('b'.repeat(64));
+    expect(moduleMocks.messageStore.loadMessages).toHaveBeenCalledWith('b'.repeat(64), true);
+    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(1);
   });
 
   it('updates stored contact relays through the bridge helper', async () => {
@@ -335,5 +468,12 @@ describe('e2eBridge', () => {
         relayUrls: ['ws://relay.one'],
       })
     ).rejects.toThrow('A valid public key is required to update contact relays.');
+
+    await expect(
+      bridge.removeStoredMessageByEventId({
+        chatId: 'chat-id',
+        eventId: 'event-id',
+      })
+    ).rejects.toThrow('A valid chat id and event id are required to remove a stored message.');
   });
 });

@@ -1,6 +1,6 @@
 const BROWSER_NOTIFICATIONS_STORAGE_KEY = 'ui-browser-notifications';
 
-export type BrowserNotificationPermissionState = NotificationPermission | 'unsupported';
+export type BrowserNotificationPermissionState = NotificationPermission | 'unsupported' | 'native';
 
 function canUseWindow(): boolean {
   return typeof window !== 'undefined';
@@ -10,11 +10,28 @@ function canUseStorage(): boolean {
   return canUseWindow() && typeof window.localStorage !== 'undefined';
 }
 
+function isDesktopNotificationEnvironment(): boolean {
+  return (
+    canUseWindow() &&
+    Boolean(
+      window.desktopRuntime?.isElectron &&
+        typeof window.desktopRuntime.showIncomingMessageNotification === 'function'
+    )
+  );
+}
+
 export function isBrowserNotificationSupported(): boolean {
-  return canUseWindow() && typeof window.Notification !== 'undefined';
+  return (
+    isDesktopNotificationEnvironment() ||
+    (canUseWindow() && typeof window.Notification !== 'undefined')
+  );
 }
 
 export function getBrowserNotificationPermission(): BrowserNotificationPermissionState {
+  if (isDesktopNotificationEnvironment()) {
+    return 'native';
+  }
+
   if (!isBrowserNotificationSupported()) {
     return 'unsupported';
   }
@@ -37,7 +54,10 @@ export function readBrowserNotificationsPreference(): boolean {
 }
 
 export function areBrowserNotificationsEnabled(): boolean {
-  return readBrowserNotificationsPreference() && getBrowserNotificationPermission() === 'granted';
+  const permission = getBrowserNotificationPermission();
+  return (
+    readBrowserNotificationsPreference() && (permission === 'granted' || permission === 'native')
+  );
 }
 
 export function saveBrowserNotificationsPreference(enabled: boolean): void {
@@ -65,6 +85,10 @@ export function clearBrowserNotificationsPreference(): void {
 }
 
 export async function requestBrowserNotificationPermission(): Promise<BrowserNotificationPermissionState> {
+  if (isDesktopNotificationEnvironment()) {
+    return 'native';
+  }
+
   if (!isBrowserNotificationSupported()) {
     return 'unsupported';
   }
@@ -82,6 +106,11 @@ export async function requestBrowserNotificationsAfterLogin(): Promise<BrowserNo
   if (!isBrowserNotificationSupported()) {
     saveBrowserNotificationsPreference(false);
     return 'unsupported';
+  }
+
+  if (isDesktopNotificationEnvironment()) {
+    saveBrowserNotificationsPreference(true);
+    return 'native';
   }
 
   const currentPermission = getBrowserNotificationPermission();

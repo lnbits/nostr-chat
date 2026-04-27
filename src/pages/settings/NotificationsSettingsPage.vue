@@ -4,7 +4,7 @@
       <q-card-section class="notifications-card__section">
         <div class="notifications-card__row">
           <div>
-            <div class="text-body1">Show browser notifications</div>
+            <div class="text-body1">{{ notificationsTitle }}</div>
             <div class="text-caption text-grey-6">
               {{ browserNotificationCaption }}
             </div>
@@ -43,25 +43,44 @@ const storedBrowserNotificationsPreference = readBrowserNotificationsPreference(
 const browserNotificationsSupported = isBrowserNotificationSupported();
 const notificationPermission = ref(getBrowserNotificationPermission());
 const browserNotificationsEnabled = ref(
-  storedBrowserNotificationsPreference && notificationPermission.value === 'granted'
+  storedBrowserNotificationsPreference &&
+    (notificationPermission.value === 'granted' || notificationPermission.value === 'native')
 );
 const isPermissionRequestInFlight = ref(false);
+const isDesktopRuntime =
+  typeof window !== 'undefined' && Boolean(window.desktopRuntime?.isElectron);
 
-if (storedBrowserNotificationsPreference && notificationPermission.value !== 'granted') {
+if (
+  storedBrowserNotificationsPreference &&
+  notificationPermission.value !== 'granted' &&
+  notificationPermission.value !== 'native'
+) {
   saveBrowserNotificationsPreference(false);
 }
 
+const notificationsTitle = computed(() =>
+  isDesktopRuntime ? 'Show desktop notifications' : 'Show browser notifications'
+);
+
 const browserNotificationCaption = computed(() => {
   if (!browserNotificationsSupported) {
-    return 'This browser does not support notifications for this app.';
+    return isDesktopRuntime
+      ? 'Desktop notifications are not supported in this app environment.'
+      : 'This browser does not support notifications for this app.';
   }
 
   if (browserNotificationsEnabled.value) {
-    return 'Show a browser notification when a new message arrives.';
+    return isDesktopRuntime
+      ? 'Show a desktop notification when a new message arrives.'
+      : 'Show a browser notification when a new message arrives.';
   }
 
   if (notificationPermission.value === 'denied') {
     return 'Browser notifications are blocked. Allow them in browser settings, then toggle this back on.';
+  }
+
+  if (notificationPermission.value === 'native') {
+    return 'Off by default. Turning this on will enable desktop notifications for this app.';
   }
 
   return 'Off by default. Turning this on will ask the browser for notification permission.';
@@ -84,6 +103,12 @@ async function handleBrowserNotificationsToggle(nextValue: boolean): Promise<voi
       position: 'top',
       timeout: 3000
     });
+    return;
+  }
+
+  if (notificationPermission.value === 'native') {
+    browserNotificationsEnabled.value = true;
+    saveBrowserNotificationsPreference(true);
     return;
   }
 

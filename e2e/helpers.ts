@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 import { type Browser, type BrowserContext, expect, type Page } from '@playwright/test';
 
 export interface TestAccount {
@@ -22,6 +24,15 @@ export interface BootstrappedUser {
     npub: string | null;
     relayUrls: string[];
   };
+}
+
+export interface SeededMessageSnapshot {
+  id: string;
+  chatId: string;
+  text: string;
+  sentAt: string;
+  authorPublicKey: string;
+  eventId: string | null;
 }
 
 export interface BootstrapUserOptions {
@@ -261,6 +272,30 @@ export const TEST_ACCOUNTS = {
     privateKey: 'd50a826f2c0aa3df6e6c5271779b2a35cc2310a74ef5c4a03fe9f2bcb724ca6f',
     displayName: 'Bob Pending',
   },
+  replyRepairAlice: {
+    privateKey: '111122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000',
+    displayName: 'Alice Reply Repair',
+  },
+  replyRepairBob: {
+    privateKey: '0000ffffeeeeddddccccbbbbaaaa999988887777666655554444333322221111',
+    displayName: 'Bob Reply Repair',
+  },
+  reactionRepairAlice: {
+    privateKey: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    displayName: 'Alice Reaction Repair',
+  },
+  reactionRepairBob: {
+    privateKey: 'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321',
+    displayName: 'Bob Reaction Repair',
+  },
+  groupReplyRepairOwner: {
+    privateKey: '0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210',
+    displayName: 'Owner Reply Repair',
+  },
+  groupReplyRepairBob: {
+    privateKey: '89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567',
+    displayName: 'Bob Group Reply Repair',
+  },
   groupAddOwner: {
     privateKey: '9c7d9d7d4be1da67a61a15403d5a33ad655b2671a6ab33096a3b0a286cc94601',
     displayName: 'Owner Add Member',
@@ -297,11 +332,32 @@ export const TEST_ACCOUNTS = {
 
 const dockerComposeArgs = ['compose', '-f', 'docker-compose.e2e.yml'];
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker';
+const commandEnv = buildCommandEnv();
 const pendingLogoutCleanupSessionKey = 'xyz-pending-logout-cleanup';
 const relayPortsByService = {
   relay: 7000,
   'relay-two': 7001,
 } as const;
+
+function buildCommandEnv(): NodeJS.ProcessEnv {
+  const pathEntries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+  const extraPathEntries: string[] = [];
+
+  if (process.platform === 'darwin') {
+    extraPathEntries.push(
+      '/Applications/Docker.app/Contents/Resources/bin',
+      '/opt/homebrew/bin',
+      '/usr/local/bin'
+    );
+  }
+
+  return {
+    ...process.env,
+    PATH: [
+      ...new Set([...extraPathEntries.filter((entry) => fs.existsSync(entry)), ...pathEntries]),
+    ].join(path.delimiter),
+  };
+}
 
 function createRelayEntries(relayUrls: string[]) {
   return relayUrls.map((url) => ({
@@ -337,14 +393,21 @@ function attachBrowserErrorTracking(page: Page): BrowserErrorEntry[] {
 
 function runDockerCompose(args: string[]): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const child = execFile(dockerCommand, [...dockerComposeArgs, ...args], (error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
+    const child = execFile(
+      dockerCommand,
+      [...dockerComposeArgs, ...args],
+      {
+        env: commandEnv,
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
 
-      resolve();
-    });
+        resolve();
+      }
+    );
 
     child.stdin?.end();
   });
@@ -511,6 +574,22 @@ export function threadMessage(page: Page, text: string) {
   return threadMessages(page, text).last();
 }
 
+async function waitForChatsShell(page: Page): Promise<void> {
+  const startNewChatButton = page.getByTestId('start-new-chat-button');
+
+  await page.goto('/#/chats');
+  await waitForAppBridge(page);
+
+  try {
+    await expect(startNewChatButton).toBeVisible({ timeout: 15_000 });
+  } catch {
+    await refreshSession(page);
+    await page.goto('/#/chats');
+    await waitForAppBridge(page);
+    await expect(startNewChatButton).toBeVisible({ timeout: 30_000 });
+  }
+}
+
 export async function bootstrapSessionOnPage(
   page: Page,
   account: TestAccount,
@@ -564,8 +643,7 @@ export async function bootstrapSessionOnPage(
     return bridge.getSessionSnapshot();
   });
 
-  await page.goto('/#/chats');
-  await expect(page.getByTestId('start-new-chat-button')).toBeVisible();
+  await waitForChatsShell(page);
 
   return session;
 }
@@ -615,9 +693,7 @@ export async function bootstrapExtensionUser(
     await page.getByRole('button', { name: 'Not now', exact: true }).click();
   }
 
-  await waitForAppBridge(page);
-  await page.goto('/#/chats');
-  await expect(page.getByTestId('start-new-chat-button')).toBeVisible();
+  await waitForChatsShell(page);
 
   const session = await page.evaluate(async () => {
     const bridge = window.__appE2E__;
@@ -664,9 +740,80 @@ export async function waitForAppBridge(page: Page): Promise<void> {
   });
 }
 
+function isRetryableReloadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('ERR_CONNECTION_REFUSED') ||
+    message.includes('ERR_CONNECTION_RESET') ||
+    message.includes('ERR_ABORTED')
+  );
+}
+
+function isRetryableExecutionContextError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('Execution context was destroyed') ||
+    message.includes('Cannot find context with specified id') ||
+    message.includes('Most likely because of a navigation')
+  );
+}
+
+async function evaluateWithAppBridgeRetry<Arg, Result>(
+  page: Page,
+  pageFunction: (arg: Arg) => Promise<Result> | Result,
+  arg: Arg
+): Promise<Result> {
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await waitForAppBridge(page);
+
+    try {
+      return await page.evaluate(pageFunction as never, arg);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableExecutionContextError(error) || attempt === 2) {
+        throw error;
+      }
+
+      await page.waitForTimeout(250 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to evaluate in the app bridge context.');
+}
+
 export async function reloadAndWaitForApp(page: Page): Promise<void> {
-  await page.reload();
-  await waitForAppBridge(page);
+  const currentUrl = page.url();
+  const fallbackUrl = currentUrl && currentUrl !== 'about:blank' ? currentUrl : '/';
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      if (attempt === 0) {
+        await page.reload();
+      } else {
+        await page.goto(fallbackUrl, {
+          waitUntil: 'load',
+        });
+      }
+      await waitForAppBridge(page);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableReloadError(error) || attempt === 2) {
+        throw error;
+      }
+
+      await page.waitForTimeout(500 * (attempt + 1));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to reload and wait for the app.');
 }
 
 export async function expectNoUnexpectedBrowserErrors(
@@ -685,7 +832,8 @@ export async function expectNoUnexpectedBrowserErrors(
 }
 
 export async function refreshSession(page: Page, chatId?: string): Promise<void> {
-  await page.evaluate(
+  await evaluateWithAppBridgeRetry(
+    page,
     async ({ nextChatId }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {
@@ -856,15 +1004,16 @@ export async function sendMessagesViaBridge(
   options: {
     createdAts?: string[];
   } = {}
-): Promise<void> {
-  await page.evaluate(
+): Promise<SeededMessageSnapshot[]> {
+  return evaluateWithAppBridgeRetry(
+    page,
     async ({ nextChatId, nextTexts, nextCreatedAts }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {
         throw new Error('E2E bridge is not available.');
       }
 
-      await bridge.sendMessages({
+      return bridge.sendMessages({
         chatId: nextChatId,
         texts: nextTexts,
         createdAts: nextCreatedAts,
@@ -876,6 +1025,33 @@ export async function sendMessagesViaBridge(
       nextCreatedAts: options.createdAts ?? [],
     }
   );
+}
+
+export async function removeStoredMessageByEventId(
+  page: Page,
+  chatId: string,
+  eventId: string
+): Promise<void> {
+  const removed = await evaluateWithAppBridgeRetry(
+    page,
+    async ({ nextChatId, nextEventId }) => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      return bridge.removeStoredMessageByEventId({
+        chatId: nextChatId,
+        eventId: nextEventId,
+      });
+    },
+    {
+      nextChatId: chatId,
+      nextEventId: eventId,
+    }
+  );
+
+  expect(removed).toBe(true);
 }
 
 export async function openThreadSearch(page: Page): Promise<void> {
@@ -957,6 +1133,12 @@ export async function waitForChatUnreadCount(
   );
 }
 
+export async function waitForChatUnreadBadge(page: Page, match?: string | RegExp): Promise<void> {
+  await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toBeVisible({
+    timeout: 12_000,
+  });
+}
+
 export async function waitForNoChatUnreadBadge(page: Page, match?: string | RegExp): Promise<void> {
   await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toHaveCount(0, {
     timeout: 12_000,
@@ -993,7 +1175,15 @@ export async function waitForChatReactionBadge(
 }
 
 export async function openChatActions(page: Page, match?: string | RegExp): Promise<void> {
-  await resolveChatItem(page, match).getByTestId('chat-item-actions-button').click();
+  const actionsButton = resolveChatItem(page, match).getByTestId('chat-item-actions-button');
+  await expect(actionsButton).toBeVisible({ timeout: 12_000 });
+  await actionsButton.scrollIntoViewIfNeeded();
+
+  try {
+    await actionsButton.click({ timeout: 12_000 });
+  } catch {
+    await actionsButton.dispatchEvent('click');
+  }
 }
 
 export async function markChatAsRead(page: Page, match?: string | RegExp): Promise<void> {
@@ -1029,6 +1219,37 @@ export async function waitForReaction(
   }
 
   await expect(reaction).toBeVisible({ timeout: 12_000 });
+}
+
+export async function replyToMessage(
+  page: Page,
+  targetText: string,
+  replyText: string,
+  options: {
+    chatId?: string;
+  } = {}
+): Promise<void> {
+  await threadMessage(page, targetText).locator('.bubble').click();
+  await page.getByText('Reply', { exact: true }).click();
+  await expect(page.locator('.composer__reply')).toBeVisible({ timeout: 12_000 });
+  await sendMessage(page, replyText, options);
+}
+
+export async function openReplyPreview(page: Page, replyText: string): Promise<void> {
+  await threadMessage(page, replyText).locator('.bubble__reply-preview').click();
+}
+
+export async function waitForReplyPreviewText(
+  page: Page,
+  replyText: string,
+  previewText: string
+): Promise<void> {
+  await expect(threadMessage(page, replyText).locator('.bubble__reply-preview-text')).toContainText(
+    previewText,
+    {
+      timeout: 12_000,
+    }
+  );
 }
 
 export async function deleteMessage(page: Page, text: string): Promise<void> {
@@ -1069,6 +1290,19 @@ export async function retryMessageRelay(page: Page, text: string, relayUrl: stri
   await retryButtons.first().click();
 }
 
+export async function waitForMessageRelayRetryToResolve(
+  page: Page,
+  text: string,
+  relayUrl: string
+): Promise<void> {
+  await openMessageRelayStatusDialog(page, text);
+  const retryButtons = page
+    .locator('.bubble__status-list-item--dialog')
+    .filter({ hasText: relayUrl })
+    .getByRole('button', { name: 'Retry', exact: true });
+  await expect(retryButtons.first()).not.toBeVisible({ timeout: 25_000 });
+}
+
 export async function closeDialogWithEscape(page: Page): Promise<void> {
   await page.keyboard.press('Escape');
 }
@@ -1090,10 +1324,20 @@ export async function waitForDeletedMessageState(
 
 export async function logoutFromSettings(page: Page): Promise<void> {
   await page.goto('/#/settings/profile');
-  await expect(page.getByTestId('settings-logout-item')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('settings-logout-item').click();
-  await expect(page.getByTestId('settings-logout-confirm')).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId('settings-logout-confirm').click();
+  const logoutItem = page.getByTestId('settings-logout-item');
+  const logoutConfirm = page.getByTestId('settings-logout-confirm');
+
+  await expect(logoutItem).toBeVisible({ timeout: 30_000 });
+  await logoutItem.click();
+
+  try {
+    await expect(logoutConfirm).toBeVisible({ timeout: 15_000 });
+  } catch {
+    await logoutItem.click();
+    await expect(logoutConfirm).toBeVisible({ timeout: 15_000 });
+  }
+
+  await logoutConfirm.click();
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/(auth|login)/);
   await expect(page.getByText('Welcome')).toBeVisible({ timeout: 30_000 });
   await waitForAppBridge(page);

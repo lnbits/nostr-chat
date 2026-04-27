@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, nativeImage, nativeTheme, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  Notification,
+  shell,
+} from 'electron';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +21,7 @@ let unreadChatBadgeState = {
   count: 0,
   label: '',
 };
+const notificationIconPath = path.resolve(currentDir, 'icons/icon.png');
 
 function shouldToggleDevTools(input: Electron.Input): boolean {
   if (input.type !== 'keyDown') {
@@ -118,10 +127,73 @@ function getPreloadPath(): string {
   );
 }
 
+function normalizeNotificationText(value: unknown, fallback = ''): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return fallback;
+  }
+
+  return trimmedValue.length > 280 ? `${trimmedValue.slice(0, 277)}...` : trimmedValue;
+}
+
+function normalizeNotificationChatPubkey(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(trimmedValue) ? trimmedValue : null;
+}
+
+async function focusMainWindow(): Promise<BrowserWindow | null> {
+  if (!mainWindow) {
+    await createWindow();
+  }
+
+  if (!mainWindow) {
+    return null;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+
+  mainWindow.focus();
+  return mainWindow;
+}
+
+async function openChatFromNotification(chatPubkey: string): Promise<void> {
+  const windowInstance = await focusMainWindow();
+  if (!windowInstance) {
+    return;
+  }
+
+  const dispatchOpenChat = () => {
+    windowInstance.webContents.send('desktop:open-chat-from-notification', {
+      chatPubkey,
+    });
+  };
+
+  if (windowInstance.webContents.isLoadingMainFrame()) {
+    windowInstance.webContents.once('did-finish-load', dispatchOpenChat);
+    return;
+  }
+
+  dispatchOpenChat();
+}
+
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     title: 'Nostr Chat',
-    icon: path.resolve(currentDir, 'icons/icon.png'),
+    icon: notificationIconPath,
     width: 1440,
     height: 960,
     minWidth: 360,
@@ -184,6 +256,32 @@ ipcMain.on('desktop:set-unread-chat-badge', (_event, payload: unknown) => {
     label,
   };
   applyUnreadChatBadge();
+});
+
+ipcMain.on('desktop:show-incoming-message-notification', (_event, payload: unknown) => {
+  const payloadObject =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  const chatPubkey = normalizeNotificationChatPubkey(payloadObject.chatPubkey);
+  const title = normalizeNotificationText(payloadObject.title, 'New message');
+  const body = normalizeNotificationText(payloadObject.body, 'New message');
+
+  if (!chatPubkey || !Notification.isSupported()) {
+    return;
+  }
+
+  const notification = new Notification({
+    title,
+    body,
+    icon: notificationIconPath,
+  });
+
+  notification.on('click', () => {
+    void openChatFromNotification(chatPubkey);
+  });
+
+  notification.show();
 });
 
 if (!app.requestSingleInstanceLock()) {

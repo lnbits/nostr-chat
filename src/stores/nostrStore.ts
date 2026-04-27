@@ -12,9 +12,9 @@ import {
   type NsecValidationResult,
   type PrivateKeyValidationResult,
 } from 'src/services/inputSanitizerService';
-import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
+import { createAppLifecycleRuntime } from 'src/stores/nostr/appLifecycleRuntime';
 import { createAuthIdentityRuntime } from 'src/stores/nostr/authIdentityRuntime';
 import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import {
@@ -44,6 +44,7 @@ import { createMessageEventRuntime } from 'src/stores/nostr/messageEventRuntime'
 import { createMessageMutationRuntime } from 'src/stores/nostr/messageMutationRuntime';
 import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
 import { createMyRelayListRuntime } from 'src/stores/nostr/myRelayListRuntime';
+import { createOutboundMessageReplayRuntime } from 'src/stores/nostr/outboundMessageReplayRuntime';
 import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
 import { createPrivateContactMembershipRuntime } from 'src/stores/nostr/privateContactMembershipRuntime';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
@@ -51,6 +52,7 @@ import { createPrivateMessagesIngestRuntime } from 'src/stores/nostr/privateMess
 import { createPrivateMessagesSubscriptionRuntime } from 'src/stores/nostr/privateMessagesSubscriptionRuntime';
 import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessagesUiRuntime';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
+import { createReconnectHealingRuntime } from 'src/stores/nostr/reconnectHealingRuntime';
 import { createRelayConnectionRuntime } from 'src/stores/nostr/relayConnectionRuntime';
 import { createRelayPublishRuntime } from 'src/stores/nostr/relayPublishRuntime';
 import { createStartupContactSyncRuntime } from 'src/stores/nostr/startupContactSyncRuntime';
@@ -71,6 +73,7 @@ import type {
   PendingIncomingReaction,
   PrivatePreferences,
   RelaySaveStatus,
+  RepairMissingMessageDependencyOptions,
   SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
 import { createUserActions } from 'src/stores/nostr/userActions';
@@ -159,11 +162,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const privateMessagesSubscriptionLastEventId = ref<string | null>(null);
   const privateMessagesSubscriptionLastEventCreatedAt = ref<number | null>(null);
   const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
+  const isAppForeground = ref(false);
+  const isReconnectHealing = ref(false);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
   const configuredRelayUrls = new Set<string>();
   const relayConnectPromises = new Map<string, Promise<void>>();
   const relayConnectFailureCooldownUntilByUrl = new Map<string, number>();
+  const pendingDirectMessageRelayRetryPromises = new Map<string, Promise<void>>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
@@ -211,6 +217,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
   let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
+  let queueOutboundMessageReplayRuntime: (reason: string, delayMs?: number) => void = () => {};
+  let notifyOutboundMessageReplayRelayConnectedRuntime: () => void = () => {};
+  let notifyReconnectHealingBrowserOnlineRuntime: () => void = () => {};
+  let notifyReconnectHealingVisibilityHiddenRuntime: () => void = () => {};
+  let notifyReconnectHealingVisibilityRegainRuntime: () => void = () => {};
+  let notifyReconnectHealingWindowBlurRuntime: () => void = () => {};
+  let notifyReconnectHealingWindowFocusRuntime: () => void = () => {};
+  let notifyReconnectHealingRelayConnectedRuntime: () => void = () => {};
+  let notifyReconnectHealingRelayListChangedRuntime: () => void = () => {};
+  let resetAppLifecycleRuntimeStateRuntime: () => void = () => {};
+  let resetReconnectHealingRuntimeStateRuntime: () => void = () => {};
+  let setAppLifecycleRouteChatIdRuntime: (chatId: string | null) => void = () => {};
+  let startAppLifecycleRuntimeRuntime: () => void = () => {};
+  let resetOutboundMessageReplayRuntimeStateRuntime: () => void = () => {};
+  let startOutboundMessageReplayRuntime: () => Promise<void> = async () => {};
   let getOrCreateSignerRuntime: () => Promise<NDKSigner> = async () => {
     throw new Error('Relay connection runtime is not initialized.');
   };
@@ -253,6 +274,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<void> = async () => {
     throw new Error('Private messages for recipient runtime is not initialized.');
   };
+  let repairMissingMessageDependencyRuntime: (
+    chatPublicKey: string,
+    targetEventId: string,
+    options: RepairMissingMessageDependencyOptions
+  ) => Promise<boolean> = async () => {
+    throw new Error('Missing message dependency repair runtime is not initialized.');
+  };
+  let resolveMissingMessageDependencyRepairRuntime: (targetEventId: string) => void = () => {};
+  let resetPrivateMessagesBackfillRuntimeStateRuntime: () => void = () => {};
   let upsertIncomingGroupInviteRequestChatRuntime: (
     groupPublicKey: string,
     createdAt: string,
@@ -402,6 +432,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ),
     () => {
       queueTrackedContactSubscriptionsRefresh();
+      notifyReconnectHealingRelayListChangedRuntime();
     }
   );
 
@@ -702,21 +733,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
   });
 
-  async function resolveStalePendingOutboundMessageRelayStatuses(): Promise<void> {
-    await nostrEventDataService.init();
-    const updatedStatusCount = await nostrEventDataService.resolvePendingOutboundRelayStatuses();
-    if (updatedStatusCount <= 0) {
-      return;
-    }
-
-    try {
-      const { useMessageStore } = await import('src/stores/messageStore');
-      await useMessageStore().reloadLoadedMessages();
-    } catch (error) {
-      console.warn('Failed to reload messages after resolving stale relay statuses', error);
-    }
-  }
-
   const {
     buildFilterSinceDetails,
     buildFilterUntilDetails,
@@ -748,6 +764,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   const {
+    resetAppLifecycleRuntimeState: resetAppLifecycleRuntimeStateImpl,
+    setRouteChatId: setAppLifecycleRouteChatIdImpl,
+    startAppLifecycleRuntime: startAppLifecycleRuntimeImpl,
+  } = createAppLifecycleRuntime({
+    notifyReconnectHealingBrowserOnline: () => {
+      notifyReconnectHealingBrowserOnlineRuntime();
+    },
+    notifyReconnectHealingVisibilityHidden: () => {
+      notifyReconnectHealingVisibilityHiddenRuntime();
+    },
+    notifyReconnectHealingVisibilityRegain: () => {
+      notifyReconnectHealingVisibilityRegainRuntime();
+    },
+    notifyReconnectHealingWindowBlur: () => {
+      notifyReconnectHealingWindowBlurRuntime();
+    },
+    notifyReconnectHealingWindowFocus: () => {
+      notifyReconnectHealingWindowFocusRuntime();
+    },
+    setIsAppForeground: (value) => {
+      isAppForeground.value = value;
+    },
+    setVisibleChatId: (chatId) => {
+      chatStore.setVisibleChatId(chatId);
+    },
+  });
+  resetAppLifecycleRuntimeStateRuntime = resetAppLifecycleRuntimeStateImpl;
+  setAppLifecycleRouteChatIdRuntime = setAppLifecycleRouteChatIdImpl;
+  startAppLifecycleRuntimeRuntime = startAppLifecycleRuntimeImpl;
+
+  const {
     buildInboundTraceDetails,
     deriveChatName,
     logInboundEvent,
@@ -757,6 +804,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     formatSubscriptionLogValue,
     getLoggedInPublicKeyHex,
     getVisibleChatId: () => chatStore.visibleChatId,
+    isAppForeground,
     isRestoringStartupState,
     logDeveloperTrace,
     normalizeEventId,
@@ -853,6 +901,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ndk,
     queuePrivateMessagesWatchdog: (delayMs) => {
       queuePrivateMessagesWatchdogRuntime(delayMs);
+    },
+    queueOutboundMessageReplay: () => {
+      notifyOutboundMessageReplayRelayConnectedRuntime();
+    },
+    queueReconnectHealing: () => {
+      notifyReconnectHealingRelayConnectedRuntime();
     },
     relayAuthFailureListenerUrls,
     relayConnectFailureCooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
@@ -1082,6 +1136,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     processIncomingDeletionRumorEvent,
     processIncomingReactionDeletion,
     processIncomingReactionRumorEvent,
+    refreshReplyPreviewsForTargetMessage,
   } = createMessageMutationRuntime({
     buildInboundTraceDetails,
     deriveChatName,
@@ -1099,6 +1154,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     readReactionTargetEventId,
     refreshMessageInLiveState: refreshMessageInLiveStateRuntime,
     removePendingIncomingReaction: removePendingIncomingReactionRuntime,
+    repairMissingMessageDependency: (chatPublicKey, targetEventId, options) =>
+      repairMissingMessageDependencyRuntime(chatPublicKey, targetEventId, options),
+    resolveMissingMessageDependencyRepair: (targetEventId) => {
+      resolveMissingMessageDependencyRepairRuntime(targetEventId);
+    },
     toIsoTimestampFromUnix,
     consumePendingIncomingDeletions: consumePendingIncomingDeletionsRuntime,
     consumePendingIncomingReactions: consumePendingIncomingReactionsRuntime,
@@ -1144,6 +1204,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     queuePrivateMessagesUiRefresh,
     readReplyTargetEventId,
+    refreshReplyPreviewsForTargetMessage,
     resolveCurrentGroupChatEpochEntry,
     resolveGroupDisplayName,
     resolveIncomingChatInboxStateValue,
@@ -1239,6 +1300,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ensurePrivateMessagesWatchdogImpl();
 
   const {
+    repairMissingMessageDependency: repairMissingMessageDependencyImpl,
+    resetPrivateMessagesBackfillRuntimeState: resetPrivateMessagesBackfillRuntimeStateImpl,
+    resolveMissingMessageDependencyRepair: resolveMissingMessageDependencyRepairImpl,
     restoreGroupEpochHistory: restoreGroupEpochHistoryImpl,
     restorePrivateMessagesForRecipient: restorePrivateMessagesForRecipientImpl,
     startPrivateMessagesStartupBackfill: startPrivateMessagesStartupBackfillImpl,
@@ -1269,6 +1333,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStoredPrivateMessagesLastReceivedFromCreatedAt,
     writePrivateMessagesBackfillState,
   });
+  repairMissingMessageDependencyRuntime = repairMissingMessageDependencyImpl;
+  resetPrivateMessagesBackfillRuntimeStateRuntime = resetPrivateMessagesBackfillRuntimeStateImpl;
+  resolveMissingMessageDependencyRepairRuntime = resolveMissingMessageDependencyRepairImpl;
   restoreGroupEpochHistoryRuntime = restoreGroupEpochHistoryImpl;
   restorePrivateMessagesForRecipientRuntime = restorePrivateMessagesForRecipientImpl;
   startPrivateMessagesStartupBackfillRuntime = startPrivateMessagesStartupBackfillImpl;
@@ -1547,12 +1614,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshContactByPublicKey,
     refreshGroupRelayListsOnStartup,
     resetStartupStepTracking,
-    resolveStalePendingOutboundMessageRelayStatuses,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
     restoreMyRelayList,
     restorePrivateContactList,
     restorePrivatePreferences,
+    startOutboundMessageReplay: () => startOutboundMessageReplayRuntime(),
     setRestoreStartupStatePromise: (promise) => {
       restoreStartupStatePromise = promise;
     },
@@ -1616,7 +1683,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resetEventSinceForFreshLogin,
     resetGroupRosterSubscriptionRuntimeState,
     resetMyRelayListRuntimeState,
+    resetOutboundMessageReplayRuntimeState: () => {
+      resetOutboundMessageReplayRuntimeStateRuntime();
+    },
+    resetPrivateMessagesBackfillRuntimeState: () => {
+      resetPrivateMessagesBackfillRuntimeStateRuntime();
+    },
     resetPrivateContactListRuntimeState,
+    resetReconnectHealingRuntimeState: () => {
+      resetReconnectHealingRuntimeStateRuntime();
+    },
     resetPrivateMessagesIngestRuntimeState,
     resetPrivateMessagesSubscriptionRuntimeState,
     resetPrivateMessagesUiRuntimeState,
@@ -1681,9 +1757,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     getOrCreateSigner,
     giftWrapSignedEvent,
+    logMessageRelayDiagnostics,
     ndk,
     normalizeEventId,
     normalizeRelayStatusUrl,
+    pendingDirectMessageRelayRetryPromises,
     publishEventWithRelayStatuses,
     readDirectMessageRecipientPubkey,
     readEpochNumberTag,
@@ -1692,6 +1770,85 @@ export const useNostrStore = defineStore('nostrStore', () => {
     sendGiftWrappedRumor,
     toIsoTimestampFromUnix,
   });
+  const {
+    queueOutboundMessageReplay: queueOutboundMessageReplayImpl,
+    notifyRelayConnected: notifyOutboundMessageReplayRelayConnectedImpl,
+    resetOutboundMessageReplayRuntimeState: resetOutboundMessageReplayRuntimeStateImpl,
+    startOutboundMessageReplay: startOutboundMessageReplayImpl,
+  } = createOutboundMessageReplayRuntime({
+    getLoggedInPublicKeyHex,
+    logMessageRelayDiagnostics,
+    retryDirectMessageRelay,
+  });
+  queueOutboundMessageReplayRuntime = queueOutboundMessageReplayImpl;
+  notifyOutboundMessageReplayRelayConnectedRuntime = notifyOutboundMessageReplayRelayConnectedImpl;
+  resetOutboundMessageReplayRuntimeStateRuntime = resetOutboundMessageReplayRuntimeStateImpl;
+  startOutboundMessageReplayRuntime = startOutboundMessageReplayImpl;
+
+  const {
+    notifyBrowserOnline: notifyReconnectHealingBrowserOnlineImpl,
+    notifyRelayConnected: notifyReconnectHealingRelayConnectedImpl,
+    notifyRelayListChanged: notifyReconnectHealingRelayListChangedImpl,
+    notifyVisibilityHidden: notifyReconnectHealingVisibilityHiddenImpl,
+    notifyVisibilityRegain: notifyReconnectHealingVisibilityRegainImpl,
+    notifyWindowBlur: notifyReconnectHealingWindowBlurImpl,
+    notifyWindowFocus: notifyReconnectHealingWindowFocusImpl,
+    resetReconnectHealingRuntimeState: resetReconnectHealingRuntimeStateImpl,
+  } = createReconnectHealingRuntime({
+    getLoggedInPublicKeyHex,
+    getVisibleChatTarget: () => {
+      if (!chatStore.visibleChatId) {
+        return null;
+      }
+
+      const chat = chatStore.chats.find((entry) => entry.id === chatStore.visibleChatId) ?? null;
+      if (!chat) {
+        return null;
+      }
+
+      return {
+        id: chat.id,
+        publicKey: chat.publicKey,
+        type: chat.type,
+        epochPublicKey: chat.epochPublicKey,
+      };
+    },
+    isRestoringStartupState,
+    listRecentDirectMessageChatTargets: (limit, excludeChatIds = []) => {
+      const excludedChatIds = new Set(excludeChatIds);
+      return chatStore.inboxChats
+        .filter((chat) => chat.type === 'user' && !excludedChatIds.has(chat.id))
+        .slice(0, limit)
+        .map((chat) => ({
+          id: chat.id,
+          publicKey: chat.publicKey,
+          type: chat.type,
+          epochPublicKey: chat.epochPublicKey,
+        }));
+    },
+    queueOutboundMessageReplay: (reason, delayMs) => {
+      queueOutboundMessageReplayRuntime(reason, delayMs);
+    },
+    queuePrivateMessagesWatchdog: (delayMs) => {
+      queuePrivateMessagesWatchdogRuntime(delayMs);
+    },
+    refreshDeveloperPendingQueues: () => refreshDeveloperPendingQueuesRuntime(),
+    restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
+      restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
+    restorePrivateMessagesForRecipient: (recipientPubkey, options) =>
+      restorePrivateMessagesForRecipientRuntime(recipientPubkey, options),
+    setIsReconnectHealing: (value) => {
+      isReconnectHealing.value = value;
+    },
+  });
+  notifyReconnectHealingBrowserOnlineRuntime = notifyReconnectHealingBrowserOnlineImpl;
+  notifyReconnectHealingVisibilityHiddenRuntime = notifyReconnectHealingVisibilityHiddenImpl;
+  notifyReconnectHealingVisibilityRegainRuntime = notifyReconnectHealingVisibilityRegainImpl;
+  notifyReconnectHealingWindowBlurRuntime = notifyReconnectHealingWindowBlurImpl;
+  notifyReconnectHealingWindowFocusRuntime = notifyReconnectHealingWindowFocusImpl;
+  notifyReconnectHealingRelayConnectedRuntime = notifyReconnectHealingRelayConnectedImpl;
+  notifyReconnectHealingRelayListChangedRuntime = notifyReconnectHealingRelayListChangedImpl;
+  resetReconnectHealingRuntimeStateRuntime = resetReconnectHealingRuntimeStateImpl;
 
   const {
     getDeveloperDiagnosticsSnapshot,
@@ -1768,6 +1925,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshDeveloperPendingQueues,
     refreshPrivateMessages,
     getRelayConnectionState,
+    isAppForeground,
+    isReconnectHealing,
     isRestoringStartupState,
     listDeveloperTraceEntries,
     loginWithExtension: loginWithExtensionImpl,
@@ -1793,8 +1952,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restorePrivateContactList,
     restorePrivatePreferences,
     restoreStartupState,
+    setAppLifecycleRouteChatId: (chatId: string | null) => {
+      setAppLifecycleRouteChatIdRuntime(chatId);
+    },
     reconnectAllDeveloperRelays,
     reconnectDeveloperRelay,
+    repairMissingMessageDependency: (
+      chatPublicKey: string,
+      targetEventId: string,
+      options: RepairMissingMessageDependencyOptions
+    ) => repairMissingMessageDependencyRuntime(chatPublicKey, targetEventId, options),
     restartPrivateMessagesDiagnosticsSubscription,
     retryDirectMessageRelay,
     retryGroupEpochTicketRelay,
@@ -1809,6 +1976,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     subscribeMyRelayListUpdates,
     subscribePrivateContactListUpdates,
     subscribePrivateMessagesForLoggedInUser: subscribePrivateMessagesForLoggedInUserRuntime,
+    startAppLifecycleRuntime: () => {
+      startAppLifecycleRuntimeRuntime();
+    },
+    stopAppLifecycleRuntime: () => {
+      resetAppLifecycleRuntimeStateRuntime();
+    },
     updateLoggedInUserRelayList,
     setDeveloperDiagnosticsEnabled,
     syncLoggedInContactProfile,

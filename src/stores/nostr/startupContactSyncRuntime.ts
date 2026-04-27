@@ -56,12 +56,12 @@ interface StartupContactSyncRuntimeDeps {
   ) => Promise<unknown>;
   refreshGroupRelayListsOnStartup: (seedRelayUrls?: string[]) => Promise<void>;
   resetStartupStepTracking: () => void;
-  resolveStalePendingOutboundMessageRelayStatuses: () => Promise<void>;
   restoreContactCursorState: (seedRelayUrls?: string[]) => Promise<void>;
   restoreGroupIdentitySecrets: (seedRelayUrls?: string[]) => Promise<void>;
   restoreMyRelayList: (seedRelayUrls?: string[]) => Promise<void>;
   restorePrivateContactList: (seedRelayUrls?: string[]) => Promise<void>;
   restorePrivatePreferences: (seedRelayUrls?: string[]) => Promise<void>;
+  startOutboundMessageReplay: () => Promise<void>;
   setRestoreStartupStatePromise: (promise: Promise<void> | null) => void;
   setSyncLoggedInContactProfilePromise: (promise: Promise<void> | null) => void;
   setSyncRecentChatContactsPromise: (promise: Promise<void> | null) => void;
@@ -95,12 +95,12 @@ export function createStartupContactSyncRuntime({
   refreshContactByPublicKey,
   refreshGroupRelayListsOnStartup,
   resetStartupStepTracking,
-  resolveStalePendingOutboundMessageRelayStatuses,
   restoreContactCursorState,
   restoreGroupIdentitySecrets,
   restoreMyRelayList,
   restorePrivateContactList,
   restorePrivatePreferences,
+  startOutboundMessageReplay,
   setRestoreStartupStatePromise,
   setSyncLoggedInContactProfilePromise,
   setSyncRecentChatContactsPromise,
@@ -362,8 +362,8 @@ export function createStartupContactSyncRuntime({
     isRestoringStartupState.value = true;
     const nextPromise = (async () => {
       try {
-        await runStartupTask('Failed to resolve stale relay statuses on startup', () =>
-          resolveStalePendingOutboundMessageRelayStatuses()
+        await runStartupTask('Failed to start outbound message replay on startup', () =>
+          startOutboundMessageReplay()
         );
         await runStartupTask('Failed to sync logged-in contact on startup', () =>
           syncLoggedInContactProfile(seedRelayUrls)

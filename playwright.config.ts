@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test';
 
 const appBaseUrl = process.env.APP_BASE_URL ?? 'http://127.0.0.1:4100';
 const isCi = Boolean(process.env.CI);
+const configuredWorkers = Number.parseInt(process.env.PLAYWRIGHT_WORKERS ?? '', 10);
+const webServerCommand = `${JSON.stringify(process.execPath)} ./scripts/quasar.cjs dev --port 4100 --hostname 127.0.0.1`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -9,7 +11,8 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: isCi,
   retries: isCi ? 1 : 0,
-  workers: isCi ? 1 : 5,
+  workers:
+    Number.isInteger(configuredWorkers) && configuredWorkers > 0 ? configuredWorkers : isCi ? 1 : 2,
   expect: {
     timeout: 15_000,
   },
@@ -25,12 +28,12 @@ export default defineConfig({
       height: 960,
     },
     testIdAttribute: 'data-testid',
-    trace: 'on',
-    screenshot: 'on',
-    video: 'on',
+    trace: isCi ? 'on-first-retry' : 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run dev:e2e',
+    command: webServerCommand,
     url: appBaseUrl,
     reuseExistingServer: !isCi,
     timeout: 120_000,

@@ -27,10 +27,24 @@ export interface AppE2EReplaceStoredGroupMembersOptions {
   memberPublicKeys: string[];
 }
 
+export interface AppE2ERemoveStoredMessageOptions {
+  chatId: string;
+  eventId: string;
+}
+
 export interface AppE2ESendMessagesOptions {
   chatId: string;
   texts: string[];
   createdAts?: string[];
+}
+
+export interface AppE2ESentMessageSnapshot {
+  id: string;
+  chatId: string;
+  text: string;
+  sentAt: string;
+  authorPublicKey: string;
+  eventId: string | null;
 }
 
 export interface AppE2ESessionSnapshot {
@@ -49,14 +63,16 @@ export interface AppE2EBridge {
   getSessionSnapshot(): Promise<AppE2ESessionSnapshot>;
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
   logout(): Promise<void>;
+  removeStoredMessageByEventId(options: AppE2ERemoveStoredMessageOptions): Promise<boolean>;
   rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
-  sendMessages(options: AppE2ESendMessagesOptions): Promise<void>;
+  sendMessages(options: AppE2ESendMessagesOptions): Promise<AppE2ESentMessageSnapshot[]>;
   replaceStoredGroupMembers(options: AppE2EReplaceStoredGroupMembersOptions): Promise<void>;
   updateContactRelays(options: AppE2EUpdateContactRelaysOptions): Promise<void>;
   waitForAppReady(options?: AppE2EWaitForAppReadyOptions): Promise<void>;
 }
 
 const WINDOW_BRIDGE_KEY = '__appE2E__';
+const E2E_BOOTSTRAP_RETRY_DELAYS_MS = [300, 600, 1_000];
 
 function normalizeRelayUrls(relayUrls: string[]): string[] {
   return inputSanitizerService.normalizeRelayEntriesFromUrls(relayUrls).map((entry) => entry.url);
@@ -78,6 +94,20 @@ function createSessionSnapshot(
       relayUrls: normalizedRelayUrls,
     })
   );
+}
+
+function getBootstrapErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? '');
+}
+
+function isRetryableBootstrapError(error: unknown): boolean {
+  return getBootstrapErrorMessage(error).includes('Not enough relays received the event');
+}
+
+async function waitForBootstrapRetry(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, delayMs);
+  });
 }
 
 async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot> {
@@ -130,8 +160,27 @@ async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2E
     throw new Error('Invalid private key supplied for e2e bootstrap.');
   }
 
-  await nostrStore.updateLoggedInUserRelayList(relayEntries);
-  await nostrStore.publishMyRelayList(relayEntries, relayUrls);
+  let bootstrapPublishError: unknown = null;
+  for (let attempt = 0; attempt <= E2E_BOOTSTRAP_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      await nostrStore.updateLoggedInUserRelayList(relayEntries);
+      await nostrStore.publishMyRelayList(relayEntries, relayUrls);
+      bootstrapPublishError = null;
+      break;
+    } catch (error) {
+      bootstrapPublishError = error;
+      if (!isRetryableBootstrapError(error) || attempt >= E2E_BOOTSTRAP_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+
+      await waitForBootstrapRetry(E2E_BOOTSTRAP_RETRY_DELAYS_MS[attempt] ?? 300);
+    }
+  }
+
+  if (bootstrapPublishError) {
+    throw bootstrapPublishError;
+  }
+
   await nostrStore.restoreStartupState(relayUrls);
   await Promise.all([chatStore.init(), messageStore.init()]);
   await Promise.all([chatStore.reload(), messageStore.reloadLoadedMessages()]);
@@ -239,6 +288,17 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
     typeof options.chatId === 'string' ? options.chatId.trim().toLowerCase() : '';
 
   if (normalizedChatId) {
+    const chat = chatStore.chats.find((entry) => entry.id === normalizedChatId) ?? null;
+    if (chat?.type === 'group') {
+      await nostrStore.restorePrivateMessagesForRecipient(chat.publicKey, { force: true });
+      if (chat.epochPublicKey) {
+        await nostrStore.restoreGroupEpochHistory(chat.publicKey, chat.epochPublicKey, {
+          force: true,
+        });
+      }
+      await chatStore.reload();
+    }
+
     await messageStore.loadMessages(normalizedChatId, true);
     return;
   }
@@ -275,7 +335,9 @@ async function rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise
   );
 }
 
-async function sendMessages(options: AppE2ESendMessagesOptions): Promise<void> {
+async function sendMessages(
+  options: AppE2ESendMessagesOptions
+): Promise<AppE2ESentMessageSnapshot[]> {
   const normalizedChatId = options.chatId.trim().toLowerCase();
   const texts = options.texts
     .map((entry) => String(entry ?? '').trim())
@@ -289,7 +351,7 @@ async function sendMessages(options: AppE2ESendMessagesOptions): Promise<void> {
   }
 
   if (texts.length === 0) {
-    return;
+    return [];
   }
 
   if (createdAts.length > 0 && createdAts.length !== texts.length) {
@@ -303,6 +365,7 @@ async function sendMessages(options: AppE2ESendMessagesOptions): Promise<void> {
 
   const chatStore = useChatStore();
   const messageStore = useMessageStore();
+  const sentMessages: AppE2ESentMessageSnapshot[] = [];
 
   await Promise.all([chatStore.init(), messageStore.init()]);
 
@@ -326,7 +389,57 @@ async function sendMessages(options: AppE2ESendMessagesOptions): Promise<void> {
     await chatStore.acceptChat(normalizedChatId, {
       lastOutgoingMessageAt: created.sentAt,
     });
+    sentMessages.push({
+      id: created.id,
+      chatId: created.chatId,
+      text: created.text,
+      sentAt: created.sentAt,
+      authorPublicKey: created.authorPublicKey,
+      eventId: created.eventId,
+    });
   }
+
+  return JSON.parse(JSON.stringify(sentMessages)) as AppE2ESentMessageSnapshot[];
+}
+
+async function removeStoredMessageByEventId(
+  options: AppE2ERemoveStoredMessageOptions
+): Promise<boolean> {
+  const normalizedChatId = inputSanitizerService.normalizeHexKey(options.chatId);
+  const normalizedEventId = inputSanitizerService.normalizeHexKey(options.eventId);
+  if (!normalizedChatId || !normalizedEventId) {
+    throw new Error('A valid chat id and event id are required to remove a stored message.');
+  }
+
+  const [{ useChatStore }, { useMessageStore }, { chatDataService }, { nostrEventDataService }] =
+    await Promise.all([
+      import('src/stores/chatStore'),
+      import('src/stores/messageStore'),
+      import('src/services/chatDataService'),
+      import('src/services/nostrEventDataService'),
+    ]);
+
+  const chatStore = useChatStore();
+  const messageStore = useMessageStore();
+
+  await Promise.all([
+    chatStore.init(),
+    messageStore.init(),
+    chatDataService.init(),
+    nostrEventDataService.init(),
+  ]);
+
+  const hadStoredEvent = Boolean(await nostrEventDataService.getEventById(normalizedEventId));
+  const deletedMessage = await chatDataService.deleteMessageByEventId(normalizedEventId);
+  await nostrEventDataService.deleteEventsByIds([normalizedEventId]);
+
+  if (!deletedMessage && !hadStoredEvent) {
+    return false;
+  }
+
+  messageStore.removeChatMessages(normalizedChatId);
+  await Promise.all([messageStore.loadMessages(normalizedChatId, true), chatStore.reload()]);
+  return true;
 }
 
 async function updateContactRelays(options: AppE2EUpdateContactRelaysOptions): Promise<void> {
@@ -409,6 +522,7 @@ export function installAppE2EBridge(): void {
     getSessionSnapshot,
     refreshSession,
     logout,
+    removeStoredMessageByEventId,
     rotateGroupEpoch,
     replaceStoredGroupMembers,
     sendMessages,

@@ -23,6 +23,7 @@ interface InboundPresentationRuntimeDeps {
   formatSubscriptionLogValue: (value: string | null | undefined) => string | null;
   getLoggedInPublicKeyHex: () => string | null;
   getVisibleChatId: () => string | null;
+  isAppForeground: Ref<boolean>;
   isRestoringStartupState: Ref<boolean>;
   logDeveloperTrace: (
     level: 'info' | 'warn' | 'error',
@@ -37,6 +38,7 @@ export function createInboundPresentationRuntime({
   formatSubscriptionLogValue,
   getLoggedInPublicKeyHex,
   getVisibleChatId,
+  isAppForeground,
   isRestoringStartupState,
   logDeveloperTrace,
   normalizeEventId,
@@ -150,15 +152,7 @@ export function createInboundPresentationRuntime({
       return true;
     }
 
-    if (typeof document === 'undefined') {
-      return false;
-    }
-
-    return (
-      document.visibilityState === 'visible' &&
-      document.hasFocus() &&
-      getVisibleChatId() === chatPubkey
-    );
+    return isAppForeground.value && getVisibleChatId() === chatPubkey;
   }
 
   async function shouldNotifyForAcceptedChatOnly(
@@ -222,9 +216,31 @@ export function createInboundPresentationRuntime({
       return;
     }
 
+    const messagePreview = buildBrowserNotificationMessagePreview(options.messageText);
+
+    if (
+      window.desktopRuntime?.isElectron &&
+      typeof window.desktopRuntime.showIncomingMessageNotification === 'function'
+    ) {
+      try {
+        window.desktopRuntime.showIncomingMessageNotification({
+          chatPubkey: options.chatPubkey,
+          title: options.title,
+          body: messagePreview,
+        });
+        return;
+      } catch (error) {
+        console.warn('Failed to show incoming desktop notification', error);
+      }
+    }
+
+    if (typeof window.Notification !== 'function') {
+      return;
+    }
+
     try {
       const notification = new window.Notification(options.title, {
-        body: buildBrowserNotificationMessagePreview(options.messageText),
+        body: messagePreview,
         ...(options.iconUrl ? { icon: options.iconUrl } : {}),
       });
 
@@ -238,7 +254,7 @@ export function createInboundPresentationRuntime({
         }
       };
     } catch (error) {
-      console.warn('Failed to show browser notification for incoming message', error);
+      console.warn('Failed to show incoming browser notification', error);
     }
   }
 

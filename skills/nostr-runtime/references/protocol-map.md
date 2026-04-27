@@ -60,9 +60,9 @@
   - Higher-level user-facing Nostr actions
 - `e2e/session.spec.ts`
   - Restore and session behavior
-- `e2e/dm.spec.ts`
+- `e2e/dm/*.spec.ts`
   - Direct-message flows
-- `e2e/groups.spec.ts`
+- `e2e/groups/*.spec.ts`
   - Group invite and epoch-related flows
 - `e2e/relays.spec.ts`
   - Relay settings and publication flows

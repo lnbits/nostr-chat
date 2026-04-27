@@ -374,7 +374,7 @@ export function createContactSubscriptionsRuntime({
       ...contactProfileTargetDetails,
     });
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const contactProfileFilters: NDKFilter = {
       kinds: [NDKKind.Metadata],
       authors: contactPubkeys,
@@ -496,7 +496,7 @@ export function createContactSubscriptionsRuntime({
       ...contactRelayTargetDetails,
     });
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const contactRelayListFilters: NDKFilter = {
       kinds: [NDKKind.RelayList],
       authors: contactPubkeys,
