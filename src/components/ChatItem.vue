@@ -372,8 +372,7 @@ function emitDeleteChat(): void {
 }
 
 .chat-item:hover .chat-item__more,
-.chat-item:focus-within .chat-item__more,
-.chat-item--active .chat-item__more {
+.chat-item:focus-within .chat-item__more {
   opacity: 1;
 }
 
@@ -431,6 +430,10 @@ function emitDeleteChat(): void {
     font-weight: 400;
     line-height: var(--tg-mobile-small-line-height);
     letter-spacing: 0;
+  }
+
+  .q-btn.chat-item__more {
+    opacity: 1;
   }
 
   .chat-item__reaction-count,
