@@ -1,0 +1,298 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - 'v*.*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+      commit: ${{ steps.validate.outputs.commit }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must match v<major>.<minor>.<patch>.<build>; got ${tag}" >&2
+            exit 1
+          fi
+
+          git fetch --force origin +refs/heads/main:refs/remotes/origin/main
+          commit="$(git rev-list -n 1 "${tag}")"
+
+          if ! git merge-base --is-ancestor "${commit}" refs/remotes/origin/main; then
+            echo "Tag ${tag} points to ${commit}, which is not reachable from origin/main." >&2
+            exit 1
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "version=${tag#v}"
+            echo "commit=${commit}"
+          } >> "${GITHUB_OUTPUT}"
+
+  build-android:
+    name: Build Android APK
+    needs: validate-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Build Android APK
+        run: npm run build:android:apk:release
+
+      - name: Stage Android release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-assets
+          apk="$(find dist/capacitor/android -type f -name '*.apk' | sort | head -n 1)"
+
+          if [[ -z "${apk}" ]]; then
+            echo "No APK found under dist/capacitor/android." >&2
+            exit 1
+          fi
+
+          cp "${apk}" release-assets/nostr-chat-android.apk
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-android
+          path: release-assets/nostr-chat-android.apk
+          if-no-files-found: error
+
+  build-linux:
+    name: Build Linux AppImage
+    needs: validate-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Build Linux AppImage
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run build:electron:linux
+
+      - name: Stage Linux release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-assets
+          appimage="$(find dist/electron/Packaged -type f -name '*.AppImage' | sort | head -n 1)"
+
+          if [[ -z "${appimage}" ]]; then
+            echo "No AppImage found under dist/electron/Packaged." >&2
+            exit 1
+          fi
+
+          cp "${appimage}" release-assets/nostr-chat-linux.AppImage
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-linux
+          path: release-assets/nostr-chat-linux.AppImage
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS DMG
+    needs: validate-tag
+    runs-on: macos-13
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Build macOS DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run build:electron:mac
+
+      - name: Stage macOS release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-assets
+          dmg="$(find dist/electron/Packaged -type f -name '*.dmg' | sort | head -n 1)"
+
+          if [[ -z "${dmg}" ]]; then
+            echo "No DMG found under dist/electron/Packaged." >&2
+            exit 1
+          fi
+
+          cp "${dmg}" release-assets/nostr-chat-macos.dmg
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-macos
+          path: release-assets/nostr-chat-macos.dmg
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows EXE
+    needs: validate-tag
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Build Windows EXE
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run build:electron:win
+
+      - name: Stage Windows release asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $exe = Get-ChildItem -Path dist/electron/Packaged -File -Filter *.exe |
+            Sort-Object Name |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw 'No EXE found under dist/electron/Packaged.'
+          }
+
+          Copy-Item $exe.FullName release-assets/nostr-chat-windows.exe
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-windows
+          path: release-assets/nostr-chat-windows.exe
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - validate-tag
+      - build-android
+      - build-linux
+      - build-macos
+      - build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate-tag.outputs.tag }}
+          COMMIT: ${{ needs.validate-tag.outputs.commit }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          required_assets=(
+            nostr-chat-android.apk
+            nostr-chat-linux.AppImage
+            nostr-chat-macos.dmg
+            nostr-chat-windows.exe
+          )
+
+          for asset in "${required_assets[@]}"; do
+            if [[ ! -f "release-assets/${asset}" ]]; then
+              echo "Missing release asset: ${asset}" >&2
+              exit 1
+            fi
+          done
+
+          sha256sum release-assets/* > release-assets/SHA256SUMS
+
+          cat > release-notes.md <<EOF
+          Automated binary release for ${TAG}.
+
+          Commit: ${COMMIT}
+
+          Versioned asset URLs:
+
+          - Android APK: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-android.apk
+          - Linux AppImage: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-linux.AppImage
+          - macOS DMG: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-macos.dmg
+          - Windows EXE: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-windows.exe
+
+          Latest asset URLs:
+
+          - Android APK: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-android.apk
+          - Linux AppImage: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-linux.AppImage
+          - macOS DMG: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-macos.dmg
+          - Windows EXE: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-windows.exe
+          EOF
+
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            gh release upload "${TAG}" release-assets/* --clobber
+            gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md --latest
+          else
+            gh release create "${TAG}" release-assets/* \
+              --verify-tag \
+              --title "${TAG}" \
+              --notes-file release-notes.md \
+              --latest
+          fi
