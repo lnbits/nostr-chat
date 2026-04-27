@@ -3,8 +3,11 @@
     <div
       ref="shellRef"
       class="home-shell"
-      :class="{ 'home-shell--mobile': isMobile }"
-      :style="shellStyle"
+      :class="{
+        'home-shell--mobile': isMobile,
+        'home-shell--mobile-keyboard': isMobile && isVisualViewportKeyboardVisible
+      }"
+      :style="homeShellStyle"
     >
       <div v-if="isReconnectHealing" class="home-shell__sync-status" aria-live="polite">
         <span class="home-shell__sync-pill">
@@ -259,7 +262,11 @@ const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
-const { visibleViewportHeight } = useVisibleViewportHeight(() => $q.screen.height);
+const {
+  visibleViewportHeight,
+  visibleViewportKeyboardInset,
+  isVisualViewportKeyboardVisible
+} = useVisibleViewportHeight(() => $q.screen.height);
 const {
   isMobile,
   shellRef,
@@ -353,6 +360,24 @@ const isThreadInitializing = computed(() => {
   return !chatStore.isLoaded;
 });
 const isReconnectHealing = computed(() => nostrStore.isReconnectHealing);
+const mobileViewportShellStyle = computed<Record<string, string>>(() => {
+  if (!isMobile.value) {
+    return {};
+  }
+
+  const viewportHeight = Math.max(0, visibleViewportHeight.value ?? $q.screen.height);
+
+  return {
+    '--tg-mobile-keyboard-inset': `${Math.max(0, visibleViewportKeyboardInset.value)}px`,
+    height: `${viewportHeight}px`,
+    minHeight: `${viewportHeight}px`,
+    maxHeight: `${viewportHeight}px`
+  };
+});
+const homeShellStyle = computed<Record<string, string>>(() => ({
+  ...shellStyle.value,
+  ...mobileViewportShellStyle.value
+}));
 
 const currentMessages = computed(() => {
   return messageStore.getMessages(activeChatId.value || null);

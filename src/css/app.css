@@ -232,6 +232,37 @@ body.body--dark {
   color: var(--tg-text);
 }
 
+body.native-mobile.mobile {
+  --tg-native-app-safe-area-top: max(env(safe-area-inset-top), 24px);
+}
+
+body.native-mobile.mobile.platform-ios {
+  --tg-native-app-safe-area-top: max(env(safe-area-inset-top), 30px);
+}
+
+body.native-mobile.mobile .sidebar-top,
+body.native-mobile.mobile .contacts-sidebar__top,
+body.native-mobile.mobile .settings-sidebar__top,
+body.native-mobile.mobile .settings-detail-layout__header {
+  padding-top: calc(var(--tg-native-app-safe-area-top) + 12px);
+}
+
+body.native-mobile.mobile .thread-header {
+  padding-top: calc(var(--tg-native-app-safe-area-top) + 8px);
+}
+
+body.native-mobile.mobile .contacts-detail-mobile-header {
+  padding-top: calc(var(--tg-native-app-safe-area-top) + 10px);
+}
+
+body.native-mobile.mobile .home-shell__sync-status {
+  top: calc(var(--tg-native-app-safe-area-top) + 12px);
+}
+
+body.native-mobile.mobile .thread-more--top {
+  top: calc(var(--tg-native-app-safe-area-top) + 44px);
+}
+
 ::selection {
   background: rgba(46, 129, 255, 0.25);
 }
