@@ -1056,6 +1056,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   color: color-mix(in srgb, var(--tg-border) 20%, #5f718a 80%);
   background: transparent !important;
   box-shadow: none !important;
+  opacity: 0;
   transition: color 0.2s ease, opacity 0.2s ease;
 }
 
@@ -1068,6 +1069,11 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   background: transparent !important;
   box-shadow: none !important;
   transform: none !important;
+}
+
+.contact-item:hover .contact-item__more,
+.contact-item:focus-within .contact-item__more {
+  opacity: 1;
 }
 
 .contact-item__main {
@@ -1156,6 +1162,10 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   .contacts-detail-panel--mobile {
     border-bottom: 0;
     border-top: 0;
+  }
+
+  .q-btn.contact-item__more {
+    opacity: 1;
   }
 }
 </style>

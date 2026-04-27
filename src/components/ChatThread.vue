@@ -1,5 +1,5 @@
 <template>
-  <div class="thread-root">
+  <div class="thread-root" @focusin="handleThreadFocusIn">
     <template v-if="chat">
       <div class="thread-header">
         <q-btn
@@ -299,10 +299,14 @@ const props = withDefaults(
     messages: Message[];
     isInitializing?: boolean;
     showBackButton?: boolean;
+    keyboardVisible?: boolean;
+    mobileViewportHeight?: number | null;
   }>(),
   {
     isInitializing: false,
-    showBackButton: false
+    showBackButton: false,
+    keyboardVisible: false,
+    mobileViewportHeight: null
   }
 );
 
@@ -367,6 +371,7 @@ let scrollToBottomRequestId = 0;
 let threadSearchDebounceId: number | null = null;
 let threadSearchRequestToken = 0;
 let threadSearchNavigationToken = 0;
+const pendingViewportSettleScrollTimeoutIds = new Set<number>();
 let pendingPaginationContext:
   | {
       direction: 'older' | 'newer';
@@ -902,6 +907,29 @@ async function refreshMessageAuthorIdentities(): Promise<void> {
 function cancelPendingScrollToBottom(): void {
   scrollToBottomRequestId += 1;
   isScrollingToBottom = false;
+}
+
+function clearPendingViewportSettleScrolls(): void {
+  pendingViewportSettleScrollTimeoutIds.forEach((timeoutId) => {
+    window.clearTimeout(timeoutId);
+  });
+  pendingViewportSettleScrollTimeoutIds.clear();
+}
+
+function scheduleViewportSettleScrollToBottom(): void {
+  if (typeof window === 'undefined' || !props.chat || !isAutomaticBottomScrollEnabled.value) {
+    return;
+  }
+
+  clearPendingViewportSettleScrolls();
+
+  [80, 220, 420].forEach((delay) => {
+    const timeoutId = window.setTimeout(() => {
+      pendingViewportSettleScrollTimeoutIds.delete(timeoutId);
+      void scrollToBottom('auto');
+    }, delay);
+    pendingViewportSettleScrollTimeoutIds.add(timeoutId);
+  });
 }
 
 function cancelPendingAutomaticThreadPosition(): void {
@@ -1998,6 +2026,15 @@ function handleOpenAuthorProfile(publicKey: string): void {
   }
 }
 
+function handleThreadFocusIn(event: FocusEvent): void {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (!target?.closest('.composer')) {
+    return;
+  }
+
+  scheduleViewportSettleScrollToBottom();
+}
+
 watch(
   () => [props.chat?.publicKey ?? null, loggedInPublicKey.value, nostrStore.contactListVersion] as const,
   ([chatPublicKey, loggedInPublicKeyValue]) => {
@@ -2135,6 +2172,30 @@ watch(
 );
 
 watch(
+  () => props.keyboardVisible,
+  (isVisible) => {
+    if (isVisible) {
+      scheduleViewportSettleScrollToBottom();
+    }
+  }
+);
+
+watch(
+  () => props.mobileViewportHeight,
+  (nextHeight, previousHeight) => {
+    if (
+      typeof nextHeight !== 'number' ||
+      typeof previousHeight !== 'number' ||
+      nextHeight >= previousHeight
+    ) {
+      return;
+    }
+
+    scheduleViewportSettleScrollToBottom();
+  }
+);
+
+watch(
   reactionVisibilitySignature,
   () => {
     scheduleVisibleReactionViewSync();
@@ -2154,6 +2215,7 @@ onBeforeUnmount(() => {
   pendingPaginationContext = null;
   setThreadScrollLocked(false);
   cancelPendingScrollToBottom();
+  clearPendingViewportSettleScrolls();
 });
 </script>
 
@@ -2404,9 +2466,36 @@ body.body--dark .thread-header__action {
 }
 
 @media (max-width: 1023px) {
+  .thread-header {
+    min-height: 56px;
+    padding: 8px 10px;
+    font-family: var(--tg-mobile-font);
+  }
+
+  .thread-header__name {
+    overflow: hidden;
+    font-size: var(--tg-mobile-header-title-font-size);
+    font-weight: 600;
+    line-height: var(--tg-mobile-header-title-line-height);
+    letter-spacing: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .thread-header__time {
+    overflow: hidden;
+    font-size: var(--tg-mobile-header-subtitle-font-size);
+    font-weight: 400;
+    line-height: var(--tg-mobile-header-subtitle-line-height);
+    letter-spacing: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .thread-search {
     flex-wrap: wrap;
     padding: 10px 10px 12px;
+    font-family: var(--tg-mobile-font);
   }
 
   .thread-search__input {
@@ -2415,6 +2504,8 @@ body.body--dark .thread-header__action {
 
   .thread-search__meta {
     min-width: 0;
+    font-size: var(--tg-mobile-small-font-size);
+    line-height: var(--tg-mobile-small-line-height);
     text-align: left;
   }
 
@@ -2543,6 +2634,17 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   box-shadow:
     var(--tg-reaction-accent-shadow-soft),
     0 0 0 2px color-mix(in srgb, var(--q-primary) 24%, transparent);
+}
+
+@media (max-width: 1023px) {
+  .thread-day-sticky__label,
+  .thread-day-separator__label,
+  .thread-unread-separator__label {
+    font-family: var(--tg-mobile-font);
+    font-size: var(--tg-mobile-small-font-size);
+    line-height: var(--tg-mobile-small-line-height);
+    letter-spacing: 0;
+  }
 }
 
 .thread-message-entry {

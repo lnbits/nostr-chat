@@ -1,5 +1,5 @@
 {
-  "name": "quasar-telegram-ui",
+  "name": "nostr-chat",
   "version": "0.1.0",
   "description": "Desktop and web Nostr chat client.",
   "private": true,
