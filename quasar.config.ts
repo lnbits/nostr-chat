@@ -33,7 +33,7 @@ export default configure(() => {
         artifactName: `\${productName}-\${version}-\${os}-\${arch}.\${ext}`,
         mac: {
           category: 'public.app-category.social-networking',
-          target: ['dmg', 'zip'],
+          target: ['zip'],
         },
         win: {
           target: ['nsis'],
