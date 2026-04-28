@@ -62,7 +62,8 @@ EOF
 publish_release() {
   if gh release view "${TAG}" > /dev/null 2>&1; then
     gh release upload "${TAG}" release-assets/* --clobber
-    gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md --latest
+    gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md --draft=false --prerelease=false
+    gh release edit "${TAG}" --latest
     return
   fi
 
@@ -70,7 +71,8 @@ publish_release() {
     --verify-tag \
     --title "${TAG}" \
     --notes-file release-notes.md \
-    --latest
+    --latest=false
+  gh release edit "${TAG}" --latest
 }
 
 validate_env
