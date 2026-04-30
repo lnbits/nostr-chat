@@ -15,6 +15,7 @@ import type { Ref } from 'vue';
 
 export type ReconnectHealingReason =
   | 'browser-online'
+  | 'native-android-active'
   | 'window-focus'
   | 'visibility-regain'
   | 'relay-connected'
@@ -93,6 +94,8 @@ function normalizeChatTarget(
 
 function getReconnectHealingDelayMs(reason: ReconnectHealingReason): number {
   switch (reason) {
+    case 'native-android-active':
+      return 0;
     case 'window-focus':
       return RECONNECT_HEALING_FOCUS_DELAY_MS;
     case 'visibility-regain':

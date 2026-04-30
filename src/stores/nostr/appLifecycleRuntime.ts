@@ -6,8 +6,12 @@ interface AppLifecycleRuntimeDeps {
   notifyReconnectHealingVisibilityRegain: () => void;
   notifyReconnectHealingWindowBlur: () => void;
   notifyReconnectHealingWindowFocus: () => void;
+  notifyNativeAndroidAppActive?: () => void;
   setIsAppForeground: (value: boolean) => void;
   setVisibleChatId: (chatId: string | null) => void;
+  startNativeAndroidAppStateListener?: (
+    listener: (isActive: boolean) => void
+  ) => { remove: () => void } | null;
 }
 
 function hasWindow(): boolean {
@@ -43,6 +47,7 @@ function normalizeRouteChatId(value: string | null | undefined): string | null {
 }
 
 export function createAppLifecycleRuntime({
+  notifyNativeAndroidAppActive = () => {},
   notifyReconnectHealingBrowserOnline,
   notifyReconnectHealingVisibilityHidden,
   notifyReconnectHealingVisibilityRegain,
@@ -50,6 +55,7 @@ export function createAppLifecycleRuntime({
   notifyReconnectHealingWindowFocus,
   setIsAppForeground,
   setVisibleChatId,
+  startNativeAndroidAppStateListener,
 }: AppLifecycleRuntimeDeps) {
   let routeChatId: string | null = null;
   let isDocumentVisible = false;
@@ -58,6 +64,7 @@ export function createAppLifecycleRuntime({
   let hasVisibilityListener = false;
   let hasFocusListener = false;
   let hasBlurListener = false;
+  let nativeAndroidAppStateListenerHandle: { remove: () => void } | null = null;
 
   function syncDerivedLifecycleState(): void {
     const isAppForeground = isDocumentVisible && isWindowFocused;
@@ -119,6 +126,18 @@ export function createAppLifecycleRuntime({
     setWindowFocus(false);
   }
 
+  function handleNativeAndroidAppStateChange(isActive: boolean): void {
+    if (isActive) {
+      setDocumentVisibility(true);
+      setWindowFocus(true);
+      notifyNativeAndroidAppActive();
+      return;
+    }
+
+    setWindowFocus(false);
+    setDocumentVisibility(false);
+  }
+
   function setRouteChatId(nextChatId: string | null): void {
     routeChatId = normalizeRouteChatId(nextChatId);
     syncDerivedLifecycleState();
@@ -152,6 +171,12 @@ export function createAppLifecycleRuntime({
       document.addEventListener('visibilitychange', handleDocumentVisibilityChange);
       hasVisibilityListener = true;
     }
+
+    if (!nativeAndroidAppStateListenerHandle && startNativeAndroidAppStateListener) {
+      nativeAndroidAppStateListenerHandle = startNativeAndroidAppStateListener(
+        handleNativeAndroidAppStateChange
+      );
+    }
   }
 
   function resetAppLifecycleRuntimeState(): void {
@@ -178,6 +203,11 @@ export function createAppLifecycleRuntime({
     if (hasDocument() && hasVisibilityListener) {
       document.removeEventListener('visibilitychange', handleDocumentVisibilityChange);
       hasVisibilityListener = false;
+    }
+
+    if (nativeAndroidAppStateListenerHandle) {
+      nativeAndroidAppStateListenerHandle.remove();
+      nativeAndroidAppStateListenerHandle = null;
     }
   }
 

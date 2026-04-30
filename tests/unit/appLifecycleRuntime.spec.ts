@@ -114,4 +114,53 @@ describe('appLifecycleRuntime', () => {
       visibilityHandler
     );
   });
+
+  it('tracks native Android app state changes and runs the native resume callback', () => {
+    const notifyReconnectHealingBrowserOnline = vi.fn();
+    const notifyReconnectHealingVisibilityHidden = vi.fn();
+    const notifyReconnectHealingVisibilityRegain = vi.fn();
+    const notifyReconnectHealingWindowBlur = vi.fn();
+    const notifyReconnectHealingWindowFocus = vi.fn();
+    const notifyNativeAndroidAppActive = vi.fn();
+    const setIsAppForeground = vi.fn();
+    const setVisibleChatId = vi.fn();
+    const removeNativeListener = vi.fn();
+    let nativeStateListener: ((isActive: boolean) => void) | null = null;
+
+    const runtime = createAppLifecycleRuntime({
+      notifyNativeAndroidAppActive,
+      notifyReconnectHealingBrowserOnline,
+      notifyReconnectHealingVisibilityHidden,
+      notifyReconnectHealingVisibilityRegain,
+      notifyReconnectHealingWindowBlur,
+      notifyReconnectHealingWindowFocus,
+      setIsAppForeground,
+      setVisibleChatId,
+      startNativeAndroidAppStateListener: (listener) => {
+        nativeStateListener = listener;
+        return {
+          remove: removeNativeListener,
+        };
+      },
+    });
+
+    runtime.setRouteChatId(CHAT_PUBLIC_KEY);
+    runtime.startAppLifecycleRuntime();
+
+    nativeStateListener?.(false);
+    expect(setIsAppForeground).toHaveBeenLastCalledWith(false);
+    expect(setVisibleChatId).toHaveBeenLastCalledWith(null);
+    expect(notifyReconnectHealingWindowBlur).toHaveBeenCalledTimes(1);
+    expect(notifyReconnectHealingVisibilityHidden).toHaveBeenCalledTimes(1);
+
+    nativeStateListener?.(true);
+    expect(setIsAppForeground).toHaveBeenLastCalledWith(true);
+    expect(setVisibleChatId).toHaveBeenLastCalledWith(CHAT_PUBLIC_KEY);
+    expect(notifyReconnectHealingVisibilityRegain).toHaveBeenCalledTimes(1);
+    expect(notifyReconnectHealingWindowFocus).toHaveBeenCalledTimes(1);
+    expect(notifyNativeAndroidAppActive).toHaveBeenCalledTimes(1);
+
+    runtime.resetAppLifecycleRuntimeState();
+    expect(removeNativeListener).toHaveBeenCalledTimes(1);
+  });
 });

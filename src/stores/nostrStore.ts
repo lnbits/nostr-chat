@@ -12,6 +12,7 @@ import {
   type NsecValidationResult,
   type PrivateKeyValidationResult,
 } from 'src/services/inputSanitizerService';
+import { startNativeAndroidAppStateListener } from 'src/services/nativeAppLifecycleService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { createAppLifecycleRuntime } from 'src/stores/nostr/appLifecycleRuntime';
@@ -23,6 +24,7 @@ import {
   INITIAL_CONNECT_TIMEOUT_MS,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
+  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
   RELAY_CONNECT_FAILURE_COOLDOWN_MS,
   STARTUP_STEP_MIN_PROGRESS_MS,
 } from 'src/stores/nostr/constants';
@@ -52,7 +54,10 @@ import { createPrivateMessagesIngestRuntime } from 'src/stores/nostr/privateMess
 import { createPrivateMessagesSubscriptionRuntime } from 'src/stores/nostr/privateMessagesSubscriptionRuntime';
 import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessagesUiRuntime';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
-import { createReconnectHealingRuntime } from 'src/stores/nostr/reconnectHealingRuntime';
+import {
+  createReconnectHealingRuntime,
+  type ReconnectHealingReason,
+} from 'src/stores/nostr/reconnectHealingRuntime';
 import { createRelayConnectionRuntime } from 'src/stores/nostr/relayConnectionRuntime';
 import { createRelayPublishRuntime } from 'src/stores/nostr/relayPublishRuntime';
 import { createStartupContactSyncRuntime } from 'src/stores/nostr/startupContactSyncRuntime';
@@ -177,6 +182,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let restoreStartupStatePromise: Promise<void> | null = null;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
+  let nativeAndroidAppActiveSyncPromise: Promise<void> | null = null;
   const groupContactRefreshPromises = new Map<string, Promise<ContactRecord | null>>();
   const backgroundGroupContactRefreshStartedAt = new Map<string, number>();
   const pendingIncomingReactions = new Map<string, PendingIncomingReaction[]>();
@@ -226,8 +232,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let notifyReconnectHealingWindowFocusRuntime: () => void = () => {};
   let notifyReconnectHealingRelayConnectedRuntime: () => void = () => {};
   let notifyReconnectHealingRelayListChangedRuntime: () => void = () => {};
+  let notifyNativeAndroidAppActiveRuntime: () => void = () => {};
   let resetAppLifecycleRuntimeStateRuntime: () => void = () => {};
   let resetReconnectHealingRuntimeStateRuntime: () => void = () => {};
+  let runReconnectHealingRuntime: (reason: ReconnectHealingReason) => Promise<void> =
+    async () => {};
   let setAppLifecycleRouteChatIdRuntime: (chatId: string | null) => void = () => {};
   let startAppLifecycleRuntimeRuntime: () => void = () => {};
   let resetOutboundMessageReplayRuntimeStateRuntime: () => void = () => {};
@@ -768,6 +777,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setRouteChatId: setAppLifecycleRouteChatIdImpl,
     startAppLifecycleRuntime: startAppLifecycleRuntimeImpl,
   } = createAppLifecycleRuntime({
+    notifyNativeAndroidAppActive: () => {
+      notifyNativeAndroidAppActiveRuntime();
+    },
     notifyReconnectHealingBrowserOnline: () => {
       notifyReconnectHealingBrowserOnlineRuntime();
     },
@@ -789,6 +801,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setVisibleChatId: (chatId) => {
       chatStore.setVisibleChatId(chatId);
     },
+    startNativeAndroidAppStateListener,
   });
   resetAppLifecycleRuntimeStateRuntime = resetAppLifecycleRuntimeStateImpl;
   setAppLifecycleRouteChatIdRuntime = setAppLifecycleRouteChatIdImpl;
@@ -1838,6 +1851,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     notifyWindowBlur: notifyReconnectHealingWindowBlurImpl,
     notifyWindowFocus: notifyReconnectHealingWindowFocusImpl,
     resetReconnectHealingRuntimeState: resetReconnectHealingRuntimeStateImpl,
+    runReconnectHealing: runReconnectHealingImpl,
   } = createReconnectHealingRuntime({
     getLoggedInPublicKeyHex,
     getVisibleChatTarget: () => {
@@ -1893,6 +1907,56 @@ export const useNostrStore = defineStore('nostrStore', () => {
   notifyReconnectHealingRelayConnectedRuntime = notifyReconnectHealingRelayConnectedImpl;
   notifyReconnectHealingRelayListChangedRuntime = notifyReconnectHealingRelayListChangedImpl;
   resetReconnectHealingRuntimeStateRuntime = resetReconnectHealingRuntimeStateImpl;
+  runReconnectHealingRuntime = runReconnectHealingImpl;
+
+  function notifyNativeAndroidAppActive(): void {
+    if (!getLoggedInPublicKeyHex()) {
+      return;
+    }
+
+    if (nativeAndroidAppActiveSyncPromise) {
+      return;
+    }
+
+    relayStore.init();
+    const relayUrls = normalizeRelayStatusUrls(relayStore.relays);
+    logDeveloperTrace('info', 'app-lifecycle', 'native-android-active', {
+      relayCount: relayUrls.length,
+      isRestoringStartupState: isRestoringStartupState.value,
+    });
+    queuePrivateMessagesWatchdogRuntime(0);
+
+    nativeAndroidAppActiveSyncPromise = (async () => {
+      try {
+        if (relayUrls.length > 0) {
+          await ensureRelayConnections(relayUrls);
+        }
+
+        const refreshTasks: Promise<unknown>[] = [
+          runReconnectHealingRuntime('native-android-active'),
+        ];
+        if (!isRestoringStartupState.value) {
+          refreshTasks.push(
+            subscribePrivateMessagesForLoggedInUserRuntime(true, {
+              restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+              seedRelayUrls: relayUrls,
+            })
+          );
+        }
+
+        await Promise.all(refreshTasks);
+      } catch (error) {
+        console.warn('Failed to refresh Nostr runtime after native Android app resume.', error);
+        logDeveloperTrace('warn', 'app-lifecycle', 'native-android-active-error', {
+          error,
+        });
+      } finally {
+        nativeAndroidAppActiveSyncPromise = null;
+      }
+    })();
+  }
+
+  notifyNativeAndroidAppActiveRuntime = notifyNativeAndroidAppActive;
 
   const {
     getDeveloperDiagnosticsSnapshot,
