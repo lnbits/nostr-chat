@@ -4,10 +4,7 @@
   "webDir": "www",
   "plugins": {
     "PushNotifications": {
-      "presentationOptions": [
-        "sound",
-        "alert"
-      ]
+      "presentationOptions": []
     }
   }
 }
