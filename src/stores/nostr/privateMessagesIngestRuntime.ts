@@ -1,5 +1,5 @@
 import { giftUnwrap, type NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
-import { chatDataService } from 'src/services/chatDataService';
+import { type ChatRow, chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
@@ -9,6 +9,7 @@ import type {
 } from 'src/stores/nostr/privateMessagesIngestTypes';
 import { isPlainRecord } from 'src/stores/nostr/shared';
 import type { NostrEventDirection } from 'src/types/chat';
+import type { ContactRecord } from 'src/types/contact';
 
 export function createPrivateMessagesIngestRuntime({
   appendRelayStatusesToMessageEvent,
@@ -88,6 +89,57 @@ export function createPrivateMessagesIngestRuntime({
     return toComparableTimestamp(createdAt) >= toComparableTimestamp(currentPreviewAt)
       ? createdAt
       : currentPreviewAt;
+  }
+
+  function normalizeNotificationTitle(value: string | null | undefined): string {
+    return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  function isFallbackNotificationTitle(
+    value: string,
+    chat: Pick<ChatRow, 'public_key' | 'type'>
+  ): boolean {
+    const normalizedValue = value.trim().toLowerCase();
+    const normalizedPublicKey = chat.public_key.trim().toLowerCase();
+    if (!normalizedValue || normalizedValue === normalizedPublicKey) {
+      return true;
+    }
+
+    if (normalizedValue === normalizedPublicKey.slice(0, 16)) {
+      return true;
+    }
+
+    if (normalizedValue === `chat ${normalizedPublicKey.slice(0, 8)}`) {
+      return true;
+    }
+
+    return (
+      chat.type === 'group' &&
+      normalizedValue === resolveGroupDisplayName(chat.public_key).trim().toLowerCase()
+    );
+  }
+
+  function resolveIncomingNotificationTitle(
+    chat: Pick<ChatRow, 'name' | 'public_key' | 'type'>,
+    contact: ContactRecord | null,
+    fallbackPublicKey: string
+  ): string {
+    const candidateTitles = [
+      chat.name,
+      contact?.meta.display_name,
+      contact?.meta.name,
+      contact?.name,
+      deriveChatName(contact, fallbackPublicKey),
+    ];
+
+    for (const candidate of candidateTitles) {
+      const title = normalizeNotificationTitle(candidate);
+      if (title && !isFallbackNotificationTitle(title, chat)) {
+        return title;
+      }
+    }
+
+    return chat.type === 'group' ? 'Nostr Group' : 'Nostr Chat';
   }
 
   function queuePrivateMessageIngestion(
@@ -790,7 +842,7 @@ export function createPrivateMessagesIngestRuntime({
     ) {
       showIncomingMessageBrowserNotification({
         chatPubkey: chat.public_key,
-        title: deriveChatName(contact, chatPubkey),
+        title: resolveIncomingNotificationTitle(chat, contact, chatPubkey),
         messageText,
         iconUrl: contact?.meta.picture?.trim() || undefined,
       });

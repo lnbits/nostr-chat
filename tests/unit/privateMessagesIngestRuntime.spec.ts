@@ -319,6 +319,121 @@ describe('privateMessagesIngestRuntime', () => {
     });
   });
 
+  it('uses the local chat name for incoming foreground notification presentation', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const chatPublicKey = 'a'.repeat(64);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: chatPublicKey,
+      content: '  Named hello  ',
+    });
+
+    deps.resolveIncomingChatInboxStateValue.mockReturnValue('accepted');
+    deps.shouldNotifyForAcceptedChatOnly.mockResolvedValue(true);
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: chatPublicKey,
+      public_key: chatPublicKey,
+      type: 'user',
+      name: 'Alice Local',
+      last_message: 'Older preview',
+      last_message_at: '2023-11-14T22:00:00.000Z',
+      unread_count: 0,
+      meta: {
+        inbox_state: 'accepted',
+        accepted_at: '2023-11-14T22:00:00.000Z',
+      },
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 44,
+      chat_public_key: chatPublicKey,
+      author_public_key: chatPublicKey,
+      created_at: createdAt,
+      event_id: 'rumor-event',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.showIncomingMessageBrowserNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatPubkey: chatPublicKey,
+        title: 'Alice Local',
+        messageText: 'Named hello',
+      })
+    );
+  });
+
+  it('uses the generic group fallback when only the generated group name is available', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const groupPublicKey = 'c'.repeat(64);
+    const epochPublicKey = 'd'.repeat(64);
+    const senderPublicKey = 'a'.repeat(64);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: epochPublicKey,
+      senderPubkey: senderPublicKey,
+      content: '  Group hello  ',
+    });
+    const groupChat = {
+      id: groupPublicKey,
+      public_key: groupPublicKey,
+      type: 'group' as const,
+      name: 'Group cccccccc',
+      last_message: 'Older preview',
+      last_message_at: '2023-11-14T22:00:00.000Z',
+      unread_count: 0,
+      meta: {
+        inbox_state: 'accepted',
+        accepted_at: '2023-11-14T22:00:00.000Z',
+      },
+    };
+
+    deps.resolveIncomingPrivateMessageRecipientContext.mockResolvedValue({
+      recipientPubkey: epochPublicKey,
+      unwrapSigner: {} as never,
+      groupChatPublicKey: groupPublicKey,
+    });
+    deps.findGroupChatEpochContextByRecipientPubkey.mockResolvedValue({
+      chat: groupChat,
+      epochEntry: {
+        epoch_number: 0,
+        epoch_public_key: epochPublicKey,
+      },
+    });
+    deps.resolveIncomingChatInboxStateValue.mockReturnValue('accepted');
+    deps.shouldNotifyForAcceptedChatOnly.mockResolvedValue(true);
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(groupChat);
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 45,
+      chat_public_key: groupPublicKey,
+      author_public_key: senderPublicKey,
+      created_at: createdAt,
+      event_id: 'rumor-event',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.showIncomingMessageBrowserNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatPubkey: groupPublicKey,
+        title: 'Nostr Group',
+        messageText: 'Group hello',
+      })
+    );
+  });
+
   it('promotes existing chats to accepted when messages arrive from accepted contacts', async () => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);

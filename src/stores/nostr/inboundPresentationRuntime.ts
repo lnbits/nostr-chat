@@ -1,4 +1,5 @@
 import { chatDataService } from 'src/services/chatDataService';
+import { emitForegroundMessageActivity } from 'src/services/foregroundMessageActivityService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import type { ContactRecord } from 'src/types/contact';
 import { areBrowserNotificationsEnabled } from 'src/utils/browserNotificationPreference';
@@ -152,7 +153,23 @@ export function createInboundPresentationRuntime({
       return true;
     }
 
-    return isAppForeground.value && getVisibleChatId() === chatPubkey;
+    return isAppForeground.value || getVisibleChatId() === chatPubkey;
+  }
+
+  function emitForegroundIncomingMessageActivity(options: {
+    chatPubkey: string;
+    title: string;
+  }): boolean {
+    if (isRestoringStartupState.value || !isAppForeground.value) {
+      return false;
+    }
+
+    emitForegroundMessageActivity({
+      chatPubkey: options.chatPubkey,
+      title: options.title,
+      showBanner: getVisibleChatId() !== options.chatPubkey,
+    });
+    return true;
   }
 
   async function shouldNotifyForAcceptedChatOnly(
@@ -209,10 +226,15 @@ export function createInboundPresentationRuntime({
     messageText: string;
     iconUrl?: string;
   }): void {
-    if (
-      typeof window === 'undefined' ||
-      shouldSuppressIncomingMessageBrowserNotification(options.chatPubkey)
-    ) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (emitForegroundIncomingMessageActivity(options)) {
+      return;
+    }
+
+    if (shouldSuppressIncomingMessageBrowserNotification(options.chatPubkey)) {
       return;
     }
 

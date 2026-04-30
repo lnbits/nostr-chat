@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { chatDataService } from 'src/services/chatDataService';
+import { FOREGROUND_MESSAGE_ACTIVITY_EVENT } from 'src/services/foregroundMessageActivityService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   isPushGatewayConfigured,
@@ -25,6 +26,7 @@ const ANDROID_PUSH_CHANNEL_DESCRIPTION = 'Incoming Nostr Chat messages';
 export type AndroidPushPermissionState = 'granted' | 'denied' | 'prompt' | 'unsupported';
 
 let didInstallPushListeners = false;
+let delayedAndroidPushCountResetTimeoutId: number | null = null;
 
 function canUseStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -286,6 +288,37 @@ export async function resetAndroidPushNotificationCounts(): Promise<void> {
   await resetPushGatewayNotificationCounts({ ownerPubkey, deviceId }, nostrStore);
 }
 
+export function scheduleAndroidPushNotificationCountReset(): void {
+  if (!isAndroidPushNotificationConfigured()) {
+    return;
+  }
+
+  void resetAndroidPushNotificationCounts().catch((error) => {
+    console.warn(
+      'Failed to reset Android push notification counts after foreground activity.',
+      error
+    );
+  });
+
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (delayedAndroidPushCountResetTimeoutId !== null) {
+    window.clearTimeout(delayedAndroidPushCountResetTimeoutId);
+  }
+
+  delayedAndroidPushCountResetTimeoutId = window.setTimeout(() => {
+    delayedAndroidPushCountResetTimeoutId = null;
+    void resetAndroidPushNotificationCounts().catch((error) => {
+      console.warn(
+        'Failed to reset Android push notification counts after delayed foreground activity.',
+        error
+      );
+    });
+  }, 2500);
+}
+
 export async function unregisterAndroidPushNotifications(): Promise<void> {
   if (!isAndroidPushNotificationSupported()) {
     clearAndroidPushNotificationsPreference();
@@ -329,6 +362,12 @@ export function startAndroidPushNotificationListeners(
           );
         });
       }
+    });
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener(FOREGROUND_MESSAGE_ACTIVITY_EVENT, () => {
+      scheduleAndroidPushNotificationCountReset();
     });
   }
 
