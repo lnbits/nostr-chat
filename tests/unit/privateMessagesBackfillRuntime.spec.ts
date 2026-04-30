@@ -1,4 +1,4 @@
-import NDK from '@nostr-dev-kit/ndk';
+import NDK, { NDKKind } from '@nostr-dev-kit/ndk';
 import { MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS } from 'src/stores/nostr/constants';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -64,7 +64,9 @@ function createRuntime(
     getLoggedInPublicKeyHex: () => LOGGED_IN_PUBLIC_KEY,
     getPrivateMessagesBackfillResumeState: vi.fn(() => null),
     getPrivateMessagesIngestQueue: vi.fn(async () => {}),
+    getPrivateMessagesLiveCatchupSince: vi.fn(() => 1699996400),
     getPrivateMessagesStartupFloorSince: vi.fn(() => 1700000000),
+    listPrivateMessageRecipientPubkeys: vi.fn(async () => [LOGGED_IN_PUBLIC_KEY, GROUP_EPOCH_A]),
     logSubscription: vi.fn(),
     ndk: new NDK(),
     normalizeThrottleMs: (value) => value ?? 0,
@@ -259,6 +261,89 @@ describe('privateMessagesBackfillRuntime', () => {
     ).resolves.toBe(false);
 
     expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('runs live catch-up over the two-hour overlap window', async () => {
+    vi.setSystemTime(new Date('2023-11-15T00:13:20.000Z'));
+
+    const queuePrivateMessageIngestion = vi.fn();
+    const updateStoredEventSinceFromCreatedAt = vi.fn();
+    const updateStoredPrivateMessagesLastReceivedFromCreatedAt = vi.fn();
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      expect(requestLabel).toBe('private-messages-live-catchup');
+      expect(filters).toEqual({
+        kinds: [NDKKind.GiftWrap],
+        '#p': [LOGGED_IN_PUBLIC_KEY, GROUP_EPOCH_A],
+        since: 1699996400,
+        until: 1700007200,
+      });
+
+      Promise.resolve().then(() => {
+        options.onEvent?.({
+          created_at: 1700007100,
+          id: TARGET_EVENT_ID,
+          kind: NDKKind.GiftWrap,
+          pubkey: DIRECT_CHAT_PUBLIC_KEY,
+        } as never);
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+
+    const runtime = createPrivateMessagesBackfillRuntime({
+      buildFilterSinceDetails: (since) => ({ since }),
+      buildFilterUntilDetails: (until) => ({ until }),
+      buildPrivateMessageSubscriptionTargetDetails: vi.fn(async () => ({})),
+      buildSubscriptionRelayDetails: (relayUrls) => ({ relayUrls }),
+      ensureRelayConnections: vi.fn(async () => {}),
+      flushPrivateMessagesUiRefreshNow: vi.fn(),
+      formatSubscriptionLogValue: (value) => value ?? null,
+      getLoggedInPublicKeyHex: () => LOGGED_IN_PUBLIC_KEY,
+      getPrivateMessagesBackfillResumeState: vi.fn(() => null),
+      getPrivateMessagesIngestQueue: vi.fn(async () => {}),
+      getPrivateMessagesLiveCatchupSince: vi.fn(() => 1699996400),
+      getPrivateMessagesStartupFloorSince: vi.fn(() => 1700000000),
+      listPrivateMessageRecipientPubkeys: vi.fn(async () => [LOGGED_IN_PUBLIC_KEY, GROUP_EPOCH_A]),
+      logSubscription: vi.fn(),
+      ndk: new NDK(),
+      normalizeThrottleMs: (value) => value ?? 0,
+      queuePrivateMessageIngestion,
+      relaySignature: (relayUrls) => relayUrls.join(','),
+      resolveGroupChatEpochEntries: () => [
+        {
+          epoch_public_key: GROUP_EPOCH_A,
+        },
+      ],
+      resolvePrivateMessageReadRelayUrls: vi.fn(async () => ['wss://relay.example']),
+      schedulePostPrivateMessagesEoseChecks: vi.fn(),
+      subscribeWithReqLogging,
+      toOptionalIsoTimestampFromUnix: (value) =>
+        typeof value === 'number' ? new Date(value * 1000).toISOString() : null,
+      updateStoredEventSinceFromCreatedAt,
+      updateStoredPrivateMessagesLastReceivedFromCreatedAt,
+      writePrivateMessagesBackfillState: vi.fn(),
+    });
+
+    await expect(
+      runtime.runPrivateMessagesLiveCatchup('watchdog', { force: true })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        didRun: true,
+        eventCount: 1,
+        reachedEose: true,
+        reason: 'watchdog',
+        timedOut: false,
+      })
+    );
+
+    expect(updateStoredPrivateMessagesLastReceivedFromCreatedAt).toHaveBeenCalledWith(1700007100);
+    expect(updateStoredEventSinceFromCreatedAt).toHaveBeenCalledWith(1700007100);
+    expect(queuePrivateMessageIngestion).toHaveBeenCalledTimes(1);
 
     runtime.resetPrivateMessagesBackfillRuntimeState();
   });

@@ -43,6 +43,17 @@ describe('reconnectHealingRuntime', () => {
       initialEntryCount: 1,
       remainingEntryCount: 0,
     }));
+    const runPrivateMessagesLiveCatchup = vi.fn(async () => ({
+      didRun: true,
+      eventCount: 0,
+      reachedEose: true,
+      reason: 'reconnect-healing' as const,
+      recipientCount: 1,
+      relayUrls: ['wss://relay.example'],
+      since: 100,
+      timedOut: false,
+      until: 200,
+    }));
     const restoreGroupEpochHistory = vi.fn(async () => {});
     const restorePrivateMessagesForRecipient = vi.fn(async () => {});
 
@@ -54,6 +65,7 @@ describe('reconnectHealingRuntime', () => {
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
+      runPrivateMessagesLiveCatchup,
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       setIsReconnectHealing: (value) => {
@@ -66,6 +78,7 @@ describe('reconnectHealingRuntime', () => {
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
+      runPrivateMessagesLiveCatchup,
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       runtime,
@@ -105,6 +118,7 @@ describe('reconnectHealingRuntime', () => {
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
+      runPrivateMessagesLiveCatchup,
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       runtime,
@@ -119,6 +133,7 @@ describe('reconnectHealingRuntime', () => {
     expect(healingState.value).toBe(false);
     expect(queuePrivateMessagesWatchdog).toHaveBeenCalledWith(0);
     expect(queueOutboundMessageReplay).toHaveBeenCalledWith('reconnect-healing', 0);
+    expect(runPrivateMessagesLiveCatchup).toHaveBeenCalledWith('reconnect-healing');
     expect(restorePrivateMessagesForRecipient).toHaveBeenNthCalledWith(1, GROUP_PUBLIC_KEY, {
       force: true,
     });

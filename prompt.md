@@ -14,6 +14,14 @@ some contacts have weird relays, we should not listen there
 
 confety emoji
 
+click on notification -> go to contact + event
+
+
+android build
+> Configure project :app
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+
 @someUser
  - more clear membership management in group chats
 
@@ -37,6 +45,7 @@ No relays found for this contact -> if this is the case do a refresh profile bef
  - keep last profile refresh in mind
 
  dektop ap -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
+   - works fine on browser
 
 
 cop to clipboard button does not work on mobile apps

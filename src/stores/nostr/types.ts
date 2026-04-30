@@ -137,6 +137,26 @@ export interface PrivateMessagesBackfillState {
   completed: boolean;
 }
 
+export type PrivateMessagesLiveCatchupReason = 'watchdog' | 'reconnect-healing';
+
+export interface PrivateMessagesLiveCatchupOptions {
+  force?: boolean;
+  seedRelayUrls?: string[];
+}
+
+export interface PrivateMessagesLiveCatchupSummary {
+  didRun: boolean;
+  eventCount: number;
+  reachedEose: boolean;
+  reason: PrivateMessagesLiveCatchupReason;
+  recipientCount: number;
+  relayUrls: string[];
+  since: number | null;
+  skippedReason?: string;
+  timedOut: boolean;
+  until: number | null;
+}
+
 export interface QueuePrivateMessageUiRefreshOptions {
   throttleMs?: number;
   reloadChats?: boolean;

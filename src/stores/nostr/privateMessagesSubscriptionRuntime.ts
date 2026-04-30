@@ -14,7 +14,10 @@ import {
   PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS,
   PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS,
 } from 'src/stores/nostr/constants';
-import type { SubscribePrivateMessagesOptions } from 'src/stores/nostr/types';
+import type {
+  PrivateMessagesLiveCatchupSummary,
+  SubscribePrivateMessagesOptions,
+} from 'src/stores/nostr/types';
 import type { Ref } from 'vue';
 
 interface PrivateMessagesSubscriptionRuntimeDeps {
@@ -44,6 +47,7 @@ interface PrivateMessagesSubscriptionRuntimeDeps {
   getRelaySnapshots: (relayUrls: string[]) => unknown[];
   getStartupStepSnapshot: (stepId: 'private-message-events') => { status: string };
   getStoredAuthMethod: () => string | null;
+  isAppForeground: Ref<boolean>;
   isRestoringStartupState: Ref<boolean>;
   listPrivateMessageRecipientPubkeys: () => Promise<string[]>;
   logSubscription: (
@@ -66,6 +70,7 @@ interface PrivateMessagesSubscriptionRuntimeDeps {
   refreshAllStoredContacts: () => Promise<unknown>;
   relaySignature: (relays: string[]) => string;
   resolvePrivateMessageReadRelayUrls: (seedRelayUrls?: string[]) => Promise<string[]>;
+  runPrivateMessagesLiveCatchup: (reason: 'watchdog') => Promise<PrivateMessagesLiveCatchupSummary>;
   schedulePostPrivateMessagesEoseChecks: () => void;
   setPrivateMessagesRestoreThrottleMs: (value: number) => void;
   startPrivateMessagesStartupBackfill: (
@@ -111,6 +116,7 @@ export function createPrivateMessagesSubscriptionRuntime({
   getRelaySnapshots,
   getStartupStepSnapshot,
   getStoredAuthMethod,
+  isAppForeground,
   isRestoringStartupState,
   listPrivateMessageRecipientPubkeys,
   logSubscription,
@@ -129,6 +135,7 @@ export function createPrivateMessagesSubscriptionRuntime({
   refreshAllStoredContacts,
   relaySignature,
   resolvePrivateMessageReadRelayUrls,
+  runPrivateMessagesLiveCatchup,
   schedulePostPrivateMessagesEoseChecks,
   setPrivateMessagesRestoreThrottleMs,
   startPrivateMessagesStartupBackfill,
@@ -327,6 +334,11 @@ export function createPrivateMessagesSubscriptionRuntime({
             reconnectedRelayUrls,
             ...buildSubscriptionRelayDetails(relayUrls),
           });
+          return;
+        }
+
+        if (!browserOffline && isAppForeground.value) {
+          await runPrivateMessagesLiveCatchup('watchdog');
         }
       } catch (error) {
         console.warn('Private messages watchdog failed', error);

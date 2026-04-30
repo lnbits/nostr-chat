@@ -23,6 +23,7 @@ import {
   INITIAL_CONNECT_TIMEOUT_MS,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
+  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
   RELAY_CONNECT_FAILURE_COOLDOWN_MS,
   STARTUP_STEP_MIN_PROGRESS_MS,
 } from 'src/stores/nostr/constants';
@@ -71,6 +72,9 @@ import type {
   GroupIdentitySecretContent,
   PendingIncomingDeletion,
   PendingIncomingReaction,
+  PrivateMessagesLiveCatchupOptions,
+  PrivateMessagesLiveCatchupReason,
+  PrivateMessagesLiveCatchupSummary,
   PrivatePreferences,
   RelaySaveStatus,
   RepairMissingMessageDependencyOptions,
@@ -254,6 +258,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => void = () => {
     throw new Error('Private messages backfill runtime is not initialized.');
   };
+  let runPrivateMessagesLiveCatchupRuntime: (
+    reason: PrivateMessagesLiveCatchupReason,
+    options?: PrivateMessagesLiveCatchupOptions
+  ) => Promise<PrivateMessagesLiveCatchupSummary> = async (reason) => ({
+    didRun: false,
+    eventCount: 0,
+    reachedEose: false,
+    reason,
+    recipientCount: 0,
+    relayUrls: [],
+    since: null,
+    skippedReason: 'runtime-not-initialized',
+    timedOut: false,
+    until: null,
+  });
+  let privateMessagesLiveCatchupAndRefreshLivePromise: Promise<PrivateMessagesLiveCatchupSummary> | null =
+    null;
   let stopPrivateMessagesBackfillRuntime: (reason?: string) => void = () => {};
   let restoreGroupEpochHistoryRuntime: (
     groupPublicKey: string,
@@ -400,6 +421,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getFilterSince,
     getPrivateMessagesBackfillResumeState,
     getPrivateMessagesEpochSwitchSince,
+    getPrivateMessagesLiveCatchupSince,
     getPrivateMessagesStartupFloorSince,
     getPrivateMessagesStartupLiveSince,
 
@@ -1252,6 +1274,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getRelaySnapshots,
     getStartupStepSnapshot,
     getStoredAuthMethod,
+    isAppForeground,
     isRestoringStartupState,
     listPrivateMessageRecipientPubkeys,
     logSubscription,
@@ -1270,6 +1293,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshAllStoredContacts: () => refreshAllStoredContactsRuntime(),
     relaySignature,
     resolvePrivateMessageReadRelayUrls,
+    runPrivateMessagesLiveCatchup: (reason) => runPrivateMessagesLiveCatchupAndRefreshLive(reason),
     schedulePostPrivateMessagesEoseChecks,
     setPrivateMessagesRestoreThrottleMs: (value) => {
       privateMessagesRestoreThrottleMs = value;
@@ -1303,6 +1327,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     repairMissingMessageDependency: repairMissingMessageDependencyImpl,
     resetPrivateMessagesBackfillRuntimeState: resetPrivateMessagesBackfillRuntimeStateImpl,
     resolveMissingMessageDependencyRepair: resolveMissingMessageDependencyRepairImpl,
+    runPrivateMessagesLiveCatchup: runPrivateMessagesLiveCatchupImpl,
     restoreGroupEpochHistory: restoreGroupEpochHistoryImpl,
     restorePrivateMessagesForRecipient: restorePrivateMessagesForRecipientImpl,
     startPrivateMessagesStartupBackfill: startPrivateMessagesStartupBackfillImpl,
@@ -1318,7 +1343,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     getPrivateMessagesBackfillResumeState,
     getPrivateMessagesIngestQueue: () => getPrivateMessagesIngestQueueRuntime(),
+    getPrivateMessagesLiveCatchupSince,
     getPrivateMessagesStartupFloorSince,
+    listPrivateMessageRecipientPubkeys,
     logSubscription,
     ndk,
     normalizeThrottleMs,
@@ -1336,10 +1363,47 @@ export const useNostrStore = defineStore('nostrStore', () => {
   repairMissingMessageDependencyRuntime = repairMissingMessageDependencyImpl;
   resetPrivateMessagesBackfillRuntimeStateRuntime = resetPrivateMessagesBackfillRuntimeStateImpl;
   resolveMissingMessageDependencyRepairRuntime = resolveMissingMessageDependencyRepairImpl;
+  runPrivateMessagesLiveCatchupRuntime = runPrivateMessagesLiveCatchupImpl;
   restoreGroupEpochHistoryRuntime = restoreGroupEpochHistoryImpl;
   restorePrivateMessagesForRecipientRuntime = restorePrivateMessagesForRecipientImpl;
   startPrivateMessagesStartupBackfillRuntime = startPrivateMessagesStartupBackfillImpl;
   stopPrivateMessagesBackfillRuntime = stopPrivateMessagesBackfillImpl;
+
+  async function runPrivateMessagesLiveCatchupAndRefreshLive(
+    reason: PrivateMessagesLiveCatchupReason,
+    options: PrivateMessagesLiveCatchupOptions = {}
+  ): Promise<PrivateMessagesLiveCatchupSummary> {
+    if (privateMessagesLiveCatchupAndRefreshLivePromise) {
+      return privateMessagesLiveCatchupAndRefreshLivePromise;
+    }
+
+    privateMessagesLiveCatchupAndRefreshLivePromise = (async () => {
+      const summary = await runPrivateMessagesLiveCatchupRuntime(reason, options);
+      if (summary.eventCount <= 0 && !summary.timedOut) {
+        return summary;
+      }
+
+      logSubscription('private-messages', 'live-catchup-restart-live', {
+        reason,
+        eventCount: summary.eventCount,
+        reachedEose: summary.reachedEose,
+        restartReason: summary.timedOut ? 'catchup-timeout' : 'catchup-events',
+        timedOut: summary.timedOut,
+        ...buildFilterSinceDetails(summary.since ?? undefined),
+        ...buildFilterUntilDetails(summary.until ?? undefined),
+        ...buildSubscriptionRelayDetails(summary.relayUrls),
+      });
+      await subscribePrivateMessagesForLoggedInUserRuntime(true, {
+        restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+        seedRelayUrls: summary.relayUrls,
+      });
+      return summary;
+    })().finally(() => {
+      privateMessagesLiveCatchupAndRefreshLivePromise = null;
+    });
+
+    return privateMessagesLiveCatchupAndRefreshLivePromise;
+  }
 
   const {
     resetContactSubscriptionsRuntimeState,
@@ -1877,6 +1941,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       queuePrivateMessagesWatchdogRuntime(delayMs);
     },
     refreshDeveloperPendingQueues: () => refreshDeveloperPendingQueuesRuntime(),
+    runPrivateMessagesLiveCatchup: (reason) =>
+      runPrivateMessagesLiveCatchupAndRefreshLive(reason, {
+        force: true,
+      }),
     restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
       restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
     restorePrivateMessagesForRecipient: (recipientPubkey, options) =>

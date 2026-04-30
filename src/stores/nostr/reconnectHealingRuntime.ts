@@ -10,6 +10,7 @@ import {
   RECONNECT_HEALING_RELAY_RECONNECT_DELAY_MS,
   RECONNECT_HEALING_VISIBILITY_DELAY_MS,
 } from 'src/stores/nostr/constants';
+import type { PrivateMessagesLiveCatchupSummary } from 'src/stores/nostr/types';
 import type { ChatType } from 'src/types/chat';
 import type { Ref } from 'vue';
 
@@ -42,6 +43,9 @@ interface ReconnectHealingRuntimeDeps {
   queueOutboundMessageReplay: (reason: 'reconnect-healing', delayMs?: number) => void;
   queuePrivateMessagesWatchdog: (delayMs?: number) => void;
   refreshDeveloperPendingQueues: () => Promise<unknown>;
+  runPrivateMessagesLiveCatchup: (
+    reason: 'reconnect-healing'
+  ) => Promise<PrivateMessagesLiveCatchupSummary>;
   restoreGroupEpochHistory: (
     groupPublicKey: string,
     epochPublicKey: string,
@@ -136,6 +140,7 @@ export function createReconnectHealingRuntime({
   queueOutboundMessageReplay,
   queuePrivateMessagesWatchdog,
   refreshDeveloperPendingQueues,
+  runPrivateMessagesLiveCatchup,
   restoreGroupEpochHistory,
   restorePrivateMessagesForRecipient,
   setIsReconnectHealing,
@@ -290,6 +295,7 @@ export function createReconnectHealingRuntime({
       setIsReconnectHealing(true);
       queuePrivateMessagesWatchdog(0);
       queueOutboundMessageReplay('reconnect-healing', 0);
+      const liveCatchupPromise = runPrivateMessagesLiveCatchup('reconnect-healing');
 
       const visibleChatTarget = normalizeChatTarget(getVisibleChatTarget());
       const recentDirectMessages = listRecentDirectMessageChatTargets(
@@ -363,9 +369,15 @@ export function createReconnectHealingRuntime({
         }
       );
 
-      const pendingQueueSummary = await refreshDeveloperPendingQueues();
+      const [liveCatchupSummary, pendingQueueSummary] = await Promise.all([
+        liveCatchupPromise,
+        refreshDeveloperPendingQueues(),
+      ]);
       logReconnectHealing('complete', {
         reason,
+        liveCatchupEventCount: liveCatchupSummary.eventCount,
+        liveCatchupReachedEose: liveCatchupSummary.reachedEose,
+        liveCatchupTimedOut: liveCatchupSummary.timedOut,
         restoredVisibleChat,
         restoredVisibleGroupEpoch,
         restoredRecentDirectMessages,

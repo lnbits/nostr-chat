@@ -10,6 +10,7 @@ import {
   PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY,
   PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS,
   PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY,
+  PRIVATE_MESSAGES_LIVE_CATCHUP_OVERLAP_SECONDS,
   PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS,
   PRIVATE_PREFERENCES_STORAGE_KEY,
 } from 'src/stores/nostr/constants';
@@ -213,6 +214,19 @@ export function createStorageSessionRuntime({
       getPrivateMessagesStartupFloorSince(normalizedNow),
       anchorCreatedAt - PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS
     );
+  }
+
+  function getPrivateMessagesLiveCatchupSince(
+    baseUnixTime = Math.floor(Date.now() / 1000)
+  ): number {
+    const normalizedNow = Math.max(0, Math.floor(baseUnixTime));
+    const lastReceivedCreatedAt = readStoredPrivateMessagesLastReceivedCreatedAt();
+    const anchorCreatedAt =
+      lastReceivedCreatedAt === null
+        ? normalizedNow
+        : Math.min(normalizedNow, lastReceivedCreatedAt);
+
+    return Math.max(0, anchorCreatedAt - PRIVATE_MESSAGES_LIVE_CATCHUP_OVERLAP_SECONDS);
   }
 
   function getPrivateMessagesEpochSwitchSince(
@@ -613,6 +627,7 @@ export function createStorageSessionRuntime({
     getFilterSince,
     getPrivateMessagesBackfillResumeState,
     getPrivateMessagesEpochSwitchSince,
+    getPrivateMessagesLiveCatchupSince,
     getPrivateMessagesStartupFloorSince,
     getPrivateMessagesStartupLiveSince,
     normalizeGroupIdentitySecretContent,

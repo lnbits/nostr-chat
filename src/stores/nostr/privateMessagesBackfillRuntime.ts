@@ -15,11 +15,16 @@ import {
   PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS,
   PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
   PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS,
+  PRIVATE_MESSAGES_LIVE_CATCHUP_INTERVAL_MS,
+  PRIVATE_MESSAGES_LIVE_CATCHUP_TIMEOUT_MS,
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
 } from 'src/stores/nostr/constants';
 import type {
   MissingMessageDependencyRepairReason,
   PrivateMessagesBackfillState,
+  PrivateMessagesLiveCatchupOptions,
+  PrivateMessagesLiveCatchupReason,
+  PrivateMessagesLiveCatchupSummary,
   RepairMissingMessageDependencyOptions,
 } from 'src/stores/nostr/types';
 
@@ -73,7 +78,9 @@ interface PrivateMessagesBackfillRuntimeDeps {
     floorSince: number
   ) => PrivateMessagesBackfillState | null;
   getPrivateMessagesIngestQueue: () => Promise<void>;
+  getPrivateMessagesLiveCatchupSince: (baseUnixTime?: number) => number;
   getPrivateMessagesStartupFloorSince: (baseUnixTime?: number) => number;
+  listPrivateMessageRecipientPubkeys: () => Promise<string[]>;
   logSubscription: (
     label: 'private-messages',
     stage: string,
@@ -122,7 +129,9 @@ export function createPrivateMessagesBackfillRuntime({
   getLoggedInPublicKeyHex,
   getPrivateMessagesBackfillResumeState,
   getPrivateMessagesIngestQueue,
+  getPrivateMessagesLiveCatchupSince,
   getPrivateMessagesStartupFloorSince,
+  listPrivateMessageRecipientPubkeys,
   logSubscription,
   ndk,
   normalizeThrottleMs,
@@ -143,6 +152,9 @@ export function createPrivateMessagesBackfillRuntime({
   let privateMessagesBackfillSignature = '';
   let privateMessagesBackfillDelayTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let privateMessagesBackfillDelayResolver: (() => void) | null = null;
+  let privateMessagesLiveCatchupSubscription: ReturnType<NDK['subscribe']> | null = null;
+  let privateMessagesLiveCatchupPromise: Promise<PrivateMessagesLiveCatchupSummary> | null = null;
+  let privateMessagesLiveCatchupLastStartedAt = 0;
   const groupEpochHistoryRestorePromises = new Map<string, Promise<void>>();
   const restoredGroupEpochHistoryKeys = new Set<string>();
   const privateMessagesForRecipientRestorePromises = new Map<string, Promise<void>>();
@@ -288,6 +300,283 @@ export function createPrivateMessagesBackfillRuntime({
     });
 
     return runToken === privateMessagesBackfillRunToken;
+  }
+
+  function createSkippedLiveCatchupSummary(
+    reason: PrivateMessagesLiveCatchupReason,
+    skippedReason: string,
+    details: Partial<PrivateMessagesLiveCatchupSummary> = {}
+  ): PrivateMessagesLiveCatchupSummary {
+    return {
+      didRun: false,
+      eventCount: 0,
+      reachedEose: false,
+      reason,
+      recipientCount: 0,
+      relayUrls: [],
+      since: null,
+      skippedReason,
+      timedOut: false,
+      until: null,
+      ...details,
+    };
+  }
+
+  function stopPrivateMessagesLiveCatchup(reason = 'replace'): void {
+    if (privateMessagesLiveCatchupSubscription) {
+      logSubscription('private-messages', 'live-catchup-stop', {
+        reason,
+      });
+      privateMessagesLiveCatchupSubscription.stop();
+      privateMessagesLiveCatchupSubscription = null;
+    }
+  }
+
+  async function runPrivateMessagesLiveCatchupWindow(options: {
+    loggedInPubkeyHex: string;
+    recipientPubkeys: string[];
+    relayUrls: string[];
+    reason: PrivateMessagesLiveCatchupReason;
+    since: number;
+    until: number;
+  }): Promise<PrivateMessagesLiveCatchupSummary> {
+    const privateMessageTargetDetails = await buildPrivateMessageSubscriptionTargetDetails(
+      options.recipientPubkeys,
+      options.loggedInPubkeyHex
+    );
+
+    return new Promise<PrivateMessagesLiveCatchupSummary>((resolve, reject) => {
+      let didFinish = false;
+      let eventCount = 0;
+      let reachedEose = false;
+      let timedOut = false;
+      let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+      let subscription: ReturnType<NDK['subscribe']> | null = null;
+
+      const clearTimeoutId = () => {
+        if (timeoutId !== null) {
+          globalThis.clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      const finish = (error?: unknown) => {
+        if (didFinish) {
+          return;
+        }
+
+        didFinish = true;
+        clearTimeoutId();
+        const finishedSubscription = subscription;
+        if (finishedSubscription) {
+          finishedSubscription.stop();
+          subscription = null;
+        }
+        if (privateMessagesLiveCatchupSubscription === finishedSubscription) {
+          privateMessagesLiveCatchupSubscription = null;
+        }
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve({
+          didRun: true,
+          eventCount,
+          reachedEose,
+          reason: options.reason,
+          recipientCount: options.recipientPubkeys.length,
+          relayUrls: [...options.relayUrls],
+          since: options.since,
+          timedOut,
+          until: options.until,
+        });
+      };
+
+      try {
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
+        logSubscription('private-messages', 'live-catchup-subscribe', {
+          reason: options.reason,
+          ...buildFilterSinceDetails(options.since),
+          ...buildFilterUntilDetails(options.until),
+          ...buildSubscriptionRelayDetails(options.relayUrls),
+          recipientCount: options.recipientPubkeys.length,
+          recipients: options.recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
+          timeoutMs: PRIVATE_MESSAGES_LIVE_CATCHUP_TIMEOUT_MS,
+          ...privateMessageTargetDetails,
+        });
+        const privateMessagesLiveCatchupFilters: NDKFilter = {
+          kinds: [NDKKind.GiftWrap],
+          '#p': options.recipientPubkeys,
+          since: options.since,
+          until: options.until,
+        };
+        subscription = subscribeWithReqLogging(
+          'private-messages',
+          'private-messages-live-catchup',
+          privateMessagesLiveCatchupFilters,
+          {
+            relaySet,
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+            closeOnEose: true,
+            onEvent: (event) => {
+              const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+              eventCount += 1;
+              updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
+              updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+              queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
+                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+              });
+            },
+            onEose: () => {
+              reachedEose = true;
+              logSubscription('private-messages', 'live-catchup-eose', {
+                reason: options.reason,
+                eventCount,
+                ...buildFilterSinceDetails(options.since),
+                ...buildFilterUntilDetails(options.until),
+              });
+              schedulePostPrivateMessagesEoseChecks();
+              flushPrivateMessagesUiRefreshNow();
+              finish();
+            },
+            onClose: () => {
+              finish();
+            },
+          },
+          {
+            reason: options.reason,
+            ...buildFilterSinceDetails(options.since),
+            ...buildFilterUntilDetails(options.until),
+            ...buildSubscriptionRelayDetails(options.relayUrls),
+          }
+        );
+
+        privateMessagesLiveCatchupSubscription = subscription;
+        timeoutId = globalThis.setTimeout(() => {
+          timedOut = true;
+          logSubscription('private-messages', 'live-catchup-timeout', {
+            reason: options.reason,
+            eventCount,
+            timeoutMs: PRIVATE_MESSAGES_LIVE_CATCHUP_TIMEOUT_MS,
+            ...buildFilterSinceDetails(options.since),
+            ...buildFilterUntilDetails(options.until),
+          });
+          finish();
+        }, PRIVATE_MESSAGES_LIVE_CATCHUP_TIMEOUT_MS);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async function runPrivateMessagesLiveCatchup(
+    reason: PrivateMessagesLiveCatchupReason,
+    options: PrivateMessagesLiveCatchupOptions = {}
+  ): Promise<PrivateMessagesLiveCatchupSummary> {
+    if (privateMessagesLiveCatchupPromise) {
+      return privateMessagesLiveCatchupPromise;
+    }
+
+    const startedAt = Date.now();
+    if (
+      options.force !== true &&
+      privateMessagesLiveCatchupLastStartedAt > 0 &&
+      startedAt - privateMessagesLiveCatchupLastStartedAt <
+        PRIVATE_MESSAGES_LIVE_CATCHUP_INTERVAL_MS
+    ) {
+      return createSkippedLiveCatchupSummary(reason, 'throttled');
+    }
+
+    privateMessagesLiveCatchupPromise = (async () => {
+      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+      if (!loggedInPubkeyHex) {
+        return createSkippedLiveCatchupSummary(reason, 'missing-login');
+      }
+
+      const recipientPubkeys = await listPrivateMessageRecipientPubkeys();
+      if (recipientPubkeys.length === 0) {
+        logSubscription('private-messages', 'live-catchup-skip', {
+          reason,
+          skipReason: 'no-recipients',
+        });
+        return createSkippedLiveCatchupSummary(reason, 'no-recipients');
+      }
+
+      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
+      if (relayUrls.length === 0) {
+        logSubscription('private-messages', 'live-catchup-skip', {
+          reason,
+          skipReason: 'no-relays',
+          recipientCount: recipientPubkeys.length,
+        });
+        return createSkippedLiveCatchupSummary(reason, 'no-relays', {
+          recipientCount: recipientPubkeys.length,
+        });
+      }
+
+      const until = Math.max(0, Math.floor(Date.now() / 1000));
+      const since = Math.min(until, Math.max(0, getPrivateMessagesLiveCatchupSince(until)));
+      if (since >= until) {
+        logSubscription('private-messages', 'live-catchup-skip', {
+          reason,
+          skipReason: 'invalid-window',
+          ...buildFilterSinceDetails(since),
+          ...buildFilterUntilDetails(until),
+          recipientCount: recipientPubkeys.length,
+          ...buildSubscriptionRelayDetails(relayUrls),
+        });
+        return createSkippedLiveCatchupSummary(reason, 'invalid-window', {
+          recipientCount: recipientPubkeys.length,
+          relayUrls,
+          since,
+          until,
+        });
+      }
+
+      privateMessagesLiveCatchupLastStartedAt = Date.now();
+      await ensureRelayConnections(relayUrls);
+      const summary = await runPrivateMessagesLiveCatchupWindow({
+        loggedInPubkeyHex,
+        recipientPubkeys,
+        relayUrls,
+        reason,
+        since,
+        until,
+      });
+
+      await getPrivateMessagesIngestQueue();
+      if (summary.eventCount > 0) {
+        flushPrivateMessagesUiRefreshNow();
+      }
+
+      logSubscription('private-messages', 'live-catchup-complete', {
+        reason,
+        eventCount: summary.eventCount,
+        reachedEose: summary.reachedEose,
+        timedOut: summary.timedOut,
+        ...buildFilterSinceDetails(summary.since ?? undefined),
+        ...buildFilterUntilDetails(summary.until ?? undefined),
+        recipientCount: summary.recipientCount,
+        ...buildSubscriptionRelayDetails(summary.relayUrls),
+      });
+
+      return summary;
+    })()
+      .catch((error) => {
+        console.warn('Failed to run private messages live catch-up', reason, error);
+        logSubscription('private-messages', 'live-catchup-error', {
+          reason,
+          error,
+        });
+        return createSkippedLiveCatchupSummary(reason, 'error');
+      })
+      .finally(() => {
+        privateMessagesLiveCatchupPromise = null;
+      });
+
+    return privateMessagesLiveCatchupPromise;
   }
 
   async function runPrivateMessagesBackfillWindow(options: {
@@ -1245,6 +1534,9 @@ export function createPrivateMessagesBackfillRuntime({
 
   function resetPrivateMessagesBackfillRuntimeState(): void {
     stopPrivateMessagesBackfill('reset');
+    stopPrivateMessagesLiveCatchup('reset');
+    privateMessagesLiveCatchupPromise = null;
+    privateMessagesLiveCatchupLastStartedAt = 0;
     for (const state of missingMessageDependencyRepairs.values()) {
       clearMissingMessageDependencyRepairTimer(state);
       state.cancelled = true;
@@ -1260,6 +1552,7 @@ export function createPrivateMessagesBackfillRuntime({
     repairMissingMessageDependency,
     resetPrivateMessagesBackfillRuntimeState,
     resolveMissingMessageDependencyRepair,
+    runPrivateMessagesLiveCatchup,
     restoreGroupEpochHistory,
     restorePrivateMessagesForRecipient,
     startPrivateMessagesStartupBackfill,
