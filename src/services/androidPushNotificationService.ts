@@ -8,6 +8,7 @@ import {
   type PushGatewayRegistrationPayload,
   refreshPushGatewayDevice,
   registerPushGatewayDevice,
+  resetPushGatewayNotificationCounts,
   unregisterPushGatewayDevice,
 } from 'src/services/pushGatewayClient';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -255,6 +256,31 @@ export async function refreshAndroidPushRegistration(): Promise<void> {
   }
 
   await refreshPushGatewayDevice(await buildRegistrationPayload(token), useNostrStore());
+  await resetAndroidPushNotificationCounts().catch((error) => {
+    console.warn(
+      'Failed to reset Android push notification counts after registration refresh.',
+      error
+    );
+  });
+}
+
+export async function resetAndroidPushNotificationCounts(): Promise<void> {
+  if (!isAndroidPushNotificationConfigured()) {
+    return;
+  }
+
+  await PushNotifications.removeAllDeliveredNotifications().catch((error) => {
+    console.warn('Failed to clear Android delivered push notifications.', error);
+  });
+
+  const nostrStore = useNostrStore();
+  const ownerPubkey = nostrStore.getLoggedInPublicKeyHex();
+  const deviceId = readStoredDeviceId();
+  if (!ownerPubkey || !deviceId) {
+    return;
+  }
+
+  await resetPushGatewayNotificationCounts({ ownerPubkey, deviceId }, nostrStore);
 }
 
 export async function unregisterAndroidPushNotifications(): Promise<void> {
@@ -288,8 +314,27 @@ export function startAndroidPushNotificationListeners(
   void ensureAndroidPushChannel().catch((error) => {
     console.warn('Failed to create Android push notification channel.', error);
   });
+  void resetAndroidPushNotificationCounts().catch((error) => {
+    console.warn('Failed to reset Android push notification counts on app start.', error);
+  });
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void resetAndroidPushNotificationCounts().catch((error) => {
+          console.warn(
+            'Failed to reset Android push notification counts on app foreground.',
+            error
+          );
+        });
+      }
+    });
+  }
 
   void PushNotifications.addListener('pushNotificationActionPerformed', (event) => {
+    void resetAndroidPushNotificationCounts().catch((error) => {
+      console.warn('Failed to reset Android push notification counts.', error);
+    });
     const recipientPubkey = inputSanitizerService.normalizeHexKey(
       String(event.notification.data?.recipientPubkey ?? '')
     );

@@ -26,7 +26,7 @@ export class FcmPushProvider implements PushProvider {
         token: input.token,
         notification: {
           title: 'Nostr Chat',
-          body: 'New message',
+          body: input.notificationBody,
         },
         data: {
           recipientPubkey: input.recipientPubkey,
@@ -36,6 +36,8 @@ export class FcmPushProvider implements PushProvider {
           priority: 'high',
           notification: {
             channelId: 'nostr_chat_messages',
+            notificationCount: input.notificationCount,
+            tag: input.notificationTag,
           },
         },
       });
