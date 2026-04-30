@@ -6,7 +6,11 @@ import { logDebug, logWarn } from './logger.js';
 import type { RelayWorker } from './relayWorker.js';
 import type { PushGatewayRepository } from './repository.js';
 import type { DeviceRegistrationInput, GatewayConfig } from './types.js';
-import { parseDeviceRegistrationInput, parseDeviceUnregisterInput } from './validation.js';
+import {
+  parseDeviceNotificationResetInput,
+  parseDeviceRegistrationInput,
+  parseDeviceUnregisterInput,
+} from './validation.js';
 
 type JsonRequest = FastifyRequest & {
   rawBody?: string;
@@ -257,6 +261,39 @@ export function createServer({ config, repository, relayWorker }: ServerDeps): F
       }
 
       logWarn('Rejected device unregister.', { error });
+      return reply
+        .code(400)
+        .send({ error: error instanceof Error ? error.message : 'Invalid request.' });
+    }
+  });
+
+  server.post('/v1/devices/notifications/reset', async (request, reply) => {
+    await authenticateRequest(request, reply, config);
+    if (reply.sent) {
+      return;
+    }
+
+    try {
+      const input = parseDeviceNotificationResetInput(request.body);
+      logDebug('Reset notification counts request parsed.', {
+        requestId: request.id,
+        ownerPubkey: input.ownerPubkey,
+        deviceId: input.deviceId,
+      });
+      ensureOwnerMatchesAuth(request as JsonRequest, input.ownerPubkey);
+      repository.clearNotificationCounts(input.ownerPubkey, input.deviceId);
+      logDebug('Reset notification counts.', {
+        requestId: request.id,
+        ownerPubkey: input.ownerPubkey,
+        deviceId: input.deviceId,
+      });
+      return { ok: true };
+    } catch (error) {
+      if (error instanceof Nip98AuthError) {
+        return reply.code(401).send({ error: error.message });
+      }
+
+      logWarn('Rejected notification count reset.', { error });
       return reply
         .code(400)
         .send({ error: error instanceof Error ? error.message : 'Invalid request.' });

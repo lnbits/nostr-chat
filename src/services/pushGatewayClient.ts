@@ -21,6 +21,11 @@ export interface PushGatewayUnregisterPayload {
   deviceId: string;
 }
 
+export interface PushGatewayNotificationResetPayload {
+  ownerPubkey: string;
+  deviceId: string;
+}
+
 export interface PushGatewaySigner {
   signHttpAuthHeader(input: { url: string; method: string; body?: string }): Promise<string>;
 }
@@ -109,6 +114,13 @@ export async function unregisterPushGatewayDevice(
   signer: PushGatewaySigner
 ): Promise<void> {
   await postSignedJson('/v1/devices/unregister', payload, signer);
+}
+
+export async function resetPushGatewayNotificationCounts(
+  payload: PushGatewayNotificationResetPayload,
+  signer: PushGatewaySigner
+): Promise<void> {
+  await postSignedJson('/v1/devices/notifications/reset', payload, signer);
 }
 
 export function mapRelayEntriesForPushGateway(entries: RelayListEntry[]): PushGatewayRelayInput[] {

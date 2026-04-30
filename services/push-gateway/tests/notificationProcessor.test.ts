@@ -53,6 +53,47 @@ describe('processRelayEvent', () => {
       token: 'token-1',
       recipientPubkey: VALID_PUBKEY_B,
       eventId: VALID_EVENT_ID,
+      notificationBody: 'New message',
+      notificationCount: 1,
+      notificationTag: 'nostr-chat:new-messages',
+    });
+  });
+
+  it('reuses one notification tag and increments the device notification count', async () => {
+    const repository = createRepository();
+    const pushProvider: PushProvider = {
+      sendNewMessageNotification: vi.fn(async () => ({ ok: true as const })),
+    };
+
+    await processRelayEvent({
+      event: {
+        id: 'd'.repeat(64),
+        kind: 1059,
+        tags: [['p', VALID_PUBKEY_B]],
+      },
+      relayUrl: 'wss://relay.example/',
+      repository,
+      pushProvider,
+    });
+    await processRelayEvent({
+      event: {
+        id: 'e'.repeat(64),
+        kind: 1059,
+        tags: [['p', VALID_PUBKEY_B]],
+      },
+      relayUrl: 'wss://relay.example/',
+      repository,
+      pushProvider,
+    });
+
+    expect(pushProvider.sendNewMessageNotification).toHaveBeenCalledTimes(2);
+    expect(pushProvider.sendNewMessageNotification).toHaveBeenLastCalledWith({
+      token: 'token-1',
+      recipientPubkey: VALID_PUBKEY_B,
+      eventId: 'e'.repeat(64),
+      notificationBody: '2 new messages',
+      notificationCount: 2,
+      notificationTag: 'nostr-chat:new-messages',
     });
   });
 });
