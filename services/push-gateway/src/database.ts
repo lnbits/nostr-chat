@@ -64,6 +64,19 @@ export function migrateDatabase(database: DatabaseSync): void {
       UNIQUE(event_id, recipient_pubkey)
     );
 
+    CREATE TABLE IF NOT EXISTS notification_counts (
+      owner_pubkey TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      notification_tag TEXT NOT NULL,
+      notification_count INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(owner_pubkey, device_id, notification_tag),
+      FOREIGN KEY(owner_pubkey, device_id)
+        REFERENCES devices(owner_pubkey, device_id)
+        ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_device_relays_relay_url
       ON device_relays(relay_url);
     CREATE INDEX IF NOT EXISTS idx_watched_pubkeys_recipient_pubkey

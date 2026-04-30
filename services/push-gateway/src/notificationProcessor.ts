@@ -3,10 +3,16 @@ import type { PushGatewayRepository } from './repository.js';
 import type { PushProvider, PushSendResult, RelayEvent } from './types.js';
 import { normalizePubkey } from './validation.js';
 
+const NEW_MESSAGES_NOTIFICATION_TAG = 'nostr-chat:new-messages';
+
 function isPushSendFailure(
   result: PushSendResult
 ): result is Extract<PushSendResult, { ok: false }> {
   return result.ok === false;
+}
+
+function buildNotificationBody(notificationCount: number): string {
+  return notificationCount > 1 ? `${notificationCount} new messages` : 'New message';
 }
 
 function normalizeEventId(value: unknown): string | null {
@@ -105,10 +111,18 @@ export async function processRelayEvent(options: {
         ownerPubkey: device.ownerPubkey,
         deviceId: device.deviceId,
       });
+      const notificationCount = options.repository.incrementNotificationCount(
+        device.ownerPubkey,
+        device.deviceId,
+        NEW_MESSAGES_NOTIFICATION_TAG
+      );
       const result = await options.pushProvider.sendNewMessageNotification({
         token: device.fcmToken,
         recipientPubkey,
         eventId,
+        notificationBody: buildNotificationBody(notificationCount),
+        notificationCount,
+        notificationTag: NEW_MESSAGES_NOTIFICATION_TAG,
       });
 
       if (isPushSendFailure(result)) {
@@ -127,6 +141,8 @@ export async function processRelayEvent(options: {
           recipientPubkey,
           ownerPubkey: device.ownerPubkey,
           deviceId: device.deviceId,
+          notificationCount,
+          notificationTag: NEW_MESSAGES_NOTIFICATION_TAG,
           invalidToken: result.invalidToken,
         });
         logError('Failed to send FCM notification.', {
@@ -143,6 +159,8 @@ export async function processRelayEvent(options: {
         recipientPubkey,
         ownerPubkey: device.ownerPubkey,
         deviceId: device.deviceId,
+        notificationCount,
+        notificationTag: NEW_MESSAGES_NOTIFICATION_TAG,
       });
     }
 

@@ -35,7 +35,7 @@ const config: GatewayConfig = {
 };
 
 describe('FcmPushProvider', () => {
-  it('sends Android notifications with the app channel and default device sound', async () => {
+  it('sends Android notifications with the app channel, default device sound, replacement tag, and count', async () => {
     const provider = new FcmPushProvider(config);
 
     await expect(
@@ -43,6 +43,9 @@ describe('FcmPushProvider', () => {
         token: 'token-1',
         recipientPubkey: 'a'.repeat(64),
         eventId: 'b'.repeat(64),
+        notificationBody: '2 new messages',
+        notificationCount: 2,
+        notificationTag: 'nostr-chat:new-messages',
       })
     ).resolves.toEqual({ ok: true });
 
@@ -50,7 +53,7 @@ describe('FcmPushProvider', () => {
       token: 'token-1',
       notification: {
         title: 'Nostr Chat',
-        body: 'New message',
+        body: '2 new messages',
       },
       data: {
         recipientPubkey: 'a'.repeat(64),
@@ -63,6 +66,8 @@ describe('FcmPushProvider', () => {
           color: '#ff1fe1',
           icon: 'nostr_chat_notification',
           sound: 'default',
+          notificationCount: 2,
+          tag: 'nostr-chat:new-messages',
         },
       },
     });

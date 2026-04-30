@@ -1,4 +1,9 @@
-import type { DeviceRegistrationInput, DeviceUnregisterInput, RelayRegistration } from './types.js';
+import type {
+  DeviceNotificationResetInput,
+  DeviceRegistrationInput,
+  DeviceUnregisterInput,
+  RelayRegistration,
+} from './types.js';
 
 const HEX_PUBKEY_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_DEVICE_ID_LENGTH = 160;
@@ -172,4 +177,8 @@ export function parseDeviceUnregisterInput(value: unknown): DeviceUnregisterInpu
     ownerPubkey,
     deviceId,
   };
+}
+
+export function parseDeviceNotificationResetInput(value: unknown): DeviceNotificationResetInput {
+  return parseDeviceUnregisterInput(value);
 }

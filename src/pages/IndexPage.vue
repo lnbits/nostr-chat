@@ -238,6 +238,7 @@ import { useQuasar } from 'quasar';
 import ChatList from 'src/components/ChatList.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { useVisibleViewportHeight } from 'src/composables/useVisibleViewportHeight';
+import { scheduleAndroidPushNotificationCountReset } from 'src/services/androidPushNotificationService';
 import { useChatStore } from 'src/stores/chatStore';
 import {
   isMissingContactRelaysError,
@@ -645,6 +646,7 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
       await chatStore.acceptChat(activeChatId.value, {
         lastOutgoingMessageAt: created.sentAt
       });
+      scheduleAndroidPushNotificationCountReset();
     }
   } catch (error) {
     reportUiError('Failed to send chat message', error, 'Failed to send message.');
@@ -674,6 +676,7 @@ async function handleReactToMessage(payload: { message: Message; emoji: string }
         }
       );
     }
+    scheduleAndroidPushNotificationCountReset();
   } catch (error) {
     reportUiError('Failed to add message reaction', error, 'Failed to add reaction.');
   }
@@ -682,6 +685,7 @@ async function handleReactToMessage(payload: { message: Message; emoji: string }
 async function handleDeleteMessage(message: Message): Promise<void> {
   try {
     await messageStore.deleteMessage(message.chatId, message.id);
+    scheduleAndroidPushNotificationCountReset();
   } catch (error) {
     reportUiError('Failed to delete message', error, 'Failed to delete message.');
   }
@@ -697,6 +701,7 @@ async function handleRemoveReaction(payload: {
       payload.message.id,
       payload.reaction
     );
+    scheduleAndroidPushNotificationCountReset();
   } catch (error) {
     reportUiError('Failed to remove message reaction', error, 'Failed to remove reaction.');
   }

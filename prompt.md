@@ -17,6 +17,39 @@ confety emoji
 @someUser
  - more clear membership management in group chats
 
+ rename services to backend?
+
+ on open app from notification card:
+  - open the /chats page
+  - fetch the notification for the last event id
+  - if only one event
+
+for group restore make sure to start with the last epoch, then work backwards
+
+the electron app should only show fresh notifications
+do not show 100 notifications on start
+
+new epoch results in unread message
+
+chat with contact from group
+
+No relays found for this contact -> if this is the case do a refresh profile beforehand
+ - keep last profile refresh in mind
+
+ dektop ap -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
+
+
+cop to clipboard button does not work on mobile apps
+
+Priority	Number	Scenario	Why it matters
+P0	9	New current group epoch / rotation	Group push notifications can silently stop after an epoch rotation because Android push still watches the old epoch pubkey.
+P0	11	Group chat deleted/left	Users can keep receiving notifications for chats they removed or left. That is noisy and potentially privacy-sensitive.
+P0	15	App restart / app version or FCM token change	Push registrations should be refreshed on app start/resume when enabled. Otherwise stale tokens or stale watched pubkeys can linger.
+P1	12	Group relay list changed	Group delivery can degrade when the group moves relays. For push, this may require expanding the payload beyond app relays, not just refreshing.
+P1	5	My Relays / NIP-65 changed	If users expect My Relays to define where they receive messages, Android push should stay aligned with that.
+P2	4	App relay write-only flag changed	Current behavior over-refreshes. Worth cleaning up, but it is not a user-visible failure in most cases.
+
+
 
 - search with @name (for groups)
 - fix search for chats&contacts (search for all fields: name, about, given name, npub, pubkey hex)

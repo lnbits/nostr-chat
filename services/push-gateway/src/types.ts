@@ -31,6 +31,11 @@ export interface DeviceUnregisterInput {
   deviceId: string;
 }
 
+export interface DeviceNotificationResetInput {
+  ownerPubkey: string;
+  deviceId: string;
+}
+
 export interface ActiveDeliveryDevice {
   ownerPubkey: string;
   deviceId: string;
@@ -47,6 +52,9 @@ export interface PushSendInput {
   token: string;
   recipientPubkey: string;
   eventId: string;
+  notificationBody: string;
+  notificationCount: number;
+  notificationTag: string;
 }
 
 export type PushSendResult = { ok: true } | { ok: false; invalidToken: boolean; error: unknown };

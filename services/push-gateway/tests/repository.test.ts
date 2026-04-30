@@ -44,6 +44,28 @@ describe('PushGatewayRepository', () => {
     expect(repository.listDeliveryDevices(VALID_PUBKEY_B)).toEqual([]);
   });
 
+  it('increments and clears notification counts per device and notification tag', () => {
+    const repository = createRepository();
+    repository.registerDevice({
+      ownerPubkey: VALID_PUBKEY_A,
+      deviceId: 'device-1',
+      platform: 'android',
+      appVersion: '0.1.0',
+      fcmToken: 'token-1',
+      relays: [{ url: 'wss://relay.one/', read: true }],
+      watchedPubkeys: [VALID_PUBKEY_A],
+      notificationsEnabled: true,
+    });
+
+    expect(repository.incrementNotificationCount(VALID_PUBKEY_A, 'device-1', 'tag-1')).toBe(1);
+    expect(repository.incrementNotificationCount(VALID_PUBKEY_A, 'device-1', 'tag-1')).toBe(2);
+    expect(repository.incrementNotificationCount(VALID_PUBKEY_A, 'device-1', 'tag-2')).toBe(1);
+
+    repository.clearNotificationCounts(VALID_PUBKEY_A, 'device-1');
+
+    expect(repository.incrementNotificationCount(VALID_PUBKEY_A, 'device-1', 'tag-1')).toBe(1);
+  });
+
   it('deduplicates event sightings by event and recipient pubkey', () => {
     const repository = createRepository();
     expect(repository.markEventSeen('c'.repeat(64), VALID_PUBKEY_A, 'wss://relay.one/')).toBe(true);

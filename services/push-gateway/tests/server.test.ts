@@ -168,4 +168,46 @@ describe('push gateway HTTP API', () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  it('resets notification counts with valid NIP-98 auth', async () => {
+    const { secretKey, pubkey } = createKeypair();
+    const { server, repository } = createTestServer();
+    repository.registerDevice({
+      ownerPubkey: pubkey,
+      deviceId: 'device-1',
+      platform: 'android',
+      appVersion: '0.1.0',
+      fcmToken: 'token',
+      relays: [{ url: 'wss://relay.example', read: true }],
+      watchedPubkeys: [pubkey],
+      notificationsEnabled: true,
+    });
+    expect(repository.incrementNotificationCount(pubkey, 'device-1', 'tag-1')).toBe(1);
+    expect(repository.incrementNotificationCount(pubkey, 'device-1', 'tag-1')).toBe(2);
+
+    const body = JSON.stringify({
+      ownerPubkey: pubkey,
+      deviceId: 'device-1',
+    });
+    const url = `${config.publicGatewayBaseUrl}/v1/devices/notifications/reset`;
+
+    const response = await server.inject({
+      method: 'POST',
+      url: '/v1/devices/notifications/reset',
+      headers: {
+        authorization: signNip98Header({
+          secretKey,
+          url,
+          method: 'POST',
+          body,
+        }),
+        'content-type': 'application/json',
+      },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(repository.incrementNotificationCount(pubkey, 'device-1', 'tag-1')).toBe(1);
+  });
 });
