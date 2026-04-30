@@ -13,6 +13,7 @@ import {
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
   PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS,
   PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS,
+  PRIVATE_MESSAGES_WATCHDOG_STALE_OPEN_MS,
 } from 'src/stores/nostr/constants';
 import type { SubscribePrivateMessagesOptions } from 'src/stores/nostr/types';
 import type { Ref } from 'vue';
@@ -213,6 +214,34 @@ export function createPrivateMessagesSubscriptionRuntime({
     return typeof navigator !== 'undefined' && navigator.onLine === false;
   }
 
+  function parseIsoTimestampMs(value: string | null): number {
+    if (!value) {
+      return 0;
+    }
+
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function resolveSubscriptionQuietMs(now: number): number {
+    const startedAt = parseIsoTimestampMs(privateMessagesSubscriptionStartedAt.value);
+    const lastEventSeenAt = parseIsoTimestampMs(privateMessagesSubscriptionLastEventSeenAt.value);
+    const latestActivityAt = Math.max(startedAt, lastEventSeenAt);
+
+    return latestActivityAt > 0 ? Math.max(0, now - latestActivityAt) : 0;
+  }
+
+  function isPrivateMessagesSubscriptionStaleOpen(
+    connectedRelayUrls: string[],
+    now: number
+  ): boolean {
+    if (connectedRelayUrls.length === 0 || privateMessagesSubscriptionLastEoseAt.value) {
+      return false;
+    }
+
+    return resolveSubscriptionQuietMs(now) >= PRIVATE_MESSAGES_WATCHDOG_STALE_OPEN_MS;
+  }
+
   async function recoverPrivateMessagesSubscriptionFromWatchdog(
     reason: string,
     details: Record<string, unknown> = {}
@@ -245,7 +274,7 @@ export function createPrivateMessagesSubscriptionRuntime({
       return privateMessagesWatchdogRunPromise;
     }
 
-    privateMessagesWatchdogRunPromise = (async () => {
+    privateMessagesWatchdogRunPromise = Promise.resolve().then(async () => {
       try {
         if (!privateMessagesSubscriptionShouldBeActive) {
           privateMessagesWatchdogRelayConnectionStates.clear();
@@ -319,12 +348,25 @@ export function createPrivateMessagesSubscriptionRuntime({
             after && ((!before && disconnectedRelayUrls.includes(relayUrl)) || previous === false)
           );
         });
+        const connectedRelayUrls = relayUrls.filter((relayUrl) => relayStatesAfter.get(relayUrl));
 
         syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
 
         if (reconnectedRelayUrls.length > 0) {
           await recoverPrivateMessagesSubscriptionFromWatchdog('relay-reconnected', {
             reconnectedRelayUrls,
+            ...buildSubscriptionRelayDetails(relayUrls),
+          });
+        }
+
+        const now = Date.now();
+        if (!browserOffline && isPrivateMessagesSubscriptionStaleOpen(connectedRelayUrls, now)) {
+          await recoverPrivateMessagesSubscriptionFromWatchdog('subscription-stale-open', {
+            connectedRelayUrls,
+            staleOpenMs: resolveSubscriptionQuietMs(now),
+            staleOpenThresholdMs: PRIVATE_MESSAGES_WATCHDOG_STALE_OPEN_MS,
+            subscriptionStartedAt: privateMessagesSubscriptionStartedAt.value,
+            lastEventSeenAt: privateMessagesSubscriptionLastEventSeenAt.value,
             ...buildSubscriptionRelayDetails(relayUrls),
           });
         }
@@ -337,7 +379,7 @@ export function createPrivateMessagesSubscriptionRuntime({
         privateMessagesWatchdogRunPromise = null;
         queuePrivateMessagesWatchdog(PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS);
       }
-    })();
+    });
 
     return privateMessagesWatchdogRunPromise;
   }
