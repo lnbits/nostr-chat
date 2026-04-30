@@ -19,6 +19,25 @@ confety emoji
 
  rename services to backend?
 
+ on open app from notification card:
+  - open the /chats page
+  - fetch the notification for the last event id
+  - if only one event
+
+for group restore make sure to start with the last epoch, then work backwards
+
+the electron app should only show fresh notifications
+do not show 100 notifications on start
+
+new epoch results in unread message
+
+chat with contact from group
+
+No relays found for this contact -> if this is the case do a refresh profile beforehand
+ - keep last profile refresh in mind
+
+ dektop ap -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
+
 
 cop to clipboard button does not work on mobile apps
 
