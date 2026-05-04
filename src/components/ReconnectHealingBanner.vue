@@ -1,7 +1,13 @@
 <template>
   <div v-if="isVisible" class="reconnect-healing-banner" aria-live="polite">
-    <q-icon name="sync" class="reconnect-healing-banner__icon" size="14px" />
     <span class="reconnect-healing-banner__label">{{ statusLabel }}</span>
+    <q-linear-progress
+      indeterminate
+      color="primary"
+      size="2px"
+      class="reconnect-healing-banner__progress"
+      aria-hidden="true"
+    />
   </div>
 </template>
 
@@ -17,24 +23,18 @@ const statusLabel = computed(() => nostrStore.reconnectHealingStatusLabel ?? 'Pr
 
 <style scoped>
 .reconnect-healing-banner {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
   min-height: 22px;
   margin: 10px -12px -12px;
-  padding: 3px 12px;
+  padding: 3px 12px 5px;
   border-top: 1px solid var(--nc-border);
   background: color-mix(in srgb, var(--q-primary) 7%, var(--nc-panel-header-bg));
   color: var(--nc-text-primary);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
-}
-
-.reconnect-healing-banner__icon {
-  flex: 0 0 auto;
-  color: var(--q-primary);
-  animation: reconnect-healing-banner-spin 1.2s linear infinite;
 }
 
 .reconnect-healing-banner__label {
@@ -44,13 +44,10 @@ const statusLabel = computed(() => nostrStore.reconnectHealingStatusLabel ?? 'Pr
   white-space: nowrap;
 }
 
-@keyframes reconnect-healing-banner-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
+.reconnect-healing-banner__progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
 }
 </style>
