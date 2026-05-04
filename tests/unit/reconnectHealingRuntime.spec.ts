@@ -10,6 +10,12 @@ const GROUP_EPOCH_PUBLIC_KEY = 'b'.repeat(64);
 const DIRECT_MESSAGE_A = 'c'.repeat(64);
 const DIRECT_MESSAGE_B = 'd'.repeat(64);
 const LOGGED_IN_PUBLIC_KEY = 'f'.repeat(64);
+const MIN_STATUS_VISIBLE_MS = 200;
+
+type StatusLabelUpdate = {
+  at: number;
+  value: string | null;
+};
 
 describe('reconnectHealingRuntime', () => {
   beforeEach(() => {
@@ -38,7 +44,7 @@ describe('reconnectHealingRuntime', () => {
   ) {
     const healingState = ref(false);
     const statusLabel = ref<string | null>(null);
-    const statusLabels: Array<string | null> = [];
+    const statusLabelUpdates: StatusLabelUpdate[] = [];
     const queueOutboundMessageReplay = vi.fn();
     const queuePrivateMessagesWatchdog = vi.fn();
     const refreshDeveloperPendingQueues = vi.fn(async () => ({
@@ -63,14 +69,17 @@ describe('reconnectHealingRuntime', () => {
       },
       setReconnectHealingStatusLabel: (value) => {
         statusLabel.value = value;
-        statusLabels.push(value);
+        statusLabelUpdates.push({
+          at: Date.now(),
+          value,
+        });
       },
     });
 
     return {
       healingState,
       statusLabel,
-      statusLabels,
+      statusLabelUpdates,
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
@@ -78,6 +87,34 @@ describe('reconnectHealingRuntime', () => {
       restorePrivateMessagesForRecipient,
       runtime,
     };
+  }
+
+  async function runQueuedTimersForStatusSteps(stepCount: number): Promise<void> {
+    for (let index = 0; index < stepCount; index += 1) {
+      await vi.advanceTimersByTimeAsync(MIN_STATUS_VISIBLE_MS);
+      await vi.runAllTicks();
+    }
+  }
+
+  function expectStatusLabels(
+    statusLabelUpdates: StatusLabelUpdate[],
+    labels: Array<string | null>
+  ) {
+    expect(statusLabelUpdates.map((entry) => entry.value)).toEqual(labels);
+  }
+
+  function expectStatusLabelsWereVisibleForMinimumDuration(
+    statusLabelUpdates: StatusLabelUpdate[]
+  ): void {
+    for (let index = 0; index < statusLabelUpdates.length - 1; index += 1) {
+      const current = statusLabelUpdates[index];
+      const next = statusLabelUpdates[index + 1];
+      if (current.value === null) {
+        continue;
+      }
+
+      expect(next.at - current.at).toBeGreaterThanOrEqual(MIN_STATUS_VISIBLE_MS);
+    }
   }
 
   it('heals the visible chat plus recent direct messages and logs the recovery pass', async () => {
@@ -116,17 +153,18 @@ describe('reconnectHealingRuntime', () => {
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       runtime,
-      statusLabels,
+      statusLabelUpdates,
     } = createRuntime({
       recentChats,
       visibleChat,
     });
 
-    await runtime.runReconnectHealing('relay-connected');
-    runtime.resetReconnectHealingRuntimeState();
+    const runPromise = runtime.runReconnectHealing('relay-connected');
+    await runQueuedTimersForStatusSteps(10);
+    await runPromise;
 
     expect(healingState.value).toBe(false);
-    expect(statusLabels).toEqual([
+    expectStatusLabels(statusLabelUpdates, [
       'Preparing sync',
       'Checking session and network',
       'Queing message relay check',
@@ -137,8 +175,8 @@ describe('reconnectHealingRuntime', () => {
       'Applying pending message updates',
       'Finishing sync',
       null,
-      null,
     ]);
+    expectStatusLabelsWereVisibleForMinimumDuration(statusLabelUpdates);
     expect(queuePrivateMessagesWatchdog).toHaveBeenCalledWith(0);
     expect(queueOutboundMessageReplay).toHaveBeenCalledWith('reconnect-healing', 0);
     expect(restorePrivateMessagesForRecipient).toHaveBeenNthCalledWith(1, GROUP_PUBLIC_KEY, {
@@ -179,16 +217,17 @@ describe('reconnectHealingRuntime', () => {
   });
 
   it('runs healing when a window-focus notifier follows a long enough background period', async () => {
-    const { refreshDeveloperPendingQueues, runtime, statusLabels } = createRuntime();
+    const { refreshDeveloperPendingQueues, runtime, statusLabelUpdates } = createRuntime();
 
     runtime.notifyWindowBlur();
     await vi.advanceTimersByTimeAsync(3000);
     runtime.notifyWindowFocus();
-    expect(statusLabels).toEqual(['Queing preparing sync']);
+    expectStatusLabels(statusLabelUpdates, ['Queing preparing sync']);
     await vi.advanceTimersByTimeAsync(750);
-    await vi.runAllTicks();
+    await runQueuedTimersForStatusSteps(10);
     runtime.resetReconnectHealingRuntimeState();
 
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
+    expectStatusLabelsWereVisibleForMinimumDuration(statusLabelUpdates);
   });
 });
