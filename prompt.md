@@ -21,6 +21,7 @@ android build
 > Configure project :app
 WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
 
+https://push.lnbits.link/healthz - make it configurable
 
 @someUser
  - more clear membership management in group chats

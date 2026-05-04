@@ -639,6 +639,17 @@ export function createPrivateMessagesSubscriptionRuntime({
           ...privateMessageTargetDetails,
         }
       );
+      privateMessagesSubscription.on('closed', (relay, reason) => {
+        const relayUrl = normalizeRelayStatusUrls([relay.url])[0] ?? relay.url;
+        logSubscription('private-messages', 'relay-closed', {
+          signature,
+          relayUrl,
+          reason: reason || null,
+          ...buildSubscriptionRelayDetails(relayUrls),
+        });
+        markPrivateMessagesWatchdogRelayDisconnected(relayUrl);
+        queuePrivateMessagesWatchdog(0);
+      });
       privateMessagesSubscriptionSignature = signature;
       syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
 

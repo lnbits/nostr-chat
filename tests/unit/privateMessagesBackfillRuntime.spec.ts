@@ -1,5 +1,8 @@
 import NDK, { NDKKind } from '@nostr-dev-kit/ndk';
-import { MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS } from 'src/stores/nostr/constants';
+import {
+  MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS,
+  PRIVATE_MESSAGES_LIVE_CATCHUP_INTERVAL_MS,
+} from 'src/stores/nostr/constants';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -344,6 +347,35 @@ describe('privateMessagesBackfillRuntime', () => {
     expect(updateStoredPrivateMessagesLastReceivedFromCreatedAt).toHaveBeenCalledWith(1700007100);
     expect(updateStoredEventSinceFromCreatedAt).toHaveBeenCalledWith(1700007100);
     expect(queuePrivateMessageIngestion).toHaveBeenCalledTimes(1);
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('throttles foreground live catch-up at the watchdog cadence', async () => {
+    vi.setSystemTime(new Date('2023-11-15T00:13:20.000Z'));
+    const { runtime, subscribeWithReqLogging } = createRuntime();
+
+    await expect(runtime.runPrivateMessagesLiveCatchup('watchdog')).resolves.toEqual(
+      expect.objectContaining({
+        didRun: true,
+      })
+    );
+    await expect(runtime.runPrivateMessagesLiveCatchup('watchdog')).resolves.toEqual(
+      expect.objectContaining({
+        didRun: false,
+        skippedReason: 'throttled',
+      })
+    );
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(PRIVATE_MESSAGES_LIVE_CATCHUP_INTERVAL_MS);
+
+    await expect(runtime.runPrivateMessagesLiveCatchup('watchdog')).resolves.toEqual(
+      expect.objectContaining({
+        didRun: true,
+      })
+    );
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(2);
 
     runtime.resetPrivateMessagesBackfillRuntimeState();
   });

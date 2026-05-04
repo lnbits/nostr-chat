@@ -1379,7 +1379,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     privateMessagesLiveCatchupAndRefreshLivePromise = (async () => {
       const summary = await runPrivateMessagesLiveCatchupRuntime(reason, options);
-      if (summary.eventCount <= 0 && !summary.timedOut) {
+      const shouldRestartLiveSubscription =
+        summary.eventCount > 0 ||
+        summary.timedOut ||
+        (reason === 'reconnect-healing' && summary.didRun);
+      if (!shouldRestartLiveSubscription) {
         return summary;
       }
 
@@ -1387,7 +1391,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
         reason,
         eventCount: summary.eventCount,
         reachedEose: summary.reachedEose,
-        restartReason: summary.timedOut ? 'catchup-timeout' : 'catchup-events',
+        restartReason:
+          summary.eventCount > 0
+            ? 'catchup-events'
+            : summary.timedOut
+              ? 'catchup-timeout'
+              : 'reconnect-healing',
         timedOut: summary.timedOut,
         ...buildFilterSinceDetails(summary.since ?? undefined),
         ...buildFilterUntilDetails(summary.until ?? undefined),
