@@ -266,6 +266,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<void> = async () => {
     throw new Error('Group epoch history runtime is not initialized.');
   };
+  let restoreDirectMessagesRuntime: (options?: {
+    force?: boolean;
+    seedRelayUrls?: string[];
+  }) => Promise<void> = async () => {
+    throw new Error('Direct messages runtime is not initialized.');
+  };
   let restorePrivateMessagesForRecipientRuntime: (
     recipientPubkey: string,
     options?: {
@@ -406,6 +412,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     normalizeTimestamp,
 
+    readStoredPrivateMessagesLastReceivedCreatedAt,
     readPrivatePreferencesFromStorage,
 
     resetEventSinceForFreshLogin,
@@ -1304,6 +1311,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     repairMissingMessageDependency: repairMissingMessageDependencyImpl,
     resetPrivateMessagesBackfillRuntimeState: resetPrivateMessagesBackfillRuntimeStateImpl,
     resolveMissingMessageDependencyRepair: resolveMissingMessageDependencyRepairImpl,
+    restoreDirectMessages: restoreDirectMessagesImpl,
     restoreGroupEpochHistory: restoreGroupEpochHistoryImpl,
     restorePrivateMessagesForRecipient: restorePrivateMessagesForRecipientImpl,
     startPrivateMessagesStartupBackfill: startPrivateMessagesStartupBackfillImpl,
@@ -1320,6 +1328,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getPrivateMessagesBackfillResumeState,
     getPrivateMessagesIngestQueue: () => getPrivateMessagesIngestQueueRuntime(),
     getPrivateMessagesStartupFloorSince,
+    readStoredPrivateMessagesLastReceivedCreatedAt,
     logSubscription,
     ndk,
     normalizeThrottleMs,
@@ -1337,6 +1346,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   repairMissingMessageDependencyRuntime = repairMissingMessageDependencyImpl;
   resetPrivateMessagesBackfillRuntimeStateRuntime = resetPrivateMessagesBackfillRuntimeStateImpl;
   resolveMissingMessageDependencyRepairRuntime = resolveMissingMessageDependencyRepairImpl;
+  restoreDirectMessagesRuntime = restoreDirectMessagesImpl;
   restoreGroupEpochHistoryRuntime = restoreGroupEpochHistoryImpl;
   restorePrivateMessagesForRecipientRuntime = restorePrivateMessagesForRecipientImpl;
   startPrivateMessagesStartupBackfillRuntime = startPrivateMessagesStartupBackfillImpl;
@@ -1859,18 +1869,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       };
     },
     isRestoringStartupState,
-    listRecentDirectMessageChatTargets: (limit, excludeChatIds = []) => {
-      const excludedChatIds = new Set(excludeChatIds);
-      return chatStore.inboxChats
-        .filter((chat) => chat.type === 'user' && !excludedChatIds.has(chat.id))
-        .slice(0, limit)
-        .map((chat) => ({
-          id: chat.id,
-          publicKey: chat.publicKey,
-          type: chat.type,
-          epochPublicKey: chat.epochPublicKey,
-        }));
-    },
     queueOutboundMessageReplay: (reason, delayMs) => {
       queueOutboundMessageReplayRuntime(reason, delayMs);
     },
@@ -1878,6 +1876,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       queuePrivateMessagesWatchdogRuntime(delayMs);
     },
     refreshDeveloperPendingQueues: () => refreshDeveloperPendingQueuesRuntime(),
+    restoreDirectMessages: (options) => restoreDirectMessagesRuntime(options),
     restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
       restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
     restorePrivateMessagesForRecipient: (recipientPubkey, options) =>
