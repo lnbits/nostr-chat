@@ -421,6 +421,7 @@ describe('nostr runtime messaging logic', () => {
     const refreshGroupContactByPublicKey = vi.fn(async () => null);
     const publishPrivateContactList = vi.fn(async () => {});
     const restoreGroupEpochHistory = vi.fn(async () => {});
+    const subscribeGroupMembershipRosterUpdates = vi.fn(async () => {});
     const runtime = createGroupInviteRuntime({
       bumpContactListVersion: vi.fn(),
       chatStore,
@@ -431,6 +432,7 @@ describe('nostr runtime messaging logic', () => {
       publishPrivateContactList,
       refreshGroupContactByPublicKey,
       restoreGroupEpochHistory,
+      subscribeGroupMembershipRosterUpdates,
       subscribePrivateMessagesForLoggedInUser,
     });
 
@@ -502,6 +504,10 @@ describe('nostr runtime messaging logic', () => {
       type: 'group',
     });
     expect(chatStore.syncContactProfile).toHaveBeenCalledWith(GROUP_KEY);
+    expect(subscribeGroupMembershipRosterUpdates).toHaveBeenCalledWith(
+      ['wss://relay.example/'],
+      true
+    );
     expect(publishPrivateContactList).toHaveBeenCalledWith(['wss://relay.example/']);
     expect(chatStore.reload).toHaveBeenCalled();
   });
@@ -514,6 +520,7 @@ describe('nostr runtime messaging logic', () => {
     };
     const restoreGroupEpochHistory = vi.fn(async () => {});
     const subscribePrivateMessagesForLoggedInUser = vi.fn(async () => {});
+    const subscribeGroupMembershipRosterUpdates = vi.fn(async () => {});
     const runtime = createGroupInviteRuntime({
       bumpContactListVersion: vi.fn(),
       chatStore,
@@ -537,6 +544,7 @@ describe('nostr runtime messaging logic', () => {
       publishPrivateContactList: vi.fn(async () => {}),
       refreshGroupContactByPublicKey: vi.fn(async () => null),
       restoreGroupEpochHistory,
+      subscribeGroupMembershipRosterUpdates,
       subscribePrivateMessagesForLoggedInUser,
     });
 
@@ -566,6 +574,10 @@ describe('nostr runtime messaging logic', () => {
     expect(restoreGroupEpochHistory).toHaveBeenCalledWith(GROUP_KEY, PUBKEY_B, {
       force: true,
     });
+    expect(subscribeGroupMembershipRosterUpdates).toHaveBeenCalledWith(
+      ['wss://relay.example/'],
+      true
+    );
     expect(subscribePrivateMessagesForLoggedInUser).not.toHaveBeenCalled();
   });
 

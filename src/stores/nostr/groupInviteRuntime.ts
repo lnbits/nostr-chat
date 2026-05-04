@@ -50,6 +50,10 @@ interface GroupInviteRuntimeDeps {
       seedRelayUrls?: string[];
     }
   ) => Promise<void>;
+  subscribeGroupMembershipRosterUpdates: (
+    seedRelayUrls?: string[],
+    force?: boolean
+  ) => Promise<void>;
   subscribePrivateMessagesForLoggedInUser: (force?: boolean) => Promise<void>;
 }
 
@@ -63,6 +67,7 @@ export function createGroupInviteRuntime({
   publishPrivateContactList,
   refreshGroupContactByPublicKey,
   restoreGroupEpochHistory,
+  subscribeGroupMembershipRosterUpdates,
   subscribePrivateMessagesForLoggedInUser,
 }: GroupInviteRuntimeDeps) {
   async function upsertIncomingGroupInviteRequestChat(
@@ -214,6 +219,16 @@ export function createGroupInviteRuntime({
 
     bumpContactListVersion();
     await chatStore.reload();
+
+    try {
+      await subscribeGroupMembershipRosterUpdates(getAppRelayUrls(), true);
+    } catch (error) {
+      console.warn(
+        'Failed to refresh group roster subscription after accepting group invite',
+        normalizedTargetPubkey,
+        error
+      );
+    }
 
     try {
       await publishPrivateContactList(getAppRelayUrls());

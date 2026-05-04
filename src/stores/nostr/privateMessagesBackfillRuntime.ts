@@ -642,6 +642,10 @@ export function createPrivateMessagesBackfillRuntime({
   function resolveInitialMissingMessageDependencyRepairAttemptIndex(
     options: RepairMissingMessageDependencyOptions
   ): number {
+    if (options.reason === 'reply-target-missing') {
+      return getAggressiveMissingMessageDependencyRepairAttemptIndex();
+    }
+
     if (options.reason === 'reply-open' && options.force === true) {
       return getAggressiveMissingMessageDependencyRepairAttemptIndex();
     }
@@ -1002,68 +1006,103 @@ export function createPrivateMessagesBackfillRuntime({
       return;
     }
 
-    const restoreKey = `${normalizedGroupPublicKey}:${normalizedEpochPublicKey}`;
-    if (!options.force && restoredGroupEpochHistoryKeys.has(restoreKey)) {
+    await chatDataService.init();
+    const groupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+    if (!groupChat || groupChat.type !== 'group') {
       return;
     }
 
-    const existingRestore = groupEpochHistoryRestorePromises.get(restoreKey);
-    if (existingRestore) {
-      return existingRestore;
+    let epochPublicKeys = Array.from(
+      new Set(
+        resolveGroupChatEpochEntries(groupChat)
+          .map((entry) => inputSanitizerService.normalizeHexKey(entry.epoch_public_key))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+    if (!epochPublicKeys.includes(normalizedEpochPublicKey)) {
+      return;
     }
 
-    const restorePromise = (async () => {
-      await chatDataService.init();
-      const groupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
-      if (!groupChat || groupChat.type !== 'group') {
-        return;
-      }
+    const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return;
+    }
 
-      const hasEpoch = resolveGroupChatEpochEntries(groupChat).some(
-        (entry) => entry.epoch_public_key === normalizedEpochPublicKey
-      );
-      if (!hasEpoch) {
-        return;
-      }
-
-      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
-      if (relayUrls.length === 0) {
-        return;
-      }
-
-      await ensureRelayConnections(relayUrls);
-      const now = Math.floor(Date.now() / 1000);
+    await ensureRelayConnections(relayUrls);
+    const now = Math.floor(Date.now() / 1000);
+    const widestRepairWindowSeconds =
+      MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS[
+        MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS.length - 1
+      ] ?? PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS;
+    let since = Math.max(0, now - widestRepairWindowSeconds);
+    if (!options.force) {
       const latestMessages = await chatDataService.listLatestMessages(normalizedGroupPublicKey, 1);
       const latestMessageTime =
         toUnixTimestampFromIso(latestMessages.rows[0]?.created_at) ??
         toUnixTimestampFromIso(groupChat.last_message_at);
-      const since =
+      since =
         latestMessageTime !== null
           ? Math.max(0, latestMessageTime - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS)
           : getPrivateMessagesStartupFloorSince(now);
-      await runGroupEpochHistoryRestoreWindow({
-        loggedInPubkeyHex,
-        groupPublicKey: normalizedGroupPublicKey,
-        recipientPubkey: normalizedEpochPublicKey,
-        relayUrls,
-        since,
-      });
-      restoredGroupEpochHistoryKeys.add(restoreKey);
-    })()
-      .catch((error) => {
-        console.warn(
-          'Failed to restore group epoch history',
-          normalizedGroupPublicKey,
-          normalizedEpochPublicKey,
-          error
-        );
-      })
-      .finally(() => {
-        groupEpochHistoryRestorePromises.delete(restoreKey);
-      });
+    }
 
-    groupEpochHistoryRestorePromises.set(restoreKey, restorePromise);
-    return restorePromise;
+    const handledEpochPublicKeys = new Set<string>();
+
+    while (epochPublicKeys.length > 0) {
+      await Promise.all(
+        epochPublicKeys.map((epochPublicKeyToRestore) => {
+          handledEpochPublicKeys.add(epochPublicKeyToRestore);
+          const restoreKey = `${normalizedGroupPublicKey}:${epochPublicKeyToRestore}`;
+          if (!options.force && restoredGroupEpochHistoryKeys.has(restoreKey)) {
+            return Promise.resolve();
+          }
+
+          const existingRestore = groupEpochHistoryRestorePromises.get(restoreKey);
+          if (existingRestore) {
+            return existingRestore;
+          }
+
+          const restorePromise = runGroupEpochHistoryRestoreWindow({
+            loggedInPubkeyHex,
+            groupPublicKey: normalizedGroupPublicKey,
+            recipientPubkey: epochPublicKeyToRestore,
+            relayUrls,
+            since,
+            until: now,
+          })
+            .then(() => {
+              restoredGroupEpochHistoryKeys.add(restoreKey);
+            })
+            .catch((error) => {
+              console.warn(
+                'Failed to restore group epoch history',
+                normalizedGroupPublicKey,
+                epochPublicKeyToRestore,
+                error
+              );
+            })
+            .finally(() => {
+              groupEpochHistoryRestorePromises.delete(restoreKey);
+            });
+
+          groupEpochHistoryRestorePromises.set(restoreKey, restorePromise);
+          return restorePromise;
+        })
+      );
+
+      const latestGroupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+      if (!latestGroupChat || latestGroupChat.type !== 'group') {
+        return;
+      }
+
+      epochPublicKeys = Array.from(
+        new Set(
+          resolveGroupChatEpochEntries(latestGroupChat)
+            .map((entry) => inputSanitizerService.normalizeHexKey(entry.epoch_public_key))
+            .filter((value): value is string => Boolean(value))
+        )
+      ).filter((epochPublicKeyToRestore) => !handledEpochPublicKeys.has(epochPublicKeyToRestore));
+    }
   }
 
   async function restorePrivateMessagesForRecipient(

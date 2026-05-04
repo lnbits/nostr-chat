@@ -110,6 +110,68 @@ async function waitForBootstrapRetry(delayMs: number): Promise<void> {
   });
 }
 
+async function waitForPrivateMessagesSubscriptionEose(
+  nostrStore: {
+    privateMessagesSubscriptionLastEoseAt: string | null;
+    waitForPrivateMessagesIngestQueue?: () => Promise<void>;
+  },
+  previousEoseAt: string | null,
+  timeoutMs = 5_000
+): Promise<void> {
+  const deadlineAt = Date.now() + timeoutMs;
+
+  while (Date.now() < deadlineAt) {
+    const nextEoseAt = nostrStore.privateMessagesSubscriptionLastEoseAt ?? null;
+    if (nextEoseAt && nextEoseAt !== previousEoseAt) {
+      await nostrStore.waitForPrivateMessagesIngestQueue?.();
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 100);
+    });
+  }
+
+  await nostrStore.waitForPrivateMessagesIngestQueue?.();
+}
+
+async function waitForGroupChatWithEpoch(
+  chatStore: {
+    chats: Array<{
+      id: string;
+      publicKey: string;
+      type: 'user' | 'group';
+      epochPublicKey: string | null;
+    }>;
+    reload: () => Promise<void>;
+  },
+  chatId: string,
+  fallbackChat: {
+    id: string;
+    publicKey: string;
+    type: 'user' | 'group';
+    epochPublicKey: string | null;
+  },
+  timeoutMs = 5_000
+): Promise<typeof fallbackChat> {
+  const deadlineAt = Date.now() + timeoutMs;
+
+  while (Date.now() < deadlineAt) {
+    await chatStore.reload();
+    const refreshedChat = chatStore.chats.find((entry) => entry.id === chatId) ?? fallbackChat;
+    if (refreshedChat.type !== 'group' || refreshedChat.epochPublicKey) {
+      return refreshedChat;
+    }
+
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 100);
+    });
+  }
+
+  await chatStore.reload();
+  return chatStore.chats.find((entry) => entry.id === chatId) ?? fallbackChat;
+}
+
 async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot> {
   const privateKey = options.privateKey.trim();
   const relayUrls = normalizeRelayUrls(options.relayUrls);
@@ -281,7 +343,9 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
   relayStore.init();
 
   await Promise.all([chatStore.init(), messageStore.init()]);
+  const previousPrivateMessagesEoseAt = nostrStore.privateMessagesSubscriptionLastEoseAt ?? null;
   await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
+  await waitForPrivateMessagesSubscriptionEose(nostrStore, previousPrivateMessagesEoseAt);
   await chatStore.reload();
 
   const normalizedChatId =
@@ -291,10 +355,17 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
     const chat = chatStore.chats.find((entry) => entry.id === normalizedChatId) ?? null;
     if (chat?.type === 'group') {
       await nostrStore.restorePrivateMessagesForRecipient(chat.publicKey, { force: true });
-      if (chat.epochPublicKey) {
-        await nostrStore.restoreGroupEpochHistory(chat.publicKey, chat.epochPublicKey, {
-          force: true,
-        });
+      await nostrStore.waitForPrivateMessagesIngestQueue();
+      const refreshedChat = await waitForGroupChatWithEpoch(chatStore, normalizedChatId, chat);
+      if (refreshedChat.epochPublicKey) {
+        await nostrStore.restoreGroupEpochHistory(
+          refreshedChat.publicKey,
+          refreshedChat.epochPublicKey,
+          {
+            force: true,
+          }
+        );
+        await nostrStore.waitForPrivateMessagesIngestQueue();
       }
       await chatStore.reload();
     }

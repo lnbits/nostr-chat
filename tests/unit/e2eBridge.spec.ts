@@ -7,6 +7,7 @@ const moduleMocks = vi.hoisted(() => {
     encodeNpub: vi.fn((value: string) => `npub-${value}`),
     getLoggedInPublicKeyHex: vi.fn(() => 'a'.repeat(64)),
     logout: vi.fn().mockResolvedValue(undefined),
+    privateMessagesSubscriptionLastEoseAt: null as string | null,
     publishMyRelayList: vi.fn().mockResolvedValue(undefined),
     restoreGroupEpochHistory: vi.fn().mockResolvedValue(undefined),
     restorePrivateMessagesForRecipient: vi.fn().mockResolvedValue(undefined),
@@ -16,6 +17,7 @@ const moduleMocks = vi.hoisted(() => {
     setDeveloperDiagnosticsEnabled: vi.fn(),
     subscribePrivateMessagesForLoggedInUser: vi.fn().mockResolvedValue(undefined),
     updateLoggedInUserRelayList: vi.fn().mockResolvedValue(undefined),
+    waitForPrivateMessagesIngestQueue: vi.fn().mockResolvedValue(undefined),
   };
   const relayStore = {
     init: vi.fn(),
@@ -138,7 +140,11 @@ describe('e2eBridge', () => {
     vi.clearAllMocks();
 
     moduleMocks.nostrStore.getLoggedInPublicKeyHex.mockReturnValue(PUBKEY_HEX);
+    moduleMocks.nostrStore.privateMessagesSubscriptionLastEoseAt = null;
     moduleMocks.nostrStore.savePrivateKey.mockReturnValue({ isValid: true });
+    moduleMocks.nostrStore.subscribePrivateMessagesForLoggedInUser.mockImplementation(async () => {
+      moduleMocks.nostrStore.privateMessagesSubscriptionLastEoseAt = new Date().toISOString();
+    });
     moduleMocks.relayStore.relays = ['ws://relay.one'];
     moduleMocks.chatStore.chats = [];
     moduleMocks.chatDataService.deleteMessageByEventId.mockResolvedValue(true);
@@ -274,7 +280,7 @@ describe('e2eBridge', () => {
     expect(moduleMocks.nostrStore.subscribePrivateMessagesForLoggedInUser).toHaveBeenCalledWith(
       true
     );
-    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(2);
+    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(3);
     expect(moduleMocks.nostrStore.restorePrivateMessagesForRecipient).toHaveBeenCalledWith(
       PUBKEY_HEX,
       { force: true }

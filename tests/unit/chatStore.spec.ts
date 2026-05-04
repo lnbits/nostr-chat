@@ -15,6 +15,7 @@ const {
   resolveDefaultSelectedChatId,
   resolveEffectiveLastSeenReceivedActivityAt,
   resolveMarkAsReadBoundaryAt,
+  resolveRequestClearBoundaryAt,
   syncChatActivityMeta,
 } = __chatStoreTestUtils;
 
@@ -39,6 +40,41 @@ describe('chatStore logic', () => {
         last_incoming_message_at: '2026-01-02T00:00:00.000Z',
       })
     ).toBe('request');
+  });
+
+  it('hides cleared request chats until a newer incoming message arrives', () => {
+    expect(
+      resolveChatCategory({
+        last_incoming_message_at: '2026-01-02T00:00:00.000Z',
+        request_cleared_at: '2026-01-02T00:00:00.000Z',
+      })
+    ).toBe('hidden');
+
+    expect(
+      resolveChatCategory({
+        last_incoming_message_at: '2026-01-03T00:00:00.000Z',
+        request_cleared_at: '2026-01-02T00:00:00.000Z',
+      })
+    ).toBe('request');
+  });
+
+  it('uses the latest deleted request message as the clear boundary', () => {
+    expect(
+      resolveRequestClearBoundaryAt(
+        {
+          last_incoming_message_at: '2026-01-02T00:00:00.000Z',
+        },
+        [
+          {
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            created_at: '2026-01-03T00:00:00.000Z',
+          },
+        ],
+        '2026-01-02T12:00:00.000Z'
+      )
+    ).toBe('2026-01-03T00:00:00.000Z');
   });
 
   it('counts only incoming timestamps newer than the seen boundary', () => {
@@ -112,6 +148,7 @@ describe('chatStore logic', () => {
     const nextMeta = syncChatActivityMeta(
       {
         last_incoming_message_at: '2026-01-01T00:00:00.000Z',
+        request_cleared_at: '2026-01-02T00:00:00.000Z',
       },
       {
         lastIncomingMessageAt: '2026-01-02T00:00:00.000Z',
@@ -125,6 +162,7 @@ describe('chatStore logic', () => {
       last_incoming_message_at: '2026-01-02T00:00:00.000Z',
       last_outgoing_message_at: '2026-01-03T00:00:00.000Z',
     });
+    expect(nextMeta).not.toHaveProperty('request_cleared_at');
   });
 
   it('does not unblock a blocked chat just because a later outgoing snapshot exists', () => {

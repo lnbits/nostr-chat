@@ -788,8 +788,10 @@ async function handleRefreshChat(chatId: string): Promise<void> {
     if (chat.type === 'group') {
       const nostrStore = await getNostrStore();
       await nostrStore.restorePrivateMessagesForRecipient(chat.publicKey, { force: true });
-      if (chat.epochPublicKey) {
-        await nostrStore.restoreGroupEpochHistory(chat.publicKey, chat.epochPublicKey, { force: true });
+      await chatStore.reload();
+      const refreshedChat = findChatById(chatId) ?? chat;
+      if (refreshedChat.epochPublicKey) {
+        await nostrStore.restoreGroupEpochHistory(refreshedChat.publicKey, refreshedChat.epochPublicKey, { force: true });
       }
       await chatStore.reload();
       await messageStore.loadMessages(chatId, true);

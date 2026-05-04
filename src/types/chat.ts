@@ -24,6 +24,7 @@ export interface ChatMetadata {
   contact_name?: string;
   request_type?: string;
   request_message?: string;
+  request_cleared_at?: string;
   muted?: boolean;
   unseen_reaction_count?: number;
   last_seen_received_activity_at?: string;

@@ -28,6 +28,7 @@ export const GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY = 'epoch_public_key';
 export const CHAT_REQUEST_TYPE_META_KEY = 'request_type';
 export const CHAT_REQUEST_MESSAGE_META_KEY = 'request_message';
 export const CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY = 'last_incoming_message_at';
+export const CHAT_REQUEST_CLEARED_AT_META_KEY = 'request_cleared_at';
 export const GROUP_INVITE_REQUEST_TYPE = 'group_invite';
 export const GROUP_INVITE_REQUEST_MESSAGE = 'This is an invitation to a group.';
 export const INVITATION_PROOF_TAG = 'invitation_proof';

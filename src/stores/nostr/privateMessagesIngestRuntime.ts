@@ -3,6 +3,7 @@ import { type ChatRow, chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
+import { CHAT_REQUEST_CLEARED_AT_META_KEY } from 'src/stores/nostr/constants';
 import type {
   GroupEpochContext,
   PrivateMessagesIngestRuntimeDeps,
@@ -26,6 +27,7 @@ export function createPrivateMessagesIngestRuntime({
   extractRelayUrlsFromEvent,
   findConflictingKnownGroupEpochNumber,
   findGroupChatEpochContextByRecipientPubkey,
+  findHigherKnownGroupEpochConflict,
   formatSubscriptionLogValue,
   getPrivateMessagesRestoreThrottleMs,
   isContactListedInPrivateContactList,
@@ -33,6 +35,7 @@ export function createPrivateMessagesIngestRuntime({
   logConflictingIncomingEpochNumber,
   logDeveloperTrace,
   logInboundEvent,
+  logInvalidIncomingEpochNumber,
   logSubscription,
   normalizeEventId,
   normalizeThrottleMs,
@@ -595,10 +598,82 @@ export function createPrivateMessagesIngestRuntime({
     const contact = await contactsService.getContactByPublicKey(chatPubkey);
     const isAcceptedContact = isContactListedInPrivateContactList(contact);
     const existingChat = await chatDataService.getChatByPublicKey(chatPubkey);
+    if (resolvedGroupChatPublicKey && resolvedGroupEpochContext?.epochEntry) {
+      const incomingEpochNumber = Number(resolvedGroupEpochContext.epochEntry.epoch_number);
+      const higherEpochConflict = Number.isInteger(incomingEpochNumber)
+        ? findHigherKnownGroupEpochConflict(
+            existingChat ?? resolvedGroupEpochContext.chat,
+            incomingEpochNumber,
+            createdAt
+          )
+        : null;
+      if (higherEpochConflict?.olderHigherEpochEntry) {
+        logInvalidIncomingEpochNumber(
+          resolvedGroupChatPublicKey,
+          incomingEpochNumber,
+          resolvedGroupEpochContext.epochEntry.epoch_public_key,
+          createdAt,
+          higherEpochConflict
+        );
+        logInboundEvent('drop', {
+          reason: 'invalid-epoch-number',
+          epochNumber: incomingEpochNumber,
+          epochPublicKey: formatSubscriptionLogValue(
+            resolvedGroupEpochContext.epochEntry.epoch_public_key
+          ),
+          higherEpochNumber: higherEpochConflict.higherEpochEntry.epoch_number,
+          higherEpochPublicKey: formatSubscriptionLogValue(
+            higherEpochConflict.higherEpochEntry.epoch_public_key
+          ),
+          higherEpochCreatedAt:
+            higherEpochConflict.olderHigherEpochEntry.invitation_created_at ??
+            higherEpochConflict.higherEpochEntry.invitation_created_at ??
+            null,
+          createdAt,
+          direction,
+          ...buildInboundTraceDetails({
+            wrappedEvent,
+            rumorEvent,
+            loggedInPubkeyHex,
+            senderPubkeyHex,
+            chatPubkey: resolvedGroupChatPublicKey,
+            relayUrls: wrappedRelayUrls,
+            recipients,
+          }),
+        });
+        return;
+      }
+    }
+
     const incomingChatInboxState = resolveIncomingChatInboxStateValue({
       chat: existingChat,
       isAcceptedContact,
     });
+    const existingRequestClearedAt = normalizeTimestamp(
+      isPlainRecord(existingChat?.meta) ? existingChat.meta[CHAT_REQUEST_CLEARED_AT_META_KEY] : null
+    );
+    if (
+      incomingChatInboxState === 'request' &&
+      existingRequestClearedAt &&
+      toComparableTimestamp(createdAt) <= toComparableTimestamp(existingRequestClearedAt)
+    ) {
+      logInboundEvent('drop', {
+        reason: 'cleared-request-message',
+        requestClearedAt: existingRequestClearedAt,
+        createdAt,
+        direction,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients,
+        }),
+      });
+      return;
+    }
     const createdChat = existingChat
       ? null
       : await chatDataService.createChat({

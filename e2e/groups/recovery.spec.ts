@@ -7,6 +7,7 @@ import {
   disposeUsers,
   E2E_RELAY_URL,
   expectNoUnexpectedBrowserErrors,
+  expectPublishedMessageRelayStatus,
   navigateToChat,
   openGroupContact,
   openGroupEpochsTab,
@@ -103,6 +104,7 @@ test('member restart restores group history from both the current and prior epoc
     await sendMessage(alice.page, epochZeroMessage, {
       chatId: groupPublicKey,
     });
+    await expectPublishedMessageRelayStatus(alice.page, epochZeroMessage);
     await navigateToChat(bob.page, groupPublicKey);
     await waitForThreadMessage(bob.page, epochZeroMessage, {
       chatId: groupPublicKey,
@@ -114,6 +116,7 @@ test('member restart restores group history from both the current and prior epoc
     await sendMessage(alice.page, epochOneMessage, {
       chatId: groupPublicKey,
     });
+    await expectPublishedMessageRelayStatus(alice.page, epochOneMessage);
     await navigateToChat(bob.page, groupPublicKey);
     await waitForThreadMessage(bob.page, epochOneMessage, {
       chatId: groupPublicKey,

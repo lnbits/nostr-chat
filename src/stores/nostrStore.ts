@@ -1512,6 +1512,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshGroupContactByPublicKey,
     restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
       restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
+    subscribeGroupMembershipRosterUpdates: (seedRelayUrls, force) =>
+      subscribeGroupMembershipRosterUpdatesRuntime(seedRelayUrls, force),
     subscribePrivateMessagesForLoggedInUser: (force) =>
       subscribePrivateMessagesForLoggedInUserRuntime(force),
   });
@@ -2006,6 +2008,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     publishGroupMemberChanges,
     publishUserMetadata,
     publishMyRelayList,
+    privateMessagesSubscriptionLastEoseAt,
     relayStatusVersion,
     reconnectHealingStatusLabel,
     resolveIdentifier,
@@ -2062,5 +2065,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     validatePrivateKey,
     validateNpub,
     validateNsec,
+    waitForPrivateMessagesIngestQueue: () => getPrivateMessagesIngestQueueRuntime(),
   };
 });
