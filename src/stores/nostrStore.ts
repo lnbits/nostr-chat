@@ -24,7 +24,7 @@ import {
   INITIAL_CONNECT_TIMEOUT_MS,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
-  PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
+  PRIVATE_MESSAGES_LIVE_RECONNECT_LOOKBACK_SECONDS,
   RELAY_CONNECT_FAILURE_COOLDOWN_MS,
   STARTUP_STEP_MIN_PROGRESS_MS,
 } from 'src/stores/nostr/constants';
@@ -469,7 +469,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   function getPrivateMessagesReconnectSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
     const lastEventTime = readStoredPrivateMessagesLastReceivedCreatedAt();
     if (lastEventTime !== null) {
-      return Math.max(0, lastEventTime - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS);
+      return Math.max(0, lastEventTime - PRIVATE_MESSAGES_LIVE_RECONNECT_LOOKBACK_SECONDS);
     }
 
     return getPrivateMessagesStartupFloorSince(baseUnixTime);
