@@ -34,11 +34,6 @@ interface PrivateMessagesForRecipientRestoreOptions {
   seedRelayUrls?: string[];
 }
 
-interface DirectMessagesRestoreOptions {
-  force?: boolean;
-  seedRelayUrls?: string[];
-}
-
 interface MissingMessageDependencyRepairTarget {
   groupPublicKey: string | null;
   recipientPubkeys: string[];
@@ -94,7 +89,6 @@ interface PrivateMessagesBackfillRuntimeDeps {
   ) => PrivateMessagesBackfillState | null;
   getPrivateMessagesIngestQueue: () => Promise<void>;
   getPrivateMessagesStartupFloorSince: (baseUnixTime?: number) => number;
-  readStoredPrivateMessagesLastReceivedCreatedAt: () => number | null;
   logSubscription: (
     label: 'private-messages',
     stage: string,
@@ -144,7 +138,6 @@ export function createPrivateMessagesBackfillRuntime({
   getPrivateMessagesBackfillResumeState,
   getPrivateMessagesIngestQueue,
   getPrivateMessagesStartupFloorSince,
-  readStoredPrivateMessagesLastReceivedCreatedAt,
   logSubscription,
   ndk,
   normalizeThrottleMs,
@@ -167,8 +160,6 @@ export function createPrivateMessagesBackfillRuntime({
   let privateMessagesBackfillDelayResolver: (() => void) | null = null;
   const groupEpochHistoryRestorePromises = new Map<string, Promise<void>>();
   const restoredGroupEpochHistoryKeys = new Set<string>();
-  const directMessagesRestorePromises = new Map<string, Promise<void>>();
-  const restoredDirectMessagesKeys = new Set<string>();
   const privateMessagesForRecipientRestorePromises = new Map<string, Promise<void>>();
   const restoredPrivateMessagesForRecipientKeys = new Set<string>();
   const missingMessageDependencyRepairs = new Map<string, MissingMessageDependencyRepairState>();
@@ -1127,59 +1118,6 @@ export function createPrivateMessagesBackfillRuntime({
     return restorePromise;
   }
 
-  function getDirectMessagesRestoreSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
-    const lastEventTime = readStoredPrivateMessagesLastReceivedCreatedAt();
-    if (lastEventTime !== null) {
-      return Math.max(0, lastEventTime - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS);
-    }
-
-    return getPrivateMessagesStartupFloorSince(baseUnixTime);
-  }
-
-  async function restoreDirectMessages(options: DirectMessagesRestoreOptions = {}): Promise<void> {
-    const loggedInPubkeyHex = inputSanitizerService.normalizeHexKey(getLoggedInPublicKeyHex());
-    if (!loggedInPubkeyHex) {
-      return;
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-    const since = getDirectMessagesRestoreSince(now);
-    const restoreKey = `${loggedInPubkeyHex}:${since}`;
-    if (!options.force && restoredDirectMessagesKeys.has(restoreKey)) {
-      return;
-    }
-
-    const existingRestore = directMessagesRestorePromises.get(restoreKey);
-    if (existingRestore) {
-      return existingRestore;
-    }
-
-    const restorePromise = (async () => {
-      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
-      if (relayUrls.length === 0) {
-        return;
-      }
-
-      await ensureRelayConnections(relayUrls);
-      await runPrivateMessagesForRecipientRestoreWindow({
-        loggedInPubkeyHex,
-        recipientPubkey: loggedInPubkeyHex,
-        relayUrls,
-        since,
-      });
-      restoredDirectMessagesKeys.add(restoreKey);
-    })()
-      .catch((error) => {
-        console.warn('Failed to restore direct messages', loggedInPubkeyHex, error);
-      })
-      .finally(() => {
-        directMessagesRestorePromises.delete(restoreKey);
-      });
-
-    directMessagesRestorePromises.set(restoreKey, restorePromise);
-    return restorePromise;
-  }
-
   function startPrivateMessagesStartupBackfill(
     loggedInPubkeyHex: string,
     recipientPubkeys: string[],
@@ -1344,8 +1282,6 @@ export function createPrivateMessagesBackfillRuntime({
     missingMessageDependencyRepairs.clear();
     groupEpochHistoryRestorePromises.clear();
     restoredGroupEpochHistoryKeys.clear();
-    directMessagesRestorePromises.clear();
-    restoredDirectMessagesKeys.clear();
     privateMessagesForRecipientRestorePromises.clear();
     restoredPrivateMessagesForRecipientKeys.clear();
   }
@@ -1354,7 +1290,6 @@ export function createPrivateMessagesBackfillRuntime({
     repairMissingMessageDependency,
     resetPrivateMessagesBackfillRuntimeState,
     resolveMissingMessageDependencyRepair,
-    restoreDirectMessages,
     restoreGroupEpochHistory,
     restorePrivateMessagesForRecipient,
     startPrivateMessagesStartupBackfill,

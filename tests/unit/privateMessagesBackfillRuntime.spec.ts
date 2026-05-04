@@ -37,7 +37,6 @@ const TARGET_EVENT_ID = 'f'.repeat(64);
 function createRuntime(
   overrides: {
     getPrivateMessagesStartupFloorSince?: ReturnType<typeof vi.fn>;
-    readStoredPrivateMessagesLastReceivedCreatedAt?: ReturnType<typeof vi.fn>;
     subscribeWithReqLogging?: ReturnType<typeof vi.fn>;
     resolveGroupChatEpochEntries?: (chat: {
       meta: Record<string, unknown>;
@@ -72,8 +71,6 @@ function createRuntime(
     getPrivateMessagesIngestQueue: vi.fn(async () => {}),
     getPrivateMessagesStartupFloorSince:
       overrides.getPrivateMessagesStartupFloorSince ?? vi.fn(() => 1700000000),
-    readStoredPrivateMessagesLastReceivedCreatedAt:
-      overrides.readStoredPrivateMessagesLastReceivedCreatedAt ?? vi.fn(() => null),
     logSubscription: vi.fn(),
     ndk: new NDK(),
     normalizeThrottleMs: (value) => value ?? 0,
@@ -152,65 +149,6 @@ describe('privateMessagesBackfillRuntime', () => {
     ).resolves.toBe(true);
 
     expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
-
-    runtime.resetPrivateMessagesBackfillRuntimeState();
-  });
-
-  it('restores direct messages for the logged-in recipient without an until bound', async () => {
-    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
-      expect(requestLabel).toBe('private-messages-recipient-restore');
-      expect(filters).toEqual({
-        kinds: [1059],
-        '#p': [LOGGED_IN_PUBLIC_KEY],
-        since: 1700007200 - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
-      });
-      Promise.resolve().then(() => {
-        options.onEose?.();
-      });
-
-      return {
-        stop: vi.fn(),
-      } as never;
-    });
-    const { runtime } = createRuntime({
-      readStoredPrivateMessagesLastReceivedCreatedAt: vi.fn(() => 1700007200),
-      subscribeWithReqLogging,
-    });
-
-    await runtime.restoreDirectMessages({ force: true });
-
-    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
-
-    runtime.resetPrivateMessagesBackfillRuntimeState();
-  });
-
-  it('uses the startup floor when direct-message restore has no last event time', async () => {
-    const getPrivateMessagesStartupFloorSince = vi.fn(() => 1600000000);
-    const subscribeWithReqLogging = vi.fn((_label, _requestLabel, filters, options) => {
-      expect(filters).toEqual(
-        expect.objectContaining({
-          '#p': [LOGGED_IN_PUBLIC_KEY],
-          since: 1600000000,
-        })
-      );
-      expect(filters).not.toHaveProperty('until');
-      Promise.resolve().then(() => {
-        options.onEose?.();
-      });
-
-      return {
-        stop: vi.fn(),
-      } as never;
-    });
-    const { runtime } = createRuntime({
-      getPrivateMessagesStartupFloorSince,
-      readStoredPrivateMessagesLastReceivedCreatedAt: vi.fn(() => null),
-      subscribeWithReqLogging,
-    });
-
-    await runtime.restoreDirectMessages({ force: true });
-
-    expect(getPrivateMessagesStartupFloorSince).toHaveBeenCalledTimes(1);
 
     runtime.resetPrivateMessagesBackfillRuntimeState();
   });

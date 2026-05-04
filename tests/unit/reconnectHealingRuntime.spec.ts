@@ -37,6 +37,7 @@ describe('reconnectHealingRuntime', () => {
     options: {
       visibleChat?: ReconnectHealingChatTarget | null;
       isRestoringStartupState?: boolean;
+      isNativeAndroid?: boolean;
     } = {}
   ) {
     const healingState = ref(false);
@@ -48,18 +49,19 @@ describe('reconnectHealingRuntime', () => {
       initialEntryCount: 1,
       remainingEntryCount: 0,
     }));
-    const restoreDirectMessages = vi.fn(async () => {});
+    const refreshDirectMessages = vi.fn(async () => {});
     const restoreGroupEpochHistory = vi.fn(async () => {});
     const restorePrivateMessagesForRecipient = vi.fn(async () => {});
 
     const runtime = createReconnectHealingRuntime({
       getLoggedInPublicKeyHex: () => LOGGED_IN_PUBLIC_KEY,
       getVisibleChatTarget: () => options.visibleChat ?? null,
+      isNativeAndroid: () => options.isNativeAndroid ?? false,
       isRestoringStartupState: ref(options.isRestoringStartupState ?? false),
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
-      restoreDirectMessages,
+      refreshDirectMessages,
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       setIsReconnectHealing: (value) => {
@@ -81,7 +83,7 @@ describe('reconnectHealingRuntime', () => {
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
-      restoreDirectMessages,
+      refreshDirectMessages,
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       runtime,
@@ -128,7 +130,7 @@ describe('reconnectHealingRuntime', () => {
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
-      restoreDirectMessages,
+      refreshDirectMessages,
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       runtime,
@@ -161,7 +163,9 @@ describe('reconnectHealingRuntime', () => {
       force: true,
     });
     expect(restorePrivateMessagesForRecipient).toHaveBeenCalledTimes(1);
-    expect(restoreDirectMessages).toHaveBeenCalledWith({ force: true });
+    expect(refreshDirectMessages).toHaveBeenCalledWith({
+      forceLiveSubscriptionRecreate: false,
+    });
     expect(restoreGroupEpochHistory).toHaveBeenCalledWith(
       GROUP_PUBLIC_KEY,
       GROUP_EPOCH_PUBLIC_KEY,
@@ -184,9 +188,24 @@ describe('reconnectHealingRuntime', () => {
         reason: 'relay-connected',
         restoredVisibleChat: true,
         restoredVisibleGroupEpoch: true,
-        restoredDirectMessages: true,
+        refreshedDirectMessages: true,
       })
     );
+  });
+
+  it('forces the private messages live subscription rebuild during Android healing', async () => {
+    const { refreshDirectMessages, runtime, statusLabelUpdates } = createRuntime({
+      isNativeAndroid: true,
+    });
+
+    const runPromise = runtime.runReconnectHealing('visibility-regain');
+    await runQueuedTimersForStatusSteps(8);
+    await runPromise;
+
+    expect(refreshDirectMessages).toHaveBeenCalledWith({
+      forceLiveSubscriptionRecreate: true,
+    });
+    expectStatusLabelsWereVisibleForMinimumDuration(statusLabelUpdates);
   });
 
   it('runs healing when a window-focus notifier follows a long enough background period', async () => {

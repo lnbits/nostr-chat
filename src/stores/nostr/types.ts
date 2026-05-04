@@ -128,6 +128,12 @@ export interface SubscribePrivateMessagesOptions {
   startupTrackStep?: boolean;
 }
 
+export interface RefreshPrivateMessagesLiveSubscriptionOptions
+  extends SubscribePrivateMessagesOptions {
+  forceRecreate?: boolean;
+  probeTimeoutMs?: number;
+}
+
 export interface PrivateMessagesBackfillState {
   pubkey: string;
   nextSince: number;

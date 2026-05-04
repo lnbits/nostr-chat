@@ -22,6 +22,10 @@ interface RestoreOptions {
   force?: boolean;
 }
 
+interface RefreshDirectMessagesOptions {
+  forceLiveSubscriptionRecreate?: boolean;
+}
+
 export interface ReconnectHealingChatTarget {
   id: string;
   publicKey: string;
@@ -32,11 +36,12 @@ export interface ReconnectHealingChatTarget {
 interface ReconnectHealingRuntimeDeps {
   getLoggedInPublicKeyHex: () => string | null;
   getVisibleChatTarget: () => ReconnectHealingChatTarget | null;
+  isNativeAndroid: () => boolean;
   isRestoringStartupState: Ref<boolean>;
   queueOutboundMessageReplay: (reason: 'reconnect-healing', delayMs?: number) => void;
   queuePrivateMessagesWatchdog: (delayMs?: number) => void;
   refreshDeveloperPendingQueues: () => Promise<unknown>;
-  restoreDirectMessages: (options?: RestoreOptions) => Promise<void>;
+  refreshDirectMessages: (options?: RefreshDirectMessagesOptions) => Promise<void>;
   restoreGroupEpochHistory: (
     groupPublicKey: string,
     epochPublicKey: string,
@@ -125,11 +130,12 @@ function delay(ms: number): Promise<void> {
 export function createReconnectHealingRuntime({
   getLoggedInPublicKeyHex,
   getVisibleChatTarget,
+  isNativeAndroid,
   isRestoringStartupState,
   queueOutboundMessageReplay,
   queuePrivateMessagesWatchdog,
   refreshDeveloperPendingQueues,
-  restoreDirectMessages,
+  refreshDirectMessages,
   restoreGroupEpochHistory,
   restorePrivateMessagesForRecipient,
   setIsReconnectHealing,
@@ -356,7 +362,7 @@ export function createReconnectHealingRuntime({
 
       let restoredVisibleChat = false;
       let restoredVisibleGroupEpoch = false;
-      let restoredDirectMessages = false;
+      let refreshedDirectMessages = false;
 
       if (visibleChatTarget?.type === 'user') {
         await showReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.refreshingOpenChat);
@@ -388,8 +394,10 @@ export function createReconnectHealingRuntime({
       await showReconnectHealingStatusLabel(
         RECONNECT_HEALING_STATUS_LABELS.refreshingDirectMessages
       );
-      await restoreDirectMessages({ force: true });
-      restoredDirectMessages = true;
+      await refreshDirectMessages({
+        forceLiveSubscriptionRecreate: isNativeAndroid(),
+      });
+      refreshedDirectMessages = true;
 
       await showReconnectHealingStatusLabel(
         RECONNECT_HEALING_STATUS_LABELS.applyingPendingMessageUpdates
@@ -400,7 +408,7 @@ export function createReconnectHealingRuntime({
         reason,
         restoredVisibleChat,
         restoredVisibleGroupEpoch,
-        restoredDirectMessages,
+        refreshedDirectMessages,
         pendingQueueSummary,
       });
     })()
