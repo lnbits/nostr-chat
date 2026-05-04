@@ -37,6 +37,8 @@ describe('reconnectHealingRuntime', () => {
     } = {}
   ) {
     const healingState = ref(false);
+    const statusLabel = ref<string | null>(null);
+    const statusLabels: Array<string | null> = [];
     const queueOutboundMessageReplay = vi.fn();
     const queuePrivateMessagesWatchdog = vi.fn();
     const refreshDeveloperPendingQueues = vi.fn(async () => ({
@@ -59,10 +61,16 @@ describe('reconnectHealingRuntime', () => {
       setIsReconnectHealing: (value) => {
         healingState.value = value;
       },
+      setReconnectHealingStatusLabel: (value) => {
+        statusLabel.value = value;
+        statusLabels.push(value);
+      },
     });
 
     return {
       healingState,
+      statusLabel,
+      statusLabels,
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
@@ -108,6 +116,7 @@ describe('reconnectHealingRuntime', () => {
       restoreGroupEpochHistory,
       restorePrivateMessagesForRecipient,
       runtime,
+      statusLabels,
     } = createRuntime({
       recentChats,
       visibleChat,
@@ -117,6 +126,19 @@ describe('reconnectHealingRuntime', () => {
     runtime.resetReconnectHealingRuntimeState();
 
     expect(healingState.value).toBe(false);
+    expect(statusLabels).toEqual([
+      'Preparing sync',
+      'Checking session and network',
+      'Queing message relay check',
+      'Queing unsent message retries',
+      'Refreshing open chat',
+      'Refreshing group history',
+      'Refreshing recent DMs',
+      'Applying pending message updates',
+      'Finishing sync',
+      null,
+      null,
+    ]);
     expect(queuePrivateMessagesWatchdog).toHaveBeenCalledWith(0);
     expect(queueOutboundMessageReplay).toHaveBeenCalledWith('reconnect-healing', 0);
     expect(restorePrivateMessagesForRecipient).toHaveBeenNthCalledWith(1, GROUP_PUBLIC_KEY, {
@@ -157,11 +179,12 @@ describe('reconnectHealingRuntime', () => {
   });
 
   it('runs healing when a window-focus notifier follows a long enough background period', async () => {
-    const { refreshDeveloperPendingQueues, runtime } = createRuntime();
+    const { refreshDeveloperPendingQueues, runtime, statusLabels } = createRuntime();
 
     runtime.notifyWindowBlur();
     await vi.advanceTimersByTimeAsync(3000);
     runtime.notifyWindowFocus();
+    expect(statusLabels).toEqual(['Queing preparing sync']);
     await vi.advanceTimersByTimeAsync(750);
     await vi.runAllTicks();
     runtime.resetReconnectHealingRuntimeState();

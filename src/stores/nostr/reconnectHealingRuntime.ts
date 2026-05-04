@@ -52,7 +52,21 @@ interface ReconnectHealingRuntimeDeps {
     options?: RestoreOptions
   ) => Promise<void>;
   setIsReconnectHealing: (value: boolean) => void;
+  setReconnectHealingStatusLabel: (value: string | null) => void;
 }
+
+const RECONNECT_HEALING_STATUS_LABELS = {
+  preparingSync: 'Preparing sync',
+  queueingPreparingSync: 'Queing preparing sync',
+  checkingSessionAndNetwork: 'Checking session and network',
+  queueingMessageRelayCheck: 'Queing message relay check',
+  queueingUnsentMessageRetries: 'Queing unsent message retries',
+  refreshingOpenChat: 'Refreshing open chat',
+  refreshingGroupHistory: 'Refreshing group history',
+  refreshingRecentDms: 'Refreshing recent DMs',
+  applyingPendingMessageUpdates: 'Applying pending message updates',
+  finishingSync: 'Finishing sync',
+} as const;
 
 function hasWindow(): boolean {
   return typeof window !== 'undefined';
@@ -139,6 +153,7 @@ export function createReconnectHealingRuntime({
   restoreGroupEpochHistory,
   restorePrivateMessagesForRecipient,
   setIsReconnectHealing,
+  setReconnectHealingStatusLabel,
 }: ReconnectHealingRuntimeDeps) {
   let reconnectHealingTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let reconnectHealingScheduledAt = 0;
@@ -249,6 +264,8 @@ export function createReconnectHealingRuntime({
 
     clearReconnectHealingTimer();
     reconnectHealingScheduledAt = nextScheduledAt;
+    setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync);
+    setIsReconnectHealing(true);
     logReconnectHealing('queued', {
       reason,
       delayMs: normalizedDelayMs,
@@ -265,10 +282,14 @@ export function createReconnectHealingRuntime({
     }
 
     reconnectHealingRunPromise = (async () => {
+      setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.preparingSync);
+      setIsReconnectHealing(true);
+
       if (!getLoggedInPublicKeyHex()) {
         return;
       }
 
+      setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.checkingSessionAndNetwork);
       if (isRestoringStartupState.value) {
         logReconnectHealing('skip', {
           reason,
@@ -287,8 +308,9 @@ export function createReconnectHealingRuntime({
       }
 
       reconnectHealingLastStartedAt = Date.now();
-      setIsReconnectHealing(true);
+      setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.queueingMessageRelayCheck);
       queuePrivateMessagesWatchdog(0);
+      setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.queueingUnsentMessageRetries);
       queueOutboundMessageReplay('reconnect-healing', 0);
 
       const visibleChatTarget = normalizeChatTarget(getVisibleChatTarget());
@@ -331,16 +353,19 @@ export function createReconnectHealingRuntime({
       let restoredRecentDirectMessages = 0;
 
       if (visibleChatTarget?.type === 'user') {
+        setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.refreshingOpenChat);
         await restorePrivateMessagesForRecipient(visibleChatTarget.publicKey, {
           force: true,
         });
         restoredVisibleChat = true;
       } else if (visibleChatTarget?.type === 'group') {
+        setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.refreshingOpenChat);
         await restorePrivateMessagesForRecipient(visibleChatTarget.publicKey, {
           force: true,
         });
         restoredVisibleChat = true;
         if (visibleChatTarget.epochPublicKey) {
+          setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.refreshingGroupHistory);
           await restoreGroupEpochHistory(
             visibleChatTarget.publicKey,
             visibleChatTarget.epochPublicKey,
@@ -352,6 +377,7 @@ export function createReconnectHealingRuntime({
         }
       }
 
+      setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.refreshingRecentDms);
       await runWithConcurrency(
         filteredRecentDirectMessages,
         RECONNECT_HEALING_RECENT_DM_CONCURRENCY,
@@ -363,7 +389,9 @@ export function createReconnectHealingRuntime({
         }
       );
 
+      setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.applyingPendingMessageUpdates);
       const pendingQueueSummary = await refreshDeveloperPendingQueues();
+      setReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.finishingSync);
       logReconnectHealing('complete', {
         reason,
         restoredVisibleChat,
@@ -380,6 +408,7 @@ export function createReconnectHealingRuntime({
       })
       .finally(() => {
         setIsReconnectHealing(false);
+        setReconnectHealingStatusLabel(null);
         reconnectHealingRunPromise = null;
 
         if (
@@ -419,6 +448,7 @@ export function createReconnectHealingRuntime({
     reconnectHealingLastBlurAt = 0;
     reconnectHealingLastHiddenAt = 0;
     setIsReconnectHealing(false);
+    setReconnectHealingStatusLabel(null);
   }
 
   return {

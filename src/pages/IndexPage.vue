@@ -12,7 +12,7 @@
       <div v-if="isReconnectHealing" class="home-shell__sync-status" aria-live="polite">
         <span class="home-shell__sync-pill">
           <q-icon name="sync" class="home-shell__sync-icon" />
-          <span>Catching up...</span>
+          <span>{{ reconnectHealingStatusLabel }}</span>
         </span>
       </div>
 
@@ -363,6 +363,9 @@ const isThreadInitializing = computed(() => {
   return !chatStore.isLoaded;
 });
 const isReconnectHealing = computed(() => nostrStore.isReconnectHealing);
+const reconnectHealingStatusLabel = computed(
+  () => nostrStore.reconnectHealingStatusLabel ?? 'Preparing sync'
+);
 const mobileViewportShellStyle = computed<Record<string, string>>(() => {
   if (!isMobile.value) {
     return {};

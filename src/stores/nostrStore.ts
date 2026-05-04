@@ -164,6 +164,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
   const isAppForeground = ref(false);
   const isReconnectHealing = ref(false);
+  const reconnectHealingStatusLabel = ref<string | null>(null);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
   const configuredRelayUrls = new Set<string>();
@@ -1884,6 +1885,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setIsReconnectHealing: (value) => {
       isReconnectHealing.value = value;
     },
+    setReconnectHealingStatusLabel: (value) => {
+      reconnectHealingStatusLabel.value = value;
+    },
   });
   notifyReconnectHealingBrowserOnlineRuntime = notifyReconnectHealingBrowserOnlineImpl;
   notifyReconnectHealingVisibilityHiddenRuntime = notifyReconnectHealingVisibilityHiddenImpl;
@@ -1983,6 +1987,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     publishUserMetadata,
     publishMyRelayList,
     relayStatusVersion,
+    reconnectHealingStatusLabel,
     resolveIdentifier,
     rotateGroupEpochAndSendTickets,
     ensureRespondedPubkeyIsContact,
