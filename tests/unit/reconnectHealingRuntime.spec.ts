@@ -50,7 +50,6 @@ describe('reconnectHealingRuntime', () => {
       remainingEntryCount: 0,
     }));
     const refreshDirectMessages = vi.fn(async () => {});
-    const restoreGroupEpochHistory = vi.fn(async () => {});
 
     const runtime = createReconnectHealingRuntime({
       getLoggedInPublicKeyHex: () => LOGGED_IN_PUBLIC_KEY,
@@ -61,7 +60,6 @@ describe('reconnectHealingRuntime', () => {
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
       refreshDirectMessages,
-      restoreGroupEpochHistory,
       setIsReconnectHealing: (value) => {
         healingState.value = value;
       },
@@ -82,7 +80,6 @@ describe('reconnectHealingRuntime', () => {
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
       refreshDirectMessages,
-      restoreGroupEpochHistory,
       runtime,
     };
   }
@@ -115,7 +112,7 @@ describe('reconnectHealingRuntime', () => {
     }
   }
 
-  it('heals the visible chat plus direct messages and logs the recovery pass', async () => {
+  it('refreshes direct messages and logs the recovery pass', async () => {
     const visibleChat: ReconnectHealingChatTarget = {
       id: GROUP_PUBLIC_KEY,
       publicKey: GROUP_PUBLIC_KEY,
@@ -128,7 +125,6 @@ describe('reconnectHealingRuntime', () => {
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
       refreshDirectMessages,
-      restoreGroupEpochHistory,
       runtime,
       statusLabelUpdates,
     } = createRuntime({
@@ -145,7 +141,6 @@ describe('reconnectHealingRuntime', () => {
       'Checking session and network',
       'Queing message relay check',
       'Queing unsent message retries',
-      'Refreshing group history',
       'Refreshing direct messages',
       'Applying pending message updates',
       'Finishing sync',
@@ -157,11 +152,6 @@ describe('reconnectHealingRuntime', () => {
     expect(refreshDirectMessages).toHaveBeenCalledWith({
       forceLiveSubscriptionRecreate: false,
     });
-    expect(restoreGroupEpochHistory).toHaveBeenCalledWith(
-      GROUP_PUBLIC_KEY,
-      GROUP_EPOCH_PUBLIC_KEY,
-      { force: true }
-    );
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
     expect(console.log).toHaveBeenCalledWith(
       '[nostr-chat][reconnect-healing]',
@@ -177,7 +167,6 @@ describe('reconnectHealingRuntime', () => {
       'complete',
       expect.objectContaining({
         reason: 'relay-connected',
-        restoredVisibleGroupEpoch: true,
         refreshedDirectMessages: true,
       })
     );

@@ -1913,8 +1913,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       refreshPrivateMessagesLiveSubscriptionForReconnect({
         forceRecreate: options?.forceLiveSubscriptionRecreate,
       }),
-    restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
-      restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
     setIsReconnectHealing: (value) => {
       isReconnectHealing.value = value;
     },
