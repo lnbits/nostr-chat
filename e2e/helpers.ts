@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { type Browser, type BrowserContext, expect, type Page } from '@playwright/test';
+import type { DeveloperDiagnosticsSnapshot } from 'src/stores/nostr/types';
 
 export interface TestAccount {
   privateKey: string;
@@ -247,6 +248,14 @@ export const TEST_ACCOUNTS = {
   catchupBob: {
     privateKey: 'e537a186c1bd3971a314c0d89d3a584cdc451c0649bb8e9152e8ef1707c4bc9b',
     displayName: 'Bob Catchup',
+  },
+  liveReconnectAlice: {
+    privateKey: '1313131313131313131313131313131313131313131313131313131313131313',
+    displayName: 'Alice Live Reconnect',
+  },
+  liveReconnectBob: {
+    privateKey: '2424242424242424242424242424242424242424242424242424242424242424',
+    displayName: 'Bob Live Reconnect',
   },
   inviteReloadAlice: {
     privateKey: '05f4dc8f76fd7d74ee878ef474d72bf438aadf9b260885efc9808397a1767e21',
@@ -848,6 +857,47 @@ export async function refreshSession(page: Page, chatId?: string): Promise<void>
   );
 }
 
+export async function getDeveloperDiagnosticsSnapshot(
+  page: Page
+): Promise<DeveloperDiagnosticsSnapshot> {
+  return evaluateWithAppBridgeRetry(
+    page,
+    async () => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      return bridge.getDeveloperDiagnosticsSnapshot();
+    },
+    null
+  );
+}
+
+export async function refreshPrivateMessagesLiveReconnect(
+  page: Page,
+  options: {
+    forceRecreate?: boolean;
+  } = {}
+): Promise<DeveloperDiagnosticsSnapshot> {
+  return evaluateWithAppBridgeRetry(
+    page,
+    async ({ nextForceRecreate }) => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      return bridge.refreshPrivateMessagesLiveReconnect({
+        forceRecreate: nextForceRecreate,
+      });
+    },
+    {
+      nextForceRecreate: options.forceRecreate,
+    }
+  );
+}
+
 export async function setAppVisibility(
   page: Page,
   options: {
@@ -973,14 +1023,18 @@ export async function waitForThreadMessage(
 ): Promise<void> {
   const message = threadMessage(page, text);
 
-  try {
-    await expect(message).toBeVisible({ timeout: 12_000 });
-    return;
-  } catch {
-    await refreshSession(page, options.chatId);
-  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await expect(message).toBeVisible({ timeout: 12_000 });
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
 
-  await expect(message).toBeVisible({ timeout: 12_000 });
+      await refreshSession(page, options.chatId);
+    }
+  }
 }
 
 export async function sendMessage(
@@ -1269,6 +1323,19 @@ export async function waitForReactionCount(
 
 export async function expectPendingMessageRelayStatus(page: Page, text: string): Promise<void> {
   await expect(threadMessage(page, text).locator('.bubble__status--pending')).toBeVisible({
+    timeout: 12_000,
+  });
+}
+
+export async function expectPublishedMessageRelayStatus(page: Page, text: string): Promise<void> {
+  const message = threadMessage(page, text);
+  await expect(message.locator('.bubble__status')).toBeVisible({
+    timeout: 12_000,
+  });
+  await expect(message.locator('.bubble__status--pending')).toHaveCount(0, {
+    timeout: 12_000,
+  });
+  await expect(message.locator('.bubble__status-segment--green')).toBeVisible({
     timeout: 12_000,
   });
 }
@@ -1654,6 +1721,8 @@ export async function updateStoredContactRelays(
       nextRelayUrls: relayUrls,
     }
   );
+  await page.reload();
+  await waitForAppBridge(page);
 }
 
 export async function replaceStoredGroupMembers(

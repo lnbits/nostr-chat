@@ -1,4 +1,5 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import type { DeveloperDiagnosticsSnapshot } from 'src/stores/nostr/types';
 import { saveBrowserNotificationsPreference } from 'src/utils/browserNotificationPreference';
 
 export interface AppE2EBootstrapOptions {
@@ -9,6 +10,10 @@ export interface AppE2EBootstrapOptions {
 
 export interface AppE2ERefreshOptions {
   chatId?: string | null;
+}
+
+export interface AppE2EPrivateMessagesLiveReconnectOptions {
+  forceRecreate?: boolean;
 }
 
 export interface AppE2ERotateGroupEpochOptions {
@@ -60,8 +65,12 @@ export interface AppE2EWaitForAppReadyOptions {
 
 export interface AppE2EBridge {
   bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot>;
+  getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot>;
   getSessionSnapshot(): Promise<AppE2ESessionSnapshot>;
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
+  refreshPrivateMessagesLiveReconnect(
+    options?: AppE2EPrivateMessagesLiveReconnectOptions
+  ): Promise<DeveloperDiagnosticsSnapshot>;
   logout(): Promise<void>;
   removeStoredMessageByEventId(options: AppE2ERemoveStoredMessageOptions): Promise<boolean>;
   rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
@@ -108,6 +117,68 @@ async function waitForBootstrapRetry(delayMs: number): Promise<void> {
   await new Promise<void>((resolve) => {
     globalThis.setTimeout(resolve, delayMs);
   });
+}
+
+async function waitForPrivateMessagesSubscriptionEose(
+  nostrStore: {
+    privateMessagesSubscriptionLastEoseAt: string | null;
+    waitForPrivateMessagesIngestQueue?: () => Promise<void>;
+  },
+  previousEoseAt: string | null,
+  timeoutMs = 5_000
+): Promise<void> {
+  const deadlineAt = Date.now() + timeoutMs;
+
+  while (Date.now() < deadlineAt) {
+    const nextEoseAt = nostrStore.privateMessagesSubscriptionLastEoseAt ?? null;
+    if (nextEoseAt && nextEoseAt !== previousEoseAt) {
+      await nostrStore.waitForPrivateMessagesIngestQueue?.();
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 100);
+    });
+  }
+
+  await nostrStore.waitForPrivateMessagesIngestQueue?.();
+}
+
+async function waitForGroupChatWithEpoch(
+  chatStore: {
+    chats: Array<{
+      id: string;
+      publicKey: string;
+      type: 'user' | 'group';
+      epochPublicKey: string | null;
+    }>;
+    reload: () => Promise<void>;
+  },
+  chatId: string,
+  fallbackChat: {
+    id: string;
+    publicKey: string;
+    type: 'user' | 'group';
+    epochPublicKey: string | null;
+  },
+  timeoutMs = 5_000
+): Promise<typeof fallbackChat> {
+  const deadlineAt = Date.now() + timeoutMs;
+
+  while (Date.now() < deadlineAt) {
+    await chatStore.reload();
+    const refreshedChat = chatStore.chats.find((entry) => entry.id === chatId) ?? fallbackChat;
+    if (refreshedChat.type !== 'group' || refreshedChat.epochPublicKey) {
+      return refreshedChat;
+    }
+
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, 100);
+    });
+  }
+
+  await chatStore.reload();
+  return chatStore.chats.find((entry) => entry.id === chatId) ?? fallbackChat;
 }
 
 async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot> {
@@ -218,6 +289,14 @@ async function getSessionSnapshot(): Promise<AppE2ESessionSnapshot> {
   );
 }
 
+async function getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot> {
+  const { useNostrStore } = await import('src/stores/nostrStore');
+  const nostrStore = useNostrStore();
+  return JSON.parse(
+    JSON.stringify(await nostrStore.getDeveloperDiagnosticsSnapshot())
+  ) as DeveloperDiagnosticsSnapshot;
+}
+
 async function waitForAppReady(options: AppE2EWaitForAppReadyOptions = {}): Promise<void> {
   const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(
     options.contactPublicKey ?? ''
@@ -281,7 +360,9 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
   relayStore.init();
 
   await Promise.all([chatStore.init(), messageStore.init()]);
+  const previousPrivateMessagesEoseAt = nostrStore.privateMessagesSubscriptionLastEoseAt ?? null;
   await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
+  await waitForPrivateMessagesSubscriptionEose(nostrStore, previousPrivateMessagesEoseAt);
   await chatStore.reload();
 
   const normalizedChatId =
@@ -291,10 +372,17 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
     const chat = chatStore.chats.find((entry) => entry.id === normalizedChatId) ?? null;
     if (chat?.type === 'group') {
       await nostrStore.restorePrivateMessagesForRecipient(chat.publicKey, { force: true });
-      if (chat.epochPublicKey) {
-        await nostrStore.restoreGroupEpochHistory(chat.publicKey, chat.epochPublicKey, {
-          force: true,
-        });
+      await nostrStore.waitForPrivateMessagesIngestQueue();
+      const refreshedChat = await waitForGroupChatWithEpoch(chatStore, normalizedChatId, chat);
+      if (refreshedChat.epochPublicKey) {
+        await nostrStore.restoreGroupEpochHistory(
+          refreshedChat.publicKey,
+          refreshedChat.epochPublicKey,
+          {
+            force: true,
+          }
+        );
+        await nostrStore.waitForPrivateMessagesIngestQueue();
       }
       await chatStore.reload();
     }
@@ -304,6 +392,20 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
   }
 
   await messageStore.reloadLoadedMessages();
+}
+
+async function refreshPrivateMessagesLiveReconnect(
+  options: AppE2EPrivateMessagesLiveReconnectOptions = {}
+): Promise<DeveloperDiagnosticsSnapshot> {
+  const { useNostrStore } = await import('src/stores/nostrStore');
+  const nostrStore = useNostrStore();
+  const previousPrivateMessagesEoseAt = nostrStore.privateMessagesSubscriptionLastEoseAt ?? null;
+
+  await nostrStore.refreshPrivateMessagesLiveSubscriptionForReconnect({
+    forceRecreate: options.forceRecreate !== false,
+  });
+  await waitForPrivateMessagesSubscriptionEose(nostrStore, previousPrivateMessagesEoseAt);
+  return getDeveloperDiagnosticsSnapshot();
 }
 
 async function logout(): Promise<void> {
@@ -519,8 +621,10 @@ export function installAppE2EBridge(): void {
 
   const bridge: AppE2EBridge = {
     bootstrapSession,
+    getDeveloperDiagnosticsSnapshot,
     getSessionSnapshot,
     refreshSession,
+    refreshPrivateMessagesLiveReconnect,
     logout,
     removeStoredMessageByEventId,
     rotateGroupEpoch,

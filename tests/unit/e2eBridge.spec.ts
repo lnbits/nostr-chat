@@ -5,8 +5,15 @@ const PUBKEY_HEX = 'a'.repeat(64);
 const moduleMocks = vi.hoisted(() => {
   const nostrStore = {
     encodeNpub: vi.fn((value: string) => `npub-${value}`),
+    getDeveloperDiagnosticsSnapshot: vi.fn().mockResolvedValue({
+      privateMessagesSubscription: {
+        since: 1,
+        liveCoverageAt: 2,
+      },
+    }),
     getLoggedInPublicKeyHex: vi.fn(() => 'a'.repeat(64)),
     logout: vi.fn().mockResolvedValue(undefined),
+    privateMessagesSubscriptionLastEoseAt: null as string | null,
     publishMyRelayList: vi.fn().mockResolvedValue(undefined),
     restoreGroupEpochHistory: vi.fn().mockResolvedValue(undefined),
     restorePrivateMessagesForRecipient: vi.fn().mockResolvedValue(undefined),
@@ -14,8 +21,10 @@ const moduleMocks = vi.hoisted(() => {
     rotateGroupEpochAndSendTickets: vi.fn().mockResolvedValue(undefined),
     savePrivateKey: vi.fn(() => ({ isValid: true })),
     setDeveloperDiagnosticsEnabled: vi.fn(),
+    refreshPrivateMessagesLiveSubscriptionForReconnect: vi.fn().mockResolvedValue(undefined),
     subscribePrivateMessagesForLoggedInUser: vi.fn().mockResolvedValue(undefined),
     updateLoggedInUserRelayList: vi.fn().mockResolvedValue(undefined),
+    waitForPrivateMessagesIngestQueue: vi.fn().mockResolvedValue(undefined),
   };
   const relayStore = {
     init: vi.fn(),
@@ -138,7 +147,22 @@ describe('e2eBridge', () => {
     vi.clearAllMocks();
 
     moduleMocks.nostrStore.getLoggedInPublicKeyHex.mockReturnValue(PUBKEY_HEX);
+    moduleMocks.nostrStore.getDeveloperDiagnosticsSnapshot.mockResolvedValue({
+      privateMessagesSubscription: {
+        since: 1,
+        liveCoverageAt: 2,
+      },
+    });
+    moduleMocks.nostrStore.privateMessagesSubscriptionLastEoseAt = null;
     moduleMocks.nostrStore.savePrivateKey.mockReturnValue({ isValid: true });
+    moduleMocks.nostrStore.subscribePrivateMessagesForLoggedInUser.mockImplementation(async () => {
+      moduleMocks.nostrStore.privateMessagesSubscriptionLastEoseAt = new Date().toISOString();
+    });
+    moduleMocks.nostrStore.refreshPrivateMessagesLiveSubscriptionForReconnect.mockImplementation(
+      async () => {
+        moduleMocks.nostrStore.privateMessagesSubscriptionLastEoseAt = new Date().toISOString();
+      }
+    );
     moduleMocks.relayStore.relays = ['ws://relay.one'];
     moduleMocks.chatStore.chats = [];
     moduleMocks.chatDataService.deleteMessageByEventId.mockResolvedValue(true);
@@ -274,7 +298,7 @@ describe('e2eBridge', () => {
     expect(moduleMocks.nostrStore.subscribePrivateMessagesForLoggedInUser).toHaveBeenCalledWith(
       true
     );
-    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(2);
+    expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(3);
     expect(moduleMocks.nostrStore.restorePrivateMessagesForRecipient).toHaveBeenCalledWith(
       PUBKEY_HEX,
       { force: true }
@@ -289,6 +313,35 @@ describe('e2eBridge', () => {
 
     await bridge.refreshSession();
     expect(moduleMocks.messageStore.reloadLoadedMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes private-message live reconnect diagnostics through the bridge', async () => {
+    const { installAppE2EBridge } = await import('src/testing/e2eBridge');
+    installAppE2EBridge();
+
+    const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
+    await expect(bridge.getDeveloperDiagnosticsSnapshot()).resolves.toEqual({
+      privateMessagesSubscription: {
+        since: 1,
+        liveCoverageAt: 2,
+      },
+    });
+
+    await expect(
+      bridge.refreshPrivateMessagesLiveReconnect({
+        forceRecreate: true,
+      })
+    ).resolves.toEqual({
+      privateMessagesSubscription: {
+        since: 1,
+        liveCoverageAt: 2,
+      },
+    });
+    expect(
+      moduleMocks.nostrStore.refreshPrivateMessagesLiveSubscriptionForReconnect
+    ).toHaveBeenCalledWith({
+      forceRecreate: true,
+    });
   });
 
   it('logs out and redirects to the auth hash', async () => {

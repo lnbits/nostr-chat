@@ -1,5 +1,12 @@
 prompt
 
+when sending a message (DM or Group message)
+
+the progress bar should be shown own the chat thread header too
+wait for EOS for private list
+
+
+
 App init:
  - if no relays ask the user if it wants the app relays on its profile
  - always use app relays to listen for messages
@@ -12,7 +19,14 @@ My Relays (NIP-65)
 some contacts have weird relays, we should not listen there
 
 
+
+only listen to my relays and app relays
+post to user write relays
+
+
 confety emoji
+
+do not show login page if tthe user is logged in. Just go back to chats
 
 @someUser
  - more clear membership management in group chats

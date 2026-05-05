@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import NDK, {
   NDKEvent,
   NDKPrivateKeySigner,
@@ -23,6 +24,7 @@ import {
   INITIAL_CONNECT_TIMEOUT_MS,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
+  PRIVATE_MESSAGES_LIVE_RECONNECT_LOOKBACK_SECONDS,
   RELAY_CONNECT_FAILURE_COOLDOWN_MS,
   STARTUP_STEP_MIN_PROGRESS_MS,
 } from 'src/stores/nostr/constants';
@@ -72,6 +74,7 @@ import type {
   PendingIncomingDeletion,
   PendingIncomingReaction,
   PrivatePreferences,
+  RefreshPrivateMessagesLiveSubscriptionOptions,
   RelaySaveStatus,
   RepairMissingMessageDependencyOptions,
   SubscribePrivateMessagesOptions,
@@ -98,6 +101,7 @@ import {
   resolveGroupDisplayNameValue,
   resolveGroupPublishRelayUrlsValue,
   resolveIncomingChatInboxStateValue,
+  resolvePrivateMessagesLiveReconnectSinceValue,
   shouldPreserveExistingGroupRelaysValue,
 } from 'src/stores/nostr/valueUtils';
 import { useRelayStore } from 'src/stores/relayStore';
@@ -162,8 +166,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const privateMessagesSubscriptionLastEventId = ref<string | null>(null);
   const privateMessagesSubscriptionLastEventCreatedAt = ref<number | null>(null);
   const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
+  const privateMessagesSubscriptionLiveCoverageAt = ref<number | null>(null);
   const isAppForeground = ref(false);
   const isReconnectHealing = ref(false);
+  const reconnectHealingStatusLabel = ref<string | null>(null);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
   const configuredRelayUrls = new Set<string>();
@@ -206,6 +212,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<void> = async () => {
     throw new Error('Private messages subscription runtime is not initialized.');
   };
+  let refreshPrivateMessagesLiveSubscriptionRuntime: (
+    options?: RefreshPrivateMessagesLiveSubscriptionOptions
+  ) => Promise<void> = async () => {
+    throw new Error('Private messages subscription refresh runtime is not initialized.');
+  };
   let subscribeGroupMembershipRosterUpdatesRuntime: (
     seedRelayUrls?: string[],
     force?: boolean
@@ -224,7 +235,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let notifyReconnectHealingVisibilityRegainRuntime: () => void = () => {};
   let notifyReconnectHealingWindowBlurRuntime: () => void = () => {};
   let notifyReconnectHealingWindowFocusRuntime: () => void = () => {};
-  let notifyReconnectHealingRelayConnectedRuntime: () => void = () => {};
   let notifyReconnectHealingRelayListChangedRuntime: () => void = () => {};
   let resetAppLifecycleRuntimeStateRuntime: () => void = () => {};
   let resetReconnectHealingRuntimeStateRuntime: () => void = () => {};
@@ -405,6 +415,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     normalizeTimestamp,
 
+    readStoredPrivateMessagesLastReceivedCreatedAt,
     readPrivatePreferencesFromStorage,
 
     resetEventSinceForFreshLogin,
@@ -446,6 +457,32 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function getDefaultEventSince(): number {
     return Math.max(0, Math.floor(Date.now() / 1000) - DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS);
+  }
+
+  function isNativeAndroidRuntime(): boolean {
+    try {
+      return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+    } catch {
+      return false;
+    }
+  }
+
+  function getPrivateMessagesReconnectSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
+    return resolvePrivateMessagesLiveReconnectSinceValue({
+      liveCoverageAt: privateMessagesSubscriptionLiveCoverageAt.value,
+      lastEventTime: readStoredPrivateMessagesLastReceivedCreatedAt(),
+      startupFloorSince: getPrivateMessagesStartupFloorSince(baseUnixTime),
+      lookbackSeconds: PRIVATE_MESSAGES_LIVE_RECONNECT_LOOKBACK_SECONDS,
+    });
+  }
+
+  function refreshPrivateMessagesLiveSubscriptionForReconnect(
+    options: { forceRecreate?: boolean } = {}
+  ): Promise<void> {
+    return refreshPrivateMessagesLiveSubscriptionRuntime({
+      forceRecreate: options.forceRecreate,
+      sinceOverride: getPrivateMessagesReconnectSince(),
+    });
   }
 
   function createInitialGroupEpochSecretState(): Pick<
@@ -905,9 +942,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     queueOutboundMessageReplay: () => {
       notifyOutboundMessageReplayRelayConnectedRuntime();
     },
-    queueReconnectHealing: () => {
-      notifyReconnectHealingRelayConnectedRuntime();
-    },
     relayAuthFailureListenerUrls,
     relayConnectFailureCooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
     relayConnectFailureCooldownUntilByUrl,
@@ -1227,6 +1261,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     isPrivateMessagesSubscriptionRelayTracked,
     markPrivateMessagesWatchdogRelayDisconnected,
     queuePrivateMessagesWatchdog,
+    refreshPrivateMessagesLiveSubscription: refreshPrivateMessagesLiveSubscriptionImpl,
     resetPrivateMessagesSubscriptionRuntimeState,
     stopPrivateMessagesLiveSubscription,
     subscribePrivateMessagesForLoggedInUser: subscribePrivateMessagesForLoggedInUserImpl,
@@ -1263,6 +1298,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesSubscriptionLastEventCreatedAt,
     privateMessagesSubscriptionLastEventId,
     privateMessagesSubscriptionLastEventSeenAt,
+    privateMessagesSubscriptionLiveCoverageAt,
     privateMessagesSubscriptionRelayUrls,
     privateMessagesSubscriptionSince,
     privateMessagesSubscriptionStartedAt,
@@ -1296,6 +1332,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   markPrivateMessagesWatchdogRelayDisconnectedRuntime =
     markPrivateMessagesWatchdogRelayDisconnected;
   queuePrivateMessagesWatchdogRuntime = queuePrivateMessagesWatchdog;
+  refreshPrivateMessagesLiveSubscriptionRuntime = refreshPrivateMessagesLiveSubscriptionImpl;
   subscribePrivateMessagesForLoggedInUserRuntime = subscribePrivateMessagesForLoggedInUserImpl;
   ensurePrivateMessagesWatchdogImpl();
 
@@ -1483,6 +1520,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshGroupContactByPublicKey,
     restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
       restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
+    subscribeGroupMembershipRosterUpdates: (seedRelayUrls, force) =>
+      subscribeGroupMembershipRosterUpdatesRuntime(seedRelayUrls, force),
     subscribePrivateMessagesForLoggedInUser: (force) =>
       subscribePrivateMessagesForLoggedInUserRuntime(force),
   });
@@ -1831,7 +1870,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     notifyBrowserOnline: notifyReconnectHealingBrowserOnlineImpl,
-    notifyRelayConnected: notifyReconnectHealingRelayConnectedImpl,
     notifyRelayListChanged: notifyReconnectHealingRelayListChangedImpl,
     notifyVisibilityHidden: notifyReconnectHealingVisibilityHiddenImpl,
     notifyVisibilityRegain: notifyReconnectHealingVisibilityRegainImpl,
@@ -1857,19 +1895,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         epochPublicKey: chat.epochPublicKey,
       };
     },
+    isNativeAndroid: () => isNativeAndroidRuntime(),
     isRestoringStartupState,
-    listRecentDirectMessageChatTargets: (limit, excludeChatIds = []) => {
-      const excludedChatIds = new Set(excludeChatIds);
-      return chatStore.inboxChats
-        .filter((chat) => chat.type === 'user' && !excludedChatIds.has(chat.id))
-        .slice(0, limit)
-        .map((chat) => ({
-          id: chat.id,
-          publicKey: chat.publicKey,
-          type: chat.type,
-          epochPublicKey: chat.epochPublicKey,
-        }));
-    },
     queueOutboundMessageReplay: (reason, delayMs) => {
       queueOutboundMessageReplayRuntime(reason, delayMs);
     },
@@ -1877,12 +1904,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
       queuePrivateMessagesWatchdogRuntime(delayMs);
     },
     refreshDeveloperPendingQueues: () => refreshDeveloperPendingQueuesRuntime(),
-    restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
-      restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
-    restorePrivateMessagesForRecipient: (recipientPubkey, options) =>
-      restorePrivateMessagesForRecipientRuntime(recipientPubkey, options),
+    refreshDirectMessages: (options) =>
+      refreshPrivateMessagesLiveSubscriptionForReconnect({
+        forceRecreate: options?.forceLiveSubscriptionRecreate,
+      }),
     setIsReconnectHealing: (value) => {
       isReconnectHealing.value = value;
+    },
+    setReconnectHealingStatusLabel: (value) => {
+      reconnectHealingStatusLabel.value = value;
     },
   });
   notifyReconnectHealingBrowserOnlineRuntime = notifyReconnectHealingBrowserOnlineImpl;
@@ -1890,7 +1920,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   notifyReconnectHealingVisibilityRegainRuntime = notifyReconnectHealingVisibilityRegainImpl;
   notifyReconnectHealingWindowBlurRuntime = notifyReconnectHealingWindowBlurImpl;
   notifyReconnectHealingWindowFocusRuntime = notifyReconnectHealingWindowFocusImpl;
-  notifyReconnectHealingRelayConnectedRuntime = notifyReconnectHealingRelayConnectedImpl;
   notifyReconnectHealingRelayListChangedRuntime = notifyReconnectHealingRelayListChangedImpl;
   resetReconnectHealingRuntimeStateRuntime = resetReconnectHealingRuntimeStateImpl;
 
@@ -1933,6 +1962,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesSubscriptionLastEventCreatedAt,
     privateMessagesSubscriptionLastEventId,
     privateMessagesSubscriptionLastEventSeenAt,
+    privateMessagesSubscriptionLiveCoverageAt,
     privateMessagesSubscriptionRelayUrls,
     privateMessagesSubscriptionSince,
     privateMessagesSubscriptionStartedAt,
@@ -1968,6 +1998,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getPrivateKeyHex: getPrivateKeyHexRuntime,
     refreshDeveloperPendingQueues,
     refreshPrivateMessages,
+    refreshPrivateMessagesLiveSubscriptionForReconnect,
     getRelayConnectionState,
     isAppForeground,
     isReconnectHealing,
@@ -1982,7 +2013,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     publishGroupMemberChanges,
     publishUserMetadata,
     publishMyRelayList,
+    privateMessagesSubscriptionLastEoseAt,
     relayStatusVersion,
+    reconnectHealingStatusLabel,
     resolveIdentifier,
     rotateGroupEpochAndSendTickets,
     ensureRespondedPubkeyIsContact,
@@ -2037,5 +2070,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     validatePrivateKey,
     validateNpub,
     validateNsec,
+    waitForPrivateMessagesIngestQueue: () => getPrivateMessagesIngestQueueRuntime(),
   };
 });

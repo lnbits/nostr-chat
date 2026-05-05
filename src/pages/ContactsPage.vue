@@ -57,6 +57,8 @@
             clear-icon="close"
             placeholder="Filter contacts"
           />
+
+          <ReconnectHealingBanner />
         </div>
 
         <q-scroll-area class="contacts-list">
@@ -201,6 +203,7 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
+import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';

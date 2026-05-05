@@ -4,7 +4,9 @@ import {
   disposeUsers,
   establishAcceptedDirectChat,
   expectNoUnexpectedBrowserErrors,
+  getDeveloperDiagnosticsSnapshot,
   navigateToChat,
+  refreshPrivateMessagesLiveReconnect,
   reloadAndWaitForApp,
   sendMessage,
   TEST_ACCOUNTS,
@@ -15,6 +17,8 @@ import {
 } from '../helpers';
 
 test.describe.configure({ mode: 'serial' });
+
+const NIP17_GIFT_WRAP_CREATED_AT_OVERLAP_SECONDS = 2 * 24 * 60 * 60;
 
 test('hard reload restores accepted DM chat list, unread count, and thread history', async ({
   browser,
@@ -144,6 +148,44 @@ test('accepted DMs catch up after the recipient reconnects without duplicates', 
     await waitForThreadMessageCount(bob.page, offlineMessageTwo, 1, {
       chatId: alice.session.publicKey,
     });
+    await expectNoUnexpectedBrowserErrors([alice, bob]);
+  } finally {
+    await disposeUsers(alice, bob);
+  }
+});
+
+test('live DM reconnect anchors the NIP-17 overlap to last live coverage', async ({ browser }) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.liveReconnectAlice);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.liveReconnectBob);
+
+  try {
+    await establishAcceptedDirectChat(alice, bob);
+
+    await expect
+      .poll(
+        async () =>
+          (await getDeveloperDiagnosticsSnapshot(bob.page)).privateMessagesSubscription
+            .liveCoverageAt,
+        {
+          timeout: 15_000,
+        }
+      )
+      .not.toBeNull();
+
+    const beforeReconnectDiagnostics = await getDeveloperDiagnosticsSnapshot(bob.page);
+    const liveCoverageAt = beforeReconnectDiagnostics.privateMessagesSubscription.liveCoverageAt;
+    expect(liveCoverageAt).not.toBeNull();
+
+    const afterReconnectDiagnostics = await refreshPrivateMessagesLiveReconnect(bob.page, {
+      forceRecreate: true,
+    });
+
+    expect(afterReconnectDiagnostics.privateMessagesSubscription.since).toBe(
+      (liveCoverageAt as number) - NIP17_GIFT_WRAP_CREATED_AT_OVERLAP_SECONDS
+    );
+    expect(
+      afterReconnectDiagnostics.privateMessagesSubscription.liveCoverageAt
+    ).toBeGreaterThanOrEqual(liveCoverageAt as number);
     await expectNoUnexpectedBrowserErrors([alice, bob]);
   } finally {
     await disposeUsers(alice, bob);

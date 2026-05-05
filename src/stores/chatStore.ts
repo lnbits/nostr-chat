@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
+import { CHAT_REQUEST_CLEARED_AT_META_KEY } from 'src/stores/nostr/constants';
 import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
@@ -35,7 +36,7 @@ const CHAT_BLOCKED_AT_META_KEY = 'blocked_at';
 const CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY = 'last_incoming_message_at';
 const CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY = 'last_outgoing_message_at';
 
-type ChatListCategory = 'chat' | 'request' | 'blocked';
+type ChatListCategory = 'chat' | 'request' | 'blocked' | 'hidden';
 
 function sortByLatest(chats: Chat[]): Chat[] {
   const toTimestamp = (value: string): number => {
@@ -158,7 +159,16 @@ function resolveChatCategory(meta: Record<string, unknown>): ChatListCategory {
     return 'chat';
   }
 
-  if (readMetaString(meta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY)) {
+  const lastIncomingMessageAt = readMetaString(meta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY);
+  if (lastIncomingMessageAt) {
+    const requestClearedAt = readMetaString(meta, CHAT_REQUEST_CLEARED_AT_META_KEY);
+    if (
+      requestClearedAt &&
+      toComparableTimestamp(requestClearedAt) >= toComparableTimestamp(lastIncomingMessageAt)
+    ) {
+      return 'hidden';
+    }
+
     return 'request';
   }
 
@@ -377,6 +387,7 @@ function syncChatActivityMeta(
       snapshot.lastOutgoingMessageAt
     );
     delete writableMeta[CHAT_BLOCKED_AT_META_KEY];
+    delete writableMeta[CHAT_REQUEST_CLEARED_AT_META_KEY];
   }
 
   return nextMeta;
@@ -501,6 +512,7 @@ function buildAcceptedChatMeta(
   }
 
   delete nextMeta[CHAT_BLOCKED_AT_META_KEY];
+  delete nextMeta[CHAT_REQUEST_CLEARED_AT_META_KEY];
   return nextMeta;
 }
 
@@ -521,6 +533,26 @@ function buildUpdatedChatPreview(chat: Chat, text: string, at: string, isVisible
   };
 }
 
+function resolveRequestClearBoundaryAt(
+  meta: Record<string, unknown>,
+  messages: Array<{ created_at: string }>,
+  fallbackAt: string | null | undefined
+): string {
+  const candidates = [
+    readMetaString(meta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY),
+    fallbackAt ?? '',
+    ...messages.map((message) => message.created_at),
+  ].filter((value) => typeof value === 'string' && value.trim().length > 0);
+
+  const latestCandidate = candidates.reduce(
+    (latest, candidate) =>
+      toComparableTimestamp(candidate) > toComparableTimestamp(latest) ? candidate : latest,
+    ''
+  );
+
+  return latestCandidate || new Date().toISOString();
+}
+
 export const __chatStoreTestUtils = {
   buildChatSearchText,
   buildAcceptedChatMeta,
@@ -535,6 +567,7 @@ export const __chatStoreTestUtils = {
   resolveDefaultSelectedChatId,
   resolveEffectiveLastSeenReceivedActivityAt,
   resolveMarkAsReadBoundaryAt,
+  resolveRequestClearBoundaryAt,
   syncChatActivityMeta,
 };
 
@@ -568,7 +601,7 @@ export const useChatStore = defineStore('chatStore', () => {
     () =>
       chats.value.filter((chat) => {
         const category = resolveChatCategory(chat.meta as Record<string, unknown>);
-        return category !== 'blocked' && chat.unreadCount > 0;
+        return category !== 'blocked' && category !== 'hidden' && chat.unreadCount > 0;
       }).length
   );
 
@@ -1049,10 +1082,44 @@ export const useChatStore = defineStore('chatStore', () => {
     }
 
     try {
+      await chatDataService.init();
+      const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
+      const existingRow = existingChat
+        ? null
+        : await chatDataService.getChatByPublicKey(normalizedChatId);
+      const existingMeta = (existingChat?.meta ?? existingRow?.meta ?? {}) as Record<
+        string,
+        unknown
+      >;
       const existingMessages = await chatDataService.listMessages(normalizedChatId);
-      const deleted = await chatDataService.deleteChat(normalizedChatId);
-      if (!deleted) {
-        return false;
+      const isRequestLikeChat =
+        resolveChatCategory(existingMeta) === 'request' ||
+        resolveChatCategory(existingMeta) === 'hidden';
+
+      if (isRequestLikeChat) {
+        const requestClearedAt = resolveRequestClearBoundaryAt(
+          existingMeta,
+          existingMessages,
+          existingChat?.lastMessageAt ?? existingRow?.last_message_at ?? null
+        );
+        const nextMeta = {
+          ...existingMeta,
+          [CHAT_REQUEST_CLEARED_AT_META_KEY]: requestClearedAt,
+        };
+        const cleared = await chatDataService.clearChatMessages(normalizedChatId, {
+          last_message: '',
+          last_message_at: requestClearedAt,
+          unread_count: 0,
+          meta: nextMeta,
+        });
+        if (!cleared) {
+          return false;
+        }
+      } else {
+        const deleted = await chatDataService.deleteChat(normalizedChatId);
+        if (!deleted) {
+          return false;
+        }
       }
 
       try {

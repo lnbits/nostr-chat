@@ -15,6 +15,7 @@ import {
   PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS,
   PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
   PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS,
+  PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
 } from 'src/stores/nostr/constants';
 import type {
@@ -53,6 +54,20 @@ interface MissingMessageDependencyRepairState {
 
 function getAggressiveMissingMessageDependencyRepairAttemptIndex(): number {
   return Math.max(0, MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS.length - 1);
+}
+
+function toUnixTimestampFromIso(value: unknown): number | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const unixTimestamp = Math.floor(parsed / 1000);
+  return unixTimestamp > 0 ? unixTimestamp : null;
 }
 
 interface PrivateMessagesBackfillRuntimeDeps {
@@ -396,9 +411,13 @@ export function createPrivateMessagesBackfillRuntime({
     recipientPubkey: string;
     relayUrls: string[];
     since: number;
-    until: number;
+    until?: number;
   }): Promise<void> {
-    if (options.since >= options.until || options.relayUrls.length === 0) {
+    const normalizedUntil = Number.isInteger(options.until) ? Number(options.until) : undefined;
+    if (
+      options.relayUrls.length === 0 ||
+      (normalizedUntil !== undefined && options.since >= normalizedUntil)
+    ) {
       return;
     }
 
@@ -440,14 +459,14 @@ export function createPrivateMessagesBackfillRuntime({
             },
           ],
           ...buildFilterSinceDetails(options.since),
-          ...buildFilterUntilDetails(options.until),
+          ...buildFilterUntilDetails(normalizedUntil),
           ...buildSubscriptionRelayDetails(options.relayUrls),
         });
         const groupEpochHistoryFilters: NDKFilter = {
           kinds: [NDKKind.GiftWrap],
           '#p': [options.recipientPubkey],
           since: options.since,
-          until: options.until,
+          ...(normalizedUntil !== undefined ? { until: normalizedUntil } : {}),
         };
         subscription = subscribeWithReqLogging(
           'private-messages',
@@ -478,7 +497,7 @@ export function createPrivateMessagesBackfillRuntime({
             groupPublicKey: formatSubscriptionLogValue(options.groupPublicKey),
             epochRecipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
             ...buildFilterSinceDetails(options.since),
-            ...buildFilterUntilDetails(options.until),
+            ...buildFilterUntilDetails(normalizedUntil),
             ...buildSubscriptionRelayDetails(options.relayUrls),
           }
         );
@@ -495,9 +514,13 @@ export function createPrivateMessagesBackfillRuntime({
     recipientPubkey: string;
     relayUrls: string[];
     since: number;
-    until: number;
+    until?: number;
   }): Promise<void> {
-    if (options.since >= options.until || options.relayUrls.length === 0) {
+    const normalizedUntil = Number.isInteger(options.until) ? Number(options.until) : undefined;
+    if (
+      options.relayUrls.length === 0 ||
+      (normalizedUntil !== undefined && options.since >= normalizedUntil)
+    ) {
       return;
     }
 
@@ -536,7 +559,7 @@ export function createPrivateMessagesBackfillRuntime({
           recipientCount: 1,
           recipients: [formatSubscriptionLogValue(options.recipientPubkey)],
           ...buildFilterSinceDetails(options.since),
-          ...buildFilterUntilDetails(options.until),
+          ...buildFilterUntilDetails(normalizedUntil),
           ...buildSubscriptionRelayDetails(options.relayUrls),
           ...privateMessageTargetDetails,
         });
@@ -544,7 +567,7 @@ export function createPrivateMessagesBackfillRuntime({
           kinds: [NDKKind.GiftWrap],
           '#p': [options.recipientPubkey],
           since: options.since,
-          until: options.until,
+          ...(normalizedUntil !== undefined ? { until: normalizedUntil } : {}),
         };
         subscription = subscribeWithReqLogging(
           'private-messages',
@@ -566,7 +589,7 @@ export function createPrivateMessagesBackfillRuntime({
               logSubscription('private-messages', 'private-messages-recipient-eose', {
                 recipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
                 ...buildFilterSinceDetails(options.since),
-                ...buildFilterUntilDetails(options.until),
+                ...buildFilterUntilDetails(normalizedUntil),
               });
               schedulePostPrivateMessagesEoseChecks();
               flushPrivateMessagesUiRefreshNow();
@@ -579,7 +602,7 @@ export function createPrivateMessagesBackfillRuntime({
           {
             recipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
             ...buildFilterSinceDetails(options.since),
-            ...buildFilterUntilDetails(options.until),
+            ...buildFilterUntilDetails(normalizedUntil),
             ...buildSubscriptionRelayDetails(options.relayUrls),
           }
         );
@@ -619,6 +642,10 @@ export function createPrivateMessagesBackfillRuntime({
   function resolveInitialMissingMessageDependencyRepairAttemptIndex(
     options: RepairMissingMessageDependencyOptions
   ): number {
+    if (options.reason === 'reply-target-missing') {
+      return getAggressiveMissingMessageDependencyRepairAttemptIndex();
+    }
+
     if (options.reason === 'reply-open' && options.force === true) {
       return getAggressiveMissingMessageDependencyRepairAttemptIndex();
     }
@@ -979,61 +1006,103 @@ export function createPrivateMessagesBackfillRuntime({
       return;
     }
 
-    const restoreKey = `${normalizedGroupPublicKey}:${normalizedEpochPublicKey}`;
-    if (!options.force && restoredGroupEpochHistoryKeys.has(restoreKey)) {
+    await chatDataService.init();
+    const groupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+    if (!groupChat || groupChat.type !== 'group') {
       return;
     }
 
-    const existingRestore = groupEpochHistoryRestorePromises.get(restoreKey);
-    if (existingRestore) {
-      return existingRestore;
+    let epochPublicKeys = Array.from(
+      new Set(
+        resolveGroupChatEpochEntries(groupChat)
+          .map((entry) => inputSanitizerService.normalizeHexKey(entry.epoch_public_key))
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+    if (!epochPublicKeys.includes(normalizedEpochPublicKey)) {
+      return;
     }
 
-    const restorePromise = (async () => {
-      await chatDataService.init();
-      const groupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
-      if (!groupChat || groupChat.type !== 'group') {
-        return;
-      }
+    const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return;
+    }
 
-      const hasEpoch = resolveGroupChatEpochEntries(groupChat).some(
-        (entry) => entry.epoch_public_key === normalizedEpochPublicKey
+    await ensureRelayConnections(relayUrls);
+    const now = Math.floor(Date.now() / 1000);
+    const widestRepairWindowSeconds =
+      MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS[
+        MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS.length - 1
+      ] ?? PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS;
+    let since = Math.max(0, now - widestRepairWindowSeconds);
+    if (!options.force) {
+      const latestMessages = await chatDataService.listLatestMessages(normalizedGroupPublicKey, 1);
+      const latestMessageTime =
+        toUnixTimestampFromIso(latestMessages.rows[0]?.created_at) ??
+        toUnixTimestampFromIso(groupChat.last_message_at);
+      since =
+        latestMessageTime !== null
+          ? Math.max(0, latestMessageTime - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS)
+          : getPrivateMessagesStartupFloorSince(now);
+    }
+
+    const handledEpochPublicKeys = new Set<string>();
+
+    while (epochPublicKeys.length > 0) {
+      await Promise.all(
+        epochPublicKeys.map((epochPublicKeyToRestore) => {
+          handledEpochPublicKeys.add(epochPublicKeyToRestore);
+          const restoreKey = `${normalizedGroupPublicKey}:${epochPublicKeyToRestore}`;
+          if (!options.force && restoredGroupEpochHistoryKeys.has(restoreKey)) {
+            return Promise.resolve();
+          }
+
+          const existingRestore = groupEpochHistoryRestorePromises.get(restoreKey);
+          if (existingRestore) {
+            return existingRestore;
+          }
+
+          const restorePromise = runGroupEpochHistoryRestoreWindow({
+            loggedInPubkeyHex,
+            groupPublicKey: normalizedGroupPublicKey,
+            recipientPubkey: epochPublicKeyToRestore,
+            relayUrls,
+            since,
+            until: now,
+          })
+            .then(() => {
+              restoredGroupEpochHistoryKeys.add(restoreKey);
+            })
+            .catch((error) => {
+              console.warn(
+                'Failed to restore group epoch history',
+                normalizedGroupPublicKey,
+                epochPublicKeyToRestore,
+                error
+              );
+            })
+            .finally(() => {
+              groupEpochHistoryRestorePromises.delete(restoreKey);
+            });
+
+          groupEpochHistoryRestorePromises.set(restoreKey, restorePromise);
+          return restorePromise;
+        })
       );
-      if (!hasEpoch) {
+
+      const latestGroupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+      if (!latestGroupChat || latestGroupChat.type !== 'group') {
         return;
       }
 
-      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
-      if (relayUrls.length === 0) {
-        return;
-      }
-
-      await ensureRelayConnections(relayUrls);
-      const now = Math.floor(Date.now() / 1000);
-      await runGroupEpochHistoryRestoreWindow({
-        loggedInPubkeyHex,
-        groupPublicKey: normalizedGroupPublicKey,
-        recipientPubkey: normalizedEpochPublicKey,
-        relayUrls,
-        since: getPrivateMessagesStartupFloorSince(now),
-        until: now,
-      });
-      restoredGroupEpochHistoryKeys.add(restoreKey);
-    })()
-      .catch((error) => {
-        console.warn(
-          'Failed to restore group epoch history',
-          normalizedGroupPublicKey,
-          normalizedEpochPublicKey,
-          error
-        );
-      })
-      .finally(() => {
-        groupEpochHistoryRestorePromises.delete(restoreKey);
-      });
-
-    groupEpochHistoryRestorePromises.set(restoreKey, restorePromise);
-    return restorePromise;
+      epochPublicKeys = Array.from(
+        new Set(
+          resolveGroupChatEpochEntries(latestGroupChat)
+            .map((entry) => inputSanitizerService.normalizeHexKey(entry.epoch_public_key))
+            .filter((value): value is string => Boolean(value))
+        )
+      ).filter((epochPublicKeyToRestore) => !handledEpochPublicKeys.has(epochPublicKeyToRestore));
+    }
   }
 
   async function restorePrivateMessagesForRecipient(

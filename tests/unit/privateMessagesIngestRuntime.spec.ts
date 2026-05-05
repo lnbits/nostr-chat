@@ -434,6 +434,84 @@ describe('privateMessagesIngestRuntime', () => {
     );
   });
 
+  it('drops group messages sent to an older epoch after a higher epoch was issued', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const groupPublicKey = 'c'.repeat(64);
+    const oldEpochPublicKey = 'd'.repeat(64);
+    const newEpochPublicKey = 'e'.repeat(64);
+    const senderPublicKey = 'a'.repeat(64);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const higherEpochEntry = {
+      epoch_number: 1,
+      epoch_public_key: newEpochPublicKey,
+      invitation_created_at: '2023-11-14T22:13:19.000Z',
+    };
+    const groupChat = {
+      id: groupPublicKey,
+      public_key: groupPublicKey,
+      type: 'group' as const,
+      name: 'Rotated Group',
+      last_message: 'Older preview',
+      last_message_at: '2023-11-14T22:00:00.000Z',
+      unread_count: 0,
+      meta: {
+        inbox_state: 'accepted',
+        accepted_at: '2023-11-14T22:00:00.000Z',
+      },
+    };
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: oldEpochPublicKey,
+      senderPubkey: senderPublicKey,
+      content: '  Stale epoch message  ',
+    });
+
+    deps.resolveIncomingPrivateMessageRecipientContext.mockResolvedValue({
+      recipientPubkey: oldEpochPublicKey,
+      unwrapSigner: {} as never,
+      groupChatPublicKey: groupPublicKey,
+    });
+    deps.findGroupChatEpochContextByRecipientPubkey.mockResolvedValue({
+      chat: groupChat,
+      epochEntry: {
+        epoch_number: 0,
+        epoch_public_key: oldEpochPublicKey,
+      },
+    });
+    deps.findHigherKnownGroupEpochConflict.mockReturnValue({
+      higherEpochEntry,
+      olderHigherEpochEntry: higherEpochEntry,
+    });
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(groupChat);
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.findHigherKnownGroupEpochConflict).toHaveBeenCalledWith(groupChat, 0, createdAt);
+    expect(deps.logInvalidIncomingEpochNumber).toHaveBeenCalledWith(
+      groupPublicKey,
+      0,
+      oldEpochPublicKey,
+      createdAt,
+      expect.objectContaining({
+        higherEpochEntry,
+        olderHigherEpochEntry: higherEpochEntry,
+      })
+    );
+    expect(deps.logInboundEvent).toHaveBeenCalledWith(
+      'drop',
+      expect.objectContaining({
+        reason: 'invalid-epoch-number',
+        epochNumber: 0,
+      })
+    );
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+    expect(deps.chatStore.recordIncomingActivity).not.toHaveBeenCalled();
+  });
+
   it('promotes existing chats to accepted when messages arrive from accepted contacts', async () => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);
@@ -792,6 +870,49 @@ describe('privateMessagesIngestRuntime', () => {
       reloadChats: true,
       reloadMessages: true,
     });
+  });
+
+  it('drops replayed request messages at or before the cleared request boundary', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const chatPublicKey = 'a'.repeat(64);
+    const loggedInPubkey = 'b'.repeat(64);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: loggedInPubkey,
+      senderPubkey: chatPublicKey,
+      content: '  Old request  ',
+      createdAt: 1700000000,
+    });
+
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: chatPublicKey,
+      public_key: chatPublicKey,
+      type: 'user',
+      name: 'Cleared Request',
+      last_message: '',
+      last_message_at: '2023-11-14T22:13:20.000Z',
+      unread_count: 0,
+      meta: {
+        last_incoming_message_at: '2023-11-14T22:13:20.000Z',
+        request_cleared_at: '2023-11-14T22:13:20.000Z',
+      },
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), loggedInPubkey, {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.updateChatPreview).not.toHaveBeenCalled();
+    expect(deps.chatStore.recordIncomingActivity).not.toHaveBeenCalled();
+    expect(deps.logInboundEvent).toHaveBeenCalledWith(
+      'drop',
+      expect.objectContaining({
+        reason: 'cleared-request-message',
+      })
+    );
   });
 
   it('treats self-sent gift-wrapped messages as outbound activity for the other participant', async () => {

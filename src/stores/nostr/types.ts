@@ -128,6 +128,12 @@ export interface SubscribePrivateMessagesOptions {
   startupTrackStep?: boolean;
 }
 
+export interface RefreshPrivateMessagesLiveSubscriptionOptions
+  extends SubscribePrivateMessagesOptions {
+  forceRecreate?: boolean;
+  probeTimeoutMs?: number;
+}
+
 export interface PrivateMessagesBackfillState {
   pubkey: string;
   nextSince: number;
@@ -279,6 +285,8 @@ export interface DeveloperPrivateMessagesSubscriptionSnapshot {
   lastEventCreatedAt: number | null;
   lastEventCreatedAtIso: string | null;
   lastEoseAt: string | null;
+  liveCoverageAt: number | null;
+  liveCoverageAtIso: string | null;
 }
 
 export interface DeveloperGroupMessageSubscriptionSnapshot {

@@ -23,6 +23,8 @@
               />
             </div>
           </div>
+
+          <ReconnectHealingBanner />
         </div>
 
         <q-list class="settings-menu">
@@ -112,6 +114,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
+import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { unregisterAndroidPushNotifications } from 'src/services/androidPushNotificationService';
 import { useNostrStore } from 'src/stores/nostrStore';

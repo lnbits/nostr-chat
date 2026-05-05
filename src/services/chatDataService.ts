@@ -62,6 +62,13 @@ export interface UpdateChatInput {
   meta?: Record<string, unknown>;
 }
 
+export interface ClearChatMessagesInput {
+  last_message?: string;
+  last_message_at?: string | null;
+  unread_count?: number;
+  meta?: Record<string, unknown>;
+}
+
 export interface CreateMessageInput {
   chat_public_key: string;
   author_public_key: string;
@@ -552,6 +559,62 @@ class ChatDataService {
       ...(input.meta !== undefined ? { meta: normalizeMeta(input.meta) } : {}),
     });
     await waitForTransaction(transaction);
+  }
+
+  async clearChatMessages(
+    chatPublicKey: string,
+    input: ClearChatMessagesInput = {}
+  ): Promise<boolean> {
+    const normalizedPublicKey = normalizePublicKeyValue(chatPublicKey);
+    if (!normalizedPublicKey) {
+      return false;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction([CHATS_STORE, MESSAGES_STORE], 'readwrite');
+    const chatsStore = transaction.objectStore(CHATS_STORE);
+    const messagesStore = transaction.objectStore(MESSAGES_STORE);
+    const existingRecord = await requestToPromise<ChatRecord | undefined>(
+      chatsStore.get(normalizedPublicKey) as IDBRequest<ChatRecord | undefined>
+    );
+
+    if (!existingRecord) {
+      await waitForTransaction(transaction);
+      return false;
+    }
+
+    chatsStore.put({
+      ...existingRecord,
+      last_message: input.last_message?.trim() ?? '',
+      last_message_at:
+        input.last_message_at !== undefined
+          ? toIsoTimestamp(input.last_message_at)
+          : existingRecord.last_message_at,
+      unread_count:
+        input.unread_count !== undefined
+          ? normalizeUnreadCount(input.unread_count)
+          : existingRecord.unread_count,
+      meta: input.meta !== undefined ? normalizeMeta(input.meta) : existingRecord.meta,
+    });
+
+    const messagesByChatIndex = messagesStore.index(MESSAGES_CHAT_PUBLIC_KEY_INDEX);
+    const messageIds = await requestToPromise<IDBValidKey[]>(
+      messagesByChatIndex.getAllKeys(IDBKeyRange.only(normalizedPublicKey)) as IDBRequest<
+        IDBValidKey[]
+      >
+    );
+
+    for (const messageId of messageIds) {
+      messagesStore.delete(messageId);
+    }
+
+    try {
+      await waitForTransaction(transaction);
+      return true;
+    } catch (error) {
+      console.error('Failed to clear chat messages in IndexedDB.', error);
+      return false;
+    }
   }
 
   async deleteChat(chatPublicKey: string): Promise<boolean> {

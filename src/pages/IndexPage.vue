@@ -9,13 +9,6 @@
       }"
       :style="homeShellStyle"
     >
-      <div v-if="isReconnectHealing" class="home-shell__sync-status" aria-live="polite">
-        <span class="home-shell__sync-pill">
-          <q-icon name="sync" class="home-shell__sync-icon" />
-          <span>Catching up...</span>
-        </span>
-      </div>
-
       <aside v-if="!isMobile || !isMobileThreadOpen" class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-top__row" :class="{ 'sidebar-top__row--mobile': isMobile }">
@@ -99,6 +92,8 @@
             clear-icon="close"
             placeholder="Search"
           />
+
+          <ReconnectHealingBanner />
         </div>
 
         <ChatList
@@ -249,6 +244,7 @@ import type { ContactRecord } from 'src/types/contact';
 import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
+import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
 import { useNostrStore } from 'src/stores/nostrStore';
 
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
@@ -362,7 +358,6 @@ const chatIdSignature = computed(() => chatStore.chats.map((chat) => chat.id).jo
 const isThreadInitializing = computed(() => {
   return !chatStore.isLoaded;
 });
-const isReconnectHealing = computed(() => nostrStore.isReconnectHealing);
 const mobileViewportShellStyle = computed<Record<string, string>>(() => {
   if (!isMobile.value) {
     return {};
@@ -793,8 +788,10 @@ async function handleRefreshChat(chatId: string): Promise<void> {
     if (chat.type === 'group') {
       const nostrStore = await getNostrStore();
       await nostrStore.restorePrivateMessagesForRecipient(chat.publicKey, { force: true });
-      if (chat.epochPublicKey) {
-        await nostrStore.restoreGroupEpochHistory(chat.publicKey, chat.epochPublicKey, { force: true });
+      await chatStore.reload();
+      const refreshedChat = findChatById(chatId) ?? chat;
+      if (refreshedChat.epochPublicKey) {
+        await nostrStore.restoreGroupEpochHistory(refreshedChat.publicKey, refreshedChat.epochPublicKey, { force: true });
       }
       await chatStore.reload();
       await messageStore.loadMessages(chatId, true);
@@ -1055,34 +1052,6 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   grid-template-columns: 1fr;
 }
 
-.home-shell__sync-status {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 3;
-  pointer-events: none;
-}
-
-.home-shell__sync-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--q-primary) 25%, var(--nc-border));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--nc-panel-header-bg) 88%, white 12%);
-  color: var(--nc-text-primary);
-  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.12);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.home-shell__sync-icon {
-  color: var(--q-primary);
-  animation: home-shell-sync-spin 1.2s linear infinite;
-}
-
 .sidebar,
 .thread-panel {
   overflow: hidden;
@@ -1197,13 +1166,4 @@ body.body--dark .q-btn.sidebar-top__action {
   }
 }
 
-@keyframes home-shell-sync-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
 </style>

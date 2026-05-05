@@ -51,7 +51,26 @@ test('invited members see published group relays and profile refresh restores th
     await bob.page.goto('/#/chats');
     await openGroupContact(bob.page, groupPublicKey);
     await openProfileRelaysSection(bob.page);
-    await expect(bob.page.getByText('No relays configured.', { exact: true })).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          const panelText = (await bob.page.locator('.profile-tab-panel').textContent()) ?? '';
+          if (
+            panelText.includes(E2E_DUAL_RELAY_URLS[0]) &&
+            panelText.includes(E2E_DUAL_RELAY_URLS[1])
+          ) {
+            return 'restored';
+          }
+
+          if (await bob.page.getByText('No relays configured.', { exact: true }).isVisible()) {
+            return 'empty';
+          }
+
+          return 'pending';
+        },
+        { timeout: 15_000 }
+      )
+      .not.toBe('pending');
 
     await bob.page.getByTestId('contact-profile-refresh-button').click();
     await openProfileRelaysSection(bob.page);
