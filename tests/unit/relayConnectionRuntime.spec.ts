@@ -59,7 +59,12 @@ function createFakeRelay(url = 'wss://relay.example/') {
   };
 }
 
-function createRuntimeHarness() {
+function createRuntimeHarness(
+  options: {
+    isPrivateMessagesSubscriptionRelayTracked?: boolean;
+    loggedInPublicKeyHex?: string | null;
+  } = {}
+) {
   const { connectivity, rawConnect, relay } = createFakeRelay();
   let hasActivatedPool = true;
   let hasRelayStatusListeners = false;
@@ -68,6 +73,8 @@ function createRuntimeHarness() {
   const relayConnectPromises = new Map<string, Promise<void>>();
   const relayConnectFailureCooldownUntilByUrl = new Map<string, number>();
   const relayAuthFailureListenerUrls = new Set<string>();
+  const queueOutboundMessageReplay = vi.fn();
+  const queuePrivateMessagesWatchdog = vi.fn();
   const pool = {
     getRelay: vi.fn(() => relay),
     on: vi.fn(),
@@ -102,19 +109,19 @@ function createRuntimeHarness() {
     getConnectPromise: () => connectPromise,
     getHasActivatedPool: () => hasActivatedPool,
     getHasRelayStatusListeners: () => hasRelayStatusListeners,
-    getLoggedInPublicKeyHex: () => null,
+    getLoggedInPublicKeyHex: () => options.loggedInPublicKeyHex ?? null,
     getPrivateKeyHex: () => null,
     getStoredAuthMethod: () => null,
     hasNip07Extension: () => false,
     initialConnectTimeoutMs: 3000,
-    isPrivateMessagesSubscriptionRelayTracked: () => false,
+    isPrivateMessagesSubscriptionRelayTracked: () =>
+      options.isPrivateMessagesSubscriptionRelayTracked ?? false,
     logDeveloperTrace: vi.fn(),
     logRelayLifecycle: vi.fn(),
     markPrivateMessagesWatchdogRelayDisconnected: vi.fn(),
     ndk: ndk as never,
-    queueOutboundMessageReplay: vi.fn(),
-    queuePrivateMessagesWatchdog: vi.fn(),
-    queueReconnectHealing: vi.fn(),
+    queueOutboundMessageReplay,
+    queuePrivateMessagesWatchdog,
     relayAuthFailureListenerUrls,
     relayConnectFailureCooldownMs: 10000,
     relayConnectFailureCooldownUntilByUrl,
@@ -137,6 +144,8 @@ function createRuntimeHarness() {
     configuredRelayUrls,
     ndk,
     pool,
+    queuePrivateMessagesWatchdog,
+    queueOutboundMessageReplay,
     rawConnect,
     relay,
     runtime,
@@ -204,5 +213,24 @@ describe('relayConnectionRuntime', () => {
 
     expect(ndk.addExplicitRelay).toHaveBeenCalledWith('wss://relay.example/', undefined, false);
     expect(rawConnect).toHaveBeenCalledWith(3000, false);
+  });
+
+  it('queues only the watchdog when a tracked private-message relay connects', async () => {
+    const { pool, queuePrivateMessagesWatchdog, queueOutboundMessageReplay, relay, runtime } =
+      createRuntimeHarness({
+        isPrivateMessagesSubscriptionRelayTracked: true,
+        loggedInPublicKeyHex: 'f'.repeat(64),
+      });
+
+    await runtime.ensureRelayConnections(['wss://relay.example']);
+    const relayConnectHandler = pool.on.mock.calls.find(
+      ([eventName]) => eventName === 'relay:connect'
+    )?.[1] as ((nextRelay: FakeRelay) => void) | undefined;
+
+    expect(relayConnectHandler).toBeTypeOf('function');
+    relayConnectHandler?.(relay);
+
+    expect(queueOutboundMessageReplay).toHaveBeenCalledTimes(1);
+    expect(queuePrivateMessagesWatchdog).toHaveBeenCalledWith(0);
   });
 });

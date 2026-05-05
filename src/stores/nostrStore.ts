@@ -235,7 +235,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let notifyReconnectHealingVisibilityRegainRuntime: () => void = () => {};
   let notifyReconnectHealingWindowBlurRuntime: () => void = () => {};
   let notifyReconnectHealingWindowFocusRuntime: () => void = () => {};
-  let notifyReconnectHealingRelayConnectedRuntime: () => void = () => {};
   let notifyReconnectHealingRelayListChangedRuntime: () => void = () => {};
   let resetAppLifecycleRuntimeStateRuntime: () => void = () => {};
   let resetReconnectHealingRuntimeStateRuntime: () => void = () => {};
@@ -942,9 +941,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     queueOutboundMessageReplay: () => {
       notifyOutboundMessageReplayRelayConnectedRuntime();
-    },
-    queueReconnectHealing: () => {
-      notifyReconnectHealingRelayConnectedRuntime();
     },
     relayAuthFailureListenerUrls,
     relayConnectFailureCooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
@@ -1874,7 +1870,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     notifyBrowserOnline: notifyReconnectHealingBrowserOnlineImpl,
-    notifyRelayConnected: notifyReconnectHealingRelayConnectedImpl,
     notifyRelayListChanged: notifyReconnectHealingRelayListChangedImpl,
     notifyVisibilityHidden: notifyReconnectHealingVisibilityHiddenImpl,
     notifyVisibilityRegain: notifyReconnectHealingVisibilityRegainImpl,
@@ -1925,7 +1920,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   notifyReconnectHealingVisibilityRegainRuntime = notifyReconnectHealingVisibilityRegainImpl;
   notifyReconnectHealingWindowBlurRuntime = notifyReconnectHealingWindowBlurImpl;
   notifyReconnectHealingWindowFocusRuntime = notifyReconnectHealingWindowFocusImpl;
-  notifyReconnectHealingRelayConnectedRuntime = notifyReconnectHealingRelayConnectedImpl;
   notifyReconnectHealingRelayListChangedRuntime = notifyReconnectHealingRelayListChangedImpl;
   resetReconnectHealingRuntimeStateRuntime = resetReconnectHealingRuntimeStateImpl;
 
