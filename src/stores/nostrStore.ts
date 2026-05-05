@@ -477,6 +477,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function refreshPrivateMessagesLiveSubscriptionForReconnect(
+    options: { forceRecreate?: boolean } = {}
+  ): Promise<void> {
+    return refreshPrivateMessagesLiveSubscriptionRuntime({
+      forceRecreate: options.forceRecreate,
+      sinceOverride: getPrivateMessagesReconnectSince(),
+    });
+  }
+
   function createInitialGroupEpochSecretState(): Pick<
     GroupIdentitySecretContent,
     'epoch_number' | 'epoch_privkey'
@@ -1901,9 +1910,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     refreshDeveloperPendingQueues: () => refreshDeveloperPendingQueuesRuntime(),
     refreshDirectMessages: (options) =>
-      refreshPrivateMessagesLiveSubscriptionRuntime({
+      refreshPrivateMessagesLiveSubscriptionForReconnect({
         forceRecreate: options?.forceLiveSubscriptionRecreate,
-        sinceOverride: getPrivateMessagesReconnectSince(),
       }),
     restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
       restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
@@ -1998,6 +2006,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getPrivateKeyHex: getPrivateKeyHexRuntime,
     refreshDeveloperPendingQueues,
     refreshPrivateMessages,
+    refreshPrivateMessagesLiveSubscriptionForReconnect,
     getRelayConnectionState,
     isAppForeground,
     isReconnectHealing,

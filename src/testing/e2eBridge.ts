@@ -1,4 +1,5 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import type { DeveloperDiagnosticsSnapshot } from 'src/stores/nostr/types';
 import { saveBrowserNotificationsPreference } from 'src/utils/browserNotificationPreference';
 
 export interface AppE2EBootstrapOptions {
@@ -9,6 +10,10 @@ export interface AppE2EBootstrapOptions {
 
 export interface AppE2ERefreshOptions {
   chatId?: string | null;
+}
+
+export interface AppE2EPrivateMessagesLiveReconnectOptions {
+  forceRecreate?: boolean;
 }
 
 export interface AppE2ERotateGroupEpochOptions {
@@ -60,8 +65,12 @@ export interface AppE2EWaitForAppReadyOptions {
 
 export interface AppE2EBridge {
   bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot>;
+  getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot>;
   getSessionSnapshot(): Promise<AppE2ESessionSnapshot>;
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
+  refreshPrivateMessagesLiveReconnect(
+    options?: AppE2EPrivateMessagesLiveReconnectOptions
+  ): Promise<DeveloperDiagnosticsSnapshot>;
   logout(): Promise<void>;
   removeStoredMessageByEventId(options: AppE2ERemoveStoredMessageOptions): Promise<boolean>;
   rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
@@ -280,6 +289,14 @@ async function getSessionSnapshot(): Promise<AppE2ESessionSnapshot> {
   );
 }
 
+async function getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot> {
+  const { useNostrStore } = await import('src/stores/nostrStore');
+  const nostrStore = useNostrStore();
+  return JSON.parse(
+    JSON.stringify(await nostrStore.getDeveloperDiagnosticsSnapshot())
+  ) as DeveloperDiagnosticsSnapshot;
+}
+
 async function waitForAppReady(options: AppE2EWaitForAppReadyOptions = {}): Promise<void> {
   const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(
     options.contactPublicKey ?? ''
@@ -375,6 +392,20 @@ async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void>
   }
 
   await messageStore.reloadLoadedMessages();
+}
+
+async function refreshPrivateMessagesLiveReconnect(
+  options: AppE2EPrivateMessagesLiveReconnectOptions = {}
+): Promise<DeveloperDiagnosticsSnapshot> {
+  const { useNostrStore } = await import('src/stores/nostrStore');
+  const nostrStore = useNostrStore();
+  const previousPrivateMessagesEoseAt = nostrStore.privateMessagesSubscriptionLastEoseAt ?? null;
+
+  await nostrStore.refreshPrivateMessagesLiveSubscriptionForReconnect({
+    forceRecreate: options.forceRecreate !== false,
+  });
+  await waitForPrivateMessagesSubscriptionEose(nostrStore, previousPrivateMessagesEoseAt);
+  return getDeveloperDiagnosticsSnapshot();
 }
 
 async function logout(): Promise<void> {
@@ -590,8 +621,10 @@ export function installAppE2EBridge(): void {
 
   const bridge: AppE2EBridge = {
     bootstrapSession,
+    getDeveloperDiagnosticsSnapshot,
     getSessionSnapshot,
     refreshSession,
+    refreshPrivateMessagesLiveReconnect,
     logout,
     removeStoredMessageByEventId,
     rotateGroupEpoch,
