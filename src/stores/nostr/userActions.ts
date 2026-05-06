@@ -64,7 +64,8 @@ interface UserActionsDeps {
     recipientPubkey: string,
     message: string,
     createdAt?: number,
-    replyToEventId?: string | null
+    replyToEventId?: string | null,
+    backrefEventIds?: string[]
   ) => NDKEvent;
   createEventDeletionRumorEvent: (
     senderPubkey: string,
@@ -301,6 +302,13 @@ export function createUserActions({
     }
 
     const replyTargetEventId = normalizeEventId(options.replyToEventId);
+    const backrefEventIds = Array.from(
+      new Set(
+        (options.backrefEventIds ?? [])
+          .map((eventId) => normalizeEventId(eventId))
+          .filter((eventId): eventId is string => Boolean(eventId))
+      )
+    );
 
     const publishResult = await sendGiftWrappedRumor(
       recipientPublicKey,
@@ -312,7 +320,8 @@ export function createUserActions({
           normalizedRecipientPubkey,
           message,
           createdAt,
-          replyTargetEventId
+          replyTargetEventId,
+          backrefEventIds
         );
       },
       options

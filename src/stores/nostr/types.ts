@@ -64,6 +64,7 @@ export interface SendGiftWrappedRumorOptions {
 
 export interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {
   replyToEventId?: string | null;
+  backrefEventIds?: string[];
 }
 
 export interface SendDirectMessageReactionOptions {
