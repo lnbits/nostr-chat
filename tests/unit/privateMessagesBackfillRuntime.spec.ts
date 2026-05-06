@@ -1,5 +1,6 @@
 import NDK from '@nostr-dev-kit/ndk';
 import {
+  MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
   MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS,
   PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
@@ -161,6 +162,7 @@ describe('privateMessagesBackfillRuntime', () => {
 
   it('fetches missing wrapper events by encrypted message backref ids', async () => {
     const targetWrapperEventId = '1'.repeat(64);
+    serviceMocks.chatDataService.listMessages.mockResolvedValueOnce([]);
     const wrappedEvent = {
       id: targetWrapperEventId,
       kind: 1059,
@@ -204,6 +206,159 @@ describe('privateMessagesBackfillRuntime', () => {
       {
         uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
         backrefDepth: 1,
+      }
+    );
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('falls back to a bounded recipient window when backref id lookup misses', async () => {
+    vi.setSystemTime(new Date('2026-05-06T12:00:00.000Z'));
+
+    const targetWrapperEventId = '1'.repeat(64);
+    const wrappedEvent = {
+      id: targetWrapperEventId,
+      kind: 1059,
+      created_at: 1778067600,
+      pubkey: '2'.repeat(64),
+      content: 'wrapped',
+      tags: [['p', LOGGED_IN_PUBLIC_KEY]],
+    };
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      if (requestLabel === 'private-message-backref-repair') {
+        expect(filters).toEqual({
+          ids: [targetWrapperEventId],
+          kinds: [1059],
+        });
+        Promise.resolve().then(() => {
+          options.onEose?.();
+        });
+        return {
+          stop: vi.fn(),
+        } as never;
+      }
+
+      expect(requestLabel).toBe('private-message-backref-repair-window');
+      expect(filters).toMatchObject({
+        kinds: [1059],
+        '#p': [LOGGED_IN_PUBLIC_KEY],
+      });
+      expect((filters as { since: number; until: number }).since).toBeLessThanOrEqual(1778067600);
+      expect((filters as { since: number; until: number }).until).toBeGreaterThanOrEqual(
+        1778067600
+      );
+      Promise.resolve().then(() => {
+        options.onEvent?.(wrappedEvent);
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { queuePrivateMessageIngestion, runtime } = createRuntime({
+      subscribeWithReqLogging,
+    });
+
+    await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
+      discoveryDepth: 1,
+      referenceCreatedAt: 1778067600,
+      seedRelayUrls: ['wss://seed.example'],
+    });
+
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(2);
+    expect(queuePrivateMessageIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: targetWrapperEventId,
+        kind: 1059,
+      }),
+      LOGGED_IN_PUBLIC_KEY,
+      {
+        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+        backrefDepth: MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
+      }
+    );
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('falls back to recipient-window candidates when exact backref wrappers are for another recipient', async () => {
+    vi.setSystemTime(new Date('2026-05-06T12:00:00.000Z'));
+
+    const targetWrapperEventId = '1'.repeat(64);
+    const recipientWrapperEventId = '2'.repeat(64);
+    const otherRecipientWrapperEvent = {
+      id: targetWrapperEventId,
+      kind: 1059,
+      created_at: 1778067600,
+      pubkey: '3'.repeat(64),
+      content: 'wrapped',
+      tags: [['p', '4'.repeat(64)]],
+    };
+    const wrappedEvent = {
+      id: recipientWrapperEventId,
+      kind: 1059,
+      created_at: 1778067600,
+      pubkey: '5'.repeat(64),
+      content: 'wrapped',
+      tags: [['p', LOGGED_IN_PUBLIC_KEY]],
+    };
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      if (requestLabel === 'private-message-backref-repair') {
+        expect(filters).toEqual({
+          ids: [targetWrapperEventId],
+          kinds: [1059],
+        });
+        Promise.resolve().then(() => {
+          options.onEvent?.(otherRecipientWrapperEvent);
+          options.onEose?.();
+        });
+        return {
+          stop: vi.fn(),
+        } as never;
+      }
+
+      expect(requestLabel).toBe('private-message-backref-repair-window');
+      expect(filters).toMatchObject({
+        kinds: [1059],
+        '#p': [LOGGED_IN_PUBLIC_KEY],
+      });
+      Promise.resolve().then(() => {
+        options.onEvent?.(wrappedEvent);
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { queuePrivateMessageIngestion, runtime } = createRuntime({
+      subscribeWithReqLogging,
+    });
+
+    await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
+      discoveryDepth: 1,
+      referenceCreatedAt: 1778067600,
+      seedRelayUrls: ['wss://seed.example'],
+    });
+
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(2);
+    expect(queuePrivateMessageIngestion).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: targetWrapperEventId,
+      }),
+      expect.anything(),
+      expect.anything()
+    );
+    expect(queuePrivateMessageIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: recipientWrapperEventId,
+        kind: 1059,
+      }),
+      LOGGED_IN_PUBLIC_KEY,
+      {
+        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+        backrefDepth: MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
       }
     );
 

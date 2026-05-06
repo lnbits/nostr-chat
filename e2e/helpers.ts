@@ -1141,11 +1141,15 @@ export async function waitForThreadSearchStatus(page: Page, statusText: string):
 }
 
 export async function openPreviousThreadSearchResult(page: Page): Promise<void> {
-  await page.getByTestId('thread-search-prev-button').click();
+  const previousButton = page.getByTestId('thread-search-prev-button');
+  await expect(previousButton).toBeEnabled({ timeout: 12_000 });
+  await previousButton.click();
 }
 
 export async function openNextThreadSearchResult(page: Page): Promise<void> {
-  await page.getByTestId('thread-search-next-button').click();
+  const nextButton = page.getByTestId('thread-search-next-button');
+  await expect(nextButton).toBeEnabled({ timeout: 12_000 });
+  await nextButton.click();
 }
 
 export async function waitForThreadSearchFocusedMessage(page: Page, text: string): Promise<void> {

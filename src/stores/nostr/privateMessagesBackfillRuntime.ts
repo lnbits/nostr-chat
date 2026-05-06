@@ -231,6 +231,50 @@ export function createPrivateMessagesBackfillRuntime({
     return Math.max(0, Math.min(MESSAGE_BACKREF_MAX_DISCOVERY_WAVES, normalizedValue));
   }
 
+  function buildMessageBackrefRepairFallbackBounds(referenceCreatedAt: number | null): {
+    since: number;
+    until: number;
+    windowSeconds: number;
+  } {
+    const now = Math.floor(Date.now() / 1000);
+    const normalizedReferenceCreatedAt = normalizeRepairReferenceCreatedAt(referenceCreatedAt);
+    const reference = Math.max(1, Math.min(now, normalizedReferenceCreatedAt ?? now));
+    const windowSeconds =
+      MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS[
+        MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS.length - 1
+      ] ?? PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS;
+    const until = Math.max(
+      1,
+      Math.min(now, reference + PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS)
+    );
+    const since = Math.max(0, reference - windowSeconds);
+
+    return {
+      since,
+      until,
+      windowSeconds,
+    };
+  }
+
+  async function resolveMessageBackrefRepairRecipientPubkeys(
+    chatPublicKey: string,
+    loggedInPubkeyHex: string
+  ): Promise<string[]> {
+    const repairTarget = await resolveMissingMessageDependencyRepairTarget(
+      chatPublicKey,
+      loggedInPubkeyHex
+    );
+    if (!repairTarget) {
+      return [loggedInPubkeyHex];
+    }
+
+    if (repairTarget.groupPublicKey) {
+      return repairTarget.recipientPubkeys;
+    }
+
+    return [loggedInPubkeyHex];
+  }
+
   function getActiveMessageBackrefRepairEventIds(chatPublicKey: string): Set<string> {
     let activeEventIds = activeMessageBackrefRepairEventIdsByChat.get(chatPublicKey);
     if (!activeEventIds) {
@@ -679,6 +723,7 @@ export function createPrivateMessagesBackfillRuntime({
   async function runMessageBackrefRepairFetch(options: {
     loggedInPubkeyHex: string;
     chatPublicKey: string;
+    recipientPubkeys: string[];
     targetEventIds: string[];
     relayUrls: string[];
     discoveryDepth: number;
@@ -689,94 +734,262 @@ export function createPrivateMessagesBackfillRuntime({
       return 0;
     }
 
-    return new Promise<number>((resolve, reject) => {
-      let didFinish = false;
-      let eventCount = 0;
-      let subscription: ReturnType<NDK['subscribe']> | null = null;
-
-      const finish = (error?: unknown) => {
-        if (didFinish) {
-          return;
-        }
-
-        didFinish = true;
-        if (subscription) {
-          subscription.stop();
-          subscription = null;
-        }
-
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(eventCount);
-      };
-
-      try {
-        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
-        const filters: NDKFilter = {
-          ids: options.targetEventIds,
-          kinds: [NDKKind.GiftWrap],
-        };
-        logSubscription('private-messages', 'backref-repair-subscribe', {
-          chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
-          targetEventCount: options.targetEventIds.length,
-          targetEventIds: options.targetEventIds.map((value) => formatSubscriptionLogValue(value)),
-          discoveryDepth: options.discoveryDepth,
-          referenceCreatedAt: options.referenceCreatedAt,
-          referenceCreatedAtIso: toOptionalIsoTimestampFromUnix(options.referenceCreatedAt),
-          ...buildSubscriptionRelayDetails(options.relayUrls),
-        });
-        subscription = subscribeWithReqLogging(
-          'private-messages',
-          'private-message-backref-repair',
-          filters,
-          {
-            relaySet,
-            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
-            closeOnEose: true,
-            onEvent: (event) => {
-              const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
-              const wrappedEventId = inputSanitizerService.normalizeHexKey(wrappedEvent.id ?? '');
-              if (wrappedEventId && !options.targetEventIds.includes(wrappedEventId)) {
-                return;
-              }
-
-              eventCount += 1;
-              updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
-              updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
-              queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
-                uiThrottleMs: options.uiThrottleMs ?? PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-                backrefDepth: options.discoveryDepth,
-              });
-            },
-            onEose: () => {
-              logSubscription('private-messages', 'backref-repair-eose', {
-                chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
-                eventCount,
-                targetEventCount: options.targetEventIds.length,
-                discoveryDepth: options.discoveryDepth,
-              });
-              schedulePostPrivateMessagesEoseChecks();
-              flushPrivateMessagesUiRefreshNow();
-              finish();
-            },
-            onClose: () => {
-              finish();
-            },
-          },
-          {
-            chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
-            targetEventCount: options.targetEventIds.length,
-            discoveryDepth: options.discoveryDepth,
-            ...buildSubscriptionRelayDetails(options.relayUrls),
-          }
-        );
-      } catch (error) {
-        reject(error);
+    const targetEventIds = Array.from(new Set(options.targetEventIds));
+    const targetEventIdSet = new Set(targetEventIds);
+    const recipientPubkeys = Array.from(
+      new Set(
+        options.recipientPubkeys
+          .map((pubkey) => inputSanitizerService.normalizeHexKey(pubkey))
+          .filter((pubkey): pubkey is string => Boolean(pubkey))
+      )
+    );
+    const recipientPubkeySet = new Set(recipientPubkeys);
+    const processedEventIds = new Set<string>();
+    const isAddressedToRepairRecipient = (event: NDKEvent): boolean => {
+      if (recipientPubkeySet.size === 0) {
+        return false;
       }
-    });
+
+      return event
+        .getMatchingTags('p')
+        .some((tag) =>
+          recipientPubkeySet.has(inputSanitizerService.normalizeHexKey(tag[1] ?? '') ?? '')
+        );
+    };
+    const queueFetchedEvent = (
+      event: NDKEvent,
+      queueOptions: {
+        backrefDepth: number;
+        requireRecipientMatch: boolean;
+        requireTargetMatch: boolean;
+      }
+    ): boolean => {
+      const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+      const wrappedEventId = inputSanitizerService.normalizeHexKey(wrappedEvent.id ?? '');
+      if (
+        !wrappedEventId ||
+        (queueOptions.requireTargetMatch && !targetEventIdSet.has(wrappedEventId))
+      ) {
+        return false;
+      }
+
+      if (queueOptions.requireRecipientMatch && !isAddressedToRepairRecipient(wrappedEvent)) {
+        return false;
+      }
+
+      if (processedEventIds.has(wrappedEventId)) {
+        return false;
+      }
+
+      processedEventIds.add(wrappedEventId);
+      updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
+      updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+      queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
+        uiThrottleMs: options.uiThrottleMs ?? PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+        backrefDepth: queueOptions.backrefDepth,
+      });
+      return true;
+    };
+
+    const runExactIdFetch = (targetIds: string[]): Promise<number> =>
+      new Promise<number>((resolve, reject) => {
+        let didFinish = false;
+        let eventCount = 0;
+        let subscription: ReturnType<NDK['subscribe']> | null = null;
+
+        const finish = (error?: unknown) => {
+          if (didFinish) {
+            return;
+          }
+
+          didFinish = true;
+          if (subscription) {
+            subscription.stop();
+            subscription = null;
+          }
+
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve(eventCount);
+        };
+
+        try {
+          const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
+          const filters: NDKFilter = {
+            ids: targetIds,
+            kinds: [NDKKind.GiftWrap],
+          };
+          logSubscription('private-messages', 'backref-repair-subscribe', {
+            chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+            targetEventCount: targetIds.length,
+            targetEventIds: targetIds.map((value) => formatSubscriptionLogValue(value)),
+            discoveryDepth: options.discoveryDepth,
+            referenceCreatedAt: options.referenceCreatedAt,
+            referenceCreatedAtIso: toOptionalIsoTimestampFromUnix(options.referenceCreatedAt),
+            ...buildSubscriptionRelayDetails(options.relayUrls),
+          });
+          subscription = subscribeWithReqLogging(
+            'private-messages',
+            'private-message-backref-repair',
+            filters,
+            {
+              relaySet,
+              cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+              closeOnEose: true,
+              onEvent: (event) => {
+                if (
+                  queueFetchedEvent(event instanceof NDKEvent ? event : new NDKEvent(ndk, event), {
+                    backrefDepth: options.discoveryDepth,
+                    requireRecipientMatch: true,
+                    requireTargetMatch: true,
+                  })
+                ) {
+                  eventCount += 1;
+                }
+              },
+              onEose: () => {
+                logSubscription('private-messages', 'backref-repair-eose', {
+                  chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+                  eventCount,
+                  targetEventCount: targetIds.length,
+                  discoveryDepth: options.discoveryDepth,
+                });
+                schedulePostPrivateMessagesEoseChecks();
+                flushPrivateMessagesUiRefreshNow();
+                finish();
+              },
+              onClose: () => {
+                finish();
+              },
+            },
+            {
+              chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+              targetEventCount: targetIds.length,
+              discoveryDepth: options.discoveryDepth,
+              ...buildSubscriptionRelayDetails(options.relayUrls),
+            }
+          );
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+    const runRecipientWindowFetch = (targetIds: string[]): Promise<number> =>
+      new Promise<number>((resolve, reject) => {
+        if (targetIds.length === 0 || recipientPubkeys.length === 0) {
+          resolve(0);
+          return;
+        }
+
+        let didFinish = false;
+        let eventCount = 0;
+        let subscription: ReturnType<NDK['subscribe']> | null = null;
+        const { since, until, windowSeconds } = buildMessageBackrefRepairFallbackBounds(
+          options.referenceCreatedAt
+        );
+
+        const finish = (error?: unknown) => {
+          if (didFinish) {
+            return;
+          }
+
+          didFinish = true;
+          if (subscription) {
+            subscription.stop();
+            subscription = null;
+          }
+
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve(eventCount);
+        };
+
+        try {
+          const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
+          const filters: NDKFilter = {
+            kinds: [NDKKind.GiftWrap],
+            '#p': recipientPubkeys,
+            since,
+            until,
+          };
+          logSubscription('private-messages', 'backref-repair-window-subscribe', {
+            chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+            targetEventCount: targetIds.length,
+            targetEventIds: targetIds.map((value) => formatSubscriptionLogValue(value)),
+            recipientCount: recipientPubkeys.length,
+            recipients: recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
+            discoveryDepth: options.discoveryDepth,
+            windowSeconds,
+            ...buildFilterSinceDetails(since),
+            ...buildFilterUntilDetails(until),
+            ...buildSubscriptionRelayDetails(options.relayUrls),
+          });
+          subscription = subscribeWithReqLogging(
+            'private-messages',
+            'private-message-backref-repair-window',
+            filters,
+            {
+              relaySet,
+              cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+              closeOnEose: true,
+              onEvent: (event) => {
+                if (
+                  queueFetchedEvent(event instanceof NDKEvent ? event : new NDKEvent(ndk, event), {
+                    backrefDepth: MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
+                    requireRecipientMatch: true,
+                    requireTargetMatch: false,
+                  })
+                ) {
+                  eventCount += 1;
+                }
+              },
+              onEose: () => {
+                logSubscription('private-messages', 'backref-repair-window-eose', {
+                  chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+                  eventCount,
+                  targetEventCount: targetIds.length,
+                  discoveryDepth: options.discoveryDepth,
+                  ...buildFilterSinceDetails(since),
+                  ...buildFilterUntilDetails(until),
+                });
+                schedulePostPrivateMessagesEoseChecks();
+                flushPrivateMessagesUiRefreshNow();
+                finish();
+              },
+              onClose: () => {
+                finish();
+              },
+            },
+            {
+              chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+              targetEventCount: targetIds.length,
+              discoveryDepth: options.discoveryDepth,
+              ...buildFilterSinceDetails(since),
+              ...buildFilterUntilDetails(until),
+              ...buildSubscriptionRelayDetails(options.relayUrls),
+            }
+          );
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+    await runExactIdFetch(targetEventIds);
+
+    const missingTargetEventIds = targetEventIds.filter(
+      (eventId) => !processedEventIds.has(eventId)
+    );
+    if (missingTargetEventIds.length > 0) {
+      await runRecipientWindowFetch(missingTargetEventIds);
+    }
+
+    return processedEventIds.size;
   }
 
   async function queueMessageBackrefRepair(
@@ -877,6 +1090,10 @@ export function createPrivateMessagesBackfillRuntime({
       await runMessageBackrefRepairFetch({
         loggedInPubkeyHex,
         chatPublicKey: normalizedChatPublicKey,
+        recipientPubkeys: await resolveMessageBackrefRepairRecipientPubkeys(
+          normalizedChatPublicKey,
+          loggedInPubkeyHex
+        ),
         targetEventIds: targetEventIdsToFetch,
         relayUrls,
         discoveryDepth,
