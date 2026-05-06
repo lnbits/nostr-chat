@@ -60,7 +60,7 @@ const RECONNECT_HEALING_STATUS_LABELS = {
   applyingPendingMessageUpdates: 'Applying pending message updates',
   finishingSync: 'Finishing sync',
 } as const;
-const RECONNECT_HEALING_STATUS_MIN_VISIBLE_MS = 200;
+const RECONNECT_HEALING_STATUS_MIN_VISIBLE_MS = 500;
 const RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_TIMEOUT_MS = 60 * 1000;
 const RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_POLL_MS = 100;
 
@@ -139,14 +139,22 @@ export function createReconnectHealingRuntime({
   let reconnectHealingTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let reconnectHealingScheduledAt = 0;
   let reconnectHealingRunPromise: Promise<void> | null = null;
-  let reconnectHealingQueuedReason: ReconnectHealingReason | null = null;
-  let reconnectHealingQueuedDelayMs: number | null = null;
-  let reconnectHealingLastStartedAt = 0;
+  let reconnectHealingPendingReason: ReconnectHealingReason | null = null;
+  let reconnectHealingLastFinishedAt = 0;
   let reconnectHealingLastBlurAt = 0;
   let reconnectHealingLastHiddenAt = 0;
   let reconnectHealingStatusLabel: string | null = null;
   let reconnectHealingStatusLabelSetAt = 0;
   let reconnectHealingStatusLabelVersion = 0;
+
+  function getReconnectHealingSessionNetworkSnapshot(): Record<string, unknown> {
+    return {
+      hasWindow: hasWindow(),
+      hasLoggedInPubkey: Boolean(getLoggedInPublicKeyHex()),
+      isRestoringStartupState: isRestoringStartupState.value,
+      browserOnline: typeof navigator === 'undefined' ? null : navigator.onLine !== false,
+    };
+  }
 
   function setReconnectHealingStatusLabelNow(value: string | null): void {
     reconnectHealingStatusLabel = value;
@@ -241,18 +249,61 @@ export function createReconnectHealingRuntime({
     reconnectHealingScheduledAt = 0;
   }
 
-  function queueReconnectHealingWhileRunning(
-    reason: ReconnectHealingReason,
-    delayMs: number
-  ): void {
-    if (
-      reconnectHealingQueuedReason === null ||
-      reconnectHealingQueuedDelayMs === null ||
-      delayMs < reconnectHealingQueuedDelayMs
-    ) {
-      reconnectHealingQueuedReason = reason;
-      reconnectHealingQueuedDelayMs = delayMs;
+  function getReconnectHealingCooldownRemainingMs(): number {
+    if (reconnectHealingLastFinishedAt <= 0) {
+      return 0;
     }
+
+    return Math.max(
+      0,
+      reconnectHealingLastFinishedAt + RECONNECT_HEALING_MIN_INTERVAL_MS - Date.now()
+    );
+  }
+
+  function rememberPendingReconnectHealing(reason: ReconnectHealingReason): void {
+    if (reconnectHealingPendingReason === null) {
+      reconnectHealingPendingReason = reason;
+      logReconnectHealing('pending', {
+        reason,
+      });
+    }
+  }
+
+  function consumePendingReconnectHealing(reason: ReconnectHealingReason): void {
+    if (reconnectHealingPendingReason === reason) {
+      reconnectHealingPendingReason = null;
+    }
+  }
+
+  function clearQueuedReconnectHealingStatus(): void {
+    if (reconnectHealingStatusLabel !== RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync) {
+      return;
+    }
+
+    setIsReconnectHealing(false);
+    setReconnectHealingStatusLabelNow(null);
+  }
+
+  function deferReconnectHealingWhileStartupRestores(reason: ReconnectHealingReason): boolean {
+    if (!isRestoringStartupState.value) {
+      return false;
+    }
+
+    logReconnectHealing('deferred', {
+      reason,
+      deferReason: 'startup-restore-in-progress',
+      ...getReconnectHealingSessionNetworkSnapshot(),
+    });
+    clearQueuedReconnectHealingStatus();
+    rememberPendingReconnectHealing(reason);
+    scheduleReconnectHealing(
+      reconnectHealingPendingReason ?? reason,
+      RECONNECT_HEALING_ONLINE_DELAY_MS,
+      {
+        showQueuedLabel: false,
+      }
+    );
+    return true;
   }
 
   function notifyBrowserOnline(): void {
@@ -310,17 +361,45 @@ export function createReconnectHealingRuntime({
       return;
     }
 
-    const cooldownRemainingMs = Math.max(
-      0,
-      reconnectHealingLastStartedAt + RECONNECT_HEALING_MIN_INTERVAL_MS - Date.now()
-    );
-    const normalizedDelayMs = Math.max(0, Math.floor(delayMs), cooldownRemainingMs);
-
     if (reconnectHealingRunPromise) {
-      queueReconnectHealingWhileRunning(reason, normalizedDelayMs);
+      rememberPendingReconnectHealing(reason);
       return;
     }
 
+    if (deferReconnectHealingWhileStartupRestores(reason)) {
+      return;
+    }
+
+    const cooldownRemainingMs = getReconnectHealingCooldownRemainingMs();
+    if (cooldownRemainingMs > 0) {
+      rememberPendingReconnectHealing(reason);
+      scheduleReconnectHealing(
+        reconnectHealingPendingReason ?? reason,
+        Math.max(0, Math.floor(delayMs), cooldownRemainingMs),
+        { showQueuedLabel: false }
+      );
+      return;
+    }
+
+    scheduleReconnectHealing(reason, Math.max(0, Math.floor(delayMs)), {
+      showQueuedLabel: true,
+    });
+  }
+
+  function scheduleReconnectHealing(
+    reason: ReconnectHealingReason,
+    delayMs: number,
+    options: { showQueuedLabel: boolean }
+  ): void {
+    if (!hasWindow() || !getLoggedInPublicKeyHex()) {
+      return;
+    }
+
+    const normalizedDelayMs = Math.max(
+      0,
+      Math.floor(delayMs),
+      getReconnectHealingCooldownRemainingMs()
+    );
     const nextScheduledAt = Date.now() + normalizedDelayMs;
     if (
       reconnectHealingTimeoutId !== null &&
@@ -332,8 +411,13 @@ export function createReconnectHealingRuntime({
 
     clearReconnectHealingTimer();
     reconnectHealingScheduledAt = nextScheduledAt;
-    setReconnectHealingStatusLabelNow(RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync);
-    setIsReconnectHealing(true);
+    if (
+      options.showQueuedLabel &&
+      reconnectHealingStatusLabel !== RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync
+    ) {
+      setReconnectHealingStatusLabelNow(RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync);
+      setIsReconnectHealing(true);
+    }
     logReconnectHealing('queued', {
       reason,
       delayMs: normalizedDelayMs,
@@ -346,27 +430,57 @@ export function createReconnectHealingRuntime({
 
   async function runReconnectHealing(reason: ReconnectHealingReason): Promise<void> {
     if (reconnectHealingRunPromise) {
+      rememberPendingReconnectHealing(reason);
       return reconnectHealingRunPromise;
     }
 
+    if (!hasWindow() || !getLoggedInPublicKeyHex()) {
+      return;
+    }
+
+    const cooldownRemainingMs = getReconnectHealingCooldownRemainingMs();
+    if (cooldownRemainingMs > 0) {
+      rememberPendingReconnectHealing(reason);
+      scheduleReconnectHealing(reconnectHealingPendingReason ?? reason, cooldownRemainingMs, {
+        showQueuedLabel: false,
+      });
+      return;
+    }
+
+    if (deferReconnectHealingWhileStartupRestores(reason)) {
+      return;
+    }
+
+    consumePendingReconnectHealing(reason);
+    clearReconnectHealingTimer();
     reconnectHealingRunPromise = (async () => {
       await showReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.preparingSync);
       setIsReconnectHealing(true);
 
       const loggedInPublicKeyHex = getLoggedInPublicKeyHex();
       if (!loggedInPublicKeyHex) {
+        logReconnectHealing('skip', {
+          reason,
+          skipReason: 'missing-login',
+          ...getReconnectHealingSessionNetworkSnapshot(),
+        });
         return;
       }
 
       await showReconnectHealingStatusLabel(
         RECONNECT_HEALING_STATUS_LABELS.checkingSessionAndNetwork
       );
+      logReconnectHealing('session-network-check', {
+        reason,
+        ...getReconnectHealingSessionNetworkSnapshot(),
+      });
       if (isRestoringStartupState.value) {
         logReconnectHealing('skip', {
           reason,
           skipReason: 'startup-restore-in-progress',
+          ...getReconnectHealingSessionNetworkSnapshot(),
         });
-        queueReconnectHealingWhileRunning(reason, RECONNECT_HEALING_ONLINE_DELAY_MS);
+        rememberPendingReconnectHealing(reason);
         return;
       }
 
@@ -374,11 +488,11 @@ export function createReconnectHealingRuntime({
         logReconnectHealing('skip', {
           reason,
           skipReason: 'browser-offline',
+          ...getReconnectHealingSessionNetworkSnapshot(),
         });
         return;
       }
 
-      reconnectHealingLastStartedAt = Date.now();
       const visibleChatTarget = normalizeChatTarget(getVisibleChatTarget());
       logReconnectHealing('start', {
         reason,
@@ -430,22 +544,18 @@ export function createReconnectHealingRuntime({
       .finally(async () => {
         await hideReconnectHealingStatus();
         reconnectHealingRunPromise = null;
+        reconnectHealingLastFinishedAt = Date.now();
 
-        if (
-          reconnectHealingQueuedReason !== null &&
-          reconnectHealingQueuedDelayMs !== null &&
-          getLoggedInPublicKeyHex()
-        ) {
-          const nextReason = reconnectHealingQueuedReason;
-          const nextDelayMs = reconnectHealingQueuedDelayMs;
-          reconnectHealingQueuedReason = null;
-          reconnectHealingQueuedDelayMs = null;
-          queueReconnectHealing(nextReason, nextDelayMs);
+        if (reconnectHealingPendingReason !== null && getLoggedInPublicKeyHex()) {
+          const nextReason = reconnectHealingPendingReason;
+          reconnectHealingPendingReason = null;
+          scheduleReconnectHealing(nextReason, RECONNECT_HEALING_MIN_INTERVAL_MS, {
+            showQueuedLabel: false,
+          });
           return;
         }
 
-        reconnectHealingQueuedReason = null;
-        reconnectHealingQueuedDelayMs = null;
+        reconnectHealingPendingReason = null;
       });
 
     return reconnectHealingRunPromise;
@@ -461,10 +571,9 @@ export function createReconnectHealingRuntime({
 
   function resetReconnectHealingRuntimeState(): void {
     clearReconnectHealingTimer();
-    reconnectHealingQueuedReason = null;
-    reconnectHealingQueuedDelayMs = null;
+    reconnectHealingPendingReason = null;
     reconnectHealingRunPromise = null;
-    reconnectHealingLastStartedAt = 0;
+    reconnectHealingLastFinishedAt = 0;
     reconnectHealingLastBlurAt = 0;
     reconnectHealingLastHiddenAt = 0;
     setIsReconnectHealing(false);
