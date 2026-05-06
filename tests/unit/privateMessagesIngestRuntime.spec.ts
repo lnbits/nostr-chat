@@ -1,4 +1,9 @@
 import { type NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
+import {
+  MESSAGE_BACKREF_TAG_NAME,
+  MESSAGE_WRAPPER_EVENT_ID_META_KEY,
+  MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY,
+} from 'src/stores/nostr/constants';
 import { createPrivateMessagesIngestRuntime } from 'src/stores/nostr/privateMessagesIngestRuntime';
 import type { MessageRelayStatus } from 'src/types/chat';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +21,7 @@ const serviceMocks = vi.hoisted(() => ({
     getMessageByEventId: vi.fn(),
     init: vi.fn(),
     updateChatPreview: vi.fn(),
+    updateMessageMeta: vi.fn(),
     updateChatUnreadCount: vi.fn(),
   },
   contactsService: {
@@ -62,7 +68,7 @@ function makeRelayStatus(overrides: Partial<MessageRelayStatus> = {}): MessageRe
 
 function makeWrappedEvent(overrides: Partial<NDKEvent> = {}): NDKEvent {
   return {
-    id: 'wrapped-event',
+    id: 'f'.repeat(64),
     kind: NDKKind.GiftWrap,
     created_at: 1700000000,
     pubkey: 'relay-author',
@@ -77,19 +83,28 @@ function makeRumorEvent(options: {
   senderPubkey?: string;
   recipientPubkey: string;
   eventId?: string;
+  backrefEventIds?: string[];
   kind?: number;
   content?: string;
   createdAt?: number;
 }): NDKEvent {
+  const backrefTags = (options.backrefEventIds ?? []).map((eventId) => [
+    MESSAGE_BACKREF_TAG_NAME,
+    eventId,
+  ]);
   return {
     id: options.eventId ?? 'rumor-event',
     kind: options.kind ?? NDKKind.PrivateDirectMessage,
     created_at: options.createdAt ?? 1700000000,
     pubkey: options.senderPubkey ?? 'a'.repeat(64),
     content: options.content ?? 'Hello there',
-    tags: [['p', options.recipientPubkey]],
+    tags: [['p', options.recipientPubkey], ...backrefTags],
     getMatchingTags: vi.fn((tagName: string) =>
-      tagName === 'p' ? [['p', options.recipientPubkey]] : []
+      tagName === 'p'
+        ? [['p', options.recipientPubkey]]
+        : tagName === MESSAGE_BACKREF_TAG_NAME
+          ? backrefTags
+          : []
     ),
   } as unknown as NDKEvent;
 }
@@ -141,6 +156,7 @@ function createDeps() {
     processIncomingDeletionRumorEvent: vi.fn().mockResolvedValue(undefined),
     processIncomingReactionRumorEvent: vi.fn().mockResolvedValue(undefined),
     queueBackgroundGroupContactRefresh: vi.fn(),
+    queueMessageBackrefRepair: vi.fn().mockResolvedValue(undefined),
     queuePrivateMessagesUiRefresh: vi.fn(),
     readReplyTargetEventId: vi.fn(() => null),
     refreshReplyPreviewsForTargetMessage: vi.fn().mockResolvedValue(0),
@@ -194,6 +210,7 @@ describe('privateMessagesIngestRuntime', () => {
     serviceMocks.chatDataService.getMessageByEventId.mockResolvedValue(null);
     serviceMocks.chatDataService.updateChatPreview.mockResolvedValue(undefined);
     serviceMocks.chatDataService.updateChatUnreadCount.mockResolvedValue(undefined);
+    serviceMocks.chatDataService.updateMessageMeta.mockResolvedValue(null);
     serviceMocks.contactsService.init.mockResolvedValue(undefined);
     serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(null);
     serviceMocks.nostrEventDataService.init.mockResolvedValue(undefined);
@@ -248,6 +265,10 @@ describe('privateMessagesIngestRuntime', () => {
         chat_public_key: 'a'.repeat(64),
         message: 'Hello there',
         event_id: 'rumor-event',
+        meta: expect.objectContaining({
+          [MESSAGE_WRAPPER_EVENT_ID_META_KEY]: 'f'.repeat(64),
+          [MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY]: 'b'.repeat(64),
+        }),
       })
     );
     expect(deps.chatStore.recordIncomingActivity).toHaveBeenCalledWith('a'.repeat(64), createdAt);
@@ -317,6 +338,54 @@ describe('privateMessagesIngestRuntime', () => {
       reloadChats: true,
       reloadMessages: true,
     });
+  });
+
+  it('queues bounded backref repair only after a direct message is accepted', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const firstBackref = '1'.repeat(64);
+    const secondBackref = '2'.repeat(64);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: 'a'.repeat(64),
+      backrefEventIds: [firstBackref, secondBackref, firstBackref],
+    });
+
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.createChat.mockResolvedValue({
+      id: 'a'.repeat(64),
+      public_key: 'a'.repeat(64),
+      type: 'user',
+      name: 'Chat aaaaaaaa',
+      last_message: '',
+      last_message_at: '2023-11-14T22:13:20.000Z',
+      unread_count: 0,
+      meta: {},
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 41,
+      chat_public_key: 'a'.repeat(64),
+      author_public_key: 'a'.repeat(64),
+      created_at: '2023-11-14T22:13:20.000Z',
+      event_id: 'rumor-event',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.queueMessageBackrefRepair).toHaveBeenCalledWith(
+      'a'.repeat(64),
+      [firstBackref, secondBackref],
+      {
+        discoveryDepth: 1,
+        referenceCreatedAt: 1700000000,
+        seedRelayUrls: ['wss://relay.example'],
+        uiThrottleMs: 25,
+      }
+    );
   });
 
   it('uses the local chat name for incoming foreground notification presentation', async () => {

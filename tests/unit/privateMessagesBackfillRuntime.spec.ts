@@ -2,6 +2,7 @@ import NDK from '@nostr-dev-kit/ndk';
 import {
   MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS,
   PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
+  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
 } from 'src/stores/nostr/constants';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,7 @@ const serviceMocks = vi.hoisted(() => ({
     getChatByPublicKey: vi.fn(),
     getMessageByEventId: vi.fn(),
     init: vi.fn(),
+    listMessages: vi.fn(),
     listLatestMessages: vi.fn(),
   },
   nostrEventDataService: {
@@ -58,6 +60,8 @@ function createRuntime(
       } as never;
     });
 
+  const queuePrivateMessageIngestion = vi.fn();
+
   const runtime = createPrivateMessagesBackfillRuntime({
     buildFilterSinceDetails: (since) => ({ since }),
     buildFilterUntilDetails: (until) => ({ until }),
@@ -74,7 +78,7 @@ function createRuntime(
     logSubscription: vi.fn(),
     ndk: new NDK(),
     normalizeThrottleMs: (value) => value ?? 0,
-    queuePrivateMessageIngestion: vi.fn(),
+    queuePrivateMessageIngestion,
     relaySignature: (relayUrls) => relayUrls.join(','),
     resolveGroupChatEpochEntries:
       overrides.resolveGroupChatEpochEntries ??
@@ -94,6 +98,7 @@ function createRuntime(
   });
 
   return {
+    queuePrivateMessageIngestion,
     runtime,
     subscribeWithReqLogging,
   };
@@ -106,6 +111,7 @@ describe('privateMessagesBackfillRuntime', () => {
     serviceMocks.chatDataService.init.mockResolvedValue(undefined);
     serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(null);
     serviceMocks.chatDataService.getMessageByEventId.mockResolvedValue(null);
+    serviceMocks.chatDataService.listMessages.mockResolvedValue([]);
     serviceMocks.chatDataService.listLatestMessages.mockResolvedValue({
       has_more: false,
       rows: [],
@@ -149,6 +155,57 @@ describe('privateMessagesBackfillRuntime', () => {
     ).resolves.toBe(true);
 
     expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('fetches missing wrapper events by encrypted message backref ids', async () => {
+    const targetWrapperEventId = '1'.repeat(64);
+    const wrappedEvent = {
+      id: targetWrapperEventId,
+      kind: 1059,
+      created_at: 1700000100,
+      pubkey: '2'.repeat(64),
+      content: 'wrapped',
+      tags: [['p', LOGGED_IN_PUBLIC_KEY]],
+    };
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      expect(requestLabel).toBe('private-message-backref-repair');
+      expect(filters).toEqual({
+        ids: [targetWrapperEventId],
+        kinds: [1059],
+      });
+      Promise.resolve().then(() => {
+        options.onEvent?.(wrappedEvent);
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { queuePrivateMessageIngestion, runtime } = createRuntime({
+      subscribeWithReqLogging,
+    });
+
+    await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
+      discoveryDepth: 1,
+      referenceCreatedAt: 1700003600,
+      seedRelayUrls: ['wss://seed.example'],
+    });
+
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+    expect(queuePrivateMessageIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: targetWrapperEventId,
+        kind: 1059,
+      }),
+      LOGGED_IN_PUBLIC_KEY,
+      {
+        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+        backrefDepth: 1,
+      }
+    );
 
     runtime.resetPrivateMessagesBackfillRuntimeState();
   });

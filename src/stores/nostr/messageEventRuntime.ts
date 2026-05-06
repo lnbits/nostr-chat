@@ -7,7 +7,11 @@ import NDK, {
   type NostrEvent,
 } from '@nostr-dev-kit/ndk';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import { INVITATION_PROOF_TAG } from 'src/stores/nostr/constants';
+import {
+  INVITATION_PROOF_TAG,
+  MESSAGE_BACKREF_LIMIT,
+  MESSAGE_BACKREF_TAG_NAME,
+} from 'src/stores/nostr/constants';
 
 interface GroupEpochContext {
   chat: {
@@ -53,12 +57,23 @@ export function createMessageEventRuntime({
     recipientPubkey: string,
     message: string,
     createdAt: number,
-    replyToEventId?: string | null
+    replyToEventId?: string | null,
+    backrefEventIds: string[] = []
   ): NDKEvent {
     const tags: string[][] = [['p', recipientPubkey]];
     const normalizedReplyTargetEventId = normalizeEventId(replyToEventId);
     if (normalizedReplyTargetEventId) {
       tags.push(['e', normalizedReplyTargetEventId, '', 'reply']);
+    }
+    const normalizedBackrefEventIds = Array.from(
+      new Set(
+        backrefEventIds
+          .map((eventId) => normalizeEventId(eventId))
+          .filter((eventId): eventId is string => Boolean(eventId))
+      )
+    ).slice(0, MESSAGE_BACKREF_LIMIT);
+    for (const eventId of normalizedBackrefEventIds) {
+      tags.push([MESSAGE_BACKREF_TAG_NAME, eventId]);
     }
 
     return new NDKEvent(ndk, {

@@ -10,6 +10,9 @@ import { type ChatRow, chatDataService } from 'src/services/chatDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
+  MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
+  MESSAGE_BACKREF_MAX_QUEUED_EVENTS_PER_CHAT,
+  MESSAGE_WRAPPER_EVENT_ID_META_KEY,
   MISSING_MESSAGE_DEPENDENCY_REPAIR_RETRY_DELAYS_MS,
   MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS,
   PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS,
@@ -50,6 +53,13 @@ interface MissingMessageDependencyRepairState {
   attemptIndex: number;
   runningPromise: Promise<boolean> | null;
   cancelled: boolean;
+}
+
+interface MessageBackrefRepairOptions {
+  discoveryDepth: number;
+  referenceCreatedAt?: number | null;
+  seedRelayUrls?: string[];
+  uiThrottleMs?: number;
 }
 
 function getAggressiveMissingMessageDependencyRepairAttemptIndex(): number {
@@ -101,6 +111,7 @@ interface PrivateMessagesBackfillRuntimeDeps {
     loggedInPubkeyHex: string,
     options?: {
       uiThrottleMs?: number;
+      backrefDepth?: number;
     }
   ) => void;
   relaySignature: (relays: string[]) => string;
@@ -163,6 +174,7 @@ export function createPrivateMessagesBackfillRuntime({
   const privateMessagesForRecipientRestorePromises = new Map<string, Promise<void>>();
   const restoredPrivateMessagesForRecipientKeys = new Set<string>();
   const missingMessageDependencyRepairs = new Map<string, MissingMessageDependencyRepairState>();
+  const activeMessageBackrefRepairEventIdsByChat = new Map<string, Set<string>>();
 
   function normalizeRepairDelayMs(value: number): number {
     return Math.max(0, Math.floor(value));
@@ -195,6 +207,56 @@ export function createPrivateMessagesBackfillRuntime({
     }
 
     return Boolean(await nostrEventDataService.getEventById(targetEventId));
+  }
+
+  async function hasStoredMessageBackrefTarget(
+    chatPublicKey: string,
+    targetEventId: string
+  ): Promise<boolean> {
+    await chatDataService.init();
+
+    const messages = await chatDataService.listMessages(chatPublicKey);
+    return messages.some((message) => {
+      const rawWrapperEventId = message.meta[MESSAGE_WRAPPER_EVENT_ID_META_KEY];
+      const wrapperEventId =
+        typeof rawWrapperEventId === 'string'
+          ? inputSanitizerService.normalizeHexKey(rawWrapperEventId)
+          : null;
+      return wrapperEventId === targetEventId;
+    });
+  }
+
+  function normalizeBackrefDiscoveryDepth(value: unknown): number {
+    const normalizedValue = Math.floor(Number(value) || 0);
+    return Math.max(0, Math.min(MESSAGE_BACKREF_MAX_DISCOVERY_WAVES, normalizedValue));
+  }
+
+  function getActiveMessageBackrefRepairEventIds(chatPublicKey: string): Set<string> {
+    let activeEventIds = activeMessageBackrefRepairEventIdsByChat.get(chatPublicKey);
+    if (!activeEventIds) {
+      activeEventIds = new Set<string>();
+      activeMessageBackrefRepairEventIdsByChat.set(chatPublicKey, activeEventIds);
+    }
+
+    return activeEventIds;
+  }
+
+  function releaseActiveMessageBackrefRepairEventIds(
+    chatPublicKey: string,
+    eventIds: string[]
+  ): void {
+    const activeEventIds = activeMessageBackrefRepairEventIdsByChat.get(chatPublicKey);
+    if (!activeEventIds) {
+      return;
+    }
+
+    for (const eventId of eventIds) {
+      activeEventIds.delete(eventId);
+    }
+
+    if (activeEventIds.size === 0) {
+      activeMessageBackrefRepairEventIdsByChat.delete(chatPublicKey);
+    }
   }
 
   async function resolveMissingMessageDependencyRepairTarget(
@@ -612,6 +674,231 @@ export function createPrivateMessagesBackfillRuntime({
     });
 
     await getPrivateMessagesIngestQueue();
+  }
+
+  async function runMessageBackrefRepairFetch(options: {
+    loggedInPubkeyHex: string;
+    chatPublicKey: string;
+    targetEventIds: string[];
+    relayUrls: string[];
+    discoveryDepth: number;
+    referenceCreatedAt: number | null;
+    uiThrottleMs: number | undefined;
+  }): Promise<number> {
+    if (options.targetEventIds.length === 0 || options.relayUrls.length === 0) {
+      return 0;
+    }
+
+    return new Promise<number>((resolve, reject) => {
+      let didFinish = false;
+      let eventCount = 0;
+      let subscription: ReturnType<NDK['subscribe']> | null = null;
+
+      const finish = (error?: unknown) => {
+        if (didFinish) {
+          return;
+        }
+
+        didFinish = true;
+        if (subscription) {
+          subscription.stop();
+          subscription = null;
+        }
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(eventCount);
+      };
+
+      try {
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk, false);
+        const filters: NDKFilter = {
+          ids: options.targetEventIds,
+          kinds: [NDKKind.GiftWrap],
+        };
+        logSubscription('private-messages', 'backref-repair-subscribe', {
+          chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+          targetEventCount: options.targetEventIds.length,
+          targetEventIds: options.targetEventIds.map((value) => formatSubscriptionLogValue(value)),
+          discoveryDepth: options.discoveryDepth,
+          referenceCreatedAt: options.referenceCreatedAt,
+          referenceCreatedAtIso: toOptionalIsoTimestampFromUnix(options.referenceCreatedAt),
+          ...buildSubscriptionRelayDetails(options.relayUrls),
+        });
+        subscription = subscribeWithReqLogging(
+          'private-messages',
+          'private-message-backref-repair',
+          filters,
+          {
+            relaySet,
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+            closeOnEose: true,
+            onEvent: (event) => {
+              const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+              const wrappedEventId = inputSanitizerService.normalizeHexKey(wrappedEvent.id ?? '');
+              if (wrappedEventId && !options.targetEventIds.includes(wrappedEventId)) {
+                return;
+              }
+
+              eventCount += 1;
+              updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
+              updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+              queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
+                uiThrottleMs: options.uiThrottleMs ?? PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+                backrefDepth: options.discoveryDepth,
+              });
+            },
+            onEose: () => {
+              logSubscription('private-messages', 'backref-repair-eose', {
+                chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+                eventCount,
+                targetEventCount: options.targetEventIds.length,
+                discoveryDepth: options.discoveryDepth,
+              });
+              schedulePostPrivateMessagesEoseChecks();
+              flushPrivateMessagesUiRefreshNow();
+              finish();
+            },
+            onClose: () => {
+              finish();
+            },
+          },
+          {
+            chatPubkey: formatSubscriptionLogValue(options.chatPublicKey),
+            targetEventCount: options.targetEventIds.length,
+            discoveryDepth: options.discoveryDepth,
+            ...buildSubscriptionRelayDetails(options.relayUrls),
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async function queueMessageBackrefRepair(
+    chatPublicKey: string,
+    targetEventIds: string[],
+    options: MessageBackrefRepairOptions
+  ): Promise<void> {
+    const normalizedChatPublicKey = inputSanitizerService.normalizeHexKey(chatPublicKey);
+    const discoveryDepth = normalizeBackrefDiscoveryDepth(options.discoveryDepth);
+    if (
+      !normalizedChatPublicKey ||
+      discoveryDepth <= 0 ||
+      discoveryDepth > MESSAGE_BACKREF_MAX_DISCOVERY_WAVES
+    ) {
+      return;
+    }
+
+    const normalizedTargetEventIds = Array.from(
+      new Set(
+        targetEventIds
+          .map((eventId) => inputSanitizerService.normalizeHexKey(eventId))
+          .filter((eventId): eventId is string => Boolean(eventId))
+      )
+    );
+    if (normalizedTargetEventIds.length === 0) {
+      return;
+    }
+
+    const activeEventIds = getActiveMessageBackrefRepairEventIds(normalizedChatPublicKey);
+    const targetEventIdsToFetch: string[] = [];
+    for (const targetEventId of normalizedTargetEventIds) {
+      if (activeEventIds.has(targetEventId)) {
+        continue;
+      }
+
+      if (activeEventIds.size >= MESSAGE_BACKREF_MAX_QUEUED_EVENTS_PER_CHAT) {
+        logSubscription('private-messages', 'backref-repair-skip', {
+          chatPubkey: formatSubscriptionLogValue(normalizedChatPublicKey),
+          targetEventId: formatSubscriptionLogValue(targetEventId),
+          reason: 'chat-queue-full',
+          activeCount: activeEventIds.size,
+          maxQueuedEvents: MESSAGE_BACKREF_MAX_QUEUED_EVENTS_PER_CHAT,
+          discoveryDepth,
+        });
+        continue;
+      }
+
+      if (await hasStoredMessageBackrefTarget(normalizedChatPublicKey, targetEventId)) {
+        logSubscription('private-messages', 'backref-repair-skip', {
+          chatPubkey: formatSubscriptionLogValue(normalizedChatPublicKey),
+          targetEventId: formatSubscriptionLogValue(targetEventId),
+          reason: 'target-already-present',
+          discoveryDepth,
+        });
+        continue;
+      }
+
+      activeEventIds.add(targetEventId);
+      targetEventIdsToFetch.push(targetEventId);
+    }
+
+    if (targetEventIdsToFetch.length === 0) {
+      if (activeEventIds.size === 0) {
+        activeMessageBackrefRepairEventIdsByChat.delete(normalizedChatPublicKey);
+      }
+      return;
+    }
+
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      releaseActiveMessageBackrefRepairEventIds(normalizedChatPublicKey, targetEventIdsToFetch);
+      return;
+    }
+
+    try {
+      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
+      if (relayUrls.length === 0) {
+        logSubscription('private-messages', 'backref-repair-skip', {
+          chatPubkey: formatSubscriptionLogValue(normalizedChatPublicKey),
+          targetEventCount: targetEventIdsToFetch.length,
+          reason: 'no-read-relays',
+          discoveryDepth,
+        });
+        return;
+      }
+
+      await ensureRelayConnections(relayUrls);
+      logSubscription('private-messages', 'backref-repair-start', {
+        chatPubkey: formatSubscriptionLogValue(normalizedChatPublicKey),
+        targetEventCount: targetEventIdsToFetch.length,
+        targetEventIds: targetEventIdsToFetch.map((value) => formatSubscriptionLogValue(value)),
+        discoveryDepth,
+        referenceCreatedAt: normalizeRepairReferenceCreatedAt(options.referenceCreatedAt),
+        referenceCreatedAtIso: toOptionalIsoTimestampFromUnix(options.referenceCreatedAt),
+        ...buildSubscriptionRelayDetails(relayUrls),
+      });
+
+      await runMessageBackrefRepairFetch({
+        loggedInPubkeyHex,
+        chatPublicKey: normalizedChatPublicKey,
+        targetEventIds: targetEventIdsToFetch,
+        relayUrls,
+        discoveryDepth,
+        referenceCreatedAt: normalizeRepairReferenceCreatedAt(options.referenceCreatedAt),
+        uiThrottleMs: options.uiThrottleMs,
+      });
+    } catch (error) {
+      console.warn(
+        'Failed to repair message backrefs',
+        normalizedChatPublicKey,
+        targetEventIdsToFetch,
+        error
+      );
+      logSubscription('private-messages', 'backref-repair-error', {
+        chatPubkey: formatSubscriptionLogValue(normalizedChatPublicKey),
+        targetEventCount: targetEventIdsToFetch.length,
+        discoveryDepth,
+        error,
+      });
+    } finally {
+      releaseActiveMessageBackrefRepairEventIds(normalizedChatPublicKey, targetEventIdsToFetch);
+    }
   }
 
   function buildMissingMessageDependencyRepairBounds(
@@ -1323,9 +1610,11 @@ export function createPrivateMessagesBackfillRuntime({
     restoredGroupEpochHistoryKeys.clear();
     privateMessagesForRecipientRestorePromises.clear();
     restoredPrivateMessagesForRecipientKeys.clear();
+    activeMessageBackrefRepairEventIdsByChat.clear();
   }
 
   return {
+    queueMessageBackrefRepair,
     repairMissingMessageDependency,
     resetPrivateMessagesBackfillRuntimeState,
     resolveMissingMessageDependencyRepair,
