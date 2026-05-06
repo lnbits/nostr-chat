@@ -1,6 +1,13 @@
 <template>
-  <div v-if="isVisible" class="reconnect-healing-banner" aria-live="polite">
-    <span class="reconnect-healing-banner__label">{{ statusLabel }}</span>
+  <div
+    v-if="isVisible"
+    class="reconnect-healing-banner"
+    :class="{ 'reconnect-healing-banner--expanded': isDetailsVisible }"
+    :aria-live="isDetailsVisible ? 'polite' : 'off'"
+  >
+    <span v-if="isDetailsVisible" class="reconnect-healing-banner__label">
+      {{ statusLabel }}
+    </span>
     <q-linear-progress
       indeterminate
       color="primary"
@@ -8,17 +15,61 @@
       class="reconnect-healing-banner__progress"
       aria-hidden="true"
     />
+    <q-btn
+      dense
+      flat
+      icon="more"
+      size="xs"
+      :ripple="false"
+      class="reconnect-healing-banner__toggle"
+      :aria-label="detailsButtonLabel"
+      :aria-expanded="isDetailsVisible"
+      @click="toggleDetails"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useNostrStore } from 'src/stores/nostrStore';
 
 const nostrStore = useNostrStore();
+const RECONNECT_HEALING_DETAILS_STORAGE_KEY = 'nostr-chat:reconnect-healing-details-visible';
 
+const isDetailsVisible = ref(false);
 const isVisible = computed(() => nostrStore.isReconnectHealing);
 const statusLabel = computed(() => nostrStore.reconnectHealingStatusLabel ?? 'Preparing sync');
+const detailsButtonLabel = computed(() =>
+  isDetailsVisible.value ? 'Hide sync details' : 'Show sync details'
+);
+
+function toggleDetails(): void {
+  isDetailsVisible.value = !isDetailsVisible.value;
+}
+
+function readStoredDetailsVisibility(): boolean {
+  try {
+    return window.localStorage.getItem(RECONNECT_HEALING_DETAILS_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredDetailsVisibility(value: boolean): void {
+  try {
+    window.localStorage.setItem(RECONNECT_HEALING_DETAILS_STORAGE_KEY, String(value));
+  } catch {
+    // Ignore storage errors; the toggle should still work for the current session.
+  }
+}
+
+onMounted(() => {
+  isDetailsVisible.value = readStoredDetailsVisibility();
+});
+
+watch(isDetailsVisible, (value) => {
+  writeStoredDetailsVisibility(value);
+});
 </script>
 
 <style scoped>
@@ -26,15 +77,20 @@ const statusLabel = computed(() => nostrStore.reconnectHealingStatusLabel ?? 'Pr
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 22px;
-  margin: 10px -12px -12px;
-  padding: 3px 12px 5px;
+  min-height: 12px;
+  margin: 6px -8px -8px;
+  padding: 0 30px 1px 0;
+  color: var(--nc-text-primary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.reconnect-healing-banner--expanded {
+  min-height: 24px;
+  padding: 2px 34px 4px 8px;
   border-top: 1px solid var(--nc-border);
   background: color-mix(in srgb, var(--q-primary) 7%, var(--nc-panel-header-bg));
-  color: var(--nc-text-primary);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
 }
 
 .reconnect-healing-banner__label {
@@ -49,5 +105,41 @@ const statusLabel = computed(() => nostrStore.reconnectHealingStatusLabel ?? 'Pr
   right: 0;
   bottom: 0;
   left: 0;
+}
+
+.q-btn.reconnect-healing-banner__toggle {
+  position: absolute;
+  right: 3px;
+  bottom: -4px;
+  z-index: 1;
+  min-height: 10px;
+  min-width: 18px;
+  width: 18px;
+  height: 12px;
+  padding: 0;
+  color: var(--nc-text-secondary) !important;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transition: color 0.2s ease;
+}
+
+.q-btn.reconnect-healing-banner__toggle :deep(.q-icon) {
+  font-size: 14px;
+}
+
+.q-btn.reconnect-healing-banner__toggle:hover {
+  color: var(--nc-text) !important;
+}
+
+.q-btn.reconnect-healing-banner__toggle::before {
+  display: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.q-btn.reconnect-healing-banner__toggle :deep(.q-focus-helper) {
+  display: none;
 }
 </style>
