@@ -117,10 +117,16 @@ watch(isDetailsVisible, (value) => {
   width: 20px;
   height: 12px;
   padding: 0;
+  color: var(--nc-text-secondary) !important;
   background: transparent;
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  transition: color 0.2s ease;
+}
+
+.q-btn.reconnect-healing-banner__toggle:hover {
+  color: var(--nc-text) !important;
 }
 
 .q-btn.reconnect-healing-banner__toggle::before {
