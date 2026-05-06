@@ -77,18 +77,18 @@ watch(isDetailsVisible, (value) => {
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 16px;
-  margin: 10px -12px -12px;
-  padding: 0 40px 2px 0;
+  min-height: 12px;
+  margin: 6px -8px -8px;
+  padding: 0 30px 1px 0;
   color: var(--nc-text-primary);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .reconnect-healing-banner--expanded {
-  min-height: 30px;
-  padding: 3px 44px 5px 12px;
+  min-height: 24px;
+  padding: 2px 34px 4px 8px;
   border-top: 1px solid var(--nc-border);
   background: color-mix(in srgb, var(--q-primary) 7%, var(--nc-panel-header-bg));
 }
@@ -109,12 +109,12 @@ watch(isDetailsVisible, (value) => {
 
 .q-btn.reconnect-healing-banner__toggle {
   position: absolute;
-  right: 4px;
-  bottom: -5px;
+  right: 3px;
+  bottom: -4px;
   z-index: 1;
-  min-height: 12px;
-  min-width: 20px;
-  width: 20px;
+  min-height: 10px;
+  min-width: 18px;
+  width: 18px;
   height: 12px;
   padding: 0;
   color: var(--nc-text-secondary) !important;
@@ -123,6 +123,10 @@ watch(isDetailsVisible, (value) => {
   border-radius: 0;
   box-shadow: none;
   transition: color 0.2s ease;
+}
+
+.q-btn.reconnect-healing-banner__toggle :deep(.q-icon) {
+  font-size: 14px;
 }
 
 .q-btn.reconnect-healing-banner__toggle:hover {
