@@ -93,7 +93,7 @@
             placeholder="Search"
           />
 
-          <ReconnectHealingBanner />
+          <ReconnectHealingBanner class="sidebar-top__healing" />
         </div>
 
         <ChatList
@@ -1126,6 +1126,14 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 
 .sidebar-top__action:deep(.q-btn-dropdown__arrow) {
   margin-left: 0;
+}
+
+@media (min-width: 1024px) {
+  .sidebar-top .sidebar-top__healing {
+    margin-right: -12px;
+    margin-bottom: -13px;
+    margin-left: -12px;
+  }
 }
 
 body.body--dark .q-btn.sidebar-top__action {
