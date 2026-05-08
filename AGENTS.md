@@ -36,6 +36,8 @@
 ## Validation
 
 - Validation is part of the change, not optional cleanup.
+- Run validation only when the current prompt produced file changes. If the prompt only answered questions, inspected files, or ran read-only commands such as `git status`, `git diff`, or `git log`, do not run `npm run quality:all`, `npm run test:unit`, or e2e smoke tests.
+- Pre-existing dirty worktree entries from before the prompt do not by themselves trigger validation. Validate only files changed intentionally during the current task.
 - After every code change, run the post-change loop before considering the task complete:
   - `npm run quality:all`
   - `npm run test:unit`
