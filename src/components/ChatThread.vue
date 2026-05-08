@@ -2,46 +2,50 @@
   <div class="thread-root" @focusin="handleThreadFocusIn">
     <template v-if="chat">
       <div class="thread-header">
-        <q-btn
-          v-if="showBackButton"
-          flat
-          dense
-          round
-          icon="arrow_back"
-          aria-label="Back"
-          @click="handleBack"
-        />
-        <div class="thread-header__identity" @click="handleOpenProfile">
-          <CachedAvatar
-            :src="avatarImageUrl"
-            :alt="chat.name"
-            :fallback="chat.avatar"
-            class="thread-header__avatar"
+        <div class="thread-header__row">
+          <q-btn
+            v-if="showBackButton"
+            flat
+            dense
+            round
+            icon="arrow_back"
+            aria-label="Back"
+            @click="handleBack"
           />
-          <div class="thread-header__meta">
-            <div class="thread-header__name">{{ chat.name }}</div>
-            <div class="thread-header__time">Last active {{ headerTime }}</div>
+          <div class="thread-header__identity" @click="handleOpenProfile">
+            <CachedAvatar
+              :src="avatarImageUrl"
+              :alt="chat.name"
+              :fallback="chat.avatar"
+              class="thread-header__avatar"
+            />
+            <div class="thread-header__meta">
+              <div class="thread-header__name">{{ chat.name }}</div>
+              <div class="thread-header__time">Last active {{ headerTime }}</div>
+            </div>
           </div>
+          <q-btn
+            flat
+            dense
+            round
+            icon="search"
+            data-testid="thread-search-open-button"
+            aria-label="Search Messages"
+            class="thread-header__action"
+            @click="handleOpenThreadSearch"
+          />
+          <q-btn
+            flat
+            dense
+            round
+            icon="badge"
+            aria-label="Open Profile"
+            class="thread-header__action"
+            @click="handleOpenProfile"
+          />
         </div>
-        <q-btn
-          flat
-          dense
-          round
-          icon="search"
-          data-testid="thread-search-open-button"
-          aria-label="Search Messages"
-          class="thread-header__action"
-          @click="handleOpenThreadSearch"
-        />
-        <q-btn
-          flat
-          dense
-          round
-          icon="badge"
-          aria-label="Open Profile"
-          class="thread-header__action"
-          @click="handleOpenProfile"
-        />
+
+        <ReconnectHealingBanner v-if="showReconnectHealingBanner" />
       </div>
 
       <transition name="thread-search-bar">
@@ -274,6 +278,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
@@ -299,12 +304,14 @@ const props = withDefaults(
     messages: Message[];
     isInitializing?: boolean;
     showBackButton?: boolean;
+    showReconnectHealingBanner?: boolean;
     keyboardVisible?: boolean;
     mobileViewportHeight?: number | null;
   }>(),
   {
     isInitializing: false,
     showBackButton: false,
+    showReconnectHealingBanner: false,
     keyboardVisible: false,
     mobileViewportHeight: null
   }
@@ -2237,11 +2244,19 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 6;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
   padding: 10px 16px;
   border-bottom: 1px solid var(--nc-border);
   background: var(--nc-panel-header-bg);
+}
+
+.thread-header__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .thread-header__identity {

@@ -156,6 +156,7 @@
           :messages="currentMessages"
           :is-initializing="isThreadInitializing"
           :show-back-button="isMobile"
+          :show-reconnect-healing-banner="isMobile"
           :keyboard-visible="isVisualViewportKeyboardVisible"
           :mobile-viewport-height="visibleViewportHeight"
           @send="handleSend"
