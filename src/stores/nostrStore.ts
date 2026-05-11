@@ -112,9 +112,12 @@ import { ref, watch } from 'vue';
 
 export type {
   StartupDisplaySnapshot,
+  StartupInternalTaskSnapshot,
   StartupStepId,
   StartupStepSnapshot,
   StartupStepStatus,
+  StartupTimedSnapshot,
+  StartupTrackId,
 } from 'src/stores/nostr/startupState';
 export type {
   AuthMethod,
@@ -1637,12 +1640,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     syncRecentChatContacts,
   } = createStartupContactSyncRuntime({
     applyContactCursorStateToContact,
+    beginStartupStep,
     bumpContactListVersion,
+    completeStartupStep,
     createStartupBatchTracker,
     deriveContactCursorDTag,
     ensureRelayConnections,
     ensureStoredEventSince,
     fetchContactCursorEvents,
+    failStartupStep,
     flushPendingEventSinceUpdate,
     getLoggedInPublicKeyHex,
     getRestoreStartupStatePromise: () => restoreStartupStatePromise,

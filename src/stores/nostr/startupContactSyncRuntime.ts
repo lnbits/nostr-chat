@@ -2,6 +2,7 @@ import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS } from 'src/stores/nostr/constants';
+import type { StartupStepId } from 'src/stores/nostr/startupState';
 import type {
   ContactCursorContent,
   ContactRefreshLifecycle,
@@ -31,7 +32,9 @@ interface StartupContactSyncRuntimeDeps {
     contact: ContactRecord,
     cursor: ContactCursorContent
   ) => Promise<boolean>;
+  beginStartupStep: (stepId: StartupStepId) => void;
   bumpContactListVersion: () => void;
+  completeStartupStep: (stepId: StartupStepId) => void;
   createStartupBatchTracker: (
     stepId: 'logged-in-profile' | 'logged-in-relays' | 'recent-chat-profiles' | 'recent-chat-relays'
   ) => StartupBatchTracker;
@@ -41,6 +44,7 @@ interface StartupContactSyncRuntimeDeps {
   fetchContactCursorEvents: (
     contacts: ContactRecord[]
   ) => Promise<Map<string, ContactCursorContent>>;
+  failStartupStep: (stepId: StartupStepId, error: unknown) => void;
   flushPendingEventSinceUpdate: () => void;
   getLoggedInPublicKeyHex: () => string | null;
   getRestoreStartupStatePromise: () => Promise<void> | null;
@@ -86,12 +90,15 @@ function formatStartupRestoreError(error: unknown): string {
 
 export function createStartupContactSyncRuntime({
   applyContactCursorStateToContact,
+  beginStartupStep,
   bumpContactListVersion,
+  completeStartupStep,
   createStartupBatchTracker,
   deriveContactCursorDTag,
   ensureRelayConnections,
   ensureStoredEventSince,
   fetchContactCursorEvents,
+  failStartupStep,
   flushPendingEventSinceUpdate,
   getLoggedInPublicKeyHex,
   getRestoreStartupStatePromise,
@@ -357,21 +364,26 @@ export function createStartupContactSyncRuntime({
     const startupRestoreStartedAt = Date.now();
 
     const runStartupTask = async (
-      taskLabel: string,
+      taskLabel: StartupStepId,
       errorMessage: string,
       task: () => Promise<void>
     ): Promise<void> => {
       const taskStartedAt = Date.now();
+      beginStartupStep(taskLabel);
       logStartupRestore('task-start', {
         task: taskLabel,
       });
       try {
         await task();
+        if (taskLabel !== 'private-messages-subscribe') {
+          completeStartupStep(taskLabel);
+        }
         logStartupRestore('task-complete', {
           task: taskLabel,
           durationMs: Date.now() - taskStartedAt,
         });
       } catch (error) {
+        failStartupStep(taskLabel, error);
         console.error(errorMessage, error);
         logStartupRestore('task-error', {
           task: taskLabel,

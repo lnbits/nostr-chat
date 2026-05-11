@@ -18,32 +18,99 @@
 
         <div v-else class="app-status__history-scroll">
           <div class="app-status__history-list">
-            <div
-              v-for="step in startupHistory"
-              :key="step.id"
-              class="app-status__history-item"
-            >
-              <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
-                <q-linear-progress
-                  indeterminate
-                  rounded
-                  color="primary"
-                  track-color="transparent"
-                  class="app-status__progress-bar"
-                />
+            <template v-for="(step, index) in startupHistory" :key="step.id">
+              <q-expansion-item
+                v-if="step.internalTasks.length > 0"
+                dense
+                expand-icon="keyboard_arrow_down"
+                class="app-status__history-entry app-status__history-expansion"
+              >
+                <template #header>
+                  <div class="app-status__history-item">
+                    <div class="app-status__history-counter">
+                      {{ index + 1 }}/{{ startupHistory.length }}
+                    </div>
+                    <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
+                      <q-linear-progress
+                        indeterminate
+                        rounded
+                        color="primary"
+                        track-color="transparent"
+                        class="app-status__progress-bar"
+                      />
+                    </div>
+                    <q-icon
+                      v-else
+                      :name="startupStatusIcon(step.status)"
+                      :class="startupStatusClass(step.status)"
+                      size="16px"
+                    />
+                    <div class="app-status__history-copy">
+                      <div class="app-status__history-label">{{ step.label }}</div>
+                      <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
+                    </div>
+                    <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
+                  </div>
+                </template>
+
+                <div class="app-status__internal-list">
+                  <div
+                    v-for="task in step.internalTasks"
+                    :key="task.id"
+                    class="app-status__internal-item"
+                  >
+                    <div v-if="task.status === 'in_progress'" class="app-status__progress-track">
+                      <q-linear-progress
+                        indeterminate
+                        rounded
+                        color="primary"
+                        track-color="transparent"
+                        class="app-status__progress-bar"
+                      />
+                    </div>
+                    <q-icon
+                      v-else
+                      :name="startupStatusIcon(task.status)"
+                      :class="startupStatusClass(task.status)"
+                      size="15px"
+                    />
+                    <div class="app-status__history-copy">
+                      <div class="app-status__internal-label">{{ task.label }}</div>
+                      <div class="app-status__history-meta">{{ startupStepMeta(task) }}</div>
+                    </div>
+                    <div class="app-status__history-duration">{{ startupStepDuration(task) }}</div>
+                  </div>
+                </div>
+              </q-expansion-item>
+
+              <div v-else class="app-status__history-entry app-status__history-static">
+                <div class="app-status__history-item">
+                  <div class="app-status__history-counter">
+                    {{ index + 1 }}/{{ startupHistory.length }}
+                  </div>
+                  <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
+                    <q-linear-progress
+                      indeterminate
+                      rounded
+                      color="primary"
+                      track-color="transparent"
+                      class="app-status__progress-bar"
+                    />
+                  </div>
+                  <q-icon
+                    v-else
+                    :name="startupStatusIcon(step.status)"
+                    :class="startupStatusClass(step.status)"
+                    size="16px"
+                  />
+                  <div class="app-status__history-copy">
+                    <div class="app-status__history-label">{{ step.label }}</div>
+                    <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
+                  </div>
+                  <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
+                </div>
               </div>
-              <q-icon
-                v-else
-                :name="startupStatusIcon(step.status)"
-                :class="startupStatusClass(step.status)"
-                size="16px"
-              />
-              <div class="app-status__history-copy">
-                <div class="app-status__history-label">{{ step.label }}</div>
-                <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
-              </div>
-              <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
-            </div>
+            </template>
           </div>
         </div>
       </div>
@@ -53,7 +120,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { StartupStepSnapshot, StartupStepStatus } from 'src/stores/nostrStore';
+import type { StartupStepStatus, StartupTimedSnapshot } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 
 const nostrStore = useNostrStore();
@@ -79,25 +146,19 @@ const displayedStartupStep = computed(() => {
 });
 
 const startupHistory = computed(() => {
-  const inProgress = startupSteps.value
-    .filter((step) => step.status === 'in_progress')
-    .sort((first, second) => (second.startedAt ?? 0) - (first.startedAt ?? 0));
-  const finished = startupSteps.value
-    .filter((step) => step.status === 'success' || step.status === 'error')
-    .sort((first, second) => (second.completedAt ?? 0) - (first.completedAt ?? 0));
-  const pending = startupSteps.value
-    .filter((step) => step.status === 'pending')
-    .sort((first, second) => first.order - second.order);
-
-  return [...inProgress, ...finished, ...pending];
+  return [...startupSteps.value].sort((first, second) => first.order - second.order);
 });
 
 const hasHeaderActivity = computed(() => {
-  return displayedStartupStep.value?.status === 'in_progress' || displayedStartupStep.value?.showProgress === true;
+  return startupSteps.value.some(
+    (step) =>
+      step.status === 'in_progress' ||
+      step.internalTasks.some((task) => task.status === 'in_progress')
+  );
 });
 
 const cardSubtitle = computed(() => {
-  if (hasHeaderActivity.value && displayedStartupStep.value) {
+  if (hasHeaderActivity.value && displayedStartupStep.value?.showProgress === true) {
     return displayedStartupStep.value.label;
   }
 
@@ -136,9 +197,7 @@ function startupStatusClass(status: StartupStepStatus | null): string {
   return 'app-status__status-icon app-status__status-icon--pending';
 }
 
-function startupStepMeta(
-  step: StartupStepSnapshot | (StartupStepSnapshot & { showProgress?: boolean })
-): string {
+function startupStepMeta(step: StartupTimedSnapshot & { showProgress?: boolean }): string {
   if (step.status === 'error') {
     return step.errorMessage?.trim() || 'Failed';
   }
@@ -156,7 +215,7 @@ function startupStepMeta(
   return 'Pending';
 }
 
-function startupStepDuration(step: StartupStepSnapshot): string {
+function startupStepDuration(step: StartupTimedSnapshot): string {
   if (typeof step.durationMs !== 'number' || !Number.isFinite(step.durationMs)) {
     return step.status === 'in_progress' ? 'Running' : 'Pending';
   }
@@ -248,12 +307,34 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   color: var(--nc-text-secondary);
 }
 
+.app-status__history-expansion {
+  border-radius: 0;
+}
+
+.app-status__history-expansion :deep(.q-item) {
+  min-height: var(--app-status-history-item-height);
+  padding: 0;
+}
+
+.app-status__history-expansion :deep(.q-focus-helper) {
+  display: none;
+}
+
 .app-status__history-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 44px 30px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
+  width: 100%;
   min-height: var(--app-status-history-item-height);
+}
+
+.app-status__history-counter {
+  padding-top: 1px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--nc-text-secondary);
+  white-space: nowrap;
 }
 
 .app-status__progress-track {
@@ -296,7 +377,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   padding-right: 4px;
 }
 
-.app-status__history-item + .app-status__history-item {
+.app-status__history-entry + .app-status__history-entry {
   padding-top: 10px;
   border-top: 1px solid var(--nc-border);
 }
@@ -307,6 +388,25 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 
 .app-status__status-icon {
   margin-top: 1px;
+}
+
+.app-status__internal-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 0 10px 54px;
+}
+
+.app-status__internal-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.app-status__internal-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .app-status__status-icon--success {
@@ -342,10 +442,22 @@ body.body--dark .app-status__status-icon--pending {
 
 @media (max-width: 420px) {
   .app-status__history-item {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 38px 26px minmax(0, 1fr);
   }
 
   .app-status__history-duration {
+    grid-column: 3;
+  }
+
+  .app-status__internal-list {
+    padding-left: 64px;
+  }
+
+  .app-status__internal-item {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .app-status__internal-item .app-status__history-duration {
     grid-column: 2;
   }
 }

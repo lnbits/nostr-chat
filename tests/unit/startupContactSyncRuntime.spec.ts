@@ -48,7 +48,9 @@ describe('startup contact sync runtime', () => {
 
     const runtime = createStartupContactSyncRuntime({
       applyContactCursorStateToContact: vi.fn(async () => false),
+      beginStartupStep: vi.fn(),
       bumpContactListVersion: vi.fn(),
+      completeStartupStep: vi.fn(),
       createStartupBatchTracker: vi.fn(() => ({
         beginItem: vi.fn(),
         finishItem: vi.fn(),
@@ -58,6 +60,7 @@ describe('startup contact sync runtime', () => {
       ensureRelayConnections: vi.fn(async () => {}),
       ensureStoredEventSince: vi.fn(),
       fetchContactCursorEvents: vi.fn(async () => new Map()),
+      failStartupStep: vi.fn(),
       flushPendingEventSinceUpdate: vi.fn(),
       getLoggedInPublicKeyHex: vi.fn(() => PUBKEY),
       getRestoreStartupStatePromise: () => restoreStartupStatePromise,

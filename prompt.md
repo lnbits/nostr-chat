@@ -1,6 +1,7 @@
 prompt
 
-
+if `No internal tasks recorded.` then do not make it an expandable list
+the internal tasks should be indented (relative to the parent)
 
 
 do not have multiple subscriptions for the same events
@@ -34,6 +35,13 @@ do not show login page if the user is logged in. Just go back to chats
  - more clear membership management in group chats
 
  rename services to backend?
+
+
+
+ hide extension login on desktop and mobile
+ add `Encrypted private key import using ncryptsec` on all
+ add `Android Signer Application` for android
+ add ` Nostr Connect / Remote Signer` for desktop and mobile
 
 
 for group restore make sure to start with the last epoch, then work backwards
