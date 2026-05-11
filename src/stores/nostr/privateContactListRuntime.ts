@@ -184,7 +184,9 @@ export function createPrivateContactListRuntime({
     relayTracker?.seal();
 
     bumpContactListVersion();
-    queueTrackedContactSubscriptionsRefresh();
+    if (!isRestoringStartupState.value) {
+      queueTrackedContactSubscriptionsRefresh();
+    }
   }
 
   async function applyPrivateContactListEvent(event: NDKEvent): Promise<void> {

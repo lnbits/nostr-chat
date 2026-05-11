@@ -1,7 +1,7 @@
 <template>
-  <div class="app-status">
+  <div class="app-status" :class="{ 'app-status--embedded': embedded }">
     <section class="app-status__card">
-      <div class="app-status__card-header">
+      <div v-if="!embedded" class="app-status__card-header">
         <div class="app-status__card-copy">
           <div class="app-status__card-title">Startup History</div>
           <div class="app-status__card-subtitle">{{ cardSubtitle }}</div>
@@ -18,32 +18,99 @@
 
         <div v-else class="app-status__history-scroll">
           <div class="app-status__history-list">
-            <div
-              v-for="step in startupHistory"
-              :key="step.id"
-              class="app-status__history-item"
-            >
-              <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
-                <q-linear-progress
-                  indeterminate
-                  rounded
-                  color="primary"
-                  track-color="transparent"
-                  class="app-status__progress-bar"
-                />
+            <template v-for="(step, index) in startupHistory" :key="step.id">
+              <q-expansion-item
+                v-if="step.internalTasks.length > 0"
+                dense
+                expand-icon="keyboard_arrow_down"
+                class="app-status__history-entry app-status__history-expansion"
+              >
+                <template #header>
+                  <div class="app-status__history-item">
+                    <div class="app-status__history-counter">
+                      {{ index + 1 }}/{{ startupHistory.length }}
+                    </div>
+                    <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
+                      <q-linear-progress
+                        indeterminate
+                        rounded
+                        color="primary"
+                        track-color="transparent"
+                        class="app-status__progress-bar"
+                      />
+                    </div>
+                    <q-icon
+                      v-else
+                      :name="startupStatusIcon(step.status)"
+                      :class="startupStatusClass(step.status)"
+                      size="16px"
+                    />
+                    <div class="app-status__history-copy">
+                      <div class="app-status__history-label">{{ step.label }}</div>
+                      <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
+                    </div>
+                    <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
+                  </div>
+                </template>
+
+                <div class="app-status__internal-list">
+                  <div
+                    v-for="task in step.internalTasks"
+                    :key="task.id"
+                    class="app-status__internal-item"
+                  >
+                    <div v-if="task.status === 'in_progress'" class="app-status__progress-track">
+                      <q-linear-progress
+                        indeterminate
+                        rounded
+                        color="primary"
+                        track-color="transparent"
+                        class="app-status__progress-bar"
+                      />
+                    </div>
+                    <q-icon
+                      v-else
+                      :name="startupStatusIcon(task.status)"
+                      :class="startupStatusClass(task.status)"
+                      size="15px"
+                    />
+                    <div class="app-status__history-copy">
+                      <div class="app-status__internal-label">{{ task.label }}</div>
+                      <div class="app-status__history-meta">{{ startupStepMeta(task) }}</div>
+                    </div>
+                    <div class="app-status__history-duration">{{ startupStepDuration(task) }}</div>
+                  </div>
+                </div>
+              </q-expansion-item>
+
+              <div v-else class="app-status__history-entry app-status__history-static">
+                <div class="app-status__history-item">
+                  <div class="app-status__history-counter">
+                    {{ index + 1 }}/{{ startupHistory.length }}
+                  </div>
+                  <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
+                    <q-linear-progress
+                      indeterminate
+                      rounded
+                      color="primary"
+                      track-color="transparent"
+                      class="app-status__progress-bar"
+                    />
+                  </div>
+                  <q-icon
+                    v-else
+                    :name="startupStatusIcon(step.status)"
+                    :class="startupStatusClass(step.status)"
+                    size="16px"
+                  />
+                  <div class="app-status__history-copy">
+                    <div class="app-status__history-label">{{ step.label }}</div>
+                    <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
+                  </div>
+                  <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
+                </div>
               </div>
-              <q-icon
-                v-else
-                :name="startupStatusIcon(step.status)"
-                :class="startupStatusClass(step.status)"
-                size="16px"
-              />
-              <div class="app-status__history-copy">
-                <div class="app-status__history-label">{{ step.label }}</div>
-                <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
-              </div>
-              <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
-            </div>
+            </template>
           </div>
         </div>
       </div>
@@ -53,8 +120,17 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { StartupStepSnapshot, StartupStepStatus } from 'src/stores/nostrStore';
+import type { StartupStepStatus, StartupTimedSnapshot } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+
+withDefaults(
+  defineProps<{
+    embedded?: boolean;
+  }>(),
+  {
+    embedded: false
+  }
+);
 
 const nostrStore = useNostrStore();
 
@@ -79,25 +155,19 @@ const displayedStartupStep = computed(() => {
 });
 
 const startupHistory = computed(() => {
-  const inProgress = startupSteps.value
-    .filter((step) => step.status === 'in_progress')
-    .sort((first, second) => (second.startedAt ?? 0) - (first.startedAt ?? 0));
-  const finished = startupSteps.value
-    .filter((step) => step.status === 'success' || step.status === 'error')
-    .sort((first, second) => (second.completedAt ?? 0) - (first.completedAt ?? 0));
-  const pending = startupSteps.value
-    .filter((step) => step.status === 'pending')
-    .sort((first, second) => first.order - second.order);
-
-  return [...inProgress, ...finished, ...pending];
+  return [...startupSteps.value].sort((first, second) => first.order - second.order);
 });
 
 const hasHeaderActivity = computed(() => {
-  return displayedStartupStep.value?.status === 'in_progress' || displayedStartupStep.value?.showProgress === true;
+  return startupSteps.value.some(
+    (step) =>
+      step.status === 'in_progress' ||
+      step.internalTasks.some((task) => task.status === 'in_progress')
+  );
 });
 
 const cardSubtitle = computed(() => {
-  if (hasHeaderActivity.value && displayedStartupStep.value) {
+  if (hasHeaderActivity.value && displayedStartupStep.value?.showProgress === true) {
     return displayedStartupStep.value.label;
   }
 
@@ -136,27 +206,38 @@ function startupStatusClass(status: StartupStepStatus | null): string {
   return 'app-status__status-icon app-status__status-icon--pending';
 }
 
-function startupStepMeta(
-  step: StartupStepSnapshot | (StartupStepSnapshot & { showProgress?: boolean })
-): string {
+function startupStepMeta(step: StartupTimedSnapshot & { showProgress?: boolean }): string {
+  const eventCountMeta = startupStepEventCountMeta(step);
   if (step.status === 'error') {
-    return step.errorMessage?.trim() || 'Failed';
+    return [step.errorMessage?.trim() || 'Failed', eventCountMeta].filter(Boolean).join(' - ');
   }
 
   if (step.status === 'success') {
-    return `Completed in ${startupStepDuration(step)}`;
+    return [`Completed in ${startupStepDuration(step)}`, eventCountMeta]
+      .filter(Boolean)
+      .join(' - ');
   }
 
   if (step.status === 'in_progress') {
-    return 'showProgress' in step && step.showProgress === true
+    const statusMeta = 'showProgress' in step && step.showProgress === true
       ? 'Fetching from relays...'
       : 'In progress';
+    return [statusMeta, eventCountMeta].filter(Boolean).join(' - ');
   }
 
-  return 'Pending';
+  return ['Pending', eventCountMeta].filter(Boolean).join(' - ');
 }
 
-function startupStepDuration(step: StartupStepSnapshot): string {
+function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
+  if (typeof step.eventCount !== 'number' || !Number.isFinite(step.eventCount)) {
+    return null;
+  }
+
+  const eventCount = Math.max(0, Math.floor(step.eventCount));
+  return `${eventCount} ${eventCount === 1 ? 'event' : 'events'}`;
+}
+
+function startupStepDuration(step: StartupTimedSnapshot): string {
   if (typeof step.durationMs !== 'number' || !Number.isFinite(step.durationMs)) {
     return step.status === 'in_progress' ? 'Running' : 'Pending';
   }
@@ -176,6 +257,10 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   min-height: 0;
 }
 
+.app-status--embedded {
+  height: auto;
+}
+
 .app-status__card {
   display: flex;
   flex-direction: column;
@@ -185,6 +270,14 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   border-radius: 14px;
   overflow: hidden;
   background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
+}
+
+.app-status--embedded .app-status__card {
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .app-status__card-header {
@@ -242,18 +335,44 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   padding: 14px 16px 16px;
 }
 
+.app-status--embedded .app-status__content {
+  padding: 0;
+}
+
 .app-status__details-copy {
   font-size: 12px;
   line-height: 1.5;
   color: var(--nc-text-secondary);
 }
 
+.app-status__history-expansion {
+  border-radius: 0;
+}
+
+.app-status__history-expansion :deep(.q-item) {
+  min-height: var(--app-status-history-item-height);
+  padding: 0;
+}
+
+.app-status__history-expansion :deep(.q-focus-helper) {
+  display: none;
+}
+
 .app-status__history-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 44px 30px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
+  width: 100%;
   min-height: var(--app-status-history-item-height);
+}
+
+.app-status__history-counter {
+  padding-top: 1px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--nc-text-secondary);
+  white-space: nowrap;
 }
 
 .app-status__progress-track {
@@ -296,7 +415,12 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   padding-right: 4px;
 }
 
-.app-status__history-item + .app-status__history-item {
+.app-status--embedded .app-status__history-scroll {
+  overflow: visible;
+  padding-right: 0;
+}
+
+.app-status__history-entry + .app-status__history-entry {
   padding-top: 10px;
   border-top: 1px solid var(--nc-border);
 }
@@ -307,6 +431,25 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 
 .app-status__status-icon {
   margin-top: 1px;
+}
+
+.app-status__internal-list {
+  display: grid;
+  gap: 8px;
+  padding: 2px 0 10px 94px;
+}
+
+.app-status__internal-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.app-status__internal-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .app-status__status-icon--success {
@@ -342,10 +485,22 @@ body.body--dark .app-status__status-icon--pending {
 
 @media (max-width: 420px) {
   .app-status__history-item {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: 38px 26px minmax(0, 1fr);
   }
 
   .app-status__history-duration {
+    grid-column: 3;
+  }
+
+  .app-status__internal-list {
+    padding-left: 84px;
+  }
+
+  .app-status__internal-item {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .app-status__internal-item .app-status__history-duration {
     grid-column: 2;
   }
 }

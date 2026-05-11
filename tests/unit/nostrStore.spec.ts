@@ -38,18 +38,23 @@ describe('nostrStore logic', () => {
   it('creates pending startup-step snapshots in stable order for restore flows', () => {
     const steps = createInitialStartupStepSnapshots();
 
-    expect(steps).toHaveLength(12);
+    expect(steps).toHaveLength(15);
     expect(steps[0]).toMatchObject({
-      id: 'logged-in-profile',
+      id: 'my-relays-restore',
       order: 1,
       status: 'pending',
     });
     expect(steps[steps.length - 1]).toMatchObject({
-      id: 'recent-chat-relays',
-      order: 12,
+      id: 'contact-relay-list-subscribe',
+      order: 15,
       status: 'pending',
     });
-    expect(steps.every((step) => step.startedAt === null && step.completedAt === null)).toBe(true);
+    expect(
+      steps.every(
+        (step) =>
+          step.startedAt === null && step.completedAt === null && step.internalTasks.length === 0
+      )
+    ).toBe(true);
   });
 
   it('transitions startup steps through begin, complete, fail, and reset without stale state leakage', () => {

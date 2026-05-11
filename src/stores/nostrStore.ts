@@ -112,9 +112,12 @@ import { ref, watch } from 'vue';
 
 export type {
   StartupDisplaySnapshot,
+  StartupInternalTaskSnapshot,
   StartupStepId,
   StartupStepSnapshot,
   StartupStepStatus,
+  StartupTimedSnapshot,
+  StartupTrackId,
 } from 'src/stores/nostr/startupState';
 export type {
   AuthMethod,
@@ -348,12 +351,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     shouldApplyPrivateContactListEvent,
   } = createTrackedContactStateRuntime();
   const {
+    beginStartupInternalTask,
     beginStartupStep,
+    completeStartupInternalTask,
     completeStartupStep,
     createStartupBatchTracker,
+    failStartupInternalTask,
     failStartupStep,
     getStartupStepSnapshot,
     resetStartupStepTracking,
+    updateStartupInternalTask,
   } = createStartupRuntime({
     startupDisplay,
     startupState: startupRuntimeState,
@@ -1346,11 +1353,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     startPrivateMessagesStartupBackfill: startPrivateMessagesStartupBackfillImpl,
     stopPrivateMessagesBackfill: stopPrivateMessagesBackfillImpl,
   } = createPrivateMessagesBackfillRuntime({
+    beginStartupInternalTask,
     buildFilterSinceDetails,
     buildFilterUntilDetails,
     buildPrivateMessageSubscriptionTargetDetails,
     buildSubscriptionRelayDetails,
+    completeStartupInternalTask,
+    completeStartupStep,
     ensureRelayConnections,
+    failStartupInternalTask,
+    failStartupStep,
     flushPrivateMessagesUiRefreshNow,
     formatSubscriptionLogValue,
     getLoggedInPublicKeyHex,
@@ -1369,6 +1381,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     toOptionalIsoTimestampFromUnix,
     updateStoredEventSinceFromCreatedAt,
     updateStoredPrivateMessagesLastReceivedFromCreatedAt,
+    updateStartupInternalTask,
     writePrivateMessagesBackfillState,
   });
   repairMissingMessageDependencyRuntime = repairMissingMessageDependencyImpl;
@@ -1637,12 +1650,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     syncRecentChatContacts,
   } = createStartupContactSyncRuntime({
     applyContactCursorStateToContact,
+    beginStartupStep,
     bumpContactListVersion,
+    completeStartupStep,
     createStartupBatchTracker,
     deriveContactCursorDTag,
     ensureRelayConnections,
     ensureStoredEventSince,
     fetchContactCursorEvents,
+    failStartupStep,
     flushPendingEventSinceUpdate,
     getLoggedInPublicKeyHex,
     getRestoreStartupStatePromise: () => restoreStartupStatePromise,

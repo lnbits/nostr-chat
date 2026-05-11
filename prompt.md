@@ -1,15 +1,16 @@
 prompt
 
-when sending a message (DM or Group message)
-
-the progress bar should be shown own the chat thread header too
-wait for EOS for private list
 
 
 do not have multiple subscriptions for the same events
 
 do not notify when restoring
 how do I know its restoring?
+if a message is after the last read message -> no not show notifications
+
+
+
+do not show login page if the user is logged in. Just go back to chats
 
 
 App init:
@@ -31,19 +32,24 @@ post to user write relays
 
 confety emoji
 
-do not show login page if tthe user is logged in. Just go back to chats
+
 
 @someUser
  - more clear membership management in group chats
 
  rename services to backend?
 
- on open app from notification card:
-  - open the /chats page
-  - fetch the notification for the last event id
-  - if only one event
+
+
+ hide extension login on desktop and mobile
+ add `Encrypted private key import using ncryptsec` on all
+ add `Android Signer Application` for android
+ add ` Nostr Connect / Remote Signer` for desktop and mobile
+
 
 for group restore make sure to start with the last epoch, then work backwards
+
+underad always at the top & group events do not count as unread
 
 the electron app should only show fresh notifications
 do not show 100 notifications on start

@@ -347,14 +347,14 @@ describe('nostr runtime core logic', () => {
       startupStepMinProgressMs: 100,
     });
 
-    runtime.beginStartupStep('my-relay-list');
+    runtime.beginStartupStep('my-relays-restore');
     expect(startupDisplay.value).toMatchObject({
-      stepId: 'my-relay-list',
+      stepId: 'my-relays-restore',
       status: 'in_progress',
       showProgress: true,
     });
 
-    runtime.completeStartupStep('my-relay-list');
+    runtime.completeStartupStep('my-relays-restore');
     expect(startupDisplay.value.status).toBe('in_progress');
     await vi.advanceTimersByTimeAsync(100);
     expect(startupDisplay.value.status).toBe('success');
@@ -364,16 +364,28 @@ describe('nostr runtime core logic', () => {
     batchTracker.beginItem();
     batchTracker.seal();
     batchTracker.finishItem();
-    expect(runtime.getStartupStepSnapshot('private-contact-relays').status).toBe('in_progress');
+    expect(
+      runtime
+        .getStartupStepSnapshot('private-contact-relays')
+        .internalTasks.find((task) => task.id === 'private-contact-relays')
+    ).toMatchObject({ status: 'in_progress' });
     batchTracker.finishItem();
     await vi.advanceTimersByTimeAsync(100);
-    expect(runtime.getStartupStepSnapshot('private-contact-relays').status).toBe('success');
+    expect(
+      runtime
+        .getStartupStepSnapshot('private-contact-relays')
+        .internalTasks.find((task) => task.id === 'private-contact-relays')
+    ).toMatchObject({ status: 'success' });
 
     const failingTracker = runtime.createStartupBatchTracker('private-message-events');
     failingTracker.beginItem();
     failingTracker.finishItem(new Error('boom'));
     await vi.advanceTimersByTimeAsync(100);
-    expect(runtime.getStartupStepSnapshot('private-message-events')).toMatchObject({
+    expect(
+      runtime
+        .getStartupStepSnapshot('private-message-events')
+        .internalTasks.find((task) => task.id === 'private-message-events')
+    ).toMatchObject({
       status: 'error',
       errorMessage: 'boom',
     });

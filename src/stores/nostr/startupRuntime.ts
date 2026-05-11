@@ -1,11 +1,15 @@
 import {
-  beginStartupStepSnapshotValue,
-  completeStartupStepSnapshotValue,
-  failStartupStepSnapshotValue,
+  beginStartupTimedSnapshotValue,
+  completeStartupTimedSnapshotValue,
+  failStartupTimedSnapshotValue,
+  getStartupInternalTaskDefinitionValue,
   resetStartupStepSnapshotsValue,
+  resolveStartupStepIdValue,
   type StartupDisplaySnapshot,
+  type StartupInternalTaskSnapshot,
   type StartupStepId,
   type StartupStepSnapshot,
+  type StartupTrackId,
 } from 'src/stores/nostr/startupState';
 import type { Ref } from 'vue';
 
@@ -22,6 +26,11 @@ interface StartupRuntimeDeps {
   startupStepMinProgressMs: number;
 }
 
+interface StartupInternalTaskUpdate {
+  eventCount?: number | null;
+  label?: string;
+}
+
 export function createStartupRuntime({
   startupDisplay,
   startupState,
@@ -35,43 +44,128 @@ export function createStartupRuntime({
     }
   }
 
-  function getStartupStepSnapshot(stepId: StartupStepId): StartupStepSnapshot {
+  function getStartupStepSnapshot(stepId: StartupTrackId): StartupStepSnapshot {
+    const parentStepId = resolveStartupStepIdValue(stepId);
     const step = startupSteps.value.find((entry) => entry.id === stepId);
+    if (step) {
+      return step;
+    }
+
+    const parentStep = startupSteps.value.find((entry) => entry.id === parentStepId);
+    if (parentStep) {
+      return parentStep;
+    }
+
+    throw new Error(`Unknown startup step: ${stepId}`);
+  }
+
+  function getStartupInternalTaskSnapshot(
+    taskId: string,
+    parentStepId?: StartupStepId
+  ): StartupInternalTaskSnapshot | null {
+    const taskDefinition = getStartupInternalTaskDefinitionValue(taskId);
+    if (taskDefinition) {
+      const parentStep = getStartupStepSnapshot(taskDefinition.parentId);
+      return parentStep.internalTasks.find((entry) => entry.id === taskId) ?? null;
+    }
+
+    if (parentStepId) {
+      const parentStep = getStartupStepSnapshot(parentStepId);
+      return parentStep.internalTasks.find((entry) => entry.id === taskId) ?? null;
+    }
+
+    for (const step of startupSteps.value) {
+      const task = step.internalTasks.find((entry) => entry.id === taskId);
+      if (task) {
+        return task;
+      }
+    }
+
+    return null;
+  }
+
+  function ensureStartupInternalTaskSnapshot(options: {
+    taskId: string;
+    parentStepId?: StartupStepId;
+    label?: string;
+    eventCount?: number | null;
+  }): StartupInternalTaskSnapshot {
+    const { taskId } = options;
+    const taskDefinition = getStartupInternalTaskDefinitionValue(taskId);
+    const parentStepId = options.parentStepId ?? taskDefinition?.parentId;
+    if (!parentStepId) {
+      throw new Error(`Unknown startup task: ${taskId}`);
+    }
+
+    const parentStep = getStartupStepSnapshot(parentStepId);
+    const existingTask = parentStep.internalTasks.find((entry) => entry.id === taskId);
+    if (existingTask) {
+      if (options.label) {
+        existingTask.label = options.label;
+      }
+      if (options.eventCount !== undefined) {
+        existingTask.eventCount = options.eventCount;
+      }
+      return existingTask;
+    }
+
+    const nextTask: StartupInternalTaskSnapshot = {
+      id: taskId,
+      label: options.label ?? taskDefinition?.label ?? taskId,
+      status: 'pending',
+      startedAt: null,
+      completedAt: null,
+      durationMs: null,
+      errorMessage: null,
+      eventCount: options.eventCount ?? null,
+    };
+    parentStep.internalTasks.push(nextTask);
+    return nextTask;
+  }
+
+  function getStartupTrackLabel(stepId: StartupTrackId): string {
+    const internalTask = getStartupInternalTaskDefinitionValue(stepId);
+    if (internalTask) {
+      return internalTask.label;
+    }
+
+    const step = getStartupStepSnapshot(stepId);
     if (!step) {
       throw new Error(`Unknown startup step: ${stepId}`);
     }
 
-    return step;
+    return step.label;
   }
 
-  function showStartupStepProgress(stepId: StartupStepId): void {
-    const step = getStartupStepSnapshot(stepId);
+  function showStartupStepProgress(stepId: StartupTrackId): void {
+    const parentStepId = resolveStartupStepIdValue(stepId);
     startupState.startupDisplayToken += 1;
     startupState.startupDisplayShownAt = Date.now();
     clearStartupDisplayTimer();
     startupDisplay.value = {
-      stepId,
-      label: step.label,
+      stepId: parentStepId,
+      label: getStartupTrackLabel(stepId),
       status: 'in_progress',
       showProgress: true,
     };
   }
 
-  function finalizeStartupStepDisplay(stepId: StartupStepId, status: 'success' | 'error'): void {
-    const step = getStartupStepSnapshot(stepId);
-    if (startupDisplay.value.stepId !== stepId) {
+  function finalizeStartupStepDisplay(stepId: StartupTrackId, status: 'success' | 'error'): void {
+    const parentStepId = resolveStartupStepIdValue(stepId);
+    if (startupDisplay.value.stepId !== parentStepId) {
       return;
     }
 
     const displayToken = ++startupState.startupDisplayToken;
+    const label = getStartupTrackLabel(stepId);
     const applyFinalState = () => {
       if (displayToken !== startupState.startupDisplayToken) {
         return;
       }
 
       startupDisplay.value = {
-        stepId,
-        label: step.label,
+        stepId: parentStepId,
+        label,
         status,
         showProgress: false,
       };
@@ -94,25 +188,69 @@ export function createStartupRuntime({
     applyFinalState();
   }
 
-  function beginStartupStep(stepId: StartupStepId): void {
-    const step = getStartupStepSnapshot(stepId);
-    const nextStep = beginStartupStepSnapshotValue(step, Date.now());
-    if (nextStep === step) {
+  function beginStartupStep(stepId: StartupTrackId): void {
+    const now = Date.now();
+    const internalTaskDefinition = getStartupInternalTaskDefinitionValue(stepId);
+    const parentStep = getStartupStepSnapshot(stepId);
+    const nextStep = beginStartupTimedSnapshotValue(parentStep, now);
+    if (nextStep === parentStep) {
+      if (internalTaskDefinition) {
+        const task = ensureStartupInternalTaskSnapshot({ taskId: internalTaskDefinition.id });
+        Object.assign(task, beginStartupTimedSnapshotValue(task, now));
+        showStartupStepProgress(stepId);
+      }
       return;
     }
-    Object.assign(step, nextStep);
+
+    Object.assign(parentStep, nextStep);
+    if (internalTaskDefinition) {
+      const task = ensureStartupInternalTaskSnapshot({ taskId: internalTaskDefinition.id });
+      Object.assign(task, beginStartupTimedSnapshotValue(task, now));
+    }
     showStartupStepProgress(stepId);
   }
 
-  function completeStartupStep(stepId: StartupStepId): void {
+  function completeStartupStep(stepId: StartupTrackId): void {
+    const now = Date.now();
+    const internalTaskDefinition = getStartupInternalTaskDefinitionValue(stepId);
+    if (internalTaskDefinition) {
+      const task = ensureStartupInternalTaskSnapshot({ taskId: internalTaskDefinition.id });
+      Object.assign(task, completeStartupTimedSnapshotValue(task, now));
+      if (
+        'completeParentOnFinish' in internalTaskDefinition &&
+        internalTaskDefinition.completeParentOnFinish === true
+      ) {
+        const parentStep = getStartupStepSnapshot(internalTaskDefinition.parentId);
+        Object.assign(parentStep, completeStartupTimedSnapshotValue(parentStep, now));
+      }
+      finalizeStartupStepDisplay(stepId, 'success');
+      return;
+    }
+
     const step = getStartupStepSnapshot(stepId);
-    Object.assign(step, completeStartupStepSnapshotValue(step, Date.now()));
+    Object.assign(step, completeStartupTimedSnapshotValue(step, now));
     finalizeStartupStepDisplay(stepId, 'success');
   }
 
-  function failStartupStep(stepId: StartupStepId, error: unknown): void {
+  function failStartupStep(stepId: StartupTrackId, error: unknown): void {
+    const now = Date.now();
+    const internalTaskDefinition = getStartupInternalTaskDefinitionValue(stepId);
+    if (internalTaskDefinition) {
+      const task = ensureStartupInternalTaskSnapshot({ taskId: internalTaskDefinition.id });
+      Object.assign(task, failStartupTimedSnapshotValue(task, error, now));
+      if (
+        'completeParentOnFinish' in internalTaskDefinition &&
+        internalTaskDefinition.completeParentOnFinish === true
+      ) {
+        const parentStep = getStartupStepSnapshot(internalTaskDefinition.parentId);
+        Object.assign(parentStep, failStartupTimedSnapshotValue(parentStep, error, now));
+      }
+      finalizeStartupStepDisplay(stepId, 'error');
+      return;
+    }
+
     const step = getStartupStepSnapshot(stepId);
-    Object.assign(step, failStartupStepSnapshotValue(step, error, Date.now()));
+    Object.assign(step, failStartupTimedSnapshotValue(step, error, now));
     finalizeStartupStepDisplay(stepId, 'error');
   }
 
@@ -129,7 +267,92 @@ export function createStartupRuntime({
     };
   }
 
-  function createStartupBatchTracker(stepId: StartupStepId): {
+  function beginStartupInternalTask(
+    parentStepId: StartupStepId,
+    taskId: string,
+    label: string,
+    updates: StartupInternalTaskUpdate = {}
+  ): void {
+    const now = Date.now();
+    const parentStep = getStartupStepSnapshot(parentStepId);
+    if (parentStep.status === 'in_progress') {
+      Object.assign(parentStep, beginStartupTimedSnapshotValue(parentStep, now));
+    } else if (parentStep.startedAt !== null) {
+      Object.assign(parentStep, {
+        ...parentStep,
+        status: 'in_progress',
+        completedAt: null,
+        durationMs: null,
+        errorMessage: null,
+      });
+    } else {
+      Object.assign(parentStep, beginStartupTimedSnapshotValue(parentStep, now));
+    }
+    const task = ensureStartupInternalTaskSnapshot({
+      taskId,
+      parentStepId,
+      label,
+      eventCount: updates.eventCount ?? null,
+    });
+    Object.assign(task, beginStartupTimedSnapshotValue(task, now));
+    if (updates.label) {
+      task.label = updates.label;
+    }
+    showStartupStepProgress(parentStepId);
+  }
+
+  function updateStartupInternalTask(
+    parentStepId: StartupStepId,
+    taskId: string,
+    updates: StartupInternalTaskUpdate
+  ): void {
+    const task = getStartupInternalTaskSnapshot(taskId, parentStepId);
+    if (!task) {
+      return;
+    }
+
+    if (updates.label) {
+      task.label = updates.label;
+    }
+    if (updates.eventCount !== undefined) {
+      task.eventCount = updates.eventCount;
+    }
+  }
+
+  function completeStartupInternalTask(
+    parentStepId: StartupStepId,
+    taskId: string,
+    updates: StartupInternalTaskUpdate = {}
+  ): void {
+    const now = Date.now();
+    const task = getStartupInternalTaskSnapshot(taskId, parentStepId);
+    if (!task) {
+      return;
+    }
+
+    updateStartupInternalTask(parentStepId, taskId, updates);
+    Object.assign(task, completeStartupTimedSnapshotValue(task, now));
+    finalizeStartupStepDisplay(parentStepId, 'success');
+  }
+
+  function failStartupInternalTask(
+    parentStepId: StartupStepId,
+    taskId: string,
+    error: unknown,
+    updates: StartupInternalTaskUpdate = {}
+  ): void {
+    const now = Date.now();
+    const task = getStartupInternalTaskSnapshot(taskId, parentStepId);
+    if (!task) {
+      return;
+    }
+
+    updateStartupInternalTask(parentStepId, taskId, updates);
+    Object.assign(task, failStartupTimedSnapshotValue(task, error, now));
+    finalizeStartupStepDisplay(parentStepId, 'error');
+  }
+
+  function createStartupBatchTracker(stepId: StartupTrackId): {
     beginItem: () => void;
     finishItem: (error?: unknown) => void;
     seal: () => void;
@@ -140,6 +363,15 @@ export function createStartupRuntime({
 
     const maybeComplete = () => {
       if (!sealed || inFlightCount > 0) {
+        return;
+      }
+
+      const internalTaskDefinition = getStartupInternalTaskDefinitionValue(stepId);
+      if (internalTaskDefinition) {
+        const task = getStartupInternalTaskSnapshot(internalTaskDefinition.id);
+        if (task?.status === 'in_progress') {
+          completeStartupStep(stepId);
+        }
         return;
       }
 
@@ -185,14 +417,18 @@ export function createStartupRuntime({
   }
 
   return {
+    beginStartupInternalTask,
     beginStartupStep,
     clearStartupDisplayTimer,
+    completeStartupInternalTask,
     completeStartupStep,
     createStartupBatchTracker,
+    failStartupInternalTask,
     failStartupStep,
     finalizeStartupStepDisplay,
     getStartupStepSnapshot,
     resetStartupStepTracking,
     showStartupStepProgress,
+    updateStartupInternalTask,
   };
 }

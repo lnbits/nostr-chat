@@ -94,6 +94,7 @@
           />
 
           <ReconnectHealingBanner class="sidebar-top__healing" />
+          <StartupHistoryBanner class="sidebar-top__healing" />
         </div>
 
         <ChatList
@@ -157,6 +158,7 @@
           :is-initializing="isThreadInitializing"
           :show-back-button="isMobile"
           :show-reconnect-healing-banner="isMobile"
+          :show-startup-history-banner="isMobile"
           :keyboard-visible="isVisualViewportKeyboardVisible"
           :mobile-viewport-height="visibleViewportHeight"
           @send="handleSend"
@@ -246,6 +248,7 @@ import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
 import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
+import StartupHistoryBanner from 'src/components/StartupHistoryBanner.vue';
 import { useNostrStore } from 'src/stores/nostrStore';
 
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
