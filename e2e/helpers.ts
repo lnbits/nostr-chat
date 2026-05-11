@@ -696,7 +696,7 @@ export async function bootstrapExtensionUser(
   await page.goto('/#/login');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await page.getByRole('button', { name: 'Login with Extension', exact: true }).click();
-  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/settings\/status$/);
+  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
 
   if (await page.getByText('Enable Browser Notifications', { exact: true }).isVisible()) {
     await page.getByRole('button', { name: 'Not now', exact: true }).click();
