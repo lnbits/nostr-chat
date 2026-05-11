@@ -6,6 +6,11 @@ do not have multiple subscriptions for the same events
 
 do not notify when restoring
 how do I know its restoring?
+if a message is after the last read message -> no not show notifications
+
+
+
+do not show login page if the user is logged in. Just go back to chats
 
 
 App init:

@@ -59,6 +59,7 @@
           />
 
           <ReconnectHealingBanner class="contacts-sidebar__healing" />
+          <StartupHistoryBanner class="contacts-sidebar__healing" />
         </div>
 
         <q-scroll-area class="contacts-list">
@@ -204,6 +205,7 @@ import ContactProfile from 'src/components/ContactProfile.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
 import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
+import StartupHistoryBanner from 'src/components/StartupHistoryBanner.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';

@@ -25,6 +25,7 @@
           </div>
 
           <ReconnectHealingBanner />
+          <StartupHistoryBanner />
         </div>
 
         <q-list class="settings-menu">
@@ -115,6 +116,7 @@ import { useRoute, useRouter } from 'vue-router';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
+import StartupHistoryBanner from 'src/components/StartupHistoryBanner.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { unregisterAndroidPushNotifications } from 'src/services/androidPushNotificationService';
 import { useNostrStore } from 'src/stores/nostrStore';
