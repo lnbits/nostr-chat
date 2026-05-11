@@ -37,7 +37,14 @@ const nostrStore = useNostrStore();
 const RECONNECT_HEALING_DETAILS_STORAGE_KEY = 'nostr-chat:reconnect-healing-details-visible';
 
 const isDetailsVisible = ref(false);
-const isVisible = computed(() => nostrStore.isReconnectHealing);
+const hasStartupActivity = computed(() =>
+  nostrStore.startupSteps.some(
+    (step) =>
+      step.status === 'in_progress' ||
+      step.internalTasks.some((task) => task.status === 'in_progress')
+  )
+);
+const isVisible = computed(() => nostrStore.isReconnectHealing && !hasStartupActivity.value);
 const statusLabel = computed(() => nostrStore.reconnectHealingStatusLabel ?? 'Preparing sync');
 const detailsButtonLabel = computed(() =>
   isDetailsVisible.value ? 'Hide sync details' : 'Show sync details'
