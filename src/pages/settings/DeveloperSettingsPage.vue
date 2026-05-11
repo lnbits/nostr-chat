@@ -831,7 +831,7 @@ const expandedCards = ref<Record<ExpandableDeveloperCardKey, boolean>>({
   nostrSession: false,
   privateMessagesSubscription: false,
   groupMessagesSubscription: false,
-  relayStatus: true,
+  relayStatus: false,
   pendingQueues: true,
   recentTrace: true,
   startupHistory: false
