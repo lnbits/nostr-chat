@@ -18,12 +18,12 @@ import {
   PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
 } from 'src/stores/nostr/constants';
+import type { StartupStepId } from 'src/stores/nostr/startupState';
 import type {
   MissingMessageDependencyRepairReason,
   PrivateMessagesBackfillState,
   RepairMissingMessageDependencyOptions,
 } from 'src/stores/nostr/types';
-import type { StartupStepId } from 'src/stores/nostr/startupState';
 
 interface GroupEpochHistoryRestoreOptions {
   force?: boolean;
@@ -1274,14 +1274,9 @@ export function createPrivateMessagesBackfillRuntime({
         writePrivateMessagesBackfillState(state);
         const startupTaskId = buildStartupBackfillChunkTaskId(state.nextSince, state.nextUntil);
         const startupTaskLabel = formatStartupBackfillChunkLabel(state.nextSince, state.nextUntil);
-        beginStartupInternalTask(
-          'private-messages-subscribe',
-          startupTaskId,
-          startupTaskLabel,
-          {
-            eventCount: 0,
-          }
-        );
+        beginStartupInternalTask('private-messages-subscribe', startupTaskId, startupTaskLabel, {
+          eventCount: 0,
+        });
         logSubscription('private-messages', 'backfill-window-start', {
           signature,
           ...buildFilterSinceDetails(state.nextSince),

@@ -216,7 +216,10 @@ export function createStartupRuntime({
     if (internalTaskDefinition) {
       const task = ensureStartupInternalTaskSnapshot({ taskId: internalTaskDefinition.id });
       Object.assign(task, completeStartupTimedSnapshotValue(task, now));
-      if (internalTaskDefinition.completeParentOnFinish === true) {
+      if (
+        'completeParentOnFinish' in internalTaskDefinition &&
+        internalTaskDefinition.completeParentOnFinish === true
+      ) {
         const parentStep = getStartupStepSnapshot(internalTaskDefinition.parentId);
         Object.assign(parentStep, completeStartupTimedSnapshotValue(parentStep, now));
       }
@@ -235,7 +238,10 @@ export function createStartupRuntime({
     if (internalTaskDefinition) {
       const task = ensureStartupInternalTaskSnapshot({ taskId: internalTaskDefinition.id });
       Object.assign(task, failStartupTimedSnapshotValue(task, error, now));
-      if (internalTaskDefinition.completeParentOnFinish === true) {
+      if (
+        'completeParentOnFinish' in internalTaskDefinition &&
+        internalTaskDefinition.completeParentOnFinish === true
+      ) {
         const parentStep = getStartupStepSnapshot(internalTaskDefinition.parentId);
         Object.assign(parentStep, failStartupTimedSnapshotValue(parentStep, error, now));
       }
