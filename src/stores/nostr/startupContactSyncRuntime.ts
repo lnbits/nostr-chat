@@ -246,11 +246,6 @@ export function createStartupContactSyncRuntime({
         profileTracker.seal();
         relayTracker.seal();
       }
-
-      await subscribePrivateMessagesForLoggedInUser(true, {
-        restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-        startupTrackStep: true,
-      });
     })().finally(() => {
       setSyncLoggedInContactProfilePromise(null);
     });
@@ -393,16 +388,6 @@ export function createStartupContactSyncRuntime({
     });
     const nextPromise = (async () => {
       try {
-        await runStartupTask(
-          'outbound-message-replay',
-          'Failed to start outbound message replay on startup',
-          () => startOutboundMessageReplay()
-        );
-        await runStartupTask(
-          'logged-in-contact-profile',
-          'Failed to sync logged-in contact on startup',
-          () => syncLoggedInContactProfile(seedRelayUrls)
-        );
         await runStartupTask('my-relays-restore', 'Failed to restore My Relays on startup', () =>
           restoreMyRelayList(seedRelayUrls)
         );
@@ -410,6 +395,11 @@ export function createStartupContactSyncRuntime({
           'my-relays-subscribe',
           'Failed to subscribe to My Relays updates on startup',
           () => subscribeMyRelayListUpdates(seedRelayUrls)
+        );
+        await runStartupTask(
+          'outbound-message-replay',
+          'Failed to start outbound message replay on startup',
+          () => startOutboundMessageReplay()
         );
         await runStartupTask(
           'private-preferences',
@@ -437,6 +427,16 @@ export function createStartupContactSyncRuntime({
           () => restoreContactCursorState(seedRelayUrls)
         );
         await runStartupTask(
+          'logged-in-contact-profile',
+          'Failed to sync logged-in contact on startup',
+          () => syncLoggedInContactProfile(seedRelayUrls)
+        );
+        await runStartupTask(
+          'recent-chat-contacts-sync',
+          'Failed to sync recent chat contacts on startup',
+          () => syncRecentChatContacts(seedRelayUrls)
+        );
+        await runStartupTask(
           'private-contact-list-subscribe',
           'Failed to subscribe to private contact list updates on startup',
           () => subscribePrivateContactListUpdates(seedRelayUrls)
@@ -444,17 +444,16 @@ export function createStartupContactSyncRuntime({
         await runStartupTask(
           'private-messages-subscribe',
           'Failed to subscribe to private messages on startup',
-          () => subscribePrivateMessagesForLoggedInUser()
+          () =>
+            subscribePrivateMessagesForLoggedInUser(true, {
+              restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+              startupTrackStep: true,
+            })
         );
         await runStartupTask(
           'group-rosters-subscribe',
           'Failed to subscribe to group rosters on startup',
           () => subscribeGroupMembershipRosterUpdates(seedRelayUrls)
-        );
-        await runStartupTask(
-          'recent-chat-contacts-sync',
-          'Failed to sync recent chat contacts on startup',
-          () => syncRecentChatContacts(seedRelayUrls)
         );
         await runStartupTask(
           'contact-profile-subscribe',

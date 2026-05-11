@@ -40,12 +40,12 @@ describe('nostrStore logic', () => {
 
     expect(steps).toHaveLength(12);
     expect(steps[0]).toMatchObject({
-      id: 'logged-in-profile',
+      id: 'my-relay-list',
       order: 1,
       status: 'pending',
     });
     expect(steps[steps.length - 1]).toMatchObject({
-      id: 'recent-chat-relays',
+      id: 'private-message-events',
       order: 12,
       status: 'pending',
     });

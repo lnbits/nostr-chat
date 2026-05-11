@@ -52,6 +52,10 @@ interface MyRelayListRuntimeDeps {
   updateStoredEventSinceFromCreatedAt: (value: unknown) => void;
 }
 
+interface ApplyMyRelayListEntriesOptions {
+  refreshSubscriptions?: boolean;
+}
+
 export function createMyRelayListRuntime({
   beginStartupStep,
   buildSubscriptionEventDetails,
@@ -118,7 +122,8 @@ export function createMyRelayListRuntime({
   }
 
   async function updateLoggedInUserRelayList(
-    relayEntries: RelayListMetadataEntry[]
+    relayEntries: RelayListMetadataEntry[],
+    options: ApplyMyRelayListEntriesOptions = {}
   ): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
@@ -127,6 +132,7 @@ export function createMyRelayListRuntime({
 
     const normalizedRelayEntries =
       inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
+    const shouldRefreshSubscriptions = options.refreshSubscriptions !== false;
     await contactsService.init();
 
     const existingContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
@@ -138,20 +144,24 @@ export function createMyRelayListRuntime({
         meta: {},
         relays: normalizedRelayEntries,
       });
-      try {
-        await subscribePrivateMessagesForLoggedInUser(true);
-      } catch (error) {
-        console.warn('Failed to subscribe to private messages', error);
+      if (shouldRefreshSubscriptions) {
+        try {
+          await subscribePrivateMessagesForLoggedInUser(true);
+        } catch (error) {
+          console.warn('Failed to subscribe to private messages', error);
+        }
+        queueTrackedContactSubscriptionsRefresh();
       }
-      queueTrackedContactSubscriptionsRefresh();
       return;
     }
 
     await contactsService.updateContact(existingContact.id, {
       relays: normalizedRelayEntries,
     });
-    await subscribePrivateMessagesForLoggedInUser(true);
-    queueTrackedContactSubscriptionsRefresh();
+    if (shouldRefreshSubscriptions) {
+      await subscribePrivateMessagesForLoggedInUser(true);
+      queueTrackedContactSubscriptionsRefresh();
+    }
   }
 
   async function fetchMyRelayListEntries(
@@ -204,13 +214,16 @@ export function createMyRelayListRuntime({
     return relayEntries.map((relay) => relay.url);
   }
 
-  async function applyMyRelayListEntries(relayEntries: RelayListMetadataEntry[]): Promise<void> {
+  async function applyMyRelayListEntries(
+    relayEntries: RelayListMetadataEntry[],
+    options: ApplyMyRelayListEntriesOptions = {}
+  ): Promise<void> {
     const normalizedRelayEntries =
       inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
     const nip65RelayStore = useNip65RelayStore();
     nip65RelayStore.init();
     nip65RelayStore.replaceRelayEntries(normalizedRelayEntries);
-    await updateLoggedInUserRelayList(normalizedRelayEntries);
+    await updateLoggedInUserRelayList(normalizedRelayEntries, options);
   }
 
   async function restoreMyRelayList(seedRelayUrls: string[] = []): Promise<void> {
@@ -227,7 +240,7 @@ export function createMyRelayListRuntime({
           return;
         }
 
-        await applyMyRelayListEntries(relayEntries);
+        await applyMyRelayListEntries(relayEntries, { refreshSubscriptions: false });
         completeStartupStep('my-relay-list');
       } catch (error) {
         failStartupStep('my-relay-list', error);

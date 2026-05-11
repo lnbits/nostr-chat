@@ -1,16 +1,16 @@
 export const STARTUP_STEP_DEFINITIONS = [
-  { id: 'logged-in-profile', order: 1, label: 'Logged-in user profile/contact metadata' },
-  { id: 'logged-in-relays', order: 2, label: 'Logged-in user relay list' },
-  { id: 'my-relay-list', order: 3, label: 'My NIP-65 relay list' },
-  { id: 'private-preferences', order: 4, label: 'Encrypted private preferences' },
-  { id: 'private-contact-list', order: 5, label: 'Encrypted private contact list' },
-  { id: 'group-identity-secrets', order: 6, label: 'Group identity secret storage' },
-  { id: 'private-contact-profiles', order: 7, label: 'Private contact profile metadata' },
-  { id: 'private-contact-relays', order: 8, label: 'Private contact relay lists' },
-  { id: 'contact-cursor-data', order: 9, label: 'Per-contact cursor data' },
-  { id: 'private-message-events', order: 10, label: 'Private message events' },
-  { id: 'recent-chat-profiles', order: 11, label: 'Recent chat contact profiles' },
-  { id: 'recent-chat-relays', order: 12, label: 'Recent chat contact relay lists' },
+  { id: 'my-relay-list', order: 1, label: 'My NIP-65 relay list' },
+  { id: 'private-preferences', order: 2, label: 'Encrypted private preferences' },
+  { id: 'private-contact-list', order: 3, label: 'Encrypted private contact list' },
+  { id: 'group-identity-secrets', order: 4, label: 'Group identity secret storage' },
+  { id: 'private-contact-profiles', order: 5, label: 'Private contact profile metadata' },
+  { id: 'private-contact-relays', order: 6, label: 'Private contact relay lists' },
+  { id: 'contact-cursor-data', order: 7, label: 'Per-contact cursor data' },
+  { id: 'logged-in-profile', order: 8, label: 'Logged-in user profile/contact metadata' },
+  { id: 'logged-in-relays', order: 9, label: 'Logged-in user relay list' },
+  { id: 'recent-chat-profiles', order: 10, label: 'Recent chat contact profiles' },
+  { id: 'recent-chat-relays', order: 11, label: 'Recent chat contact relay lists' },
+  { id: 'private-message-events', order: 12, label: 'Private message events' },
 ] as const;
 
 export type StartupStepId = (typeof STARTUP_STEP_DEFINITIONS)[number]['id'];

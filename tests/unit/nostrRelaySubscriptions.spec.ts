@@ -393,10 +393,14 @@ describe('relay and subscription runtimes', () => {
     ]);
     expect(await runtime.fetchMyRelayList(['wss://relay.one/'])).toEqual(['wss://relay.one/']);
 
+    subscribePrivateMessagesForLoggedInUser.mockClear();
+    queueTrackedContactSubscriptionsRefresh.mockClear();
     await runtime.restoreMyRelayList(['wss://relay.one/']);
     expect(beginStartupStep).toHaveBeenCalledWith('my-relay-list');
     expect(completeStartupStep).toHaveBeenCalledWith('my-relay-list');
     expect(nip65RelayStoreMock.replaceRelayEntries).toHaveBeenCalled();
+    expect(subscribePrivateMessagesForLoggedInUser).not.toHaveBeenCalled();
+    expect(queueTrackedContactSubscriptionsRefresh).not.toHaveBeenCalled();
 
     await runtime.subscribeMyRelayListUpdates(['wss://relay.one/']);
     await runtime.subscribeMyRelayListUpdates(['wss://relay.one/']);
