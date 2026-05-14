@@ -129,6 +129,44 @@ watch(isDetailsVisible, (value) => {
   pointer-events: none;
 }
 
+.reconnect-healing-banner__progress
+  :deep(.q-linear-progress__model--indeterminate::before) {
+  animation-name: reconnect-healing-progress-indeterminate;
+}
+
+.reconnect-healing-banner__progress
+  :deep(.q-linear-progress__model--indeterminate::after) {
+  animation-name: reconnect-healing-progress-indeterminate-short;
+}
+
+@keyframes reconnect-healing-progress-indeterminate {
+  0% {
+    transform: translate3d(-4.5%, 0, 0) scale3d(0.04375, 1, 1);
+  }
+
+  60% {
+    transform: translate3d(100%, 0, 0) scale3d(0.1125, 1, 1);
+  }
+
+  100% {
+    transform: translate3d(100%, 0, 0) scale3d(0.1125, 1, 1);
+  }
+}
+
+@keyframes reconnect-healing-progress-indeterminate-short {
+  0% {
+    transform: translate3d(-12.5%, 0, 0) scale3d(0.125, 1, 1);
+  }
+
+  60% {
+    transform: translate3d(107%, 0, 0) scale3d(0.00125, 1, 1);
+  }
+
+  100% {
+    transform: translate3d(107%, 0, 0) scale3d(0.00125, 1, 1);
+  }
+}
+
 .q-btn.reconnect-healing-banner__toggle {
   position: absolute;
   right: 3px;

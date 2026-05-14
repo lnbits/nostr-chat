@@ -439,6 +439,44 @@ watch(isDetailsVisible, (value) => {
   pointer-events: none;
 }
 
+.startup-history-banner__progress
+  :deep(.q-linear-progress__model--indeterminate::before) {
+  animation-name: startup-history-progress-indeterminate;
+}
+
+.startup-history-banner__progress
+  :deep(.q-linear-progress__model--indeterminate::after) {
+  animation-name: startup-history-progress-indeterminate-short;
+}
+
+@keyframes startup-history-progress-indeterminate {
+  0% {
+    transform: translate3d(-4.5%, 0, 0) scale3d(0.04375, 1, 1);
+  }
+
+  60% {
+    transform: translate3d(100%, 0, 0) scale3d(0.1125, 1, 1);
+  }
+
+  100% {
+    transform: translate3d(100%, 0, 0) scale3d(0.1125, 1, 1);
+  }
+}
+
+@keyframes startup-history-progress-indeterminate-short {
+  0% {
+    transform: translate3d(-12.5%, 0, 0) scale3d(0.125, 1, 1);
+  }
+
+  60% {
+    transform: translate3d(107%, 0, 0) scale3d(0.00125, 1, 1);
+  }
+
+  100% {
+    transform: translate3d(107%, 0, 0) scale3d(0.00125, 1, 1);
+  }
+}
+
 .q-btn.startup-history-banner__toggle {
   position: absolute;
   right: 3px;
