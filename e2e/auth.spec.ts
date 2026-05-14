@@ -5,6 +5,7 @@ import {
   bootstrapUser,
   disposeUsers,
   E2E_RELAY_URL,
+  E2E_RELAY_URL_TWO,
   expectBrowserStorageToBeEmpty,
   expectNoUnexpectedBrowserErrors,
   logoutFromSettings,
@@ -20,12 +21,15 @@ test.describe.configure({ mode: 'serial' });
 
 test('generated key login opens profile onboarding before chats', async ({ browser }) => {
   const context = await browser.newContext();
-  await context.addInitScript((relayUrl) => {
-    window.localStorage.setItem(
-      'relays',
-      JSON.stringify([{ url: relayUrl, read: true, write: true }])
-    );
-  }, E2E_RELAY_URL);
+  await context.addInitScript(
+    (relayUrls: string[]) => {
+      window.localStorage.setItem(
+        'relays',
+        JSON.stringify(relayUrls.map((url) => ({ url, read: true, write: true })))
+      );
+    },
+    [E2E_RELAY_URL, E2E_RELAY_URL_TWO]
+  );
   const page = await context.newPage();
 
   try {
@@ -42,12 +46,26 @@ test('generated key login opens profile onboarding before chats', async ({ brows
     ).toBeVisible({ timeout: 30_000 });
     await expect(page).toHaveURL(/#\/register$/);
 
+    await page.getByTestId('auth-onboarding-add-relays-button').click();
+    const secondRelayCheckbox = page.getByRole('checkbox', {
+      name: `Use ${E2E_RELAY_URL_TWO} when searching for profile`,
+    });
+    await expect(secondRelayCheckbox).toBeChecked({ timeout: 10_000 });
+    await secondRelayCheckbox.click();
+    await expect(secondRelayCheckbox).not.toBeChecked();
+
     await page.getByTestId('auth-onboarding-skip-button').click();
     await page
       .getByRole('button', { name: 'Not now', exact: true })
       .click({ timeout: 3_000 })
       .catch(() => undefined);
     await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
+
+    const storedRelays = await page.evaluate(() => {
+      const value = window.localStorage.getItem('relays');
+      return value ? (JSON.parse(value) as Array<{ url: string }>) : [];
+    });
+    expect(storedRelays.map((relay) => relay.url)).toEqual([new URL(E2E_RELAY_URL).href]);
   } finally {
     await context.close();
   }

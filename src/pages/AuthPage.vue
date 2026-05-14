@@ -315,17 +315,28 @@
                   />
                 </q-item-section>
                 <q-item-section>
-                  <q-item-label class="onboarding-relay-list__url">{{ relay.url }}</q-item-label>
+                  <q-item-label class="onboarding-relay-list__main">
+                    <q-badge
+                      outline
+                      :color="relay.statusColor"
+                      class="onboarding-relay-list__status"
+                      :aria-label="relay.statusLabel"
+                    >
+                      <q-icon :name="relay.statusIcon" size="18px" />
+                    </q-badge>
+                    <span class="onboarding-relay-list__url">{{ relay.url }}</span>
+                  </q-item-label>
                 </q-item-section>
                 <q-item-section side>
-                  <q-badge
-                    outline
-                    :color="relay.statusColor"
-                    class="onboarding-relay-list__status"
-                    :aria-label="relay.statusLabel"
-                  >
-                    <q-icon :name="relay.statusIcon" size="18px" />
-                  </q-badge>
+                  <q-btn
+                    flat
+                    round
+                    dense
+                    icon="delete"
+                    color="negative"
+                    :aria-label="`Delete ${relay.url}`"
+                    @click="removeOnboardingRelay(relay.url)"
+                  />
                 </q-item-section>
               </q-item>
             </q-list>
@@ -491,6 +502,7 @@ const onboardingError = ref('');
 const onboardingRelayInput = ref('');
 const onboardingAttempt = ref(0);
 const selectedOnboardingRelayKeys = ref<Set<string>>(new Set());
+const hasSeenOnboardingRelaySetup = ref(false);
 const isOnboardingContinuing = ref(false);
 const PROFILE_LOOKUP_TIMEOUT_MS = 12_000;
 const privateKeyValidation = computed(() => nostrStore.validatePrivateKey(privateKey.value.trim()));
@@ -683,6 +695,8 @@ async function startProfileOnboarding(): Promise<void> {
   onboardingNpub.value = nostrStore.encodeNpub(publicKey) ?? '';
   onboardingProfile.value = null;
   onboardingError.value = '';
+  selectedOnboardingRelayKeys.value = new Set();
+  hasSeenOnboardingRelaySetup.value = false;
   loginStep.value = 'onboarding';
   await runProfileLookup();
 }
@@ -749,6 +763,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 }
 
 function showOnboardingRelaySetup(): void {
+  hasSeenOnboardingRelaySetup.value = true;
   resetSelectedOnboardingRelaysToConnected();
   onboardingStatus.value = 'relay-setup';
 }
@@ -780,6 +795,18 @@ async function handleOnboardingAddRelay(): Promise<void> {
   }
 }
 
+function removeOnboardingRelay(relayUrl: string): void {
+  try {
+    const relayKey = buildRelayLookupKey(relayUrl);
+    relayStore.replaceRelayEntries(
+      relayStore.relayEntries.filter((entry) => buildRelayLookupKey(entry.url) !== relayKey)
+    );
+    setOnboardingRelaySelected(relayUrl, false);
+  } catch (error) {
+    reportUiError('Failed to remove relay during onboarding', error, 'Failed to remove relay.');
+  }
+}
+
 function resetSelectedOnboardingRelaysToConnected(): void {
   selectedOnboardingRelayKeys.value = new Set(
     relayStore.relays
@@ -797,6 +824,18 @@ function setOnboardingRelaySelected(relayUrl: string, selected: boolean): void {
     nextSelectedRelayKeys.delete(key);
   }
   selectedOnboardingRelayKeys.value = nextSelectedRelayKeys;
+}
+
+function keepOnlySelectedOnboardingRelays(): void {
+  if (!hasSeenOnboardingRelaySetup.value) {
+    return;
+  }
+
+  const selectedRelayKeys = selectedOnboardingRelayKeys.value;
+  relayStore.replaceRelayEntries(
+    relayStore.relayEntries.filter((entry) => selectedRelayKeys.has(buildRelayLookupKey(entry.url)))
+  );
+  selectedOnboardingRelayKeys.value = new Set(relayStore.relays.map((url) => buildRelayLookupKey(url)));
 }
 
 function validateRelayUrlForOnboarding(value: string): string {
@@ -833,6 +872,7 @@ async function continueFromOnboarding(): Promise<void> {
 
   isOnboardingContinuing.value = true;
   try {
+    keepOnlySelectedOnboardingRelays();
     await handleBrowserNotificationsAfterLogin();
     await goToHome();
   } catch (error) {
@@ -1158,13 +1198,22 @@ async function goToRegister(): Promise<void> {
   opacity: 1;
 }
 
+.onboarding-relay-list__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .onboarding-relay-list__url {
+  min-width: 0;
   font-size: 13px;
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
 .onboarding-relay-list__status {
+  flex: 0 0 auto;
   min-width: 36px;
   min-height: 26px;
   justify-content: center;
