@@ -18,6 +18,12 @@
           class="nav-rail__badge"
           :label="unreadChatBadgeLabel"
         />
+        <q-badge
+          v-if="item.key === 'settings' && hasUpdateAvailable"
+          rounded
+          color="primary"
+          class="nav-rail__badge nav-rail__badge--dot"
+        />
       </span>
 
       <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
@@ -30,6 +36,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
+import { useAppUpdateStore } from 'src/stores/appUpdateStore';
 import { useChatStore } from 'src/stores/chatStore';
 import { formatUnreadChatBadgeLabel } from 'src/utils/unreadChatBadge';
 
@@ -40,6 +47,7 @@ const navItems = [
 ] as const;
 
 const chatStore = useChatStore();
+const appUpdateStore = useAppUpdateStore();
 
 defineProps<{
   active: 'chats' | 'contacts' | 'settings';
@@ -51,6 +59,7 @@ defineEmits<{
 
 const unreadChatCount = computed(() => chatStore.unreadChatCount);
 const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadChatCount.value));
+const hasUpdateAvailable = computed(() => appUpdateStore.hasUpdateAvailable);
 </script>
 
 <style scoped>
@@ -100,6 +109,16 @@ const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadCha
   top: -7px;
   left: calc(100% - 2px);
   z-index: 1;
+}
+
+.nav-rail__badge--dot {
+  min-width: 10px;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  top: -4px;
+  left: calc(100% - 3px);
+  border: 2px solid var(--nc-panel-sidebar-bg);
 }
 
 .nav-rail__btn:hover {
