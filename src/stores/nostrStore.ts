@@ -135,6 +135,7 @@ export type {
   RelayConnectionState,
   RelaySaveStatus,
   RotateGroupEpochResult,
+  UserProfileLookupResult,
 } from 'src/stores/nostr/types';
 
 export type NostrNpubValidationResult = NpubValidationResult;
@@ -1488,6 +1489,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensureContactStoredAsGroup,
     ensureRespondedPubkeyIsContact,
     fetchContactPreviewByPublicKey,
+    fetchUserProfileFromRelays,
     queueBackgroundGroupContactRefresh,
     refreshContactByPublicKey,
     refreshGroupContactByPublicKey,
@@ -2039,6 +2041,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     rotateGroupEpochAndSendTickets,
     ensureRespondedPubkeyIsContact,
     fetchContactPreviewByPublicKey,
+    fetchUserProfileFromRelays,
     refreshContactByPublicKey,
     refreshGroupMembershipRoster,
     restoreContactCursorState,

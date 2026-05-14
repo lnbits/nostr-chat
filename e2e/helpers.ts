@@ -696,11 +696,28 @@ export async function bootstrapExtensionUser(
   await page.goto('/#/login');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await page.getByRole('button', { name: 'Login with Extension', exact: true }).click();
-  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
+  await page.waitForFunction(
+    () =>
+      Boolean(
+        document.querySelector('[data-testid="auth-onboarding-continue-button"]') ||
+          document.querySelector('[data-testid="auth-onboarding-skip-button"]')
+      ),
+    undefined,
+    { timeout: 30_000 }
+  );
+
+  const continueButton = page.getByTestId('auth-onboarding-continue-button');
+  if (await continueButton.isVisible()) {
+    await continueButton.click();
+  } else {
+    await page.getByTestId('auth-onboarding-skip-button').click();
+  }
 
   if (await page.getByText('Enable Browser Notifications', { exact: true }).isVisible()) {
     await page.getByRole('button', { name: 'Not now', exact: true }).click();
   }
+
+  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
 
   await waitForChatsShell(page);
 
