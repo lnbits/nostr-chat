@@ -4,16 +4,6 @@
       <q-card v-if="loginStep === 'welcome'" flat bordered class="auth-card auth-card--light">
         <q-card-section class="auth-card__header">
           <div class="auth-card__header-main">
-            <q-btn
-              flat
-              round
-              dense
-              icon="arrow_back"
-              color="primary"
-              class="auth-card__back-button"
-              aria-label="Back"
-              @click="goBackFromWelcome"
-            />
             <div class="auth-card__header-text">
               <div class="auth-card__title">Welcome</div>
               <div class="auth-card__subtitle">Choose how you want to continue</div>
@@ -378,12 +368,23 @@
             </q-list>
           </div>
 
-          <div v-if="onboardingStatus === 'found'" class="auth-card__button-row auth-card__button-row--single">
+          <div v-if="onboardingStatus === 'found'" class="auth-card__button-row">
+            <q-btn
+              outline
+              color="negative"
+              no-caps
+              icon="logout"
+              label="Logout"
+              class="auth-card__button"
+              data-testid="auth-onboarding-logout-button"
+              :disable="isOnboardingContinuing"
+              @click="nostrStore.logout"
+            />
             <q-btn
               unelevated
               color="primary"
               no-caps
-              label="Continue"
+              label="Confirm and start using app"
               class="auth-card__button"
               data-testid="auth-onboarding-continue-button"
               :loading="isOnboardingContinuing"
@@ -421,7 +422,7 @@
               label="Try again"
               class="auth-card__button"
               data-testid="auth-onboarding-retry-button"
-              @click="() => runProfileLookup()"
+              @click="findProfileFromOnboardingRelays"
             />
             <div class="auth-card__button-row">
               <q-btn
@@ -445,25 +446,19 @@
             </div>
           </div>
 
-          <div v-else-if="onboardingStatus === 'relay-setup'" class="auth-card__button-row">
-            <q-btn
-              outline
-              color="primary"
-              no-caps
-              label="Search again"
-              class="auth-card__button"
-              data-testid="auth-onboarding-search-again-button"
-              :disable="!canSearchSelectedOnboardingRelays"
-              @click="runProfileLookup(selectedOnboardingRelayUrls)"
-            />
+          <div
+            v-else-if="onboardingStatus === 'relay-setup'"
+            class="auth-card__button-row auth-card__button-row--single"
+          >
             <q-btn
               unelevated
               color="primary"
               no-caps
-              label="Continue"
+              label="Next: show profile"
               class="auth-card__button"
-              data-testid="auth-onboarding-skip-button"
-              @click="showOnboardingProfileSetup"
+              data-testid="auth-onboarding-relays-next-button"
+              :disable="!canSearchSelectedOnboardingRelays"
+              @click="findProfileFromOnboardingRelays"
             />
           </div>
 
@@ -583,7 +578,7 @@ const onboardingTitle = computed(() => {
   }
 
   if (onboardingStatus.value === 'relay-setup') {
-    return 'Add relays';
+    return 'App relays';
   }
 
   if (onboardingStatus.value === 'profile-setup') {
@@ -602,7 +597,7 @@ const onboardingSubtitle = computed(() => {
   }
 
   if (onboardingStatus.value === 'relay-setup') {
-    return 'Add relays to search for your profile';
+    return 'Add or remove relays before searching for your profile';
   }
 
   if (onboardingStatus.value === 'profile-setup') {
@@ -709,14 +704,6 @@ function openKeyLogin(): void {
   }
 }
 
-function goBackFromWelcome(): void {
-  try {
-    router.back();
-  } catch (error) {
-    reportUiError('Failed to go back from login', error);
-  }
-}
-
 function goBackToWelcome(): void {
   try {
     loginStep.value = 'welcome';
@@ -793,10 +780,13 @@ async function startProfileOnboarding(): Promise<void> {
   hasSeenOnboardingRelaySetup.value = false;
   shouldUpdateOnboardingRelays.value = true;
   loginStep.value = 'onboarding';
-  await runProfileLookup();
+  await showOnboardingRelaySetup();
 }
 
-async function runProfileLookup(relayUrlOverride?: string[]): Promise<void> {
+async function runProfileLookup(
+  relayUrlOverride?: string[],
+  options: { showProfileSetupWhenNotFound?: boolean } = {}
+): Promise<void> {
   if (!onboardingPubkey.value) {
     return;
   }
@@ -809,7 +799,7 @@ async function runProfileLookup(relayUrlOverride?: string[]): Promise<void> {
 
   const relayUrls = uniqueRelayUrls(relayUrlOverride ?? relayStore.relays);
   if (relayUrls.length === 0) {
-    onboardingStatus.value = 'not-found';
+    onboardingStatus.value = options.showProfileSetupWhenNotFound ? 'profile-setup' : 'not-found';
     return;
   }
 
@@ -828,7 +818,7 @@ async function runProfileLookup(relayUrlOverride?: string[]): Promise<void> {
       return;
     }
 
-    onboardingStatus.value = 'not-found';
+    onboardingStatus.value = options.showProfileSetupWhenNotFound ? 'profile-setup' : 'not-found';
   } catch (error) {
     if (attempt !== onboardingAttempt.value) {
       return;
@@ -857,15 +847,39 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-function showOnboardingRelaySetup(): void {
+async function showOnboardingRelaySetup(): Promise<void> {
   hasSeenOnboardingRelaySetup.value = true;
   resetSelectedOnboardingRelaysToConnected();
   onboardingStatus.value = 'relay-setup';
+
+  const relayUrls = uniqueRelayUrls(relayStore.relays);
+  if (relayUrls.length === 0) {
+    return;
+  }
+
+  try {
+    await nostrStore.ensureRelayConnections(relayUrls);
+  } catch (error) {
+    console.warn('Failed to connect onboarding relays', error);
+  } finally {
+    resetSelectedOnboardingRelaysToConnected();
+  }
 }
 
 function showOnboardingProfileSetup(): void {
   shouldUpdateOnboardingRelays.value = true;
   onboardingStatus.value = 'profile-setup';
+}
+
+async function findProfileFromOnboardingRelays(): Promise<void> {
+  if (!canSearchSelectedOnboardingRelays.value) {
+    return;
+  }
+
+  keepOnlySelectedOnboardingRelays();
+  await runProfileLookup(relayStore.relays, {
+    showProfileSetupWhenNotFound: true,
+  });
 }
 
 async function handleOnboardingAddRelay(): Promise<void> {

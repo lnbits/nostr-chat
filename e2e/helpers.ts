@@ -697,9 +697,17 @@ export async function bootstrapExtensionUser(
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await page.getByRole('button', { name: 'Login with Extension', exact: true }).click();
   await page.waitForFunction(
+    () => Boolean(document.querySelector('[data-testid="auth-onboarding-relays-next-button"]')),
+    undefined,
+    { timeout: 30_000 }
+  );
+  await page.getByTestId('auth-onboarding-relays-next-button').click();
+
+  await page.waitForFunction(
     () =>
       Boolean(
         document.querySelector('[data-testid="auth-onboarding-continue-button"]') ||
+          document.querySelector('[data-testid="auth-onboarding-profile-start-button"]') ||
           document.querySelector('[data-testid="auth-onboarding-skip-button"]')
       ),
     undefined,
@@ -709,6 +717,8 @@ export async function bootstrapExtensionUser(
   const continueButton = page.getByTestId('auth-onboarding-continue-button');
   if (await continueButton.isVisible()) {
     await continueButton.click();
+  } else if (await page.getByTestId('auth-onboarding-profile-start-button').isVisible()) {
+    await page.getByTestId('auth-onboarding-profile-start-button').click();
   } else {
     await page.getByTestId('auth-onboarding-skip-button').click();
   }

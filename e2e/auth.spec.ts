@@ -39,14 +39,11 @@ test('generated key login opens profile onboarding before chats', async ({ brows
     });
     await page.getByRole('button', { name: 'Login Now', exact: true }).click();
 
-    await expect(
-      page.locator(
-        '[data-testid="auth-onboarding-continue-button"], [data-testid="auth-onboarding-skip-button"]'
-      )
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('auth-onboarding-relays-next-button')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page).toHaveURL(/#\/register$/);
 
-    await page.getByTestId('auth-onboarding-add-relays-button').click();
     const secondRelayCheckbox = page.getByRole('checkbox', {
       name: `Use ${E2E_RELAY_URL_TWO} when searching for profile`,
     });
@@ -54,7 +51,7 @@ test('generated key login opens profile onboarding before chats', async ({ brows
     await secondRelayCheckbox.click();
     await expect(secondRelayCheckbox).not.toBeChecked();
 
-    await page.getByTestId('auth-onboarding-skip-button').click();
+    await page.getByTestId('auth-onboarding-relays-next-button').click();
     await expect(page.getByTestId('auth-onboarding-profile-name-input')).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Use selected relays' })).toBeChecked();
     await expect(page.getByTestId('auth-onboarding-profile-start-button')).toBeEnabled();
@@ -91,6 +88,11 @@ test('NIP-07 login can establish a direct chat and receive a reply', async ({ br
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.nip07Bob);
 
   try {
+    await alice.page.goto('/#/auth');
+    await expect.poll(() => alice.page.url(), { timeout: 10_000 }).toMatch(/#\/chats$/);
+    await alice.page.goto('/#/register');
+    await expect.poll(() => alice.page.url(), { timeout: 10_000 }).toMatch(/#\/chats$/);
+
     const openingMessage = `nip07-open-${Date.now()}`;
     const replyMessage = `nip07-reply-${Date.now()}`;
 

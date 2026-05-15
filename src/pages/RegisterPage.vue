@@ -5,12 +5,26 @@
 
       <q-card v-else flat bordered class="register-card register-card--light">
         <q-card-section class="register-card__header">
-          <div class="register-card__title">Create Account</div>
-          <div class="register-card__subtitle" v-if="isCreatingAccount">
-            Creating Account
-          </div>
-          <div class="register-card__subtitle" v-else>
-            A new Nostr keypair has been generated for this account. Download the secret before continuing.
+          <div class="register-card__header-main">
+            <q-btn
+              flat
+              round
+              dense
+              icon="arrow_back"
+              color="primary"
+              class="register-card__back-button"
+              aria-label="Back"
+              :disable="isLoggingIn"
+              @click="goBackToAuth"
+            />
+            <div class="register-card__header-text">
+              <div class="register-card__title">Create Account</div>
+              <div class="register-card__subtitle" v-if="isCreatingAccount">Creating Account</div>
+              <div class="register-card__subtitle" v-else>
+                A new Nostr keypair has been generated for this account. Download the secret before
+                continuing.
+              </div>
+            </div>
           </div>
         </q-card-section>
 
@@ -49,16 +63,6 @@
               @click="handleLoginNow"
             />
           </template>
-
-          <q-btn
-            flat
-            color="primary"
-            no-caps
-            label="Back"
-            class="register-card__button"
-            :disable="isLoggingIn"
-            @click="goBackToAuth"
-          />
         </q-card-section>
       </q-card>
     </div>
@@ -252,6 +256,23 @@ async function handleLoginNow(): Promise<void> {
 .register-card--light .register-card__header {
   background: rgba(255, 255, 255, 0.82);
   border-bottom-color: rgba(208, 220, 235, 0.82);
+}
+
+.register-card__header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.register-card__header-text {
+  min-width: 0;
+}
+
+.register-card__back-button {
+  flex: 0 0 auto;
+  margin-top: -2px;
+  color: #2563eb;
 }
 
 .register-card__title {
