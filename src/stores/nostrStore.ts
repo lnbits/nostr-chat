@@ -922,6 +922,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchRelayNip11Info,
     getOrCreateSigner: getOrCreateSignerImpl,
     getRelayConnectionState,
+    isRelayConnectionPending,
   } = createRelayConnectionRuntime({
     authenticatedRelayUrls,
     buildRelaySnapshot,
@@ -2021,6 +2022,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshPrivateMessages,
     refreshPrivateMessagesLiveSubscriptionForReconnect,
     getRelayConnectionState,
+    isRelayConnectionPending,
     isAppForeground,
     isReconnectHealing,
     isRestoringStartupState,

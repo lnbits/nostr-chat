@@ -343,8 +343,16 @@
 
             <q-list bordered separator class="onboarding-relay-list">
               <q-item v-for="relay in onboardingRelayRows" :key="relay.url">
-                <q-item-section avatar>
+                <q-item-section avatar class="onboarding-relay-list__selector">
+                  <q-spinner
+                    v-if="relay.checking"
+                    color="primary"
+                    size="24px"
+                    class="onboarding-relay-list__spinner"
+                    :aria-label="`Checking ${relay.url}`"
+                  />
                   <q-checkbox
+                    v-else
                     dense
                     color="primary"
                     :model-value="relay.selected"
@@ -539,7 +547,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import BrowserNotificationsLoginDialog from 'src/components/BrowserNotificationsLoginDialog.vue';
@@ -587,10 +595,17 @@ const onboardingProfileNameInput = ref('');
 const onboardingProfileAboutInput = ref('');
 const onboardingAttempt = ref(0);
 const selectedOnboardingRelayKeys = ref<Set<string>>(new Set());
+const checkingOnboardingRelayKeys = ref<Set<string>>(new Set());
+const timedOutOnboardingRelayKeys = ref<Set<string>>(new Set());
 const hasSeenOnboardingRelaySetup = ref(false);
 const shouldUpdateOnboardingRelays = ref(true);
 const isOnboardingContinuing = ref(false);
 const PROFILE_LOOKUP_TIMEOUT_MS = 12_000;
+const ONBOARDING_RELAY_CHECK_TIMEOUT_MS = 5_000;
+const onboardingRelayCheckTimeouts = new Map<
+  string,
+  ReturnType<typeof globalThis.setTimeout>
+>();
 const privateKeyValidation = computed(() => nostrStore.validatePrivateKey(privateKey.value.trim()));
 const privateKeyError = computed(() =>
   privateKey.value.trim() && !privateKeyValidation.value.isValid
@@ -675,14 +690,20 @@ const canAddOnboardingRelay = computed(() => {
 const onboardingRelayRows = computed(() => {
   void nostrStore.relayStatusVersion;
   return relayStore.relays.map((url) => {
+    const relayKey = buildRelayLookupKey(url);
     const connected = nostrStore.getRelayConnectionState(url) === 'connected';
+    const checking =
+      !timedOutOnboardingRelayKeys.value.has(relayKey) &&
+      (checkingOnboardingRelayKeys.value.has(relayKey) ||
+        nostrStore.isRelayConnectionPending(url));
     return {
       url,
+      checking,
       connected,
-      selected: selectedOnboardingRelayKeys.value.has(buildRelayLookupKey(url)),
-      statusColor: connected ? 'positive' : 'warning',
-      statusIcon: connected ? 'check' : 'warning_amber',
-      statusLabel: connected ? 'Connected' : 'Warning',
+      selected: selectedOnboardingRelayKeys.value.has(relayKey),
+      statusColor: checking ? 'primary' : connected ? 'positive' : 'warning',
+      statusIcon: checking ? 'hourglass_empty' : connected ? 'check' : 'warning_amber',
+      statusLabel: checking ? 'Checking' : connected ? 'Connected' : 'Warning',
     };
   });
 });
@@ -786,6 +807,9 @@ async function startProfileOnboarding(): Promise<void> {
   onboardingProfileNameInput.value = '';
   onboardingProfileAboutInput.value = '';
   selectedOnboardingRelayKeys.value = new Set();
+  checkingOnboardingRelayKeys.value = new Set();
+  timedOutOnboardingRelayKeys.value = new Set();
+  clearAllOnboardingRelayCheckTimeouts();
   hasSeenOnboardingRelaySetup.value = false;
   shouldUpdateOnboardingRelays.value = true;
   loginStep.value = 'onboarding';
@@ -862,6 +886,7 @@ async function showOnboardingRelaySetup(): Promise<void> {
   onboardingStatus.value = 'relay-setup';
 
   const relayUrls = uniqueRelayUrls(relayStore.relays);
+  markOnboardingRelaysChecking(relayUrls);
   if (relayUrls.length === 0) {
     return;
   }
@@ -871,7 +896,7 @@ async function showOnboardingRelaySetup(): Promise<void> {
   } catch (error) {
     console.warn('Failed to connect onboarding relays', error);
   } finally {
-    resetSelectedOnboardingRelaysToConnected();
+    clearResolvedOnboardingRelayChecks(relayUrls);
   }
 }
 
@@ -899,6 +924,7 @@ async function handleOnboardingAddRelay(): Promise<void> {
       ...relayStore.relayEntries,
     ]);
     onboardingRelayInput.value = '';
+    markOnboardingRelaysChecking([normalizedRelay]);
 
     try {
       await nostrStore.ensureRelayConnections([normalizedRelay]);
@@ -907,6 +933,8 @@ async function handleOnboardingAddRelay(): Promise<void> {
       }
     } catch (error) {
       console.warn('Failed to connect onboarding relay', normalizedRelay, error);
+    } finally {
+      clearResolvedOnboardingRelayChecks([normalizedRelay]);
     }
   } catch (error) {
     reportUiError('Failed to add relay during onboarding', error, 'Failed to add relay.');
@@ -920,6 +948,7 @@ function removeOnboardingRelay(relayUrl: string): void {
       relayStore.relayEntries.filter((entry) => buildRelayLookupKey(entry.url) !== relayKey)
     );
     setOnboardingRelaySelected(relayUrl, false);
+    clearOnboardingRelayChecking(relayUrl);
   } catch (error) {
     reportUiError('Failed to remove relay during onboarding', error, 'Failed to remove relay.');
   }
@@ -943,6 +972,131 @@ function setOnboardingRelaySelected(relayUrl: string, selected: boolean): void {
   }
   selectedOnboardingRelayKeys.value = nextSelectedRelayKeys;
 }
+
+function markOnboardingRelaysChecking(relayUrls: string[]): void {
+  const nextCheckingRelayKeys = new Set(checkingOnboardingRelayKeys.value);
+  for (const relayUrl of relayUrls) {
+    if (nostrStore.getRelayConnectionState(relayUrl) === 'connected') {
+      continue;
+    }
+
+    nextCheckingRelayKeys.add(buildRelayLookupKey(relayUrl));
+    clearOnboardingRelayTimeoutState(relayUrl);
+    scheduleOnboardingRelayCheckTimeout(relayUrl);
+  }
+  checkingOnboardingRelayKeys.value = nextCheckingRelayKeys;
+}
+
+function clearOnboardingRelayChecking(relayUrl: string): void {
+  const relayKey = buildRelayLookupKey(relayUrl);
+  clearOnboardingRelayCheckTimeout(relayUrl);
+  clearOnboardingRelayTimeoutState(relayUrl);
+  if (!checkingOnboardingRelayKeys.value.has(relayKey)) {
+    return;
+  }
+
+  const nextCheckingRelayKeys = new Set(checkingOnboardingRelayKeys.value);
+  nextCheckingRelayKeys.delete(relayKey);
+  checkingOnboardingRelayKeys.value = nextCheckingRelayKeys;
+}
+
+function clearResolvedOnboardingRelayChecks(relayUrls: string[]): void {
+  const nextSelectedRelayKeys = new Set(selectedOnboardingRelayKeys.value);
+  const nextCheckingRelayKeys = new Set(checkingOnboardingRelayKeys.value);
+  const nextTimedOutRelayKeys = new Set(timedOutOnboardingRelayKeys.value);
+  for (const relayUrl of relayUrls) {
+    const relayKey = buildRelayLookupKey(relayUrl);
+    if (!nextCheckingRelayKeys.has(relayKey)) {
+      continue;
+    }
+
+    if (nostrStore.getRelayConnectionState(relayUrl) === 'connected') {
+      nextSelectedRelayKeys.add(relayKey);
+      nextCheckingRelayKeys.delete(relayKey);
+      nextTimedOutRelayKeys.delete(relayKey);
+      clearOnboardingRelayCheckTimeout(relayUrl);
+      continue;
+    }
+
+    if (!nostrStore.isRelayConnectionPending(relayUrl)) {
+      nextCheckingRelayKeys.delete(relayKey);
+      nextTimedOutRelayKeys.add(relayKey);
+      clearOnboardingRelayCheckTimeout(relayUrl);
+    }
+  }
+  selectedOnboardingRelayKeys.value = nextSelectedRelayKeys;
+  checkingOnboardingRelayKeys.value = nextCheckingRelayKeys;
+  timedOutOnboardingRelayKeys.value = nextTimedOutRelayKeys;
+}
+
+function scheduleOnboardingRelayCheckTimeout(relayUrl: string): void {
+  const relayKey = buildRelayLookupKey(relayUrl);
+  clearOnboardingRelayCheckTimeout(relayUrl);
+  const timeoutId = globalThis.setTimeout(() => {
+    onboardingRelayCheckTimeouts.delete(relayKey);
+    const nextSelectedRelayKeys = new Set(selectedOnboardingRelayKeys.value);
+    const nextCheckingRelayKeys = new Set(checkingOnboardingRelayKeys.value);
+    const nextTimedOutRelayKeys = new Set(timedOutOnboardingRelayKeys.value);
+
+    if (!nextCheckingRelayKeys.has(relayKey)) {
+      return;
+    }
+
+    nextCheckingRelayKeys.delete(relayKey);
+    if (nostrStore.getRelayConnectionState(relayUrl) === 'connected') {
+      nextSelectedRelayKeys.add(relayKey);
+      nextTimedOutRelayKeys.delete(relayKey);
+    } else {
+      nextSelectedRelayKeys.delete(relayKey);
+      nextTimedOutRelayKeys.add(relayKey);
+    }
+
+    selectedOnboardingRelayKeys.value = nextSelectedRelayKeys;
+    checkingOnboardingRelayKeys.value = nextCheckingRelayKeys;
+    timedOutOnboardingRelayKeys.value = nextTimedOutRelayKeys;
+  }, ONBOARDING_RELAY_CHECK_TIMEOUT_MS);
+  onboardingRelayCheckTimeouts.set(relayKey, timeoutId);
+}
+
+function clearOnboardingRelayCheckTimeout(relayUrl: string): void {
+  const relayKey = buildRelayLookupKey(relayUrl);
+  const timeoutId = onboardingRelayCheckTimeouts.get(relayKey);
+  if (!timeoutId) {
+    return;
+  }
+
+  globalThis.clearTimeout(timeoutId);
+  onboardingRelayCheckTimeouts.delete(relayKey);
+}
+
+function clearOnboardingRelayTimeoutState(relayUrl: string): void {
+  const relayKey = buildRelayLookupKey(relayUrl);
+  if (!timedOutOnboardingRelayKeys.value.has(relayKey)) {
+    return;
+  }
+
+  const nextTimedOutRelayKeys = new Set(timedOutOnboardingRelayKeys.value);
+  nextTimedOutRelayKeys.delete(relayKey);
+  timedOutOnboardingRelayKeys.value = nextTimedOutRelayKeys;
+}
+
+function clearAllOnboardingRelayCheckTimeouts(): void {
+  for (const timeoutId of onboardingRelayCheckTimeouts.values()) {
+    globalThis.clearTimeout(timeoutId);
+  }
+  onboardingRelayCheckTimeouts.clear();
+}
+
+watch(
+  () => nostrStore.relayStatusVersion,
+  () => {
+    clearResolvedOnboardingRelayChecks(relayStore.relays);
+  }
+);
+
+onBeforeUnmount(() => {
+  clearAllOnboardingRelayCheckTimeouts();
+});
 
 function keepOnlySelectedOnboardingRelays(): void {
   if (!hasSeenOnboardingRelaySetup.value) {
@@ -1361,6 +1515,15 @@ async function goToRegister(): Promise<void> {
 
 .onboarding-profile-setup__checkbox {
   color: #334155;
+}
+
+.onboarding-relay-list__selector {
+  min-width: 48px;
+}
+
+.onboarding-relay-list__spinner {
+  width: 32px;
+  justify-content: center;
 }
 
 .onboarding-relay-list__checkbox :deep(.q-checkbox__bg),
