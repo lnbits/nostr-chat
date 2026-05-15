@@ -1578,6 +1578,7 @@ export async function openProfileRelaysSection(page: Page): Promise<void> {
 
 export async function openAppRelaysSettings(page: Page): Promise<void> {
   await page.goto('/#/settings/relays');
+  await expect(page.getByTestId('settings-relays-contacts-tab')).toHaveCount(0);
   await expect(page.getByTestId('settings-relays-app-tab')).toBeVisible();
   await page.getByTestId('settings-relays-app-tab').click();
   await expect(
