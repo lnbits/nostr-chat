@@ -44,6 +44,13 @@ This list is based on the current app code, especially `src/stores/nostrStore.ts
 - Used for encryption throughout the app.
 - It is used by the DM/gift-wrap pipeline, and also to self-encrypt private preferences, group identity secrets, per-contact cursor data, and the private contact-list payload.
 
+## NIP-46
+
+- Used for Nostr remote signing login.
+- The app acts as a NIP-46 client and supports `bunker://` connection tokens and generated `nostrconnect://` pairing links.
+- The NIP-46 local client key is persisted as a session token so refresh and app restart can restore the remote signer connection without storing the user's `nsec`.
+- The app requests broad `sign_event`, `nip44_encrypt`, and `nip44_decrypt` permissions because private messaging, private app storage, profile updates, relay lists, and relay auth all need the active signer.
+
 ## NIP-51
 
 - Used for private follow-set style lists.

@@ -66,7 +66,26 @@ export interface RelayListMetadataEntry {
   write?: boolean;
 }
 
-export type AuthMethod = 'nsec' | 'nip07';
+export type AuthMethod = 'nsec' | 'nip07' | 'nip46';
+
+export interface Nip46LoginResult {
+  pubkey: string;
+  signerPubkey: string | null;
+  relayUrls: string[];
+}
+
+export interface Nip46NostrConnectLogin {
+  clientPubkey: string;
+  login: Promise<Nip46LoginResult>;
+  relayUrl: string;
+  uri: string;
+  cancel: () => void;
+}
+
+export interface Nip46SessionSnapshot {
+  signerPubkey: string | null;
+  relayUrls: string[];
+}
 
 export interface SendGiftWrappedRumorOptions {
   localMessageId?: number;
@@ -316,6 +335,8 @@ export interface DeveloperGroupMessageSubscriptionSnapshot {
 export interface DeveloperSessionSnapshot {
   loggedInPubkey: string | null;
   authMethod: AuthMethod | null;
+  nip46SignerPubkey: string | null;
+  nip46RelayUrls: string[];
   eventSince: number;
   eventSinceIso: string | null;
   filterSince: number;

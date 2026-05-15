@@ -71,6 +71,7 @@ import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContac
 import type {
   ContactCursorState,
   GroupIdentitySecretContent,
+  Nip46SessionSnapshot,
   PendingIncomingDeletion,
   PendingIncomingReaction,
   PrivatePreferences,
@@ -128,6 +129,9 @@ export type {
   DeveloperRelayRow,
   DeveloperTraceEntry,
   DeveloperTraceLevel,
+  Nip46LoginResult,
+  Nip46NostrConnectLogin,
+  Nip46SessionSnapshot,
   NostrIdentifierResolutionResult,
   NostrNip05DataResult,
   PublishGroupMemberChangesResult,
@@ -253,6 +257,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let getPrivateKeyHexRuntime: () => string | null = () => {
     throw new Error('Auth session runtime is not initialized.');
   };
+  let getNip46SignerPayloadRuntime: () => string | null = () => {
+    throw new Error('Auth session runtime is not initialized.');
+  };
+  let getNip46SignerSessionSnapshotRuntime: () => Nip46SessionSnapshot = () => ({
+    signerPubkey: null,
+    relayUrls: [],
+  });
   let refreshAllStoredContactsRuntime: () => Promise<unknown> = async () => {
     throw new Error('Private messages refresh runtime is not initialized.');
   };
@@ -934,6 +945,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getHasActivatedPool: () => hasActivatedPool,
     getHasRelayStatusListeners: () => hasRelayStatusListeners,
     getLoggedInPublicKeyHex,
+    getNip46SignerPayload: () => getNip46SignerPayloadRuntime(),
     getPrivateKeyHex: () => getPrivateKeyHexRuntime(),
     getStoredAuthMethod,
     hasNip07Extension,
@@ -1749,8 +1761,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     clearPrivateKey: clearPrivateKeyImpl,
+    createRemoteSignerNostrConnectLogin: createRemoteSignerNostrConnectLoginImpl,
     getPrivateKeyHex: getPrivateKeyHexImpl,
+    getNip46SignerPayload: getNip46SignerPayloadImpl,
+    getNip46SignerSessionSnapshot: getNip46SignerSessionSnapshotImpl,
     loginWithExtension: loginWithExtensionImpl,
+    loginWithRemoteSignerBunker: loginWithRemoteSignerBunkerImpl,
     logout: logoutImpl,
     savePrivateKeyHex: savePrivateKeyHexImpl,
   } = createAuthSessionRuntime({
@@ -1832,6 +1848,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
   });
   getPrivateKeyHexRuntime = getPrivateKeyHexImpl;
+  getNip46SignerPayloadRuntime = getNip46SignerPayloadImpl;
+  getNip46SignerSessionSnapshotRuntime = getNip46SignerSessionSnapshotImpl;
   const {
     getNip05Data,
     resolveIdentifier,
@@ -1964,6 +1982,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getAppRelayUrls,
     getFilterSince,
     getLoggedInPublicKeyHex,
+    getNip46SignerSessionSnapshot: () => getNip46SignerSessionSnapshotRuntime(),
     getPrivateMessagesRestoreThrottleMs: () => privateMessagesRestoreThrottleMs,
     getPrivateMessagesSubscription,
     getPrivateMessagesSubscriptionSignature,
@@ -1999,6 +2018,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   return {
     clearPrivateKey: clearPrivateKeyImpl,
+    createRemoteSignerNostrConnectLogin: createRemoteSignerNostrConnectLoginImpl,
     createGroupChat,
     clearDeveloperTraceEntries,
     contactListVersion,
@@ -2029,6 +2049,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     listDeveloperTraceEntries,
     listPrivateMessageRecipientPubkeys,
     loginWithExtension: loginWithExtensionImpl,
+    loginWithRemoteSignerBunker: loginWithRemoteSignerBunkerImpl,
     logout: logoutImpl,
     publishPrivateContactList,
     publishGroupRelayList,
