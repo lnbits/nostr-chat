@@ -1,6 +1,7 @@
 export const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 export const PUBLIC_KEY_STORAGE_KEY = 'npub';
 export const AUTH_METHOD_STORAGE_KEY = 'auth-method';
+export const NIP46_SIGNER_PAYLOAD_STORAGE_KEY = 'nostr-nip46-signer';
 export const EVENT_SINCE_STORAGE_KEY = 'nostr-event-since';
 export const PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY =
   'nostr-private-messages-last-received-event';

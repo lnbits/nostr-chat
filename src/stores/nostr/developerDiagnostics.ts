@@ -19,6 +19,7 @@ import type {
   DeveloperPendingReactionSnapshot,
   DeveloperRelayRow,
   DeveloperRelaySnapshot,
+  Nip46SessionSnapshot,
   PendingIncomingDeletion,
   PendingIncomingReaction,
   RelayConnectionState,
@@ -45,6 +46,7 @@ interface DeveloperDiagnosticsDeps {
   getAppRelayUrls: () => string[];
   getFilterSince: () => number;
   getLoggedInPublicKeyHex: () => string | null;
+  getNip46SignerSessionSnapshot: () => Nip46SessionSnapshot;
   getPrivateMessagesRestoreThrottleMs: () => number;
   getPrivateMessagesSubscription: () => unknown;
   getPrivateMessagesSubscriptionSignature: () => string | null;
@@ -105,6 +107,7 @@ export function createDeveloperDiagnosticsRuntime({
   getAppRelayUrls,
   getFilterSince,
   getLoggedInPublicKeyHex,
+  getNip46SignerSessionSnapshot,
   getPrivateMessagesRestoreThrottleMs,
   getPrivateMessagesSubscription,
   getPrivateMessagesSubscriptionSignature,
@@ -445,6 +448,7 @@ export function createDeveloperDiagnosticsRuntime({
 
     const loggedInPubkey = getLoggedInPublicKeyHex();
     const authMethod = getStoredAuthMethod();
+    const nip46Session = getNip46SignerSessionSnapshot();
     const storedEventSince = ensureStoredEventSince();
     const filterSince = getFilterSince();
     const appRelayUrls = getAppRelayUrls();
@@ -479,6 +483,8 @@ export function createDeveloperDiagnosticsRuntime({
       session: {
         loggedInPubkey,
         authMethod,
+        nip46SignerPubkey: nip46Session.signerPubkey,
+        nip46RelayUrls: nip46Session.relayUrls,
         eventSince: storedEventSince,
         eventSinceIso: toOptionalIsoTimestampFromUnix(storedEventSince),
         filterSince,

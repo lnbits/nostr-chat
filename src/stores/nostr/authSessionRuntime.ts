@@ -2,11 +2,22 @@ import NDK, { NDKNip07Signer, NDKPrivateKeySigner, type NDKSigner } from '@nostr
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   AUTH_METHOD_STORAGE_KEY,
+  NIP46_SIGNER_PAYLOAD_STORAGE_KEY,
   PRIVATE_KEY_STORAGE_KEY,
   PUBLIC_KEY_STORAGE_KEY,
 } from 'src/stores/nostr/constants';
+import {
+  createNip46AuthRuntime,
+  getNip46SessionSnapshotFromPayload,
+} from 'src/stores/nostr/nip46AuthRuntime';
 import { hasStorage } from 'src/stores/nostr/shared';
-import type { AuthMethod, SubscribePrivateMessagesOptions } from 'src/stores/nostr/types';
+import type {
+  AuthMethod,
+  Nip46LoginResult,
+  Nip46NostrConnectLogin,
+  Nip46SessionSnapshot,
+  SubscribePrivateMessagesOptions,
+} from 'src/stores/nostr/types';
 import { clearPersistedAppState } from 'src/utils/logoutCleanup';
 import type { Ref } from 'vue';
 
@@ -144,6 +155,26 @@ export function createAuthSessionRuntime({
     return inputSanitizerService.normalizeHexKey(stored);
   }
 
+  function getNip46SignerPayload(): string | null {
+    if (!hasStorage()) {
+      return null;
+    }
+
+    return window.localStorage.getItem(NIP46_SIGNER_PAYLOAD_STORAGE_KEY)?.trim() || null;
+  }
+
+  function setStoredNip46SignerPayload(payload: string): void {
+    if (!hasStorage()) {
+      return;
+    }
+
+    window.localStorage.setItem(NIP46_SIGNER_PAYLOAD_STORAGE_KEY, payload);
+  }
+
+  function getNip46SignerSessionSnapshot(): Nip46SessionSnapshot {
+    return getNip46SessionSnapshotFromPayload(getNip46SignerPayload());
+  }
+
   function setStoredAuthSession(
     authMethod: AuthMethod,
     pubkeyHex: string,
@@ -184,6 +215,8 @@ export function createAuthSessionRuntime({
   }
 
   function clearPrivateKey(): void {
+    const activeSigner = ndk.signer as (NDKSigner & { stop?: () => void }) | undefined;
+    activeSigner?.stop?.();
     setCachedSigner(null);
     setCachedSignerSessionKey(null);
     ndk.signer = undefined;
@@ -219,6 +252,7 @@ export function createAuthSessionRuntime({
 
     window.localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
     window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+    window.localStorage.removeItem(NIP46_SIGNER_PAYLOAD_STORAGE_KEY);
     window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
     clearPrivatePreferencesStorage();
   }
@@ -261,6 +295,30 @@ export function createAuthSessionRuntime({
     return pubkeyHex;
   }
 
+  const { createNip46NostrConnectLogin, loginWithNip46Bunker } = createNip46AuthRuntime({
+    clearCurrentAuthSession: clearPrivateKey,
+    ndk,
+    resetEventSinceForFreshLogin,
+    setCachedSigner,
+    setCachedSignerSessionKey,
+    setStoredAuthSession,
+    setStoredNip46SignerPayload,
+  });
+
+  async function loginWithRemoteSignerBunker(input: {
+    connectionToken: string;
+    onAuthUrl?: (url: string) => void;
+  }): Promise<Nip46LoginResult> {
+    return loginWithNip46Bunker(input);
+  }
+
+  function createRemoteSignerNostrConnectLogin(input: {
+    relayUrl: string;
+    onAuthUrl?: (url: string) => void;
+  }): Nip46NostrConnectLogin {
+    return createNip46NostrConnectLogin(input);
+  }
+
   async function logout(): Promise<void> {
     clearPrivateKey();
     eventSince.value = 0;
@@ -292,8 +350,12 @@ export function createAuthSessionRuntime({
 
   return {
     clearPrivateKey,
+    createRemoteSignerNostrConnectLogin,
     getPrivateKeyHex,
+    getNip46SignerPayload,
+    getNip46SignerSessionSnapshot,
     loginWithExtension,
+    loginWithRemoteSignerBunker,
     logout,
     savePrivateKeyHex,
   };

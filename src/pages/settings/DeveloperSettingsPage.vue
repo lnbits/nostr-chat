@@ -355,6 +355,18 @@
             <div class="developer-facts__value">
               {{ diagnostics.session.hasNip07Extension ? 'available' : 'not detected' }}
             </div>
+
+            <template v-if="diagnostics.session.authMethod === 'nip46'">
+              <div class="developer-facts__label">NIP-46 signer</div>
+              <div class="developer-facts__value developer-facts__value--mono">
+                {{ diagnostics.session.nip46SignerPubkey ?? 'unknown' }}
+              </div>
+
+              <div class="developer-facts__label">NIP-46 relays</div>
+              <div class="developer-facts__value developer-facts__value--mono">
+                {{ diagnostics.session.nip46RelayUrls.join(', ') || 'none' }}
+              </div>
+            </template>
           </div>
 
           <div class="developer-chip-group">

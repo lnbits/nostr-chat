@@ -90,6 +90,16 @@
           />
 
           <q-btn
+            unelevated
+            color="primary"
+            no-caps
+            icon="phonelink_lock"
+            label="Login with Remote Signer"
+            class="auth-card__button"
+            @click="openRemoteSignerLogin"
+          />
+
+          <q-btn
             outline
             color="primary"
             no-caps
@@ -110,6 +120,223 @@
             aria-label="LNbits"
           >
             <img src="lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+          </a>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-link"
+          >
+            LNbits
+          </a>
+          <span>team.</span>
+        </q-card-section>
+      </q-card>
+
+      <q-card
+        v-else-if="loginStep === 'remote-signer'"
+        flat
+        bordered
+        class="auth-card auth-card--light auth-card--remote-signer"
+      >
+        <q-card-section class="auth-card__header">
+          <div class="auth-card__header-main">
+            <q-btn
+              flat
+              round
+              dense
+              icon="arrow_back"
+              color="primary"
+              class="auth-card__back-button"
+              aria-label="Back"
+              :disable="isRemoteSignerLoginInProgress"
+              @click="goBackToLoginOptions"
+            />
+            <div class="auth-card__header-text">
+              <div class="auth-card__title">Remote Signer</div>
+              <div class="auth-card__subtitle">Connect with NIP-46</div>
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-section class="auth-card__actions remote-signer">
+          <q-tabs
+            v-model="remoteSignerMode"
+            dense
+            no-caps
+            active-color="primary"
+            indicator-color="primary"
+            class="remote-signer__tabs"
+          >
+            <q-tab name="bunker" icon="link" label="Bunker URL" />
+            <q-tab name="nostrconnect" icon="qr_code_2" label="Nostr Connect" />
+          </q-tabs>
+
+          <q-tab-panels v-model="remoteSignerMode" animated class="remote-signer__panels">
+            <q-tab-panel name="bunker" class="remote-signer__panel">
+              <q-input
+                v-model="remoteSignerBunkerInput"
+                class="nc-input"
+                dense
+                outlined
+                rounded
+                type="textarea"
+                autogrow
+                label="bunker:// connection string"
+                data-testid="auth-remote-signer-bunker-input"
+                :disable="isRemoteSignerLoginInProgress"
+                @keydown.enter.prevent="handleRemoteSignerBunkerLogin"
+              />
+
+              <q-btn
+                unelevated
+                color="primary"
+                no-caps
+                icon="login"
+                label="Connect"
+                class="auth-card__button"
+                data-testid="auth-remote-signer-bunker-connect-button"
+                :disable="!canLoginWithRemoteSignerBunker"
+                :loading="isRemoteSignerLoginInProgress && remoteSignerMode === 'bunker'"
+                @click="handleRemoteSignerBunkerLogin"
+              />
+            </q-tab-panel>
+
+            <q-tab-panel name="nostrconnect" class="remote-signer__panel">
+              <q-input
+                v-model="remoteSignerRelayInput"
+                class="nc-input"
+                dense
+                outlined
+                rounded
+                label="Pairing relay"
+                placeholder="wss://relay.example.com"
+                data-testid="auth-remote-signer-relay-input"
+                :error="Boolean(remoteSignerRelayError)"
+                :error-message="remoteSignerRelayError"
+                :disable="isRemoteSignerLoginInProgress"
+                @keydown.enter.prevent="handleCreateNostrConnectLogin"
+              />
+
+              <q-btn
+                unelevated
+                color="primary"
+                no-caps
+                icon="add_link"
+                label="Generate pairing link"
+                class="auth-card__button"
+                data-testid="auth-remote-signer-create-nostrconnect-button"
+                :disable="!canCreateNostrConnectLogin"
+                :loading="isRemoteSignerLoginInProgress && remoteSignerMode === 'nostrconnect'"
+                @click="handleCreateNostrConnectLogin"
+              />
+
+              <div v-if="remoteSignerConnectUri" class="remote-signer-pairing">
+                <div
+                  v-if="remoteSignerConnectQrDataUrl"
+                  class="remote-signer-pairing__qr-shell"
+                  data-testid="auth-remote-signer-nostrconnect-qr"
+                >
+                  <img
+                    :src="remoteSignerConnectQrDataUrl"
+                    alt="Nostr Connect pairing QR code"
+                    class="remote-signer-pairing__qr"
+                  />
+                </div>
+
+                <q-input
+                  :model-value="remoteSignerConnectUri"
+                  class="nc-input remote-signer-pairing__uri"
+                  dense
+                  outlined
+                  rounded
+                  readonly
+                  type="textarea"
+                  autogrow
+                  label="nostrconnect://"
+                  data-testid="auth-remote-signer-nostrconnect-uri"
+                />
+
+                <div class="auth-card__button-row">
+                  <q-btn
+                    outline
+                    color="primary"
+                    no-caps
+                    icon="content_copy"
+                    label="Copy"
+                    class="auth-card__button"
+                    data-testid="auth-remote-signer-copy-button"
+                    @click="copyRemoteSignerConnectUri"
+                  />
+                  <q-btn
+                    unelevated
+                    color="primary"
+                    no-caps
+                    icon="open_in_new"
+                    label="Open"
+                    class="auth-card__button"
+                    data-testid="auth-remote-signer-open-button"
+                    @click="openRemoteSignerConnectUri"
+                  />
+                </div>
+              </div>
+            </q-tab-panel>
+          </q-tab-panels>
+
+          <q-banner
+            v-if="remoteSignerAuthUrl"
+            dense
+            rounded
+            class="auth-onboarding-banner"
+          >
+            <template #avatar>
+              <q-icon name="verified_user" color="primary" />
+            </template>
+            <a
+              :href="remoteSignerAuthUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="remote-signer__auth-link"
+            >
+              Open signer authorization
+            </a>
+          </q-banner>
+
+          <q-banner
+            v-if="remoteSignerError"
+            dense
+            rounded
+            class="auth-onboarding-banner auth-onboarding-banner--warning"
+          >
+            <template #avatar>
+              <q-icon name="warning_amber" color="warning" />
+            </template>
+            {{ remoteSignerError }}
+          </q-banner>
+
+          <q-btn
+            v-if="isRemoteSignerLoginInProgress"
+            flat
+            color="negative"
+            no-caps
+            icon="close"
+            label="Cancel"
+            class="auth-card__button"
+            data-testid="auth-remote-signer-cancel-button"
+            @click="cancelRemoteSignerLogin"
+          />
+        </q-card-section>
+
+        <q-card-section class="auth-card__footer">
+          <span>Made by the</span>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-logo-link"
+            aria-label="LNbits"
+          >
+            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
           </a>
           <a
             href="https://lnbits.com"
@@ -552,6 +779,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { Capacitor } from '@capacitor/core';
 import { normalizeRelayUrl } from '@nostr-dev-kit/ndk';
+import { toDataURL as createQrDataUrl } from 'qrcode';
 import BrowserNotificationsLoginDialog from 'src/components/BrowserNotificationsLoginDialog.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { useBrowserNotificationsLoginPrompt } from 'src/composables/useBrowserNotificationsLoginPrompt';
@@ -573,7 +801,11 @@ const {
   confirmBrowserNotificationsLoginDialog,
   skipBrowserNotificationsLoginDialog
 } = useBrowserNotificationsLoginPrompt();
-type AuthStep = 'welcome' | 'methods' | 'key' | 'onboarding';
+type AuthStep = 'welcome' | 'methods' | 'remote-signer' | 'key' | 'onboarding';
+type RemoteSignerMode = 'bunker' | 'nostrconnect';
+type ActiveRemoteSignerLogin = {
+  cancel: () => void;
+};
 type OnboardingStatus =
   | 'idle'
   | 'checking'
@@ -585,8 +817,16 @@ type OnboardingStatus =
 
 const loginStep = ref<AuthStep>('welcome');
 const privateKey = ref('');
+const remoteSignerMode = ref<RemoteSignerMode>('bunker');
+const remoteSignerBunkerInput = ref('');
+const remoteSignerRelayInput = ref('');
+const remoteSignerConnectUri = ref('');
+const remoteSignerConnectQrDataUrl = ref('');
+const remoteSignerAuthUrl = ref('');
+const remoteSignerError = ref('');
 const isExtensionLoginInProgress = ref(false);
 const isKeyLoginInProgress = ref(false);
+const isRemoteSignerLoginInProgress = ref(false);
 const onboardingStatus = ref<OnboardingStatus>('idle');
 const onboardingProfile = ref<UserProfileLookupResult | null>(null);
 const onboardingPubkey = ref('');
@@ -615,6 +855,18 @@ const privateKeyError = computed(() =>
     : ''
 );
 const canLoginWithKey = computed(() => privateKeyValidation.value.isValid && !isKeyLoginInProgress.value);
+const remoteSignerRelayError = computed(() =>
+  validateRelayUrlForRemoteSigner(remoteSignerRelayInput.value.trim())
+);
+const canLoginWithRemoteSignerBunker = computed(
+  () => remoteSignerBunkerInput.value.trim().length > 0 && !isRemoteSignerLoginInProgress.value
+);
+const canCreateNostrConnectLogin = computed(
+  () =>
+    remoteSignerRelayInput.value.trim().length > 0 &&
+    !remoteSignerRelayError.value &&
+    !isRemoteSignerLoginInProgress.value
+);
 const isDesktopAppRuntime = computed(() =>
   typeof window === 'undefined' ? false : Boolean(window.desktopRuntime?.isElectron)
 );
@@ -728,6 +980,7 @@ const canSearchSelectedOnboardingRelays = computed(
 );
 const hasSelectedOnboardingRelays = computed(() => selectedOnboardingRelayUrls.value.length > 0);
 const canCompleteOnboardingProfileSetup = computed(() => !isOnboardingContinuing.value);
+let activeRemoteSignerLogin: ActiveRemoteSignerLogin | null = null;
 
 function openLoginOptions(): void {
   try {
@@ -745,6 +998,21 @@ function openKeyLogin(): void {
   }
 }
 
+function openRemoteSignerLogin(): void {
+  try {
+    relayStore.init();
+    remoteSignerMode.value = 'bunker';
+    remoteSignerBunkerInput.value = '';
+    clearRemoteSignerPairingState();
+    remoteSignerAuthUrl.value = '';
+    remoteSignerError.value = '';
+    remoteSignerRelayInput.value = relayStore.relays[0] ?? '';
+    loginStep.value = 'remote-signer';
+  } catch (error) {
+    reportUiError('Failed to open remote signer login', error);
+  }
+}
+
 function goBackToWelcome(): void {
   try {
     loginStep.value = 'welcome';
@@ -756,8 +1024,13 @@ function goBackToWelcome(): void {
 
 function goBackToLoginOptions(): void {
   try {
+    cancelRemoteSignerLogin();
     loginStep.value = 'methods';
     privateKey.value = '';
+    remoteSignerBunkerInput.value = '';
+    clearRemoteSignerPairingState();
+    remoteSignerAuthUrl.value = '';
+    remoteSignerError.value = '';
   } catch (error) {
     reportUiError('Failed to go back to login options', error);
   }
@@ -801,6 +1074,142 @@ async function handleKeyLogin(): Promise<void> {
     reportUiError('Failed to log in', error, 'Failed to log in.');
   } finally {
     isKeyLoginInProgress.value = false;
+  }
+}
+
+function setRemoteSignerAuthUrl(url: string): void {
+  remoteSignerAuthUrl.value = url;
+}
+
+function getRemoteSignerErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  return fallback;
+}
+
+async function handleRemoteSignerBunkerLogin(): Promise<void> {
+  if (!canLoginWithRemoteSignerBunker.value) {
+    return;
+  }
+
+  isRemoteSignerLoginInProgress.value = true;
+  clearRemoteSignerPairingState();
+  remoteSignerAuthUrl.value = '';
+  remoteSignerError.value = '';
+  try {
+    await nostrStore.loginWithRemoteSignerBunker({
+      connectionToken: remoteSignerBunkerInput.value,
+      onAuthUrl: setRemoteSignerAuthUrl,
+    });
+    remoteSignerBunkerInput.value = '';
+    await startProfileOnboarding();
+  } catch (error) {
+    remoteSignerError.value = getRemoteSignerErrorMessage(
+      error,
+      'Failed to connect remote signer.'
+    );
+    reportUiError('Failed to log in with NIP-46 remote signer', error, remoteSignerError.value);
+  } finally {
+    isRemoteSignerLoginInProgress.value = false;
+  }
+}
+
+async function handleCreateNostrConnectLogin(): Promise<void> {
+  if (!canCreateNostrConnectLogin.value) {
+    return;
+  }
+
+  cancelRemoteSignerLogin();
+  isRemoteSignerLoginInProgress.value = true;
+  clearRemoteSignerPairingState();
+  remoteSignerAuthUrl.value = '';
+  remoteSignerError.value = '';
+
+  try {
+    const login = nostrStore.createRemoteSignerNostrConnectLogin({
+      relayUrl: remoteSignerRelayInput.value,
+      onAuthUrl: setRemoteSignerAuthUrl,
+    });
+    activeRemoteSignerLogin = {
+      cancel: login.cancel,
+    };
+    remoteSignerConnectUri.value = login.uri;
+    remoteSignerRelayInput.value = login.relayUrl;
+    await Promise.all([renderRemoteSignerConnectQr(login.uri), login.login]);
+    activeRemoteSignerLogin = null;
+    clearRemoteSignerPairingState();
+    await startProfileOnboarding();
+  } catch (error) {
+    const message = getRemoteSignerErrorMessage(error, 'Failed to pair remote signer.');
+    clearRemoteSignerPairingState();
+    if (message !== 'NIP-46 login was cancelled.') {
+      remoteSignerError.value = message;
+      reportUiError('Failed to pair NIP-46 remote signer', error, message);
+    }
+  } finally {
+    activeRemoteSignerLogin = null;
+    isRemoteSignerLoginInProgress.value = false;
+  }
+}
+
+function cancelRemoteSignerLogin(): void {
+  activeRemoteSignerLogin?.cancel();
+  activeRemoteSignerLogin = null;
+  clearRemoteSignerPairingState();
+  remoteSignerAuthUrl.value = '';
+  isRemoteSignerLoginInProgress.value = false;
+}
+
+function clearRemoteSignerPairingState(): void {
+  remoteSignerConnectUri.value = '';
+  remoteSignerConnectQrDataUrl.value = '';
+}
+
+async function renderRemoteSignerConnectQr(uri: string): Promise<void> {
+  try {
+    const dataUrl = await createQrDataUrl(uri, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 256,
+      color: {
+        dark: '#182236',
+        light: '#ffffff',
+      },
+    });
+    if (remoteSignerConnectUri.value === uri) {
+      remoteSignerConnectQrDataUrl.value = dataUrl;
+    }
+  } catch (error) {
+    console.warn('Failed to render NIP-46 pairing QR code', error);
+    remoteSignerConnectQrDataUrl.value = '';
+  }
+}
+
+async function copyRemoteSignerConnectUri(): Promise<void> {
+  const uri = remoteSignerConnectUri.value.trim();
+  if (!uri) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(uri);
+  } catch (error) {
+    reportUiError('Failed to copy NIP-46 pairing link', error, 'Failed to copy pairing link.');
+  }
+}
+
+function openRemoteSignerConnectUri(): void {
+  const uri = remoteSignerConnectUri.value.trim();
+  if (!uri) {
+    return;
+  }
+
+  try {
+    window.open(uri, '_blank', 'noopener,noreferrer');
+  } catch (error) {
+    reportUiError('Failed to open NIP-46 pairing link', error, 'Failed to open pairing link.');
   }
 }
 
@@ -1207,6 +1616,27 @@ function validateRelayUrlForOnboarding(value: string): string {
   }
 }
 
+function validateRelayUrlForRemoteSigner(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+      return 'Relay must use ws:// or wss://';
+    }
+
+    if (!url.hostname) {
+      return 'Relay URL must include a hostname';
+    }
+
+    return '';
+  } catch {
+    return 'Relay must be a valid ws:// or wss:// URL';
+  }
+}
+
 async function continueFromOnboarding(): Promise<void> {
   if (isOnboardingContinuing.value) {
     return;
@@ -1410,9 +1840,76 @@ async function goToRegister(): Promise<void> {
   width: min(100%, 560px);
 }
 
+.auth-card--remote-signer {
+  width: min(100%, 560px);
+}
+
 .auth-onboarding {
   gap: 16px;
   padding-top: 16px;
+}
+
+.remote-signer {
+  gap: 14px;
+}
+
+.remote-signer__tabs {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #334155;
+}
+
+.remote-signer__panels {
+  border-radius: 14px;
+  background: transparent;
+  color: #182236;
+}
+
+.remote-signer__panel {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+}
+
+.remote-signer-pairing {
+  display: grid;
+  gap: 12px;
+}
+
+.remote-signer-pairing__qr-shell {
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: min(100%, 280px);
+  aspect-ratio: 1;
+  padding: 12px;
+  border: 1px solid rgba(208, 220, 235, 0.92);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.remote-signer-pairing__qr {
+  display: block;
+  width: 100%;
+  max-width: 256px;
+  height: auto;
+}
+
+.remote-signer-pairing__uri :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.remote-signer__auth-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.remote-signer__auth-link:hover,
+.remote-signer__auth-link:focus-visible {
+  text-decoration: underline;
 }
 
 .auth-card--light .nc-input :deep(.q-field__control) {

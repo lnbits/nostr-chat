@@ -110,6 +110,7 @@ function createRuntimeHarness(
     getHasActivatedPool: () => hasActivatedPool,
     getHasRelayStatusListeners: () => hasRelayStatusListeners,
     getLoggedInPublicKeyHex: () => options.loggedInPublicKeyHex ?? null,
+    getNip46SignerPayload: () => null,
     getPrivateKeyHex: () => null,
     getStoredAuthMethod: () => null,
     hasNip07Extension: () => false,

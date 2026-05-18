@@ -89,6 +89,51 @@ test('generated key login opens profile onboarding before chats', async ({ brows
   }
 });
 
+test('remote signer login generates a nostrconnect QR pairing link', async ({ browser }) => {
+  const context = await browser.newContext();
+  await context.addInitScript(
+    (relayUrls: string[]) => {
+      window.localStorage.setItem(
+        'relays',
+        JSON.stringify(relayUrls.map((url) => ({ url, read: true, write: true })))
+      );
+    },
+    [E2E_RELAY_URL]
+  );
+  const page = await context.newPage();
+
+  try {
+    await page.goto('/#/auth');
+    await page.getByRole('button', { name: 'Login', exact: true }).click();
+    await page.getByRole('button', { name: 'Login with Remote Signer', exact: true }).click();
+    await page.getByText('Nostr Connect', { exact: true }).click();
+
+    await expect(page.getByRole('textbox', { name: 'Pairing relay' })).toHaveValue(E2E_RELAY_URL);
+    await page.getByTestId('auth-remote-signer-create-nostrconnect-button').click();
+
+    const uriInput = page.getByRole('textbox', { name: 'nostrconnect://' });
+    await expect(uriInput).toBeVisible({ timeout: 10_000 });
+    const uri = await uriInput.inputValue();
+    const parsedUri = new URL(uri);
+
+    expect(parsedUri.protocol).toBe('nostrconnect:');
+    expect(parsedUri.hostname).toMatch(/^[0-9a-f]{64}$/);
+    expect(parsedUri.searchParams.get('relay')).toBe(new URL(E2E_RELAY_URL).href);
+    expect(parsedUri.searchParams.get('secret')).toMatch(/^[0-9a-f]{64}$/);
+    expect(parsedUri.searchParams.get('perms')).toContain('sign_event');
+    expect(parsedUri.searchParams.get('perms')).toContain('nip44_encrypt');
+    expect(parsedUri.searchParams.get('perms')).toContain('nip44_decrypt');
+
+    const qrImage = page.getByTestId('auth-remote-signer-nostrconnect-qr').locator('img');
+    await expect(qrImage).toHaveAttribute('src', /^data:image\/png;base64,/);
+
+    await page.getByTestId('auth-remote-signer-cancel-button').click();
+    await expect(page.getByTestId('auth-remote-signer-nostrconnect-uri')).toBeHidden();
+  } finally {
+    await context.close();
+  }
+});
+
 test('NIP-07 login can establish a direct chat and receive a reply', async ({ browser }) => {
   const alice = await bootstrapExtensionUser(browser, TEST_ACCOUNTS.nip07Alice);
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.nip07Bob);

@@ -1,5 +1,6 @@
 import NDK, {
   NDKNip07Signer,
+  NDKNip46Signer,
   NDKPrivateKeySigner,
   type NDKRelay,
   type NDKRelayInformation,
@@ -25,6 +26,7 @@ interface RelayConnectionRuntimeDeps {
   getHasActivatedPool: () => boolean;
   getHasRelayStatusListeners: () => boolean;
   getLoggedInPublicKeyHex: () => string | null;
+  getNip46SignerPayload: () => string | null;
   getPrivateKeyHex: () => string | null;
   getStoredAuthMethod: () => AuthMethod | null;
   hasNip07Extension: () => boolean;
@@ -139,6 +141,7 @@ export function createRelayConnectionRuntime({
   getHasActivatedPool,
   getHasRelayStatusListeners,
   getLoggedInPublicKeyHex,
+  getNip46SignerPayload,
   getPrivateKeyHex,
   getStoredAuthMethod,
   hasNip07Extension,
@@ -183,6 +186,13 @@ export function createRelayConnectionRuntime({
         }
 
         cachedSigner = new NDKNip07Signer(undefined, ndk);
+      } else if (authMethod === 'nip46') {
+        const payload = getNip46SignerPayload();
+        if (!payload) {
+          throw new Error('Missing NIP-46 remote signer session. Login is required.');
+        }
+
+        cachedSigner = await NDKNip46Signer.fromPayload(payload, ndk);
       } else {
         const privateKeyHex = getPrivateKeyHex();
         if (!privateKeyHex) {
@@ -208,7 +218,9 @@ export function createRelayConnectionRuntime({
       throw new Error(
         authMethod === 'nip07'
           ? 'The connected NIP-07 extension account does not match the current login.'
-          : 'The stored signer does not match the current login.'
+          : authMethod === 'nip46'
+            ? 'The connected NIP-46 remote signer account does not match the current login.'
+            : 'The stored signer does not match the current login.'
       );
     }
 

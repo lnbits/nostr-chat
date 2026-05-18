@@ -59,6 +59,7 @@ vi.mock('src/utils/logoutCleanup', () => ({
 import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import {
   AUTH_METHOD_STORAGE_KEY,
+  NIP46_SIGNER_PAYLOAD_STORAGE_KEY,
   PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
   PRIVATE_KEY_STORAGE_KEY,
   PUBLIC_KEY_STORAGE_KEY,
@@ -669,6 +670,7 @@ describe('nostr runtime messaging logic', () => {
   it('clears and persists auth session state for direct key logins and logout', async () => {
     const localStorage = createMockStorage({
       [AUTH_METHOD_STORAGE_KEY]: 'nsec',
+      [NIP46_SIGNER_PAYLOAD_STORAGE_KEY]: 'remote-session',
       [PRIVATE_KEY_STORAGE_KEY]: 'f'.repeat(64),
       [PUBLIC_KEY_STORAGE_KEY]: PUBKEY_A,
     });
@@ -692,6 +694,7 @@ describe('nostr runtime messaging logic', () => {
 
     runtime.clearPrivateKey();
     expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBeUndefined();
+    expect(localStorage.store.get(NIP46_SIGNER_PAYLOAD_STORAGE_KEY)).toBeUndefined();
     expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
     expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBeUndefined();
     expect(deps.resetPrivateMessagesSubscriptionRuntimeState).toHaveBeenCalledWith({

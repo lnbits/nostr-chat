@@ -22,7 +22,7 @@ export function createAuthIdentityRuntime({
     }
 
     const stored = window.localStorage.getItem(AUTH_METHOD_STORAGE_KEY)?.trim().toLowerCase();
-    if (stored === 'nsec' || stored === 'nip07') {
+    if (stored === 'nsec' || stored === 'nip07' || stored === 'nip46') {
       return stored;
     }
 

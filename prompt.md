@@ -4,8 +4,8 @@ prompt
 
 do not have multiple subscriptions for the same events
 
-
-drop login with extension
+do not subscribe to contacts relaysI w, only to my relay
+fetch contact updates with the watchdog r manual refresh
 
 App init:
  - always use app relays to listen for messages
@@ -13,6 +13,13 @@ App init:
 - login and secrets on mobile
 
 - macos sign app
+
+refresh contacts should refresh priofiels
+URL for notifications firebase
+secret storage on android
+
+
+backrefs
 
 My Relays (NIP-65)
 some contacts have weird relays, we should not listen there
