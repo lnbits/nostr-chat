@@ -1,4 +1,9 @@
 import { route } from 'quasar/wrappers';
+import {
+  clearAndroidPrivateKeySessionMetadata,
+  hasUsableAndroidPrivateKeySession,
+} from 'src/services/androidSecurePrivateKeyStorage';
+import { PUBLIC_KEY_STORAGE_KEY } from 'src/stores/nostr/constants';
 import { finalizePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import {
   createMemoryHistory,
@@ -8,14 +13,22 @@ import {
 } from 'vue-router';
 import routes from './routes';
 
-const PUBLIC_KEY_STORAGE_KEY = 'npub';
-
-function hasStoredPublicKey(): boolean {
+async function hasStoredPublicKey(): Promise<boolean> {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
     return false;
   }
 
-  return Boolean(window.localStorage.getItem(PUBLIC_KEY_STORAGE_KEY)?.trim());
+  const hasPublicKey = Boolean(window.localStorage.getItem(PUBLIC_KEY_STORAGE_KEY)?.trim());
+  if (!hasPublicKey) {
+    return false;
+  }
+
+  if (await hasUsableAndroidPrivateKeySession()) {
+    return true;
+  }
+
+  clearAndroidPrivateKeySessionMetadata();
+  return false;
 }
 
 export default route(() => {
@@ -41,7 +54,7 @@ export default route(() => {
     }
 
     const isAuthRoute = to.name === 'auth' || to.name === 'register';
-    const hasLoggedInUser = hasStoredPublicKey();
+    const hasLoggedInUser = await hasStoredPublicKey();
 
     if (isAuthRoute) {
       return hasLoggedInUser ? { name: 'chats' } : true;

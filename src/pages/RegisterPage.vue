@@ -228,7 +228,7 @@ async function handleLoginNow(): Promise<void> {
 
   isLoggingIn.value = true;
   try {
-    const didSave = nostrStore.savePrivateKeyHex(generatedAccount.value.privateKeyHex);
+    const didSave = await nostrStore.savePrivateKeyHex(generatedAccount.value.privateKeyHex);
     if (!didSave) {
       throw new Error('Failed to persist the generated account key.');
     }

@@ -1,4 +1,12 @@
 import NDK, { NDKNip07Signer, NDKPrivateKeySigner, type NDKSigner } from '@nostr-dev-kit/ndk';
+import {
+  clearAndroidPrivateKeyMemoryOnlySession,
+  isAndroidSecurePrivateKeyStorageAvailable,
+  markAndroidPrivateKeyMemoryOnlySession,
+  readAndroidSecurePrivateKeyHex,
+  removeAndroidSecurePrivateKeyHex,
+  writeAndroidSecurePrivateKeyHex,
+} from 'src/services/androidSecurePrivateKeyStorage';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   AUTH_METHOD_STORAGE_KEY,
@@ -142,7 +150,10 @@ export function createAuthSessionRuntime({
   setSyncRecentChatContactsPromise,
   stopPrivateMessagesSubscription,
 }: AuthSessionRuntimeDeps) {
-  function getPrivateKeyHex(): string | null {
+  let cachedPrivateKeyHex: string | null = null;
+  let loadPrivateKeyHexPromise: Promise<string | null> | null = null;
+
+  function readLegacyPrivateKeyHex(): string | null {
     if (!hasStorage()) {
       return null;
     }
@@ -153,6 +164,135 @@ export function createAuthSessionRuntime({
     }
 
     return inputSanitizerService.normalizeHexKey(stored);
+  }
+
+  function getStoredPublicKeyHex(): string | null {
+    if (!hasStorage()) {
+      return null;
+    }
+
+    const stored = window.localStorage.getItem(PUBLIC_KEY_STORAGE_KEY)?.trim() ?? '';
+    return (
+      inputSanitizerService.normalizeHexKey(stored) ??
+      inputSanitizerService.validateNpub(stored).normalizedPubkey
+    );
+  }
+
+  function getPrivateKeyHex(): string | null {
+    return cachedPrivateKeyHex ?? readLegacyPrivateKeyHex();
+  }
+
+  function derivePublicKeyFromPrivateKeyHex(privateKeyHex: string): string | null {
+    try {
+      return inputSanitizerService.normalizeHexKey(
+        new NDKPrivateKeySigner(privateKeyHex, ndk).pubkey
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function setStoredNsecSessionMetadata(pubkeyHex: string): void {
+    if (!hasStorage()) {
+      return;
+    }
+
+    window.localStorage.setItem(AUTH_METHOD_STORAGE_KEY, 'nsec');
+    window.localStorage.setItem(PUBLIC_KEY_STORAGE_KEY, pubkeyHex);
+  }
+
+  async function persistAndroidPrivateKeyHex(
+    privateKeyHex: string,
+    pubkeyHex: string
+  ): Promise<boolean> {
+    try {
+      await writeAndroidSecurePrivateKeyHex(privateKeyHex);
+      clearAndroidPrivateKeyMemoryOnlySession();
+      return true;
+    } catch (error) {
+      console.warn('Failed to persist private key in Android secure storage.', error);
+      markAndroidPrivateKeyMemoryOnlySession(pubkeyHex);
+      return false;
+    }
+  }
+
+  async function loadAndroidPrivateKeyHex(): Promise<string | null> {
+    if (cachedPrivateKeyHex) {
+      return cachedPrivateKeyHex;
+    }
+
+    const legacyPrivateKeyHex = readLegacyPrivateKeyHex();
+    let securePrivateKeyHex: string | null = null;
+
+    try {
+      securePrivateKeyHex = await readAndroidSecurePrivateKeyHex();
+    } catch (error) {
+      console.warn('Failed to read private key from Android secure storage.', error);
+    }
+
+    const storedPubkeyHex = getStoredPublicKeyHex();
+    const securePrivateKeyPubkeyHex = securePrivateKeyHex
+      ? derivePublicKeyFromPrivateKeyHex(securePrivateKeyHex)
+      : null;
+
+    if (
+      securePrivateKeyHex &&
+      (!storedPubkeyHex || securePrivateKeyPubkeyHex === storedPubkeyHex)
+    ) {
+      cachedPrivateKeyHex = securePrivateKeyHex;
+      if (hasStorage()) {
+        window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+      }
+      clearAndroidPrivateKeyMemoryOnlySession();
+      return securePrivateKeyHex;
+    }
+
+    if (securePrivateKeyHex) {
+      console.warn(
+        'Ignoring Android secure private key that does not match the stored public key.'
+      );
+    }
+
+    if (!legacyPrivateKeyHex) {
+      return null;
+    }
+
+    const legacyPrivateKeyPubkeyHex = derivePublicKeyFromPrivateKeyHex(legacyPrivateKeyHex);
+    if (
+      !legacyPrivateKeyPubkeyHex ||
+      (storedPubkeyHex && legacyPrivateKeyPubkeyHex !== storedPubkeyHex)
+    ) {
+      console.warn('Ignoring legacy private key that does not match the stored public key.');
+      if (hasStorage()) {
+        window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+      }
+      return null;
+    }
+
+    cachedPrivateKeyHex = legacyPrivateKeyHex;
+    const pubkeyHex = storedPubkeyHex ?? legacyPrivateKeyPubkeyHex;
+    setStoredNsecSessionMetadata(pubkeyHex);
+
+    await persistAndroidPrivateKeyHex(legacyPrivateKeyHex, pubkeyHex);
+
+    if (hasStorage()) {
+      window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+    }
+
+    return legacyPrivateKeyHex;
+  }
+
+  async function loadPrivateKeyHex(): Promise<string | null> {
+    if (!isAndroidSecurePrivateKeyStorageAvailable()) {
+      cachedPrivateKeyHex = readLegacyPrivateKeyHex();
+      return cachedPrivateKeyHex;
+    }
+
+    loadPrivateKeyHexPromise ??= loadAndroidPrivateKeyHex().finally(() => {
+      loadPrivateKeyHexPromise = null;
+    });
+
+    return loadPrivateKeyHexPromise;
   }
 
   function getNip46SignerPayload(): string | null {
@@ -214,9 +354,20 @@ export function createAuthSessionRuntime({
     setPrivateMessagesEpochSubscriptionRefreshQueue(Promise.resolve());
   }
 
-  function clearPrivateKey(): void {
+  async function removePersistedAndroidPrivateKey(): Promise<void> {
+    clearAndroidPrivateKeyMemoryOnlySession();
+    try {
+      await removeAndroidSecurePrivateKeyHex();
+    } catch (error) {
+      console.warn('Failed to remove private key from Android secure storage.', error);
+    }
+  }
+
+  function clearPrivateKey(options: { clearSecureStorage?: boolean } = {}): void {
     const activeSigner = ndk.signer as (NDKSigner & { stop?: () => void }) | undefined;
     activeSigner?.stop?.();
+    cachedPrivateKeyHex = null;
+    loadPrivateKeyHexPromise = null;
     setCachedSigner(null);
     setCachedSignerSessionKey(null);
     ndk.signer = undefined;
@@ -246,6 +397,10 @@ export function createAuthSessionRuntime({
     chatStoreClearAllComposerDrafts();
     bumpDeveloperDiagnosticsVersion();
 
+    if (options.clearSecureStorage !== false) {
+      void removePersistedAndroidPrivateKey();
+    }
+
     if (!hasStorage()) {
       return;
     }
@@ -257,16 +412,25 @@ export function createAuthSessionRuntime({
     clearPrivatePreferencesStorage();
   }
 
-  function savePrivateKeyHex(hexPrivateKey: string): boolean {
+  async function savePrivateKeyHex(hexPrivateKey: string): Promise<boolean> {
     const normalized = inputSanitizerService.normalizeHexKey(hexPrivateKey);
     if (!normalized || !hasStorage()) {
       return false;
     }
 
     const signer = new NDKPrivateKeySigner(normalized, ndk);
-    clearPrivateKey();
+    clearPrivateKey({ clearSecureStorage: false });
     resetEventSinceForFreshLogin();
-    setStoredAuthSession('nsec', signer.pubkey, normalized);
+    cachedPrivateKeyHex = normalized;
+
+    if (isAndroidSecurePrivateKeyStorageAvailable()) {
+      await removePersistedAndroidPrivateKey();
+      await persistAndroidPrivateKeyHex(normalized, signer.pubkey);
+      setStoredAuthSession('nsec', signer.pubkey);
+    } else {
+      setStoredAuthSession('nsec', signer.pubkey, normalized);
+    }
+
     setCachedSigner(signer);
     setCachedSignerSessionKey(`nsec:${signer.pubkey}`);
     ndk.signer = signer;
@@ -320,7 +484,8 @@ export function createAuthSessionRuntime({
   }
 
   async function logout(): Promise<void> {
-    clearPrivateKey();
+    clearPrivateKey({ clearSecureStorage: false });
+    await removePersistedAndroidPrivateKey();
     eventSince.value = 0;
     pendingEventSinceState.pendingEventSinceUpdate = 0;
     isRestoringStartupState.value = false;
@@ -352,6 +517,7 @@ export function createAuthSessionRuntime({
     clearPrivateKey,
     createRemoteSignerNostrConnectLogin,
     getPrivateKeyHex,
+    loadPrivateKeyHex,
     getNip46SignerPayload,
     getNip46SignerSessionSnapshot,
     loginWithExtension,

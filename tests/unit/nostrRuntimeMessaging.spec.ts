@@ -36,9 +36,20 @@ const logoutCleanupMock = vi.hoisted(() => ({
   clearPersistedAppState: vi.fn(async () => {}),
 }));
 
+const androidSecurePrivateKeyStorageMock = vi.hoisted(() => ({
+  clearAndroidPrivateKeyMemoryOnlySession: vi.fn(),
+  isAndroidSecurePrivateKeyStorageAvailable: vi.fn(() => false),
+  markAndroidPrivateKeyMemoryOnlySession: vi.fn(),
+  readAndroidSecurePrivateKeyHex: vi.fn(async () => null as string | null),
+  removeAndroidSecurePrivateKeyHex: vi.fn(async () => {}),
+  writeAndroidSecurePrivateKeyHex: vi.fn(async () => {}),
+}));
+
 vi.mock('src/services/chatDataService', () => ({
   chatDataService: chatDataServiceMock,
 }));
+
+vi.mock('src/services/androidSecurePrivateKeyStorage', () => androidSecurePrivateKeyStorageMock);
 
 vi.mock('src/services/contactsService', () => ({
   contactsService: contactsServiceMock,
@@ -243,6 +254,14 @@ describe('nostr runtime messaging logic', () => {
     (globalThis as Record<string, unknown>).window = undefined;
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    androidSecurePrivateKeyStorageMock.clearAndroidPrivateKeyMemoryOnlySession.mockClear();
+    androidSecurePrivateKeyStorageMock.isAndroidSecurePrivateKeyStorageAvailable.mockReturnValue(
+      false
+    );
+    androidSecurePrivateKeyStorageMock.markAndroidPrivateKeyMemoryOnlySession.mockClear();
+    androidSecurePrivateKeyStorageMock.readAndroidSecurePrivateKeyHex.mockResolvedValue(null);
+    androidSecurePrivateKeyStorageMock.removeAndroidSecurePrivateKeyHex.mockResolvedValue();
+    androidSecurePrivateKeyStorageMock.writeAndroidSecurePrivateKeyHex.mockResolvedValue();
   });
 
   afterEach(() => {
@@ -683,8 +702,8 @@ describe('nostr runtime messaging logic', () => {
     const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
 
     expect(runtime.getPrivateKeyHex()).toBe('f'.repeat(64));
-    expect(runtime.savePrivateKeyHex('invalid')).toBe(false);
-    expect(runtime.savePrivateKeyHex(privateKey)).toBe(true);
+    await expect(runtime.savePrivateKeyHex('invalid')).resolves.toBe(false);
+    await expect(runtime.savePrivateKeyHex(privateKey)).resolves.toBe(true);
     expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBe('nsec');
     expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBe(privateKey);
     expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBe(expectedPubkey);
@@ -721,6 +740,83 @@ describe('nostr runtime messaging logic', () => {
     expect(deps.clearRelayStoreState).toHaveBeenCalledTimes(1);
     expect(deps.clearNip65RelayStoreState).toHaveBeenCalledTimes(1);
     expect(logoutCleanupMock.clearPersistedAppState).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses Android secure storage instead of localStorage for direct key logins', async () => {
+    androidSecurePrivateKeyStorageMock.isAndroidSecurePrivateKeyStorageAvailable.mockReturnValue(
+      true
+    );
+    const localStorage = createMockStorage();
+    (globalThis as Record<string, unknown>).window = {
+      localStorage: localStorage.api,
+    };
+
+    const { deps, ndk, runtime } = createAuthSessionHarness();
+    const privateKey = NDKPrivateKeySigner.generate().privateKey;
+    const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
+
+    await expect(runtime.savePrivateKeyHex(privateKey)).resolves.toBe(true);
+
+    expect(androidSecurePrivateKeyStorageMock.writeAndroidSecurePrivateKeyHex).toHaveBeenCalledWith(
+      privateKey
+    );
+    expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBe('nsec');
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBe(expectedPubkey);
+    expect(runtime.getPrivateKeyHex()).toBe(privateKey);
+    expect(deps.setCachedSignerSessionKey).toHaveBeenCalledWith(`nsec:${expectedPubkey}`);
+    expect(ndk.signer).toBeTruthy();
+  });
+
+  it('falls back to a memory-only Android private-key session when secure storage fails', async () => {
+    androidSecurePrivateKeyStorageMock.isAndroidSecurePrivateKeyStorageAvailable.mockReturnValue(
+      true
+    );
+    androidSecurePrivateKeyStorageMock.writeAndroidSecurePrivateKeyHex.mockRejectedValue(
+      new Error('secure storage unavailable')
+    );
+    const localStorage = createMockStorage();
+    (globalThis as Record<string, unknown>).window = {
+      localStorage: localStorage.api,
+    };
+
+    const { runtime } = createAuthSessionHarness();
+    const privateKey = NDKPrivateKeySigner.generate().privateKey;
+    const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
+
+    await expect(runtime.savePrivateKeyHex(privateKey)).resolves.toBe(true);
+
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(runtime.getPrivateKeyHex()).toBe(privateKey);
+    expect(
+      androidSecurePrivateKeyStorageMock.markAndroidPrivateKeyMemoryOnlySession
+    ).toHaveBeenCalledWith(expectedPubkey);
+  });
+
+  it('migrates legacy Android localStorage private keys into secure storage', async () => {
+    androidSecurePrivateKeyStorageMock.isAndroidSecurePrivateKeyStorageAvailable.mockReturnValue(
+      true
+    );
+    const privateKey = NDKPrivateKeySigner.generate().privateKey;
+    const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
+    const localStorage = createMockStorage({
+      [PRIVATE_KEY_STORAGE_KEY]: privateKey,
+      [PUBLIC_KEY_STORAGE_KEY]: expectedPubkey,
+    });
+    (globalThis as Record<string, unknown>).window = {
+      localStorage: localStorage.api,
+    };
+
+    const { runtime } = createAuthSessionHarness();
+
+    await expect(runtime.loadPrivateKeyHex()).resolves.toBe(privateKey);
+
+    expect(androidSecurePrivateKeyStorageMock.writeAndroidSecurePrivateKeyHex).toHaveBeenCalledWith(
+      privateKey
+    );
+    expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBe('nsec');
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBe(expectedPubkey);
   });
 
   it('queues UI refreshes, chat checks, and post-EOSE work for private messages', async () => {

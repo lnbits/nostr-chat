@@ -111,7 +111,7 @@ function createRuntimeHarness(
     getHasRelayStatusListeners: () => hasRelayStatusListeners,
     getLoggedInPublicKeyHex: () => options.loggedInPublicKeyHex ?? null,
     getNip46SignerPayload: () => null,
-    getPrivateKeyHex: () => null,
+    loadPrivateKeyHex: async () => null,
     getStoredAuthMethod: () => null,
     hasNip07Extension: () => false,
     initialConnectTimeoutMs: 3000,

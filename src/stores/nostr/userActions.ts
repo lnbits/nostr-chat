@@ -113,7 +113,7 @@ interface UserActionsDeps {
   readDirectMessageRecipientPubkey: (event: NostrEvent) => string | null;
   readEpochNumberTag: (tags: string[][]) => number | null;
   readFirstTagValue: (tags: string[][], tagName: string) => string | null;
-  savePrivateKeyHex: (hexPrivateKey: string) => boolean;
+  savePrivateKeyHex: (hexPrivateKey: string) => Promise<boolean>;
   sendGiftWrappedRumor: (
     recipientPublicKey: string,
     relays: string[],
@@ -172,23 +172,23 @@ export function createUserActions({
     return inputSanitizerService.validatePrivateKey(input);
   }
 
-  function savePrivateKeyFromNsec(input: string): NsecValidationResult {
+  async function savePrivateKeyFromNsec(input: string): Promise<NsecValidationResult> {
     const validation = validateNsec(input);
     if (!validation.isValid || !validation.hexPrivateKey) {
       return validation;
     }
 
-    savePrivateKeyHex(validation.hexPrivateKey);
+    await savePrivateKeyHex(validation.hexPrivateKey);
     return validation;
   }
 
-  function savePrivateKey(input: string): PrivateKeyValidationResult {
+  async function savePrivateKey(input: string): Promise<PrivateKeyValidationResult> {
     const validation = validatePrivateKey(input);
     if (!validation.isValid || !validation.hexPrivateKey) {
       return validation;
     }
 
-    savePrivateKeyHex(validation.hexPrivateKey);
+    await savePrivateKeyHex(validation.hexPrivateKey);
     return validation;
   }
 

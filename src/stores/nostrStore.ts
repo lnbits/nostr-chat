@@ -257,6 +257,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let getPrivateKeyHexRuntime: () => string | null = () => {
     throw new Error('Auth session runtime is not initialized.');
   };
+  let loadPrivateKeyHexRuntime: () => Promise<string | null> = async () => {
+    throw new Error('Auth session runtime is not initialized.');
+  };
   let getNip46SignerPayloadRuntime: () => string | null = () => {
     throw new Error('Auth session runtime is not initialized.');
   };
@@ -946,7 +949,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getHasRelayStatusListeners: () => hasRelayStatusListeners,
     getLoggedInPublicKeyHex,
     getNip46SignerPayload: () => getNip46SignerPayloadRuntime(),
-    getPrivateKeyHex: () => getPrivateKeyHexRuntime(),
+    loadPrivateKeyHex: () => loadPrivateKeyHexRuntime(),
     getStoredAuthMethod,
     hasNip07Extension,
     initialConnectTimeoutMs: INITIAL_CONNECT_TIMEOUT_MS,
@@ -1763,6 +1766,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     clearPrivateKey: clearPrivateKeyImpl,
     createRemoteSignerNostrConnectLogin: createRemoteSignerNostrConnectLoginImpl,
     getPrivateKeyHex: getPrivateKeyHexImpl,
+    loadPrivateKeyHex: loadPrivateKeyHexImpl,
     getNip46SignerPayload: getNip46SignerPayloadImpl,
     getNip46SignerSessionSnapshot: getNip46SignerSessionSnapshotImpl,
     loginWithExtension: loginWithExtensionImpl,
@@ -1848,6 +1852,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
   });
   getPrivateKeyHexRuntime = getPrivateKeyHexImpl;
+  loadPrivateKeyHexRuntime = loadPrivateKeyHexImpl;
   getNip46SignerPayloadRuntime = getNip46SignerPayloadImpl;
   getNip46SignerSessionSnapshotRuntime = getNip46SignerSessionSnapshotImpl;
   const {

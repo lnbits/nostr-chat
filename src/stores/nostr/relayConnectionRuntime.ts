@@ -27,7 +27,7 @@ interface RelayConnectionRuntimeDeps {
   getHasRelayStatusListeners: () => boolean;
   getLoggedInPublicKeyHex: () => string | null;
   getNip46SignerPayload: () => string | null;
-  getPrivateKeyHex: () => string | null;
+  loadPrivateKeyHex: () => Promise<string | null>;
   getStoredAuthMethod: () => AuthMethod | null;
   hasNip07Extension: () => boolean;
   initialConnectTimeoutMs: number;
@@ -142,7 +142,7 @@ export function createRelayConnectionRuntime({
   getHasRelayStatusListeners,
   getLoggedInPublicKeyHex,
   getNip46SignerPayload,
-  getPrivateKeyHex,
+  loadPrivateKeyHex,
   getStoredAuthMethod,
   hasNip07Extension,
   initialConnectTimeoutMs,
@@ -194,7 +194,7 @@ export function createRelayConnectionRuntime({
 
         cachedSigner = await NDKNip46Signer.fromPayload(payload, ndk);
       } else {
-        const privateKeyHex = getPrivateKeyHex();
+        const privateKeyHex = await loadPrivateKeyHex();
         if (!privateKeyHex) {
           throw new Error('Missing private key for local signer. Login is required.');
         }
