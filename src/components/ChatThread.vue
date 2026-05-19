@@ -9,7 +9,7 @@
             dense
             round
             icon="arrow_back"
-            aria-label="Back"
+            :aria-label="$t('Back')"
             @click="handleBack"
           />
           <div class="thread-header__identity" @click="handleOpenProfile">
@@ -21,7 +21,7 @@
             />
             <div class="thread-header__meta">
               <div class="thread-header__name">{{ chat.name }}</div>
-              <div class="thread-header__time">Last active {{ headerTime }}</div>
+              <div class="thread-header__time">{{ $t('Last active {time}', { time: headerTime }) }}</div>
             </div>
           </div>
           <q-btn
@@ -30,7 +30,7 @@
             round
             icon="search"
             data-testid="thread-search-open-button"
-            aria-label="Search Messages"
+            :aria-label="$t('Search Messages')"
             class="thread-header__action"
             @click="handleOpenThreadSearch"
           />
@@ -39,7 +39,7 @@
             dense
             round
             icon="badge"
-            aria-label="Open Profile"
+            :aria-label="$t('Open Profile')"
             class="thread-header__action"
             @click="handleOpenProfile"
           />
@@ -61,7 +61,7 @@
             rounded
             clearable
             clear-icon="close"
-            placeholder="Search"
+            :placeholder="$t('Search')"
             :loading="isThreadSearchBusy"
             @keydown.enter.prevent="handleThreadSearchEnter"
           >
@@ -81,7 +81,7 @@
               round
               icon="keyboard_arrow_up"
               data-testid="thread-search-prev-button"
-              aria-label="Previous Search Result"
+              :aria-label="$t('Previous Search Result')"
               class="thread-search__action"
               :disable="!canNavigateThreadSearch"
               @click="handlePreviousThreadSearchResult"
@@ -92,7 +92,7 @@
               round
               icon="keyboard_arrow_down"
               data-testid="thread-search-next-button"
-              aria-label="Next Search Result"
+              :aria-label="$t('Next Search Result')"
               class="thread-search__action"
               :disable="!canNavigateThreadSearch"
               @click="handleNextThreadSearchResult"
@@ -103,7 +103,7 @@
               round
               icon="close"
               data-testid="thread-search-close-button"
-              aria-label="Close Search"
+              :aria-label="$t('Close Search')"
               class="thread-search__action"
               @click="handleCloseThreadSearch"
             />
@@ -129,7 +129,7 @@
             dense
             no-caps
             icon="keyboard_arrow_up"
-            label="More"
+            :label="$t('More')"
             class="thread-more__button"
             :disable="isLoadingOlderMessages"
             @mousedown.prevent
@@ -203,7 +203,7 @@
             dense
             no-caps
             icon-right="keyboard_arrow_down"
-            label="More"
+            :label="$t('More')"
             class="thread-more__button"
             :disable="isLoadingNewerMessages"
             @mousedown.prevent
@@ -219,7 +219,7 @@
               v-if="showReactionJumpButton"
               flat
               dense
-              aria-label="Jump to the first new reaction"
+              :aria-label="$t('Jump to the first new reaction')"
               class="thread-scroll-jump thread-scroll-jump--reaction"
               @click="handleReactionJump"
             >
@@ -237,7 +237,7 @@
               dense
               round
               icon="keyboard_double_arrow_down"
-              aria-label="Jump to the latest messages"
+              :aria-label="$t('Jump to the latest messages')"
               class="thread-scroll-jump"
               @click="handleScrollJump"
             />
@@ -264,11 +264,11 @@
             track-color="grey-4"
           />
         </div>
-        <div class="thread-empty__status">Restoring chats and messages...</div>
+        <div class="thread-empty__status">{{ $t('Restoring chats and messages...') }}</div>
       </template>
       <template v-else>
         <div class="thread-empty__mark q-mb-md">...</div>
-        <div>Select a chat to start messaging.</div>
+        <div>{{ $t('Select a chat to start messaging.') }}</div>
       </template>
     </div>
   </div>
@@ -299,6 +299,7 @@ import {
   resolveThreadSearchNavigationIndex
 } from 'src/utils/threadSearch';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { getDateTimeLocale, t } from 'src/i18n';
 
 const props = withDefaults(
   defineProps<{
@@ -443,7 +444,7 @@ const headerTime = computed(() => {
     return '';
   }
 
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(getDateTimeLocale(), {
     hour: 'numeric',
     minute: '2-digit',
     month: 'short',
@@ -465,7 +466,7 @@ const avatarImageUrl = computed(() => {
 });
 
 const contactAuthorLabel = computed(() => {
-  return props.chat?.name?.trim() || 'Contact';
+  return props.chat?.name?.trim() || t('Contact');
 });
 
 const contactAvatarFallback = computed(() => {
@@ -498,15 +499,15 @@ const isChatActuallyVisible = computed(() => {
 const threadSearchStatusLabel = computed(() => {
   const normalizedQuery = threadSearchQuery.value.trim();
   if (!normalizedQuery) {
-    return 'Search messages';
+    return t('Search messages');
   }
 
   if (isThreadSearchBusy.value) {
-    return 'Searching...';
+    return t('Searching...');
   }
 
   if (threadSearchMatches.value.length === 0) {
-    return 'No matches';
+    return t('No matches');
   }
 
   const activeIndex = Math.max(0, activeThreadSearchMatchIndex.value);
@@ -663,7 +664,7 @@ function formatDayLabel(value: string): string {
   }
 
   const isCurrentYear = date.getFullYear() === new Date().getFullYear();
-  return new Intl.DateTimeFormat('en-GB', {
+  return new Intl.DateTimeFormat(getDateTimeLocale(), {
     day: '2-digit',
     month: 'long',
     ...(isCurrentYear ? {} : { year: 'numeric' })
@@ -706,7 +707,7 @@ const threadItems = computed<ThreadItem[]>(() => {
       items.push({
         type: 'unread-separator',
         key: `unread-separator-${message.id}`,
-        label: 'Unread Messages'
+        label: t('Unread Messages')
       });
     }
 
@@ -715,7 +716,7 @@ const threadItems = computed<ThreadItem[]>(() => {
       items.push({
         type: 'epoch-separator',
         key: `epoch-separator-${message.id}`,
-        label: `Epoch ${epochNoticeNumber}`
+        label: t('Epoch {number}', { number: epochNoticeNumber })
       });
       continue;
     }
@@ -776,7 +777,7 @@ async function refreshSelfAuthorIdentity(loggedInPublicKeyValue: string | null):
   const refreshToken = ++selfAuthorIdentityRefreshToken;
   if (!loggedInPublicKeyValue) {
     selfAvatarImageUrl.value = '';
-    selfAvatarFallback.value = buildAvatarText('You');
+    selfAvatarFallback.value = buildAvatarText(t('You'));
     return;
   }
 
@@ -796,7 +797,7 @@ async function refreshSelfAuthorIdentity(loggedInPublicKeyValue: string | null):
       readMetaString(meta, 'name') ||
       loggedInContact?.name?.trim() ||
       loggedInContact?.given_name?.trim() ||
-      'You';
+      t('You');
 
     selfAvatarImageUrl.value = readMetaString(meta, 'picture');
     selfAvatarFallback.value = readMetaString(meta, 'avatar') || buildAvatarText(preferredName);
@@ -806,7 +807,7 @@ async function refreshSelfAuthorIdentity(loggedInPublicKeyValue: string | null):
     }
 
     selfAvatarImageUrl.value = '';
-    selfAvatarFallback.value = buildAvatarText('You');
+    selfAvatarFallback.value = buildAvatarText(t('You'));
     console.error(
       'Failed to load logged-in user avatar for chat thread',
       loggedInPublicKeyValue,
@@ -822,7 +823,7 @@ function resolveMessageAuthorIdentity(message: Message): {
 } {
   if (message.sender === 'me') {
     return {
-      label: 'You',
+      label: t('You'),
       avatarSrc: selfAvatarImageUrl.value,
       avatarFallback: selfAvatarFallback.value
     };

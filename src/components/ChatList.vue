@@ -18,10 +18,11 @@
 
         <q-item-section class="requests-row__main">
           <q-item-label class="requests-row__title">
-            Requests <span class="requests-row__count">({{ formatRequestCount(requestCount) }})</span>
+            {{ $t('Requests') }}
+            <span class="requests-row__count">({{ formatRequestCount(requestCount) }})</span>
           </q-item-label>
           <q-item-label caption class="requests-row__caption" lines="1">
-            Unknown inbound chats stay here until you reply or accept.
+            {{ $t('Unknown inbound chats stay here until you reply or accept.') }}
           </q-item-label>
         </q-item-section>
       </q-item>

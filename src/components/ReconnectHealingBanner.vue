@@ -32,6 +32,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { t } from 'src/i18n';
 
 const nostrStore = useNostrStore();
 const RECONNECT_HEALING_DETAILS_STORAGE_KEY = 'nostr-chat:reconnect-healing-details-visible';
@@ -45,9 +46,11 @@ const hasStartupActivity = computed(() =>
   )
 );
 const isVisible = computed(() => nostrStore.isReconnectHealing && !hasStartupActivity.value);
-const statusLabel = computed(() => nostrStore.reconnectHealingStatusLabel ?? 'Preparing sync');
+const statusLabel = computed(() =>
+  formatReconnectHealingStatusLabel(nostrStore.reconnectHealingStatusLabel ?? 'Preparing sync')
+);
 const detailsButtonLabel = computed(() =>
-  isDetailsVisible.value ? 'Hide sync details' : 'Show sync details'
+  isDetailsVisible.value ? t('Hide sync details') : t('Show sync details')
 );
 
 function toggleDetails(): void {
@@ -68,6 +71,17 @@ function writeStoredDetailsVisibility(value: boolean): void {
   } catch {
     // Ignore storage errors; the toggle should still work for the current session.
   }
+}
+
+function formatReconnectHealingStatusLabel(value: string): string {
+  const syncStartedPrefix = 'Sync started: ';
+  if (value.startsWith(syncStartedPrefix)) {
+    return t('Sync started: {reason}', {
+      reason: t(value.slice(syncStartedPrefix.length))
+    });
+  }
+
+  return t(value);
 }
 
 onMounted(() => {

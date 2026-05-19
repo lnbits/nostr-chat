@@ -32,7 +32,7 @@
             dense
             round
             icon="close"
-            aria-label="Close dialog"
+            :aria-label="$t('Close dialog')"
             class="app-dialog__close"
             @click="closeDialog"
           />

@@ -8,21 +8,21 @@
           dense
           round
           icon="arrow_back"
-          aria-label="Back to chats"
+          :aria-label="$t('Back to chats')"
           class="requests-page__back"
           @click="$emit('back')"
         />
 
         <div class="requests-page__copy">
-          <div class="requests-page__eyebrow">Inbox Review</div>
-          <h1 class="requests-page__title">Requests</h1>
+          <div class="requests-page__eyebrow">{{ $t('Inbox Review') }}</div>
+          <h1 class="requests-page__title">{{ $t('Requests') }}</h1>
           <p class="requests-page__subtitle">
-            First-contact chats stay here until you reply or accept them.
+            {{ $t('First-contact chats stay here until you reply or accept them.') }}
           </p>
         </div>
       </div>
 
-      <div class="requests-page__summary" aria-label="Pending requests">
+      <div class="requests-page__summary" :aria-label="$t('Pending requests')">
         <div class="requests-page__summary-count">{{ requestCount }}</div>
         <div class="requests-page__summary-label">{{ requestCountLabel }}</div>
       </div>
@@ -32,8 +32,8 @@
       <div class="requests-page__empty-icon" aria-hidden="true">
         <q-icon name="mark_email_unread" size="30px" />
       </div>
-      <div class="requests-page__empty-title">No pending requests</div>
-      <div class="requests-page__empty-copy">Unknown inbound chats will appear here.</div>
+      <div class="requests-page__empty-title">{{ $t('No pending requests') }}</div>
+      <div class="requests-page__empty-copy">{{ $t('Unknown inbound chats will appear here.') }}</div>
     </div>
 
     <q-scroll-area v-else class="requests-page__scroll">
@@ -56,6 +56,7 @@
 import { computed } from 'vue';
 import ChatRequestItem from 'src/components/ChatRequestItem.vue';
 import type { Chat } from 'src/types/chat';
+import { t } from 'src/i18n';
 
 const props = withDefaults(defineProps<{
   requests: Chat[];
@@ -74,7 +75,7 @@ const emit = defineEmits<{
 
 const requestCount = computed(() => props.requests.length);
 const requestCountLabel = computed(() => {
-  return requestCount.value === 1 ? 'Pending chat' : 'Pending chats';
+  return requestCount.value === 1 ? t('Pending chat') : t('Pending chats');
 });
 </script>
 

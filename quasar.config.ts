@@ -248,6 +248,8 @@ export default configure((ctx) => {
   const enableAppShell = ctx.modeName === 'spa' && ctx.prod;
 
   return {
+    boot: ['i18n'],
+
     css: ['app.css'],
     extras: ['material-icons'],
 

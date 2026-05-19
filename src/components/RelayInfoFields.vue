@@ -26,7 +26,7 @@
       <div class="relay-info-group__children">
         <q-input
           v-if="value.length === 0"
-          label="value"
+          :label="$t('value')"
           model-value="[]"
           dense
           outlined
@@ -52,7 +52,7 @@
       <div class="relay-info-group__children">
         <q-input
           v-if="objectEntries.length === 0"
-          label="value"
+          :label="$t('value')"
           model-value="{}"
           dense
           outlined
@@ -76,6 +76,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { t } from 'src/i18n';
 
 defineOptions({
   name: 'RelayInfoFields'
@@ -147,7 +148,7 @@ function humanizeLabel(value: string): string {
   const trimmed = value.trim();
   const indexMatch = trimmed.match(/^\[(\d+)\]$/);
   if (indexMatch) {
-    return `Item ${Number(indexMatch[1]) + 1}`;
+    return t('Item {number}', { number: Number(indexMatch[1]) + 1 });
   }
 
   const normalized = normalizeLabel(trimmed).replace(/[^a-z0-9_]/g, '_');
@@ -158,7 +159,7 @@ function humanizeLabel(value: string): string {
     .map((part) => toDisplayWord(part));
 
   if (words.length === 0) {
-    return 'Value';
+    return t('Value');
   }
 
   return words.join(' ');

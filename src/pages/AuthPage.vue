@@ -5,8 +5,8 @@
         <q-card-section class="auth-card__header">
           <div class="auth-card__header-main">
             <div class="auth-card__header-text">
-              <div class="auth-card__title">Welcome</div>
-              <div class="auth-card__subtitle">Choose how you want to continue</div>
+              <div class="auth-card__title">{{ $t('Welcome') }}</div>
+              <div class="auth-card__subtitle">{{ $t('Choose how you want to continue') }}</div>
             </div>
           </div>
         </q-card-section>
@@ -17,7 +17,7 @@
             color="primary"
             no-caps
             icon="login"
-            label="Login"
+            :label="$t('Login')"
             class="auth-card__button"
             @click="openLoginOptions"
           />
@@ -27,14 +27,14 @@
             color="primary"
             no-caps
             icon="vpn_key"
-            label="Create Account"
+            :label="$t('Create Account')"
             class="auth-card__button auth-card__button--secondary"
             @click="goToRegister"
           />
         </q-card-section>
 
         <q-card-section class="auth-card__footer">
-          <span>Made by the</span>
+          <span>{{ $t('Made by the') }}</span>
           <a
             href="https://lnbits.com"
             target="_blank"
@@ -52,7 +52,7 @@
           >
             LNbits
           </a>
-          <span>team.</span>
+          <span>{{ $t('team.') }}</span>
         </q-card-section>
       </q-card>
 
@@ -66,12 +66,12 @@
               icon="arrow_back"
               color="primary"
               class="auth-card__back-button"
-              aria-label="Back"
+              :aria-label="$t('Back')"
               @click="goBackToWelcome"
             />
             <div class="auth-card__header-text">
-              <div class="auth-card__title">Login</div>
-              <div class="auth-card__subtitle">Choose a login method</div>
+              <div class="auth-card__title">{{ $t('Login') }}</div>
+              <div class="auth-card__subtitle">{{ $t('Choose a login method') }}</div>
             </div>
           </div>
         </q-card-section>
@@ -83,7 +83,7 @@
             color="primary"
             no-caps
             icon="extension"
-            label="Login with Extension"
+            :label="$t('Login with Extension')"
             class="auth-card__button"
             :loading="isExtensionLoginInProgress"
             @click="handleExtensionLogin"
@@ -94,7 +94,7 @@
             color="primary"
             no-caps
             icon="phonelink_lock"
-            label="Login with Remote Signer"
+            :label="$t('Login with Remote Signer')"
             class="auth-card__button"
             @click="openRemoteSignerLogin"
           />
@@ -104,14 +104,14 @@
             color="primary"
             no-caps
             icon="vpn_key"
-            label="Login with Key (not recommended)"
+            :label="$t('Login with Key (not recommended)')"
             class="auth-card__button auth-card__button--secondary"
             @click="openKeyLogin"
           />
         </q-card-section>
 
         <q-card-section class="auth-card__footer">
-          <span>Made by the</span>
+          <span>{{ $t('Made by the') }}</span>
           <a
             href="https://lnbits.com"
             target="_blank"
@@ -129,7 +129,7 @@
           >
             LNbits
           </a>
-          <span>team.</span>
+          <span>{{ $t('team.') }}</span>
         </q-card-section>
       </q-card>
 
@@ -148,13 +148,13 @@
               icon="arrow_back"
               color="primary"
               class="auth-card__back-button"
-              aria-label="Back"
+              :aria-label="$t('Back')"
               :disable="isRemoteSignerLoginInProgress"
               @click="goBackToLoginOptions"
             />
             <div class="auth-card__header-text">
-              <div class="auth-card__title">Remote Signer</div>
-              <div class="auth-card__subtitle">Connect with NIP-46</div>
+              <div class="auth-card__title">{{ $t('Remote Signer') }}</div>
+              <div class="auth-card__subtitle">{{ $t('Connect with NIP-46') }}</div>
             </div>
           </div>
         </q-card-section>
@@ -168,8 +168,8 @@
             indicator-color="primary"
             class="remote-signer__tabs"
           >
-            <q-tab name="bunker" icon="link" label="Bunker URL" />
-            <q-tab name="nostrconnect" icon="qr_code_2" label="Nostr Connect" />
+            <q-tab name="bunker" icon="link" :label="$t('Bunker URL')" />
+            <q-tab name="nostrconnect" icon="qr_code_2" :label="$t('Nostr Connect')" />
           </q-tabs>
 
           <q-tab-panels v-model="remoteSignerMode" animated class="remote-signer__panels">
@@ -182,7 +182,7 @@
                 rounded
                 type="textarea"
                 autogrow
-                label="bunker:// connection string"
+                :label="$t('bunker:// connection string')"
                 data-testid="auth-remote-signer-bunker-input"
                 :disable="isRemoteSignerLoginInProgress"
                 @keydown.enter.prevent="handleRemoteSignerBunkerLogin"
@@ -193,7 +193,7 @@
                 color="primary"
                 no-caps
                 icon="login"
-                label="Connect"
+                :label="$t('Connect')"
                 class="auth-card__button"
                 data-testid="auth-remote-signer-bunker-connect-button"
                 :disable="!canLoginWithRemoteSignerBunker"
@@ -209,7 +209,7 @@
                 dense
                 outlined
                 rounded
-                label="Pairing relay"
+                :label="$t('Pairing relay')"
                 placeholder="wss://relay.example.com"
                 data-testid="auth-remote-signer-relay-input"
                 :error="Boolean(remoteSignerRelayError)"
@@ -223,7 +223,7 @@
                 color="primary"
                 no-caps
                 icon="add_link"
-                label="Generate pairing link"
+                :label="$t('Generate pairing link')"
                 class="auth-card__button"
                 data-testid="auth-remote-signer-create-nostrconnect-button"
                 :disable="!canCreateNostrConnectLogin"
@@ -239,7 +239,7 @@
                 >
                   <img
                     :src="remoteSignerConnectQrDataUrl"
-                    alt="Nostr Connect pairing QR code"
+                    :alt="$t('Nostr Connect pairing QR code')"
                     class="remote-signer-pairing__qr"
                   />
                 </div>
@@ -263,7 +263,7 @@
                     color="primary"
                     no-caps
                     icon="content_copy"
-                    label="Copy"
+                    :label="$t('Copy')"
                     class="auth-card__button"
                     data-testid="auth-remote-signer-copy-button"
                     @click="copyRemoteSignerConnectUri"
@@ -273,7 +273,7 @@
                     color="primary"
                     no-caps
                     icon="open_in_new"
-                    label="Open"
+                    :label="$t('Open')"
                     class="auth-card__button"
                     data-testid="auth-remote-signer-open-button"
                     @click="openRemoteSignerConnectUri"
@@ -298,7 +298,7 @@
               rel="noopener noreferrer"
               class="remote-signer__auth-link"
             >
-              Open signer authorization
+              {{ $t('Open signer authorization') }}
             </a>
           </q-banner>
 
@@ -320,7 +320,7 @@
             color="negative"
             no-caps
             icon="close"
-            label="Cancel"
+            :label="$t('Cancel')"
             class="auth-card__button"
             data-testid="auth-remote-signer-cancel-button"
             @click="cancelRemoteSignerLogin"
@@ -328,7 +328,7 @@
         </q-card-section>
 
         <q-card-section class="auth-card__footer">
-          <span>Made by the</span>
+          <span>{{ $t('Made by the') }}</span>
           <a
             href="https://lnbits.com"
             target="_blank"
@@ -346,7 +346,7 @@
           >
             LNbits
           </a>
-          <span>team.</span>
+          <span>{{ $t('team.') }}</span>
         </q-card-section>
       </q-card>
 
@@ -360,13 +360,13 @@
               icon="arrow_back"
               color="primary"
               class="auth-card__back-button"
-              aria-label="Back"
+              :aria-label="$t('Back')"
               :disable="isKeyLoginInProgress"
               @click="goBackToLoginOptions"
             />
             <div class="auth-card__header-text">
-              <div class="auth-card__title">Login with Key</div>
-              <div class="auth-card__subtitle">Enter your nsec or hex private key to continue</div>
+              <div class="auth-card__title">{{ $t('Login with Key') }}</div>
+              <div class="auth-card__subtitle">{{ $t('Enter your nsec or hex private key to continue') }}</div>
             </div>
           </div>
         </q-card-section>
@@ -375,7 +375,7 @@
           <q-card flat bordered class="auth-warning">
             <q-card-section class="auth-warning__content">
               <q-icon name="warning" size="20px" class="auth-warning__icon" />
-              <div>Entering your private key strongly discouraged. Use a Nostr Remote Signer.</div>
+              <div>{{ $t('Entering your private key is strongly discouraged. Use a Nostr Remote Signer.') }}</div>
             </q-card-section>
           </q-card>
 
@@ -386,7 +386,7 @@
             outlined
             rounded
             type="password"
-            label="Private Key (nsec or hex)"
+            :label="$t('Private Key (nsec or hex)')"
             :error="Boolean(privateKeyError)"
             :error-message="privateKeyError"
             @keydown.enter.prevent="handleKeyLogin"
@@ -397,7 +397,7 @@
               unelevated
               color="primary"
               no-caps
-              label="Login"
+              :label="$t('Login')"
               class="auth-card__button"
               :disable="!canLoginWithKey"
               :loading="isKeyLoginInProgress"
@@ -407,7 +407,7 @@
         </q-card-section>
 
         <q-card-section class="auth-card__footer">
-          <span>Made by the</span>
+          <span>{{ $t('Made by the') }}</span>
           <a
             href="https://lnbits.com"
             target="_blank"
@@ -425,7 +425,7 @@
           >
             LNbits
           </a>
-          <span>team.</span>
+          <span>{{ $t('team.') }}</span>
         </q-card-section>
       </q-card>
 
@@ -440,7 +440,7 @@
               icon="arrow_back"
               color="primary"
               class="auth-card__back-button"
-              aria-label="Back"
+              :aria-label="$t('Back')"
               :disable="isOnboardingContinuing"
               @click="goBackToOnboardingRelays"
             />
@@ -455,9 +455,9 @@
           <div v-if="onboardingStatus === 'checking'" class="onboarding-checking">
             <q-spinner color="primary" size="42px" />
             <div class="onboarding-checking__text">
-              <div class="onboarding-checking__title">Looking for your profile</div>
+              <div class="onboarding-checking__title">{{ $t('Looking for your profile') }}</div>
               <div class="onboarding-checking__subtitle">
-                Checking {{ appRelayCountLabel }} for your Nostr metadata.
+                {{ $t('Checking {count} for your Nostr metadata.', { count: appRelayCountLabel }) }}
               </div>
             </div>
           </div>
@@ -490,7 +490,7 @@
             <template #avatar>
               <q-icon name="person_search" color="primary" />
             </template>
-            No profile was found on the current app relays.
+            {{ $t('No profile was found on the current app relays.') }}
           </q-banner>
 
           <q-banner
@@ -512,7 +512,7 @@
               dense
               outlined
               rounded
-              label="Name (optional)"
+              :label="$t('Name (optional)')"
               data-testid="auth-onboarding-profile-name-input"
               @keydown.enter.prevent="completeOnboardingProfileSetup"
             />
@@ -525,7 +525,7 @@
               rounded
               type="textarea"
               autogrow
-              label="About (optional)"
+              :label="$t('About (optional)')"
               data-testid="auth-onboarding-profile-about-input"
             />
 
@@ -533,7 +533,7 @@
               v-if="hasSelectedOnboardingRelays"
               v-model="shouldUpdateOnboardingRelays"
               color="primary"
-              label="Use selected relays for my profile"
+              :label="$t('Use selected relays for my profile')"
               data-testid="auth-onboarding-update-relays-checkbox"
               class="onboarding-profile-setup__checkbox"
             />
@@ -546,7 +546,7 @@
               dense
               outlined
               rounded
-              label="Relay URL"
+              :label="$t('Relay URL')"
               placeholder="wss://example-relay.io"
               data-testid="auth-onboarding-relay-input"
               :error="Boolean(onboardingRelayValidationError)"
@@ -561,7 +561,7 @@
                   color="primary"
                   icon="add"
                   size="sm"
-                  aria-label="Add relay"
+                  :aria-label="$t('Add relay')"
                   data-testid="auth-onboarding-add-relay-button"
                   :disable="!canAddOnboardingRelay"
                   @click="handleOnboardingAddRelay"
@@ -577,14 +577,14 @@
                     color="primary"
                     size="24px"
                     class="onboarding-relay-list__spinner"
-                    :aria-label="`Checking ${relay.url}`"
+                    :aria-label="$t('Checking {relay}', { relay: relay.url })"
                   />
                   <q-checkbox
                     v-else
                     dense
                     color="primary"
                     :model-value="relay.selected"
-                    :aria-label="`Use ${relay.url} when searching for profile`"
+                    :aria-label="$t('Use {relay} when searching for profile', { relay: relay.url })"
                     class="onboarding-relay-list__checkbox"
                     @update:model-value="
                       (value) => setOnboardingRelaySelected(relay.url, Boolean(value))
@@ -611,7 +611,7 @@
                     dense
                     icon="delete"
                     color="negative"
-                    :aria-label="`Delete ${relay.url}`"
+                    :aria-label="$t('Delete {relay}', { relay: relay.url })"
                     @click="removeOnboardingRelay(relay.url)"
                   />
                 </q-item-section>
@@ -625,7 +625,7 @@
               color="negative"
               no-caps
               icon="logout"
-              label="Logout"
+              :label="$t('Logout')"
               class="auth-card__button"
               data-testid="auth-onboarding-logout-button"
               :disable="isOnboardingContinuing"
@@ -635,7 +635,7 @@
               unelevated
               color="primary"
               no-caps
-              label="Confirm and start using app"
+              :label="$t('Confirm and start using app')"
               class="auth-card__button"
               data-testid="auth-onboarding-continue-button"
               :loading="isOnboardingContinuing"
@@ -648,7 +648,7 @@
               outline
               color="primary"
               no-caps
-              label="Skip for now"
+              :label="$t('Skip for now')"
               class="auth-card__button"
               data-testid="auth-onboarding-skip-button"
               :loading="isOnboardingContinuing"
@@ -658,7 +658,7 @@
               unelevated
               color="primary"
               no-caps
-              label="Add relays"
+              :label="$t('Add relays')"
               class="auth-card__button"
               data-testid="auth-onboarding-add-relays-button"
               @click="showOnboardingRelaySetup"
@@ -670,7 +670,7 @@
               unelevated
               color="primary"
               no-caps
-              label="Try again"
+              :label="$t('Try again')"
               class="auth-card__button"
               data-testid="auth-onboarding-retry-button"
               @click="findProfileFromOnboardingRelays"
@@ -680,7 +680,7 @@
                 outline
                 color="primary"
                 no-caps
-                label="Edit relays"
+                :label="$t('Edit relays')"
                 class="auth-card__button"
                 @click="showOnboardingRelaySetup"
               />
@@ -688,7 +688,7 @@
                 flat
                 color="primary"
                 no-caps
-                label="Continue"
+                :label="$t('Continue')"
                 class="auth-card__button"
                 data-testid="auth-onboarding-skip-button"
                 :loading="isOnboardingContinuing"
@@ -706,7 +706,7 @@
               color="negative"
               no-caps
               icon="logout"
-              label="Logout"
+              :label="$t('Logout')"
               class="auth-card__button"
               data-testid="auth-onboarding-logout-button"
               :disable="isOnboardingContinuing"
@@ -716,7 +716,7 @@
               unelevated
               color="primary"
               no-caps
-              label="Next"
+              :label="$t('Next')"
               class="auth-card__button"
               data-testid="auth-onboarding-relays-next-button"
               :disable="!canSearchSelectedOnboardingRelays"
@@ -732,7 +732,7 @@
               unelevated
               color="primary"
               no-caps
-              label="Save and start using app"
+              :label="$t('Save and start using app')"
               class="auth-card__button"
               data-testid="auth-onboarding-profile-start-button"
               :disable="!canCompleteOnboardingProfileSetup"
@@ -743,7 +743,7 @@
         </q-card-section>
 
         <q-card-section class="auth-card__footer">
-          <span>Made by the</span>
+          <span>{{ $t('Made by the') }}</span>
           <a
             href="https://lnbits.com"
             target="_blank"
@@ -761,7 +761,7 @@
           >
             LNbits
           </a>
-          <span>team.</span>
+          <span>{{ $t('team.') }}</span>
         </q-card-section>
       </q-card>
     </div>
@@ -790,6 +790,7 @@ import { useRelayStore } from 'src/stores/relayStore';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { buildRelayLookupKey, uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { t } from 'src/i18n';
 
 const router = useRouter();
 const nostrStore = useNostrStore();
@@ -851,7 +852,7 @@ const onboardingRelayCheckTimeouts = new Map<
 const privateKeyValidation = computed(() => nostrStore.validatePrivateKey(privateKey.value.trim()));
 const privateKeyError = computed(() =>
   privateKey.value.trim() && !privateKeyValidation.value.isValid
-    ? 'Enter a valid nsec or 64-character hex private key.'
+    ? t('Enter a valid nsec or 64-character hex private key.')
     : ''
 );
 const canLoginWithKey = computed(() => privateKeyValidation.value.isValid && !isKeyLoginInProgress.value);
@@ -878,51 +879,53 @@ const showExtensionLoginOption = computed(
 );
 const onboardingTitle = computed(() => {
   if (onboardingStatus.value === 'found') {
-    return 'Confirm profile';
+    return t('Confirm profile');
   }
 
   if (onboardingStatus.value === 'relay-setup') {
-    return 'App relays';
+    return t('App relays');
   }
 
   if (onboardingStatus.value === 'profile-setup') {
-    return 'Set up profile';
+    return t('Set up profile');
   }
 
   if (onboardingStatus.value === 'error') {
-    return 'Profile check failed';
+    return t('Profile check failed');
   }
 
-  return 'Checking profile';
+  return t('Checking profile');
 });
 const onboardingSubtitle = computed(() => {
   if (onboardingStatus.value === 'found') {
-    return 'This profile was found on your app relays';
+    return t('This profile was found on your app relays');
   }
 
   if (onboardingStatus.value === 'relay-setup') {
-    return 'Add or remove relays before searching for your profile';
+    return t('Add or remove relays before searching for your profile');
   }
 
   if (onboardingStatus.value === 'profile-setup') {
-    return 'This is the final step before entering the app';
+    return t('This is the final step before entering the app');
   }
 
   if (onboardingStatus.value === 'not-found') {
-    return 'You can add relays or skip this step';
+    return t('You can add relays or skip this step');
   }
 
   if (onboardingStatus.value === 'error') {
-    return 'The app could not finish checking your relays';
+    return t('The app could not finish checking your relays');
   }
 
-  return 'Stay here while the app checks your relays';
+  return t('Stay here while the app checks your relays');
 });
 const appRelayCountLabel = computed(() => {
   const count = relayStore.relays.length;
-  return `${count} app relay${count === 1 ? '' : 's'}`;
+  return count === 1
+    ? t('{count} app relay', { count })
+    : t('{count} app relays', { count });
 });
-const onboardingProfileName = computed(() => onboardingProfile.value?.name ?? 'Unknown profile');
+const onboardingProfileName = computed(() => onboardingProfile.value?.name ?? t('Unknown profile'));
 const onboardingProfilePubkey = computed(() => {
   if (onboardingNpub.value) {
     return onboardingNpub.value;
@@ -937,11 +940,11 @@ const onboardingProfilePubkey = computed(() => {
 const onboardingProfilePicture = computed(() => onboardingProfile.value?.picture ?? '');
 const onboardingProfileAvatar = computed(() => buildAvatarText(onboardingProfileName.value));
 const onboardingProfileAbout = computed(
-  () => onboardingProfile.value?.about || 'No description published.'
+  () => onboardingProfile.value?.about || t('No description published.')
 );
 const onboardingProfileNip05 = computed(() => onboardingProfile.value?.nip05 ?? '');
 const onboardingErrorMessage = computed(
-  () => onboardingError.value || 'Profile lookup failed. You can retry, edit relays, or continue.'
+  () => onboardingError.value || t('Profile lookup failed. You can retry, edit relays, or continue.')
 );
 const onboardingRelayValidationError = computed(() =>
   validateRelayUrlForOnboarding(onboardingRelayInput.value.trim())
@@ -966,7 +969,7 @@ const onboardingRelayRows = computed(() => {
       selected: selectedOnboardingRelayKeys.value.has(relayKey),
       statusColor: checking ? 'primary' : connected ? 'positive' : 'warning',
       statusIcon: checking ? 'hourglass_empty' : connected ? 'check' : 'warning_amber',
-      statusLabel: checking ? 'Checking' : connected ? 'Connected' : 'Warning',
+      statusLabel: checking ? t('Checking') : connected ? t('Connected') : t('Warning'),
     };
   });
 });
@@ -1049,7 +1052,7 @@ async function handleExtensionLogin(): Promise<void> {
     reportUiError(
       'Failed to log in with NIP-07 extension',
       error,
-      'Failed to log in with extension.'
+      t('Failed to log in with extension.')
     );
   } finally {
     isExtensionLoginInProgress.value = false;
@@ -1071,7 +1074,7 @@ async function handleKeyLogin(): Promise<void> {
     privateKey.value = '';
     await startProfileOnboarding();
   } catch (error) {
-    reportUiError('Failed to log in', error, 'Failed to log in.');
+    reportUiError('Failed to log in', error, t('Failed to log in.'));
   } finally {
     isKeyLoginInProgress.value = false;
   }
@@ -1108,7 +1111,7 @@ async function handleRemoteSignerBunkerLogin(): Promise<void> {
   } catch (error) {
     remoteSignerError.value = getRemoteSignerErrorMessage(
       error,
-      'Failed to connect remote signer.'
+      t('Failed to connect remote signer.')
     );
     reportUiError('Failed to log in with NIP-46 remote signer', error, remoteSignerError.value);
   } finally {
@@ -1142,7 +1145,7 @@ async function handleCreateNostrConnectLogin(): Promise<void> {
     clearRemoteSignerPairingState();
     await startProfileOnboarding();
   } catch (error) {
-    const message = getRemoteSignerErrorMessage(error, 'Failed to pair remote signer.');
+    const message = getRemoteSignerErrorMessage(error, t('Failed to pair remote signer.'));
     clearRemoteSignerPairingState();
     if (message !== 'NIP-46 login was cancelled.') {
       remoteSignerError.value = message;
@@ -1196,7 +1199,7 @@ async function copyRemoteSignerConnectUri(): Promise<void> {
   try {
     await navigator.clipboard.writeText(uri);
   } catch (error) {
-    reportUiError('Failed to copy NIP-46 pairing link', error, 'Failed to copy pairing link.');
+    reportUiError('Failed to copy NIP-46 pairing link', error, t('Failed to copy pairing link.'));
   }
 }
 
@@ -1209,7 +1212,7 @@ function openRemoteSignerConnectUri(): void {
   try {
     window.open(uri, '_blank', 'noopener,noreferrer');
   } catch (error) {
-    reportUiError('Failed to open NIP-46 pairing link', error, 'Failed to open pairing link.');
+    reportUiError('Failed to open NIP-46 pairing link', error, t('Failed to open pairing link.'));
   }
 }
 
@@ -1280,7 +1283,7 @@ async function runProfileLookup(
     onboardingError.value =
       error instanceof Error && error.message
         ? error.message
-        : 'Profile lookup failed. You can retry, edit relays, or continue.';
+        : t('Profile lookup failed. You can retry, edit relays, or continue.');
     onboardingStatus.value = 'error';
   }
 }
@@ -1288,7 +1291,7 @@ async function runProfileLookup(
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
-      reject(new Error('Profile lookup timed out. Check your relays or try again.'));
+      reject(new Error(t('Profile lookup timed out. Check your relays or try again.')));
     }, timeoutMs);
 
     promise
@@ -1357,7 +1360,7 @@ async function handleOnboardingAddRelay(): Promise<void> {
       clearResolvedOnboardingRelayChecks([normalizedRelay]);
     }
   } catch (error) {
-    reportUiError('Failed to add relay during onboarding', error, 'Failed to add relay.');
+    reportUiError('Failed to add relay during onboarding', error, t('Failed to add relay.'));
   }
 }
 
@@ -1370,7 +1373,7 @@ function removeOnboardingRelay(relayUrl: string): void {
     setOnboardingRelaySelected(relayUrl, false);
     clearOnboardingRelayChecking(relayUrl);
   } catch (error) {
-    reportUiError('Failed to remove relay during onboarding', error, 'Failed to remove relay.');
+    reportUiError('Failed to remove relay during onboarding', error, t('Failed to remove relay.'));
   }
 }
 
@@ -1583,7 +1586,7 @@ async function completeOnboardingProfileSetup(): Promise<void> {
     await handleBrowserNotificationsAfterLogin();
     await goToHome();
   } catch (error) {
-    reportUiError('Failed to finish profile onboarding', error, 'Failed to finish onboarding.');
+    reportUiError('Failed to finish profile onboarding', error, t('Failed to finish onboarding.'));
   } finally {
     isOnboardingContinuing.value = false;
   }
@@ -1597,22 +1600,22 @@ function validateRelayUrlForOnboarding(value: string): string {
   try {
     const url = new URL(value);
     if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-      return 'Relay must use ws:// or wss://';
+      return t('Relay must use ws:// or wss://');
     }
 
     if (!url.hostname) {
-      return 'Relay URL must include a hostname';
+      return t('Relay URL must include a hostname');
     }
 
     const nextRelayKey = buildRelayLookupKey(normalizeRelayUrl(value));
     const existingRelayKeys = new Set(relayStore.relays.map((relay) => buildRelayLookupKey(relay)));
     if (existingRelayKeys.has(nextRelayKey)) {
-      return 'Relay is already added';
+      return t('Relay is already added');
     }
 
     return '';
   } catch {
-    return 'Relay must be a valid ws:// or wss:// URL';
+    return t('Relay must be a valid ws:// or wss:// URL');
   }
 }
 
@@ -1624,16 +1627,16 @@ function validateRelayUrlForRemoteSigner(value: string): string {
   try {
     const url = new URL(value);
     if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-      return 'Relay must use ws:// or wss://';
+      return t('Relay must use ws:// or wss://');
     }
 
     if (!url.hostname) {
-      return 'Relay URL must include a hostname';
+      return t('Relay URL must include a hostname');
     }
 
     return '';
   } catch {
-    return 'Relay must be a valid ws:// or wss:// URL';
+    return t('Relay must be a valid ws:// or wss:// URL');
   }
 }
 
@@ -1648,7 +1651,7 @@ async function continueFromOnboarding(): Promise<void> {
     await handleBrowserNotificationsAfterLogin();
     await goToHome();
   } catch (error) {
-    reportUiError('Failed to continue after profile onboarding', error, 'Failed to continue.');
+    reportUiError('Failed to continue after profile onboarding', error, t('Failed to continue.'));
   } finally {
     isOnboardingContinuing.value = false;
   }

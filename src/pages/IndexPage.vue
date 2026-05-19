@@ -12,7 +12,7 @@
       <aside v-if="!isMobile || !isMobileThreadOpen" class="sidebar">
         <div class="sidebar-top">
           <div class="sidebar-top__row" :class="{ 'sidebar-top__row--mobile': isMobile }">
-            <div v-if="!isMobile" class="sidebar-top__title">Chats</div>
+            <div v-if="!isMobile" class="sidebar-top__title">{{ $t('Chats') }}</div>
             <q-input
               v-if="isMobile"
               v-model="searchQuery"
@@ -22,7 +22,7 @@
               rounded
               clearable
               clear-icon="close"
-              placeholder="Search"
+              :placeholder="$t('Search')"
             />
             <div class="sidebar-top__actions">
               <q-btn-dropdown
@@ -31,7 +31,7 @@
                 icon="refresh"
                 dropdown-icon="arrow_drop_down"
                 class="sidebar-top__action"
-                aria-label="Refresh Chats"
+                :aria-label="$t('Refresh Chats')"
               >
                 <q-list separator>
                   <q-item
@@ -42,7 +42,7 @@
                     @click="handleRefreshChatsForRange(option)"
                   >
                     <q-item-section>
-                      <q-item-label>{{ option.label }}</q-item-label>
+                      <q-item-label>{{ $t(option.labelKey) }}</q-item-label>
                     </q-item-section>
                   </q-item>
                 </q-list>
@@ -54,7 +54,7 @@
                 icon="group_add"
                 class="sidebar-top__action"
                 data-testid="start-new-chat-button"
-                aria-label="Start New Chat"
+                :aria-label="$t('Start New Chat')"
                 :loading="isCreatingGroup"
               >
                 <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
@@ -65,7 +65,7 @@
                       data-testid="start-new-chat-menu-item"
                       @click="handleNewChat"
                     >
-                      <q-item-section>New Chat</q-item-section>
+                      <q-item-section>{{ $t('New Chat') }}</q-item-section>
                     </q-item>
                     <q-item
                       clickable
@@ -73,7 +73,7 @@
                       data-testid="start-new-group-menu-item"
                       @click="handleNewGroup"
                     >
-                      <q-item-section>New Group</q-item-section>
+                      <q-item-section>{{ $t('New Group') }}</q-item-section>
                     </q-item>
                   </q-list>
                 </q-menu>
@@ -90,7 +90,7 @@
             rounded
             clearable
             clear-icon="close"
-            placeholder="Search"
+            :placeholder="$t('Search')"
           />
 
           <ReconnectHealingBanner class="sidebar-top__healing" />
@@ -125,7 +125,7 @@
         v-if="!isMobile"
         class="app-shell__resize-handle"
         role="separator"
-        aria-label="Resize left panel"
+        :aria-label="$t('Resize left panel')"
         aria-orientation="vertical"
         :aria-valuemin="minSidebarWidth"
         :aria-valuemax="maxSidebarWidth"
@@ -173,7 +173,7 @@
       <q-dialog v-model="isCreateGroupDialogOpen" :persistent="isCreatingGroup">
         <q-card class="create-group-dialog" data-testid="create-group-dialog">
           <q-card-section class="create-group-dialog__header">
-            <div class="create-group-dialog__title">New Group</div>
+            <div class="create-group-dialog__title">{{ $t('New Group') }}</div>
           </q-card-section>
 
           <q-card-section>
@@ -185,7 +185,7 @@
               outlined
               rounded
               autofocus
-              label="Name"
+              :label="$t('Name')"
               @keydown.enter.prevent="handleConfirmNewGroup"
             />
 
@@ -196,21 +196,21 @@
               dense
               outlined
               rounded
-              label="About"
+              :label="$t('About')"
             />
           </q-card-section>
 
           <q-card-actions align="right" class="create-group-dialog__actions">
             <q-btn
               flat
-              label="Cancel"
+              :label="$t('Cancel')"
               color="primary"
               :disable="isCreatingGroup"
               @click="closeCreateGroupDialog()"
             />
             <q-btn
               unelevated
-              label="OK"
+              :label="$t('OK')"
               color="primary"
               data-testid="create-group-submit"
               :loading="isCreatingGroup"
@@ -250,6 +250,7 @@ import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
 import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
 import StartupHistoryBanner from 'src/components/StartupHistoryBanner.vue';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { getDateTimeLocale, t } from 'src/i18n';
 
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
 const ChatRequestsPage = defineAsyncComponent(() => import('src/components/ChatRequestsPage.vue'));
@@ -301,33 +302,33 @@ type ChatRefreshRangeId =
 
 interface ChatRefreshRangeOption {
   id: ChatRefreshRangeId;
-  label: string;
+  labelKey: string;
   lookbackMinutes?: number;
 }
 
 const chatRefreshRangeOptions: ChatRefreshRangeOption[] = [
   {
     id: 'since-last-message',
-    label: 'Since last message'
+    labelKey: 'Since last message'
   },
   {
     id: 'last-24-hours',
-    label: 'Last 24 hours',
+    labelKey: 'Last 24 hours',
     lookbackMinutes: 24 * 60
   },
   {
     id: 'last-week',
-    label: 'Last week',
+    labelKey: 'Last week',
     lookbackMinutes: 7 * 24 * 60
   },
   {
     id: 'last-month',
-    label: 'Last month',
+    labelKey: 'Last month',
     lookbackMinutes: 30 * 24 * 60
   },
   {
     id: 'custom',
-    label: 'Custom'
+    labelKey: 'Custom'
   }
 ];
 const isRequestsRoute = computed(() => route.name === 'chat-requests');
@@ -444,8 +445,10 @@ function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGrou
   if (publishedRelayUrls.length > 0 && failedRelayUrls.length === 0) {
     $q.notify({
       type: 'positive',
-      message: 'Group created.',
-      caption: `Identity secret saved to ${formatRelayList(publishedRelayUrls)}.`,
+      message: t('Group created.'),
+      caption: t('Identity secret saved to {relays}.', {
+        relays: formatRelayList(publishedRelayUrls)
+      }),
       position: 'top',
       timeout: 5000
     });
@@ -455,8 +458,11 @@ function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGrou
   if (publishedRelayUrls.length > 0) {
     $q.notify({
       type: 'warning',
-      message: 'Group created with partial relay backup.',
-      caption: `Saved to ${formatRelayList(publishedRelayUrls)}. Failed on ${formatRelayList(failedRelayUrls)}.`,
+      message: t('Group created with partial relay backup.'),
+      caption: t('Saved to {savedRelays}. Failed on {failedRelays}.', {
+        savedRelays: formatRelayList(publishedRelayUrls),
+        failedRelays: formatRelayList(failedRelayUrls)
+      }),
       position: 'top',
       timeout: 6500
     });
@@ -465,12 +471,14 @@ function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGrou
 
   $q.notify({
     type: 'warning',
-    message: 'Group created locally.',
+    message: t('Group created locally.'),
     caption:
       errorMessage ??
       (relayUrls.length > 0
-        ? `Failed to save the identity secret to ${formatRelayList(relayUrls)}.`
-        : 'Failed to save the identity secret to relays.'),
+        ? t('Failed to save the identity secret to {relays}.', {
+            relays: formatRelayList(relayUrls)
+          })
+        : t('Failed to save the identity secret to relays.')),
     position: 'top',
     timeout: 6500
   });
@@ -552,7 +560,7 @@ async function handleConfirmNewGroup(): Promise<void> {
     if (createdGroup.memberListSyncError) {
       $q.notify({
         type: 'warning',
-        message: 'Group created, but member list sync failed.',
+        message: t('Group created, but member list sync failed.'),
         caption: createdGroup.memberListSyncError,
         position: 'top',
         timeout: 6500
@@ -562,7 +570,7 @@ async function handleConfirmNewGroup(): Promise<void> {
     if (createdGroup.contactListSyncError) {
       $q.notify({
         type: 'warning',
-        message: 'Group created, but contact list sync failed.',
+        message: t('Group created, but contact list sync failed.'),
         caption: createdGroup.contactListSyncError,
         position: 'top',
         timeout: 6500
@@ -575,7 +583,7 @@ async function handleConfirmNewGroup(): Promise<void> {
       params: { pubkey: createdGroup.groupPublicKey }
     });
   } catch (error) {
-    reportUiError('Failed to create group from chats page', error, 'Failed to create group.');
+    reportUiError('Failed to create group from chats page', error, t('Failed to create group.'));
   } finally {
     isCreatingGroup.value = false;
   }
@@ -654,7 +662,7 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
       scheduleAndroidPushNotificationCountReset();
     }
   } catch (error) {
-    reportUiError('Failed to send chat message', error, 'Failed to send message.');
+    reportUiError('Failed to send chat message', error, t('Failed to send message.'));
   }
 }
 
@@ -683,7 +691,7 @@ async function handleReactToMessage(payload: { message: Message; emoji: string }
     }
     scheduleAndroidPushNotificationCountReset();
   } catch (error) {
-    reportUiError('Failed to add message reaction', error, 'Failed to add reaction.');
+    reportUiError('Failed to add message reaction', error, t('Failed to add reaction.'));
   }
 }
 
@@ -692,7 +700,7 @@ async function handleDeleteMessage(message: Message): Promise<void> {
     await messageStore.deleteMessage(message.chatId, message.id);
     scheduleAndroidPushNotificationCountReset();
   } catch (error) {
-    reportUiError('Failed to delete message', error, 'Failed to delete message.');
+    reportUiError('Failed to delete message', error, t('Failed to delete message.'));
   }
 }
 
@@ -708,7 +716,7 @@ async function handleRemoveReaction(payload: {
     );
     scheduleAndroidPushNotificationCountReset();
   } catch (error) {
-    reportUiError('Failed to remove message reaction', error, 'Failed to remove reaction.');
+    reportUiError('Failed to remove message reaction', error, t('Failed to remove reaction.'));
   }
 }
 
@@ -754,7 +762,7 @@ async function handleRefreshChatProfile(chatId: string): Promise<void> {
       refreshRelayList: true
     });
   } catch (error) {
-    reportUiError('Failed to refresh chat contact profile', error, 'Failed to refresh profile.');
+    reportUiError('Failed to refresh chat contact profile', error, t('Failed to refresh profile.'));
   }
 }
 
@@ -810,7 +818,7 @@ async function handleRefreshChat(chatId: string): Promise<void> {
 
     await refreshChats(chatId);
   } catch (error) {
-    reportUiError('Failed to refresh chat', error, 'Failed to refresh chat.');
+    reportUiError('Failed to refresh chat', error, t('Failed to refresh chat.'));
   }
 }
 
@@ -820,7 +828,7 @@ async function handleRefreshChatsForRange(option: ChatRefreshRangeOption): Promi
   if (option.id === 'custom') {
     $q.notify({
       type: 'info',
-      message: 'Custom chat refresh range is not implemented yet.',
+      message: t('Custom chat refresh range is not implemented yet.'),
       caption: refreshToastCaption,
       position: 'top'
     });
@@ -837,12 +845,14 @@ async function handleRefreshChatsForRange(option: ChatRefreshRangeOption): Promi
     }
     $q.notify({
       type: 'positive',
-      message: `Chat refresh started for ${option.label.toLowerCase()}.`,
+      message: t('Chat refresh started for {range}.', {
+        range: t(option.labelKey).toLowerCase()
+      }),
       caption: refreshToastCaption,
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to refresh chats for selected range', error, 'Failed to refresh chats.');
+    reportUiError('Failed to refresh chats for selected range', error, t('Failed to refresh chats.'));
   }
 }
 
@@ -855,7 +865,7 @@ function getRefreshToastCaption(option: ChatRefreshRangeOption, chat: {
     return sinceCaption;
   }
 
-  return 'Since date unavailable.';
+  return t('Since date unavailable.');
 }
 
 function getSinceValueCaption(sinceValue: number | null): string {
@@ -863,10 +873,12 @@ function getSinceValueCaption(sinceValue: number | null): string {
     return '';
   }
 
-  return `Since ${new Intl.DateTimeFormat(undefined, {
+  return t('Since {date}', {
+    date: new Intl.DateTimeFormat(getDateTimeLocale(), {
     dateStyle: 'medium',
     timeStyle: 'short'
-  }).format(new Date(sinceValue * 1000))}`;
+    }).format(new Date(sinceValue * 1000))
+  });
 }
 
 function getChatRefreshSinceValue(
@@ -924,7 +936,7 @@ async function handleAcceptRequest(chatId: string): Promise<void> {
       console.warn('Failed to add accepted chat to contacts', chat.publicKey, error);
     }
   } catch (error) {
-    reportUiError('Failed to accept chat request', error, 'Failed to accept request.');
+    reportUiError('Failed to accept chat request', error, t('Failed to accept request.'));
   }
 }
 
@@ -977,7 +989,7 @@ async function handleBlockChat(chatId: string): Promise<void> {
       }
     }
   } catch (error) {
-    reportUiError('Failed to block chat request', error, 'Failed to block request.');
+    reportUiError('Failed to block chat request', error, t('Failed to block request.'));
   }
 }
 

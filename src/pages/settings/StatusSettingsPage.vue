@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Status" icon="fact_check">
+  <SettingsDetailLayout :title="$t('Status')" icon="fact_check">
     <div class="status-settings-page">
       <AppStatus class="status-settings-page__panel" />
     </div>

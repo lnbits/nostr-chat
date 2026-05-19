@@ -4,7 +4,7 @@
       v-if="isEmojiAutocompleteVisible"
       class="composer__emoji-autocomplete"
       role="listbox"
-      aria-label="Emoji suggestions"
+      :aria-label="$t('Emoji suggestions')"
     >
       <button
         v-for="(entry, index) in emojiAutocompleteEntries"
@@ -21,14 +21,14 @@
       </button>
 
       <div v-if="emojiAutocompleteEntries.length === 0" class="composer__emoji-empty">
-        No emoji found.
+        {{ $t('No emoji found.') }}
       </div>
     </div>
 
     <div v-if="replyTo" class="composer__reply">
       <div class="composer__reply-accent" aria-hidden="true" />
       <div class="composer__reply-copy">
-        <div class="composer__reply-title">Reply to {{ replyTo.authorName }}</div>
+        <div class="composer__reply-title">{{ $t('Reply to {name}', { name: replyTo.authorName }) }}</div>
         <div class="composer__reply-text">{{ replyTo.text }}</div>
       </div>
       <q-btn
@@ -36,7 +36,7 @@
         dense
         round
         icon="close"
-        aria-label="Cancel reply"
+        :aria-label="$t('Cancel reply')"
         class="composer__reply-close"
         @click="$emit('cancel-reply')"
       />
@@ -52,7 +52,7 @@
         outlined
         rounded
         autogrow
-        placeholder="Write a message"
+        :placeholder="$t('Write a message')"
         @update:model-value="handleDraftUpdate"
         @focus="rememberSelection"
         @click="rememberSelection"
@@ -69,7 +69,7 @@
             flat
             dense
             icon="sentiment_satisfied"
-            aria-label="Add emoji"
+            :aria-label="$t('Add emoji')"
            
             @click="rememberSelection"
           >
@@ -100,7 +100,7 @@
         :icon="sendButtonIcon"
         class="composer__send"
         data-testid="message-composer-send"
-        aria-label="Send message"
+        :aria-label="$t('Send message')"
         @touchstart.prevent.stop="handleSendTouchStart"
         @click="handleSendClick"
       />

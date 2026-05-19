@@ -31,7 +31,7 @@
         unelevated
         no-caps
         color="primary"
-        label="Accept"
+        :label="$t('Accept')"
         class="request-item__action request-item__action--primary"
         data-testid="chat-request-accept-button"
         @click.stop="handleAccept"
@@ -40,7 +40,7 @@
         flat
         no-caps
         color="grey-8"
-        label="Delete"
+        :label="$t('Delete')"
         class="request-item__action"
         data-testid="chat-request-delete-button"
         @click.stop="handleDelete"
@@ -49,7 +49,7 @@
         flat
         no-caps
         color="negative"
-        label="Block"
+        :label="$t('Block')"
         class="request-item__action"
         data-testid="chat-request-block-button"
         @click.stop="handleBlock"
@@ -64,6 +64,7 @@ import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { Chat } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { getDateTimeLocale, t } from 'src/i18n';
 
 const props = defineProps<{
   chat: Chat;
@@ -86,7 +87,7 @@ function readMetaString(key: string): string {
 const isGroupInviteRequest = computed(() => readMetaString('request_type') === 'group_invite');
 
 const requestEyebrow = computed(() => {
-  return isGroupInviteRequest.value ? 'Group invitation' : 'New contact';
+  return isGroupInviteRequest.value ? t('Group invitation') : t('New contact');
 });
 
 const requestCaption = computed(() => {
@@ -96,10 +97,10 @@ const requestCaption = computed(() => {
   }
 
   if (isGroupInviteRequest.value) {
-    return 'This is an invitation to a group.';
+    return t('This is an invitation to a group.');
   }
 
-  return props.chat.lastMessage || 'Open to review this request.';
+  return props.chat.lastMessage || t('Open to review this request.');
 });
 
 function chatPubkeySnippet(value: string): string {
@@ -109,7 +110,7 @@ function chatPubkeySnippet(value: string): string {
 const chatTitle = computed(() => {
   const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex();
   if (loggedInPubkey && props.chat.publicKey.trim().toLowerCase() === loggedInPubkey) {
-    return 'My Self';
+    return t('My Self');
   }
 
   const givenName = readMetaString('given_name');
@@ -140,7 +141,7 @@ const avatarImageUrl = computed(() => {
 });
 
 const formattedTime = computed(() => {
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(getDateTimeLocale(), {
     month: 'short',
     day: 'numeric'
   }).format(new Date(props.chat.lastMessageAt));

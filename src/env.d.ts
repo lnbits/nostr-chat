@@ -1,6 +1,16 @@
 /// <reference types="@quasar/app-vite" />
 /// <reference types="vite/client" />
 
+import type { ComputedRef } from 'vue';
+import type { LocaleCode, TranslationParams } from 'src/i18n';
+
+declare module '@vue/runtime-core' {
+  interface ComponentCustomProperties {
+    $i18nLocale: Readonly<ComputedRef<LocaleCode>>;
+    $t: (key: string, params?: TranslationParams) => string;
+  }
+}
+
 declare global {
   interface Window {
     __appE2E__?: import('src/testing/e2eBridge').AppE2EBridge;
@@ -19,5 +29,3 @@ declare global {
     __e2eNip07SignEvent?: (event: Record<string, unknown>) => Promise<{ sig: string }>;
   }
 }
-
-export {};

@@ -1,11 +1,11 @@
 <template>
-  <SettingsDetailLayout title="Theme" icon="wallpaper">
+  <SettingsDetailLayout :title="$t('Theme')" icon="wallpaper">
     <q-card flat bordered class="theme-card">
       <q-card-section class="theme-card__section">
         <div>
-          <div class="text-body1">Appearance</div>
+          <div class="text-body1">{{ $t('Appearance') }}</div>
           <div class="text-caption text-grey-6">
-            Switch between light and dark appearance.
+            {{ $t('Switch between light and dark appearance.') }}
           </div>
         </div>
 
@@ -14,7 +14,7 @@
           color="primary"
           checked-icon="dark_mode"
           unchecked-icon="light_mode"
-          label="Dark mode"
+          :label="$t('Dark mode')"
           left-label
           class="theme-card__toggle"
         />

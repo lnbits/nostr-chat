@@ -29,7 +29,7 @@
         <div
           v-if="unseenReactionCount > 0"
           class="chat-item__reaction-badge"
-          :aria-label="`${unseenReactionCount} unseen reactions`"
+          :aria-label="$t('{count} unseen reactions', { count: unseenReactionCount })"
         >
           <span class="chat-item__reaction-icon-shell" aria-hidden="true">
             <q-icon name="favorite" size="13px" class="chat-item__reaction-icon" />
@@ -50,17 +50,17 @@
         round
         icon="more_vert"
         class="chat-item__more"
-        aria-label="Chat actions"
+        :aria-label="$t('Chat actions')"
         data-testid="chat-item-actions-button"
         @click.stop
       >
         <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
           <q-list dense class="nc-pop-menu__list">
             <q-item clickable v-close-popup @click="emitViewProfile">
-              <q-item-section>View Profile</q-item-section>
+              <q-item-section>{{ $t('View Profile') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitRefreshProfile">
-              <q-item-section>Refresh Profile</q-item-section>
+              <q-item-section>{{ $t('Refresh Profile') }}</q-item-section>
             </q-item>
             <q-item
               v-if="chat.type === 'group'"
@@ -68,16 +68,16 @@
               v-close-popup
               @click="emitRefreshChat"
             >
-              <q-item-section>Refresh Group Chat</q-item-section>
+              <q-item-section>{{ $t('Refresh Group Chat') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup :disable="isMuted" @click="emitMute">
-              <q-item-section>Mute</q-item-section>
+              <q-item-section>{{ $t('Mute') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitMarkAsRead">
-              <q-item-section>Mark as Read</q-item-section>
+              <q-item-section>{{ $t('Mark as Read') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitDeleteChat">
-              <q-item-section class="text-negative">Delete Chat</q-item-section>
+              <q-item-section class="text-negative">{{ $t('Delete Chat') }}</q-item-section>
             </q-item>
           </q-list>
         </q-menu>
@@ -91,6 +91,7 @@ import { computed } from 'vue';
 import type { Chat } from 'src/types/chat';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { getDateTimeLocale, t } from 'src/i18n';
 
 const props = defineProps<{
   chat: Chat;
@@ -135,7 +136,7 @@ function getLoggedInPubkey(): string {
 }
 
 const formattedTime = computed(() => {
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(getDateTimeLocale(), {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(props.chat.lastMessageAt));
@@ -144,7 +145,7 @@ const formattedTime = computed(() => {
 const chatTitle = computed(() => {
   const loggedInPubkey = getLoggedInPubkey();
   if (loggedInPubkey && props.chat.publicKey.trim().toLowerCase() === loggedInPubkey) {
-    return 'My Self';
+    return t('My Self');
   }
 
   const givenName = readMetaString('given_name');

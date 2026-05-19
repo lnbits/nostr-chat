@@ -13,16 +13,21 @@
               icon="arrow_back"
               color="primary"
               class="register-card__back-button"
-              aria-label="Back"
+              :aria-label="$t('Back')"
               :disable="isLoggingIn"
               @click="goBackToAuth"
             />
             <div class="register-card__header-text">
-              <div class="register-card__title">Create Account</div>
-              <div class="register-card__subtitle" v-if="isCreatingAccount">Creating Account</div>
+              <div class="register-card__title">{{ $t('Create Account') }}</div>
+              <div class="register-card__subtitle" v-if="isCreatingAccount">
+                {{ $t('Creating Account') }}
+              </div>
               <div class="register-card__subtitle" v-else>
-                A new Nostr keypair has been generated for this account. Download the secret before
-                continuing.
+                {{
+                  $t(
+                    'A new Nostr keypair has been generated for this account. Download the secret before continuing.'
+                  )
+                }}
               </div>
             </div>
           </div>
@@ -45,7 +50,7 @@
               color="primary"
               no-caps
               icon="download"
-              label="Download Account Secret"
+              :label="$t('Download Account Secret')"
               class="register-card__button"
               :disable="!generatedAccount"
               @click="handleDownloadSecret"
@@ -56,7 +61,7 @@
               color="primary"
               no-caps
               icon="login"
-              label="Login Now"
+              :label="$t('Login Now')"
               class="register-card__button"
               :disable="!generatedAccount"
               :loading="isLoggingIn"
@@ -66,7 +71,7 @@
         </q-card-section>
 
         <q-card-section class="register-card__footer">
-          <span>Made by the</span>
+          <span>{{ $t('Made by the') }}</span>
           <a
             href="https://lnbits.com"
             target="_blank"
@@ -84,7 +89,7 @@
           >
             LNbits
           </a>
-          <span>team.</span>
+          <span>{{ $t('team.') }}</span>
         </q-card-section>
       </q-card>
     </div>
@@ -96,6 +101,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
 import AuthProfileOnboardingCard from 'src/components/AuthProfileOnboardingCard.vue';
+import { t } from 'src/i18n';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -180,7 +186,7 @@ function generateAccountKeys(): void {
       nsec: signer.nsec
     };
   } catch (error) {
-    reportUiError('Failed to generate account keys', error, 'Failed to create account keys.');
+    reportUiError('Failed to generate account keys', error, t('Failed to create account keys.'));
   }
 }
 
@@ -203,7 +209,7 @@ function handleDownloadSecret(): void {
     document.body.removeChild(link);
     URL.revokeObjectURL(objectUrl);
   } catch (error) {
-    reportUiError('Failed to download account secret', error, 'Failed to download account secret.');
+    reportUiError('Failed to download account secret', error, t('Failed to download account secret.'));
   }
 }
 
@@ -229,7 +235,7 @@ async function handleLoginNow(): Promise<void> {
 
     showProfileOnboarding.value = true;
   } catch (error) {
-    reportUiError('Failed to log in with generated account', error, 'Failed to log in.');
+    reportUiError('Failed to log in with generated account', error, t('Failed to log in.'));
   } finally {
     isLoggingIn.value = false;
   }

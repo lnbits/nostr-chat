@@ -7,7 +7,7 @@
         outlined
         dense
         rounded
-        label="Relay URL"
+        :label="$t('Relay URL')"
         placeholder="wss://example-relay.io"
         data-testid="relay-editor-new-relay-input"
         :error="Boolean(relayValidationError)"
@@ -23,7 +23,7 @@
             color="primary"
             icon="add"
             size="sm"
-            aria-label="Add relay"
+            :aria-label="$t('Add relay')"
             data-testid="relay-editor-add-relay-button"
             :disable="!canAddRelay"
             @click="emitAddRelay"
@@ -106,11 +106,11 @@
                   @click.stop
                   @update:model-value="(value) => emitRelayReadUpdate(index, value)"
                 />
-                <span class="relay-io-toggle__label">Read</span>
+                  <span class="relay-io-toggle__label">{{ $t('Read') }}</span>
               </div>
               <q-separator vertical class="relay-io-toggle-separator" />
               <div class="relay-io-toggle">
-                <span class="relay-io-toggle__label q-ml-sm">Write</span>
+                <span class="relay-io-toggle__label q-ml-sm">{{ $t('Write') }}</span>
                 <q-toggle
                   dense
                   size="xs"
@@ -132,7 +132,7 @@
               dense
               icon="delete"
               color="negative"
-              aria-label="Delete relay"
+              :aria-label="$t('Delete relay')"
               data-testid="relay-editor-delete-relay-button"
               @click.stop="emitRemoveRelay(index)"
             />
@@ -141,7 +141,7 @@
 
         <div class="relay-expansion-item__body">
           <div v-if="isRelayInfoLoading(relay)" class="relay-nip11__state">
-            Loading NIP-11 data...
+            {{ $t('Loading NIP-11 data...') }}
           </div>
 
           <div
@@ -154,7 +154,7 @@
               dense
               no-caps
               color="negative"
-              label="Retry"
+              :label="$t('Retry')"
               @click="emitRetryRelayInfo(relay)"
             />
           </div>
@@ -163,7 +163,7 @@
             <RelayInfoFields label="NIP-11" :value="relayInfo(relay)" />
           </div>
 
-          <div v-else class="relay-nip11__state">Expand to load NIP-11 data.</div>
+          <div v-else class="relay-nip11__state">{{ $t('Expand to load NIP-11 data.') }}</div>
         </div>
       </q-expansion-item>
     </q-list>

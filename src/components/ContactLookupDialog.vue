@@ -16,7 +16,7 @@
       autofocus
       clearable
       clear-icon="close"
-      label="Identifier or Public key"
+      :label="$t('Identifier or Public key')"
       :error="Boolean(identifierError)"
       :error-message="identifierError"
       @update:model-value="handleIdentifierInput"
@@ -53,11 +53,15 @@
               <q-item-label caption>{{ contactSubtitle(contact) }}</q-item-label>
             </q-item-section>
             <q-item-section side v-if="contact.type === 'group'">
-              <q-badge rounded color="primary" label="Group" />
+              <q-badge rounded color="primary" :label="$t('Group')" />
             </q-item-section>
           </q-item>
           <div v-if="filteredContacts.length === 0" class="contact-lookup-dialog__empty-state">
-            {{ identifierInput.trim() ? 'No matching contacts. Enter a valid identifier to add one.' : 'No contacts available yet.' }}
+            {{
+              identifierInput.trim()
+                ? $t('No matching contacts. Enter a valid identifier to add one.')
+                : $t('No contacts available yet.')
+            }}
           </div>
         </q-list>
       </div>
@@ -71,7 +75,7 @@
       dense
       outlined
       rounded
-      label="Given Name"
+      :label="$t('Given Name')"
       @keydown.enter.prevent="handleSubmit"
     />
 
@@ -80,7 +84,7 @@
         outline
         color="primary"
         no-caps
-        label="Cancel"
+        :label="$t('Cancel')"
         :disable="isSubmitting"
         @click="closeDialog"
       />
@@ -108,6 +112,7 @@ import { useRelayStore } from 'src/stores/relayStore';
 import type { ContactMetadata, ContactRecord, ContactType } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { t } from 'src/i18n';
 
 interface Props {
   modelValue: boolean;
@@ -154,18 +159,18 @@ const showSuggestions = computed(() => {
 const canSubmit = computed(() => {
   return Boolean(selectedExistingContact.value || identifierInput.value.trim());
 });
-const dialogTitle = computed(() => (props.purpose === 'chat' ? 'New Chat' : 'Add Contact'));
+const dialogTitle = computed(() => (props.purpose === 'chat' ? t('New Chat') : t('Add Contact')));
 const dialogSubtitle = computed(() => {
   return props.purpose === 'chat'
-    ? 'Search your contacts or enter a valid identifier to start chatting.'
-    : 'Search your contacts or enter a valid identifier to add someone new.';
+    ? t('Search your contacts or enter a valid identifier to start chatting.')
+    : t('Search your contacts or enter a valid identifier to add someone new.');
 });
 const submitLabel = computed(() => {
   if (selectedExistingContact.value) {
-    return props.purpose === 'chat' ? 'Open Chat' : 'Open';
+    return props.purpose === 'chat' ? t('Open Chat') : t('Open');
   }
 
-  return props.purpose === 'chat' ? 'Add and Chat' : 'Add Contact';
+  return props.purpose === 'chat' ? t('Add and Chat') : t('Add Contact');
 });
 
 watch(
@@ -253,8 +258,8 @@ function canUseContact(contact: ContactRecord): boolean {
 
 function unsupportedContactMessage(): string {
   return props.purpose === 'chat'
-    ? 'New Chat only supports direct contacts. Open the group from Chats instead.'
-    : 'This contact cannot be used here.';
+    ? t('New Chat only supports direct contacts. Open the group from Chats instead.')
+    : t('This contact cannot be used here.');
 }
 
 function findContactByPubkey(pubkey: string | null | undefined): ContactRecord | null {
@@ -281,11 +286,11 @@ function newContactIdentifierErrorMessage(resolution: {
 }): string {
   if (resolution.identifierType === 'nip05') {
     return resolution.error === 'nip05_unresolved'
-      ? 'NIP-05 could not be resolved. Please verify the identifier.'
-      : 'Enter a valid NIP-05 identifier (name@domain).';
+      ? t('NIP-05 could not be resolved. Please verify the identifier.')
+      : t('Enter a valid NIP-05 identifier (name@domain).');
   }
 
-  return 'Enter a valid hex pubkey, npub, or NIP-05 email.';
+  return t('Enter a valid hex pubkey, npub, or NIP-05 email.');
 }
 
 function closeDialog(): void {
@@ -339,7 +344,7 @@ async function finalizeResolvedContact(contact: ContactRecord): Promise<void> {
     reportUiError(
       props.purpose === 'chat' ? 'Failed to open chat contact' : 'Failed to add contact',
       error,
-      props.purpose === 'chat' ? 'Failed to continue to chat.' : 'Failed to add contact.'
+      props.purpose === 'chat' ? t('Failed to continue to chat.') : t('Failed to add contact.')
     );
   } finally {
     isSubmitting.value = false;
@@ -379,7 +384,7 @@ async function ensureContactInPrivateContactList(contact: ContactRecord): Promis
     reportUiError(
       'Failed to publish private contact list after selecting contact',
       error,
-      'Contact saved, but contact list sync failed.'
+      t('Contact saved, but contact list sync failed.')
     );
   }
 
@@ -441,7 +446,7 @@ async function createContactFromIdentifier(identifier: string): Promise<ContactR
     reportUiError(
       'Failed to refresh contact profile after create',
       error,
-      'Contact added, but profile refresh failed.'
+      t('Contact added, but profile refresh failed.')
     );
   }
 
@@ -456,7 +461,7 @@ async function createContactFromIdentifier(identifier: string): Promise<ContactR
     reportUiError(
       'Failed to publish private contact list after adding contact',
       error,
-      'Contact added, but contact list sync failed.'
+      t('Contact added, but contact list sync failed.')
     );
   }
 
@@ -486,7 +491,7 @@ async function handleSubmit(): Promise<void> {
   const selectedContact =
     selectedExistingContact.value ?? resolveExistingContactFromInput(identifierInput.value);
   if (!selectedContact && !identifierInput.value.trim()) {
-    identifierError.value = 'Enter a valid hex pubkey, npub, or NIP-05 email.';
+    identifierError.value = t('Enter a valid hex pubkey, npub, or NIP-05 email.');
     return;
   }
 
@@ -507,7 +512,7 @@ async function handleSubmit(): Promise<void> {
     reportUiError(
       props.purpose === 'chat' ? 'Failed to open chat contact' : 'Failed to add contact',
       error,
-      props.purpose === 'chat' ? 'Failed to continue to chat.' : 'Failed to add contact.'
+      props.purpose === 'chat' ? t('Failed to continue to chat.') : t('Failed to add contact.')
     );
   } finally {
     isSubmitting.value = false;

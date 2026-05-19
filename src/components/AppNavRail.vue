@@ -6,7 +6,7 @@
       unelevated
       class="nav-rail__btn"
       :class="{ 'nav-rail__btn--active': active === item.key }"
-      :aria-label="item.label"
+      :aria-label="$t(item.labelKey)"
       @click="$emit('select', item.key)"
     >
       <span class="nav-rail__icon-shell">
@@ -28,7 +28,7 @@
       </span>
 
       <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
-        {{ item.label }}
+        {{ $t(item.labelKey) }}
       </AppTooltip>
     </q-btn>
   </aside>
@@ -42,9 +42,9 @@ import { useChatStore } from 'src/stores/chatStore';
 import { formatUnreadChatBadgeLabel } from 'src/utils/unreadChatBadge';
 
 const navItems = [
-  { key: 'chats', label: 'Chats', icon: 'chat' },
-  { key: 'contacts', label: 'Contacts', icon: 'contacts' },
-  { key: 'settings', label: 'Settings', icon: 'settings' }
+  { key: 'chats', labelKey: 'Chats', icon: 'chat' },
+  { key: 'contacts', labelKey: 'Contacts', icon: 'contacts' },
+  { key: 'settings', labelKey: 'Settings', icon: 'settings' }
 ] as const;
 
 const chatStore = useChatStore();
