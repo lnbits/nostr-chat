@@ -4,7 +4,7 @@
   "auth.chooseLoginMethod": "Choose login way",
   "auth.connectNip46": "Connect with NIP-46",
   "auth.downloadAccountSecret": "Download account secret",
-  "auth.enteringPrivateKeyStrongly": "No good at all to enter your private key. Use Nostr Remote Signer.",
+  "auth.enteringPrivateKeyStrongly": "No good at all to enter your private key. Use Nostr remote signer.",
   "auth.enterNsecHexPrivate": "Put your nsec or hex private key to continue",
   "auth.enterValidNsec64": "Enter correct nsec or 64-character hex private key.",
   "auth.generatedKeypairSecretNotice": "A new Nostr keypair don generate for dis account. Download the secret before continuing.",
