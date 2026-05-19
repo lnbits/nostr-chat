@@ -1,41 +1,50 @@
 prompt
 
 
+add `Encrypted private key import using ncryptsec` on all
+
+do not have multiple subscriptions for the same events
+
+do not subscribe to contacts relays, only to my relay
+fetch contact updates with the watchdog r manual refresh
+
+- login and secrets on mobile and desktop app
+
+URL for notifications firebase
+
+refresh contacts should refresh priofiels
+No relays found for this contact -> if this is the case do a refresh profile beforehand
+ - keep last profile refresh in mind
+- when refreshing a users's profile also use the app relays (the user might not have relays) 
 
 
-App init:
- - always use app relays to listen for messages
+for group restore make sure to start with the last epoch, then work backwards
+In the Gropu > Members show the updating relays status bar for each member (pulsing when it is sending) slowly filling up to be green or read.
 
 
+
+chat with contact from group
+dektop app -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
+copy to clipboard button does not work on mobile apps
+
+underad always at the top & group events do not count as unread
+new epoch results in unread message
+
+- Add i18n to this app. Extract all labels that are visible in the UI and create translation file for them.
+  Based on the extracted file make translation files for the top 20 languages.
+  In Settings > Languages add a language selector.
 
 
 
 
 backrefs
 
-
-
 confety emoji
-update npm libs and vultrbilities
 
 
 ### Groups
 @someUser
  - more clear membership management in group chats
-
- rename services to backend?
-
-
-
-
-
-
-
-the electron app should only show fresh notifications
-do not show 100 notifications on start
-
-
-
 
 
  
@@ -75,17 +84,6 @@ on group restore set members the latest epoch sent invitations
 - better nip51 here
 
 - group private key is now saved as NIP78, this data structure must be standardizd so other apps can use it easily
-
-
-
-
-
-When the app runs in the browser show the unread count badge in the tab title with the number of unread chats
-
-node 24
-
-do not subscribe to all your contacts relays?
-remove old project-name references
 
 
 
