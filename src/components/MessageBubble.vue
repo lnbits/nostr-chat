@@ -13,7 +13,7 @@
         class="bubble__author"
         :class="isMine ? 'bubble__author--mine' : 'bubble__author--their'"
         data-testid="thread-author-profile-link"
-        :aria-label="`Open profile for ${authorLabel}`"
+        :aria-label="$t('profile.open.aria', { name: authorLabel })"
         @click.stop="handleOpenAuthorProfile"
       >
         <CachedAvatar
@@ -44,31 +44,31 @@
               <q-item-section avatar>
                 <q-icon name="reply" />
               </q-item-section>
-              <q-item-section>Reply</q-item-section>
+              <q-item-section>{{ $t('message.reply.action') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="handleCopy">
               <q-item-section avatar>
                 <q-icon name="content_copy" />
               </q-item-section>
-              <q-item-section>Copy</q-item-section>
+              <q-item-section>{{ $t('common.copy') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="handlePin">
               <q-item-section avatar>
                 <q-icon name="push_pin" />
               </q-item-section>
-              <q-item-section>Pin</q-item-section>
+              <q-item-section>{{ $t('common.pin') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="handleInfo">
               <q-item-section avatar>
                 <q-icon name="info" />
               </q-item-section>
-              <q-item-section>Nostr Info</q-item-section>
+              <q-item-section>{{ $t('common.nostrInfo') }}</q-item-section>
             </q-item>
             <q-item v-if="canDeleteMessage" clickable v-close-popup @click="handleDelete">
               <q-item-section avatar>
                 <q-icon name="delete" class="text-negative" />
               </q-item-section>
-              <q-item-section class="text-negative">Delete</q-item-section>
+              <q-item-section class="text-negative">{{ $t('common.delete') }}</q-item-section>
             </q-item>
             <q-item
               v-else-if="isDeletedMessage"
@@ -79,11 +79,11 @@
               <q-item-section avatar>
                 <q-icon name="visibility" />
               </q-item-section>
-              <q-item-section>View Deleted Message</q-item-section>
+              <q-item-section>{{ $t('message.viewDeletedMessage') }}</q-item-section>
             </q-item>
           </q-list>
 
-          <div class="bubble__quick-reactions" role="menu" aria-label="Quick emoji reactions">
+          <div class="bubble__quick-reactions" role="menu" :aria-label="$t('message.quickEmojiReactions')">
             <button
               v-for="entry in quickReactionEntries"
               :key="entry.emoji"
@@ -91,7 +91,7 @@
               class="bubble__quick-reaction"
               @click="handleEmojiReaction(entry.emoji)"
               :title="entry.label"
-              :aria-label="`React with ${entry.label}`"
+              :aria-label="$t('common.react', { label: entry.label })"
             >
               {{ entry.emoji }}
             </button>
@@ -99,7 +99,7 @@
             <button
               type="button"
               class="bubble__quick-reaction bubble__quick-reaction--more"
-              aria-label="Open more emoji"
+              :aria-label="$t('message.openMoreEmoji')"
               @click="openEmojiPickerMenu"
             >
               <q-icon name="more_horiz" size="18px" />
@@ -133,7 +133,7 @@
           v-if="replyPreview"
           type="button"
           class="bubble__reply-preview"
-          aria-label="Open replied message"
+          :aria-label="$t('message.openRepliedMessage')"
           @click.stop="handleOpenReplyTarget"
         >
           <div class="bubble__reply-preview-accent" aria-hidden="true" />
@@ -158,7 +158,7 @@
           class="bubble__more"
           @click.stop="expandMessage"
         >
-          More
+          {{ $t('common.more') }}
         </button>
       </div>
 
@@ -202,8 +202,8 @@
           }"
           :aria-label="
             canRemoveReaction(item.reaction)
-              ? `Remove ${item.reaction.name} reaction`
-              : `${item.reaction.name} reaction`
+              ? $t('message.removeReaction', { name: item.reaction.name })
+              : $t('message.reactionByName', { name: item.reaction.name })
           "
           @click.stop="handleRemoveReaction(item.reaction)"
         >
@@ -223,7 +223,7 @@
     max-width="460px"
   >
     <div v-if="statusSections.length === 0" class="bubble__status-empty">
-      No relay status recorded yet.
+      {{ $t('relays.relayStatusRecordedYet') }}
     </div>
     <template v-else>
       <div
@@ -253,7 +253,7 @@
               no-caps
               size="sm"
               color="primary"
-              label="Retry"
+              :label="$t('common.retry')"
               class="bubble__status-retry"
               :loading="isRetrying(item)"
               :disable="isRetrying(item) || !item.retryable"
@@ -283,42 +283,42 @@
           dense
           no-caps
           icon="arrow_back"
-          label="Back"
+          :label="$t('common.back')"
           class="bubble__info-back"
           @click="handleBackToInfo"
         />
-        <div class="bubble__info-dialog-title-text">Nostr Info</div>
+        <div class="bubble__info-dialog-title-text">{{ $t('common.nostrInfo') }}</div>
       </div>
     </template>
 
     <div v-if="!isEventJsonViewOpen" class="bubble__info">
       <div class="bubble__info-row">
-        <div class="bubble__info-label">Sent</div>
+        <div class="bubble__info-label">{{ $t('common.sent') }}</div>
         <div class="bubble__info-value">{{ formattedInfoTime }}</div>
       </div>
       <div class="bubble__info-row">
-        <div class="bubble__info-label">Sender</div>
-        <div class="bubble__info-value">{{ isMine ? 'You' : 'Contact' }}</div>
+        <div class="bubble__info-label">{{ $t('message.sender') }}</div>
+        <div class="bubble__info-value">{{ isMine ? $t('common.you') : $t('contacts.contact.label') }}</div>
       </div>
       <div class="bubble__info-row">
-        <div class="bubble__info-label">Author Pubkey</div>
+        <div class="bubble__info-label">{{ $t('contacts.authorPubkey') }}</div>
         <div class="bubble__info-value bubble__info-value--mono">{{ message.authorPublicKey }}</div>
       </div>
       <div class="bubble__info-row">
-        <div class="bubble__info-label">Event ID</div>
+        <div class="bubble__info-label">{{ $t('message.eventId') }}</div>
         <div class="bubble__info-value bubble__info-value--mono">
-          {{ message.eventId || 'Not available' }}
+          {{ message.eventId || $t('common.notAvailable') }}
         </div>
       </div>
       <div class="bubble__info-row">
-        <div class="bubble__info-label">Message</div>
+        <div class="bubble__info-label">{{ $t('message.message') }}</div>
         <div class="bubble__info-value">{{ baseVisibleMessageText }}</div>
       </div>
       <q-btn
         flat
         no-caps
         color="primary"
-        label="Show Event Json"
+        :label="$t('message.showEventJson')"
         class="bubble__info-json-button"
         @click="handleShowEventJson"
       />
@@ -326,13 +326,15 @@
 
     <div v-else class="bubble__event-json-panel">
       <pre v-if="formattedEventJson" class="bubble__event-json">{{ formattedEventJson }}</pre>
-      <div v-else class="bubble__event-json-empty">Event JSON is not available for this message.</div>
+      <div v-else class="bubble__event-json-empty">
+        {{ $t('message.eventJsonAvailableMessage') }}
+      </div>
     </div>
   </AppDialog>
 
   <AppDialog
     v-model="isDeletedMessageDialogOpen"
-    title="Deleted Message"
+    :title="$t('message.deletedMessage')"
     max-width="460px"
   >
     <div class="bubble__deleted-message-dialog">{{ message.text }}</div>
@@ -361,6 +363,7 @@ import type {
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isReactionUnseenForAuthor } from 'src/utils/messageReactions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { getDateTimeLocale, t } from 'src/i18n';
 
 const props = defineProps<{
   message: Message;
@@ -461,10 +464,10 @@ const authorLabel = computed(() => {
   }
 
   if (isMine.value) {
-    return 'You';
+    return t('common.you');
   }
 
-  return props.contactName?.trim() || 'Contact';
+  return props.contactName?.trim() || t('contacts.contact.label');
 });
 const authorAvatarSrc = computed(() => props.authorAvatarSrc?.trim() || '');
 const authorAvatarFallback = computed(() => {
@@ -707,7 +710,7 @@ function createMenuPositionEvent(): MouseEvent | null {
 function notifyUnimplemented(label: string): void {
   $q.notify({
     type: 'info',
-    message: `${label} is not implemented yet.`,
+    message: t('common.notImplementedLabel', { label }),
     position: 'top',
     timeout: 1800
   });
@@ -773,7 +776,7 @@ function handleEmojiReaction(emoji: string): void {
       emoji
     });
   } catch (error) {
-    reportUiError('Failed to emit message reaction', error, 'Failed to add reaction.');
+    reportUiError('Failed to emit message reaction', error, t('errors.failedAddReaction'));
   }
 }
 
@@ -788,7 +791,7 @@ function handleRemoveReaction(reaction: MessageReaction): void {
       reaction
     });
   } catch (error) {
-    reportUiError('Failed to emit message reaction removal', error, 'Failed to remove reaction.');
+    reportUiError('Failed to emit message reaction removal', error, t('errors.failedRemoveReaction'));
   }
 }
 
@@ -797,17 +800,17 @@ async function handleCopy(): Promise<void> {
     await copyText(baseVisibleMessageText.value);
     $q.notify({
       type: 'positive',
-      message: 'Message copied.',
+      message: t('message.messageCopied'),
       position: 'top',
       timeout: 1600
     });
   } catch (error) {
-    reportUiError('Failed to copy message text', error, 'Failed to copy message.');
+    reportUiError('Failed to copy message text', error, t('errors.failedCopyMessage'));
   }
 }
 
 function handlePin(): void {
-  notifyUnimplemented('Pin');
+  notifyUnimplemented(t('common.pin'));
 }
 
 function handleInfo(): void {
@@ -863,21 +866,21 @@ async function retryRelay(item: StatusListItem): Promise<void> {
   try {
     await nostrStore.retryDirectMessageRelay(messageId, item.relayUrl, item.scope);
   } catch (error) {
-    reportUiError('Failed to retry direct message relay publish', error, 'Failed to retry relay.');
+    reportUiError('Failed to retry direct message relay publish', error, t('errors.failedRetryRelay'));
   } finally {
     retryingRelayKeys.value = retryingRelayKeys.value.filter((key) => key !== item.key);
   }
 }
 
 const formattedTime = computed(() => {
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(getDateTimeLocale(), {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(props.message.sentAt));
 });
 
 const formattedInfoTime = computed(() => {
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(getDateTimeLocale(), {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(new Date(props.message.sentAt));

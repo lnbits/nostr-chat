@@ -8,12 +8,12 @@
     max-width="440px"
   >
     <div class="browser-notifications-login-dialog__body">
-      You can also manage this later from <strong>Settings</strong> under <strong>Notifications</strong>.
+      {{ $t('notifications.manageLaterHint') }}
     </div>
 
     <template #actions>
-      <q-btn flat no-caps label="Not now" @click="handleSkip" />
-      <q-btn unelevated no-caps color="primary" label="Enable" @click="handleEnable" />
+      <q-btn flat no-caps :label="$t('common.now')" @click="handleSkip" />
+      <q-btn unelevated no-caps color="primary" :label="$t('common.enable')" @click="handleEnable" />
     </template>
   </AppDialog>
 </template>
@@ -22,6 +22,7 @@
 import { computed } from 'vue';
 import AppDialog from 'src/components/AppDialog.vue';
 import { isAndroidPushNotificationSupported } from 'src/services/androidPushNotificationService';
+import { t } from 'src/i18n';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -44,19 +45,19 @@ const isDesktopRuntime = computed(
 const isAndroidRuntime = computed(() => isAndroidPushNotificationSupported());
 const dialogTitle = computed(() => {
   if (isAndroidRuntime.value || isDesktopRuntime.value) {
-    return 'Enable Notifications';
+    return t('notifications.enableNotifications');
   }
 
-  return 'Enable Browser Notifications';
+  return t('notifications.enableBrowserNotifications');
 });
 const dialogSubtitle = computed(() => {
   if (isAndroidRuntime.value) {
-    return 'Get notified when new messages arrive. If you continue, Android will ask for notification permission.';
+    return t('notifications.android.enablePrompt');
   }
 
   return isDesktopRuntime.value
-    ? 'Get notified when new messages arrive. If you continue, desktop notifications will be enabled for this app.'
-    : 'Get notified when new messages arrive. If you continue, your browser will ask for permission next.';
+    ? t('notifications.desktop.enablePrompt')
+    : t('notifications.browser.enablePrompt');
 });
 
 function handleEnable(): void {

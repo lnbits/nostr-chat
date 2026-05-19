@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Relays" icon="satellite_alt">
+  <SettingsDetailLayout :title="$t('relays.title')" icon="satellite_alt">
     <div class="relays-content">
       <q-tabs
         v-model="activeTab"
@@ -11,13 +11,13 @@
       >
         <q-tab
           name="my"
-          label="My Relays (NIP-65)"
+          :label="$t('relays.nip65.mineTitle')"
           class="relays-tab"
           data-testid="settings-relays-my-tab"
         />
         <q-tab
           name="app"
-          label="App Relays"
+          :label="$t('relays.appRelays.title')"
           class="relays-tab"
           data-testid="settings-relays-app-tab"
         />
@@ -30,9 +30,9 @@
             :relays="nip65RelayStore.relays"
             :relay-validation-error="myRelayValidationError"
             :can-add-relay="canAddMyRelay"
-            empty-message="No NIP-65 relays configured."
+            :empty-message="$t('relays.nip65RelaysConfigured')"
             :secondary-action-disabled="!canUseDefaultMyRelays"
-            secondary-action-label="Use Default Relays"
+            :secondary-action-label="$t('relays.useDefaultRelays')"
             secondary-action-icon="restart_alt"
             :relay-read-enabled="myRelayReadEnabled"
             :relay-write-enabled="myRelayWriteEnabled"
@@ -62,9 +62,9 @@
             :relays="relayStore.relays"
             :relay-validation-error="appRelayValidationError"
             :can-add-relay="canAddAppRelay"
-            empty-message="No app relays configured."
+            :empty-message="$t('relays.appRelaysConfigured')"
             :secondary-action-disabled="!canRestoreDefaults"
-            secondary-action-label="Restore Default Relays"
+            :secondary-action-label="$t('relays.restoreDefaultRelays')"
             secondary-action-icon="restart_alt"
             :relay-read-enabled="appRelayReadEnabled"
             :relay-write-enabled="appRelayWriteEnabled"
@@ -101,6 +101,7 @@ import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { t } from 'src/i18n';
 
 type RelayTab = 'my' | 'app';
 interface RelayTogglePayload {
@@ -236,16 +237,16 @@ function validateRelayUrl(value: string): string {
   try {
     const url = new URL(value);
     if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-      return 'Relay must use ws:// or wss://';
+      return t('relays.relayMustUseWs');
     }
 
     if (!url.hostname) {
-      return 'Relay URL must include a hostname';
+      return t('relays.relayUrlMustInclude');
     }
 
     return '';
   } catch {
-    return 'Relay must be a valid ws:// or wss:// URL';
+    return t('relays.relayMustValidWs');
   }
 }
 

@@ -26,7 +26,7 @@
         round
         dense
         icon="close"
-        aria-label="Dismiss"
+        :aria-label="$t('common.dismiss')"
         @click.stop="dismissForegroundMessageBanner"
       />
     </div>
@@ -47,6 +47,7 @@ import { installAppE2EBridge } from 'src/testing/e2eBridge';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { readDarkModePreference } from 'src/utils/themeStorage';
 import { useRouter } from 'vue-router';
+import { t } from 'src/i18n';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -60,7 +61,7 @@ Notify.setDefaults({
       dense: true,
       flat: true,
       color: 'white',
-      'aria-label': 'Dismiss',
+      'aria-label': t('common.dismiss'),
     },
   ],
 });
@@ -71,7 +72,7 @@ const foregroundMessageBannerAvatarFallback = computed(() =>
 );
 const foregroundMessageBannerMessage = computed(() => {
   const messageText = foregroundMessageBanner.value?.messageText.replace(/\s+/g, ' ').trim() ?? '';
-  return messageText || 'Message';
+  return messageText || t('message.message');
 });
 let foregroundMessageBannerTimeoutId: number | null = null;
 
@@ -103,7 +104,7 @@ function showForegroundMessageBanner(detail: ForegroundMessageActivityDetail): v
     chatPubkey: detail.chatPubkey,
     iconUrl: detail.iconUrl,
     messageText: detail.messageText,
-    title: detail.title || 'Nostr Chat',
+    title: detail.title || t('chat.nostrChat'),
     showBanner: true,
   };
   foregroundMessageBannerTimeoutId = window.setTimeout(() => {

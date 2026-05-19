@@ -7,7 +7,7 @@
   >
     <div v-if="isDetailsVisible" class="startup-history-banner__details">
       <div class="startup-history-banner__header">
-        <span class="startup-history-banner__title">Startup History</span>
+        <span class="startup-history-banner__title">{{ $t('startup.startupHistory') }}</span>
         <span class="startup-history-banner__summary">{{ summaryLabel }}</span>
       </div>
 
@@ -48,7 +48,7 @@
                   class="startup-history-banner__lock-icon"
                   aria-hidden="true"
                 />
-                <span>{{ step.label }}</span>
+                <span>{{ $t(step.label) }}</span>
               </div>
               <div class="startup-history-banner__meta">{{ startupStepMeta(step) }}</div>
             </div>
@@ -82,7 +82,7 @@
                 size="13px"
               />
               <div class="startup-history-banner__copy">
-                <div class="startup-history-banner__task-label">{{ task.label }}</div>
+                <div class="startup-history-banner__task-label">{{ $t(task.label) }}</div>
                 <div class="startup-history-banner__meta">{{ startupStepMeta(task) }}</div>
               </div>
               <div class="startup-history-banner__duration">
@@ -120,6 +120,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { isStartupLockedStepIdValue } from 'src/stores/nostr/startupState';
 import type { StartupStepStatus, StartupTimedSnapshot } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { t } from 'src/i18n';
 
 const STARTUP_HISTORY_DETAILS_STORAGE_KEY = 'nostr-chat:startup-history-details-visible';
 
@@ -158,17 +159,17 @@ const isVisible = computed(() => {
 
 const summaryLabel = computed(() => {
   if (!activeStep.value) {
-    return 'Preparing startup restore';
+    return t('startup.preparingStartupRestore');
   }
 
   const activeIndex = startupHistory.value.findIndex((step) => step.id === activeStep.value?.id);
   const counter =
-    activeIndex >= 0 ? `${activeIndex + 1}/${startupHistory.value.length}` : 'Startup';
-  return `${counter} ${activeStep.value.label}`;
+    activeIndex >= 0 ? `${activeIndex + 1}/${startupHistory.value.length}` : t('startup.startup');
+  return `${counter} ${t(activeStep.value.label)}`;
 });
 
 const detailsButtonLabel = computed(() =>
-  isDetailsVisible.value ? 'Hide startup history' : 'Show startup history'
+  isDetailsVisible.value ? t('startup.hideStartupHistory') : t('startup.showStartupHistory')
 );
 
 function toggleDetails(): void {
@@ -226,20 +227,20 @@ function startupStatusClass(status: StartupStepStatus | null): string {
 function startupStepMeta(step: StartupTimedSnapshot): string {
   const eventCountMeta = startupStepEventCountMeta(step);
   if (step.status === 'error') {
-    return [step.errorMessage?.trim() || 'Failed', eventCountMeta].filter(Boolean).join(' - ');
+    return [step.errorMessage?.trim() || t('common.failed'), eventCountMeta].filter(Boolean).join(' - ');
   }
 
   if (step.status === 'success') {
-    return [`Completed in ${startupStepDuration(step)}`, eventCountMeta]
+    return [t('common.completed', { duration: startupStepDuration(step) }), eventCountMeta]
       .filter(Boolean)
       .join(' - ');
   }
 
   if (step.status === 'in_progress') {
-    return ['In progress', eventCountMeta].filter(Boolean).join(' - ');
+    return [t('common.progress'), eventCountMeta].filter(Boolean).join(' - ');
   }
 
-  return ['Pending', eventCountMeta].filter(Boolean).join(' - ');
+  return [t('common.pending'), eventCountMeta].filter(Boolean).join(' - ');
 }
 
 function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
@@ -248,12 +249,12 @@ function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
   }
 
   const eventCount = Math.max(0, Math.floor(step.eventCount));
-  return `${eventCount} ${eventCount === 1 ? 'event' : 'events'}`;
+  return eventCount === 1 ? t('common.eventCount.one', { count: eventCount }) : t('common.eventCount.many', { count: eventCount });
 }
 
 function startupStepDuration(step: StartupTimedSnapshot): string {
   if (typeof step.durationMs !== 'number' || !Number.isFinite(step.durationMs)) {
-    return step.status === 'in_progress' ? 'Running' : 'Pending';
+    return step.status === 'in_progress' ? t('common.runningLabel') : t('common.pending');
   }
 
   if (step.durationMs < 1000) {

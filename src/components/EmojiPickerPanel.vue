@@ -8,7 +8,7 @@
         outlined
         rounded
         clearable
-        placeholder="Search emoji"
+        :placeholder="$t('message.searchEmoji')"
       >
         <template #prepend>
           <q-icon name="search" />
@@ -24,7 +24,7 @@
         v-if="activeEmojiGroup"
         class="emoji-picker__group"
       >
-        <div class="emoji-picker__group-title">{{ activeEmojiGroup.label }}</div>
+        <div class="emoji-picker__group-title">{{ $t(activeEmojiGroup.label) }}</div>
         <div class="emoji-picker__grid">
           <button
             v-for="entry in activeEmojiGroup.emojis"
@@ -43,7 +43,7 @@
       </div>
 
       <div v-if="availableEmojiGroups.length === 0" class="emoji-picker__empty">
-        No emoji found.
+        {{ $t('message.emojiFound') }}
       </div>
     </div>
 
@@ -51,7 +51,7 @@
       v-if="availableEmojiGroups.length > 0"
       class="emoji-picker__tabs"
       role="tablist"
-      aria-label="Emoji categories"
+      :aria-label="$t('message.emojiCategories')"
     >
       <button
         v-for="group in availableEmojiGroups"
@@ -61,12 +61,12 @@
         :class="{ 'emoji-picker__tab--active': activeEmojiCategoryKey === group.key }"
         role="tab"
         :aria-selected="activeEmojiCategoryKey === group.key ? 'true' : 'false'"
-        :aria-label="group.label"
+        :aria-label="$t(group.label)"
         @click="selectEmojiCategory(group.key)"
       >
         <q-icon :name="group.icon" size="18px" />
         <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
-          {{ group.label }}
+          {{ $t(group.label) }}
         </AppTooltip>
       </button>
     </div>

@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Notifications" icon="notifications">
+  <SettingsDetailLayout :title="$t('notifications.notifications')" icon="notifications">
     <q-card flat bordered class="notifications-card">
       <q-card-section class="notifications-card__section">
         <div class="notifications-card__row">
@@ -47,6 +47,7 @@ import {
   saveBrowserNotificationsPreference
 } from 'src/utils/browserNotificationPreference';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { t } from 'src/i18n';
 
 const $q = useQuasar();
 
@@ -93,46 +94,46 @@ onMounted(() => {
 
 const notificationsTitle = computed(() => {
   if (isAndroidRuntime) {
-    return 'Show Android push notifications';
+    return t('notifications.showAndroidPushNotifications');
   }
 
-  return isDesktopRuntime ? 'Show desktop notifications' : 'Show browser notifications';
+  return isDesktopRuntime ? t('notifications.showDesktopNotifications') : t('notifications.showBrowserNotifications');
 });
 
 const notificationCaption = computed(() => {
   if (!notificationsSupported) {
     if (isAndroidRuntime) {
-      return 'Android push notifications need a configured push gateway.';
+      return t('notifications.android.pushGatewayMissing');
     }
 
     return isDesktopRuntime
-      ? 'Desktop notifications are not supported in this app environment.'
-      : 'This browser does not support notifications for this app.';
+      ? t('notifications.desktop.unsupportedEnvironment')
+      : t('notifications.browser.unsupportedApp');
   }
 
   if (notificationsEnabled.value) {
     if (isAndroidRuntime) {
-      return 'Show a notification when new messages arrive while this device is in the background.';
+      return t('notifications.android.toggleLabel');
     }
 
     return isDesktopRuntime
-      ? 'Show a desktop notification when a new message arrives.'
-      : 'Show a browser notification when a new message arrives.';
+      ? t('notifications.desktop.toggleLabel')
+      : t('notifications.browser.toggleLabel');
   }
 
   if (notificationPermission.value === 'denied') {
     return isAndroidRuntime
-      ? 'Android notifications are blocked. Allow them in Android settings, then toggle this back on.'
-      : 'Browser notifications are blocked. Allow them in browser settings, then toggle this back on.';
+      ? t('notifications.android.blockedInstructions')
+      : t('notifications.browser.blockedInstructions');
   }
 
   if (notificationPermission.value === 'native') {
-    return 'Off by default. Turning this on will enable desktop notifications for this app.';
+    return t('notifications.desktop.toggleCaption');
   }
 
   return isAndroidRuntime
-    ? 'Off by default. Turning this on will ask Android for notification permission.'
-    : 'Off by default. Turning this on will ask the browser for notification permission.';
+    ? t('notifications.android.toggleCaption')
+    : t('notifications.browser.toggleCaption');
 });
 
 async function refreshAndroidPermissionState(): Promise<void> {
@@ -163,7 +164,7 @@ async function handleNotificationsToggle(nextValue: boolean): Promise<void> {
     saveBrowserNotificationsPreference(false);
     $q.notify({
       type: 'warning',
-      message: 'Browser notifications are not supported here.',
+      message: t('notifications.browser.unsupported'),
       position: 'top',
       timeout: 3000
     });
@@ -193,10 +194,10 @@ async function handleNotificationsToggle(nextValue: boolean): Promise<void> {
 
     $q.notify({
       type: permission === 'denied' ? 'warning' : 'info',
-      message:
-        permission === 'denied'
-          ? 'Browser notifications were blocked. Allow them in browser settings to enable this.'
-          : 'Browser notification permission was not granted.',
+        message:
+          permission === 'denied'
+            ? t('notifications.browser.blockedEnableInstructions')
+            : t('notifications.browser.permissionDenied'),
       position: 'top',
       timeout: 3200
     });
@@ -206,7 +207,7 @@ async function handleNotificationsToggle(nextValue: boolean): Promise<void> {
     reportUiError(
       'Failed to update browser notification preference',
       error,
-      'Failed to update browser notifications.'
+      t('errors.failedUpdateBrowserNotifications')
     );
   } finally {
     isPermissionRequestInFlight.value = false;
@@ -225,7 +226,7 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
       reportUiError(
         'Failed to disable Android push notifications',
         error,
-        'Failed to disable push notifications.'
+        t('errors.failedDisablePushNotifications')
       );
     } finally {
       isPermissionRequestInFlight.value = false;
@@ -238,7 +239,7 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
     clearAndroidPushNotificationsPreference();
     $q.notify({
       type: 'warning',
-      message: 'Android push notifications need a configured push gateway.',
+      message: t('notifications.android.pushGatewayMissing'),
       position: 'top',
       timeout: 3200
     });
@@ -257,8 +258,8 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
         type: permission === 'denied' ? 'warning' : 'info',
         message:
           permission === 'denied'
-            ? 'Android notifications were blocked. Allow them in Android settings to enable this.'
-            : 'Android notification permission was not granted.',
+            ? t('notifications.android.blockedEnableInstructions')
+            : t('notifications.android.permissionDenied'),
         position: 'top',
         timeout: 3200
       });
@@ -269,7 +270,7 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
     reportUiError(
       'Failed to update Android push notification preference',
       error,
-      'Failed to update push notifications.'
+      t('errors.failedUpdatePushNotifications')
     );
   } finally {
     isPermissionRequestInFlight.value = false;

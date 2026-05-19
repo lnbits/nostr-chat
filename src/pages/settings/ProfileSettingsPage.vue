@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Profile" icon="face">
+  <SettingsDetailLayout :title="$t('profile.profile')" icon="face">
     <ContactProfile
       v-model="profileMetadata"
       v-model:pubkey="profilePubkey"
@@ -25,6 +25,7 @@ import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { buildContactProfilePublishPayload } from 'src/utils/contactProfilePublish';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { t } from 'src/i18n';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -55,11 +56,11 @@ async function handlePublish(nextProfile: typeof profileMetadata.value): Promise
     await nostrStore.publishUserMetadata(buildContactProfilePublishPayload(nextProfile), relayStore.relays);
     $q.notify({
       type: 'positive',
-      message: 'Profile metadata published.',
+      message: t('profile.profileMetadataPublished'),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to publish profile metadata', error, 'Failed to publish profile metadata.');
+    reportUiError('Failed to publish profile metadata', error, t('errors.failedPublishProfileMetadata'));
   } finally {
     isPublishing.value = false;
   }

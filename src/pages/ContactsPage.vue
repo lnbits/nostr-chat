@@ -9,7 +9,7 @@
       <aside v-if="!isMobile || !isMobileProfileOpen" class="contacts-sidebar">
         <div class="contacts-sidebar__top">
           <div class="contacts-sidebar__row" :class="{ 'contacts-sidebar__row--mobile': isMobile }">
-            <div v-if="!isMobile" class="contacts-sidebar__title">Contacts</div>
+            <div v-if="!isMobile" class="contacts-sidebar__title">{{ $t('contacts.contacts.label') }}</div>
             <q-input
               v-if="isMobile"
               v-model="contactQueryModel"
@@ -19,7 +19,7 @@
               rounded
               clearable
               clear-icon="close"
-              placeholder="Filter contacts"
+              :placeholder="$t('contacts.filterContacts')"
             />
             <div class="contacts-sidebar__actions">
               <q-btn
@@ -27,21 +27,21 @@
                 flat
                 round
                 icon="refresh"
-                aria-label="Refresh Contacts"
+                :aria-label="$t('contacts.refreshContacts')"
                 :loading="isRefreshingContacts"
                 @click="handleRefreshContacts"
               >
-                <AppTooltip>Refresh Contacts</AppTooltip>
+                <AppTooltip>{{ $t('contacts.refreshContacts') }}</AppTooltip>
               </q-btn>
               <q-btn
                 dense
                 flat
                 round
                 icon="person_add_alt"
-                aria-label="Add Contact"
+                :aria-label="$t('contacts.addContact')"
                 @click="openAddContactDialog"
               >
-                <AppTooltip>Add Contact</AppTooltip>
+                <AppTooltip>{{ $t('contacts.addContact') }}</AppTooltip>
               </q-btn>
             </div>
           </div>
@@ -55,7 +55,7 @@
             rounded
             clearable
             clear-icon="close"
-            placeholder="Filter contacts"
+            :placeholder="$t('contacts.filterContacts')"
           />
 
           <ReconnectHealingBanner class="contacts-sidebar__healing" />
@@ -101,19 +101,19 @@
                   round
                   icon="more_vert"
                   class="contact-item__more"
-                  aria-label="Contact actions"
+                  :aria-label="$t('contacts.contactActions')"
                   @click.stop
                 >
                   <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
                     <q-list dense class="nc-pop-menu__list">
                       <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
-                        <q-item-section>Chat</q-item-section>
+                        <q-item-section>{{ $t('chat.chat') }}</q-item-section>
                       </q-item>
                       <q-item clickable v-close-popup @click="handleContactMenuRefreshProfile(contact)">
-                        <q-item-section>Refresh Profile</q-item-section>
+                        <q-item-section>{{ $t('profile.refreshProfile') }}</q-item-section>
                       </q-item>
                       <q-item clickable v-close-popup @click="handleContactMenuDelete(contact)">
-                        <q-item-section class="text-negative">Delete Contact</q-item-section>
+                        <q-item-section class="text-negative">{{ $t('contacts.deleteContact') }}</q-item-section>
                       </q-item>
                     </q-list>
                   </q-menu>
@@ -121,10 +121,10 @@
               </q-item-section>
             </q-item>
 
-            <div v-if="isLoadingContacts" class="contacts-empty">Loading contacts...</div>
+            <div v-if="isLoadingContacts" class="contacts-empty">{{ $t('contacts.loadingContacts') }}</div>
 
             <div v-else-if="contacts.length === 0" class="contacts-empty">
-              No contacts found.
+              {{ $t('contacts.contactsFound') }}
             </div>
           </q-list>
         </q-scroll-area>
@@ -140,7 +140,7 @@
         v-if="!isMobile"
         class="app-shell__resize-handle"
         role="separator"
-        aria-label="Resize left panel"
+        :aria-label="$t('common.resizeLeftPanel')"
         aria-orientation="vertical"
         :aria-valuemin="minSidebarWidth"
         :aria-valuemax="maxSidebarWidth"
@@ -163,7 +163,7 @@
                 dense
                 round
                 icon="arrow_back"
-                aria-label="Back to contacts"
+                :aria-label="$t('contacts.backContacts')"
                 @click="handleBackToContactsList"
               />
               <div class="contacts-detail-mobile-header__title">{{ selectedContactHeaderTitle }}</div>
@@ -182,7 +182,7 @@
               @publish="handlePublishSelectedGroupProfile"
             />
           </div>
-          <div v-else class="contacts-empty-state">Select a contact to view profile.</div>
+          <div v-else class="contacts-empty-state">{{ $t('contacts.selectContactViewProfile') }}</div>
         </q-scroll-area>
       </section>
     </div>
@@ -209,6 +209,7 @@ import StartupHistoryBanner from 'src/components/StartupHistoryBanner.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
+import { t } from 'src/i18n';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import type { ContactMetadata, ContactRecord } from 'src/types/contact';
@@ -299,7 +300,7 @@ const selectedContactHeaderTitle = computed(() => {
     return name;
   }
 
-  return selectedContactPubkey.value.trim().slice(0, 32) || 'Contact';
+  return selectedContactPubkey.value.trim().slice(0, 32) || t('contacts.contact.label');
 });
 
 let latestSearchRequestId = 0;
@@ -730,7 +731,7 @@ async function handleRefreshContacts(): Promise<void> {
       await loadContacts(contactQuery.value);
       $q.notify({
         type: 'info',
-        message: 'No contacts to refresh.',
+        message: t('contacts.contactsRefresh'),
         position: 'top'
       });
       return;
@@ -753,10 +754,13 @@ async function handleRefreshContacts(): Promise<void> {
 
     if (failedCount === 0) {
       $q.notify({
-        type: 'positive',
-        message: `Refreshed ${refreshedCount} contact${refreshedCount === 1 ? '' : 's'}.`,
-        position: 'top'
-      });
+      type: 'positive',
+      message:
+        refreshedCount === 1
+          ? t('contacts.refreshedContact', { count: refreshedCount })
+          : t('contacts.refreshedContacts', { count: refreshedCount }),
+      position: 'top'
+    });
       return;
     }
 
@@ -764,12 +768,16 @@ async function handleRefreshContacts(): Promise<void> {
       type: refreshedCount > 0 ? 'warning' : 'negative',
       message:
         refreshedCount > 0
-          ? `Refreshed ${refreshedCount} contact${refreshedCount === 1 ? '' : 's'}; ${failedCount} failed.`
-          : 'Failed to refresh contacts.',
+          ? t('contacts.refreshedFailed', {
+              count: refreshedCount,
+              contactLabel: refreshedCount === 1 ? t('contacts.contact') : t('contacts.contacts'),
+              failedCount
+            })
+          : t('errors.failedRefreshContacts'),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to refresh contacts from header', error, 'Failed to refresh contacts.');
+    reportUiError('Failed to refresh contacts from header', error, t('errors.failedRefreshContacts'));
   } finally {
     isRefreshingContacts.value = false;
   }
@@ -785,7 +793,7 @@ async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<
       selectedContactProfile.value = mapContactToProfileForm(refreshedContact);
     }
   } catch (error) {
-    reportUiError('Failed to refresh contact profile from menu', error, 'Failed to refresh profile.');
+    reportUiError('Failed to refresh contact profile from menu', error, t('errors.failedRefreshProfile'));
   }
 }
 
@@ -823,7 +831,7 @@ async function handleSendMessagesToAppRelaysUpdate(value: boolean): Promise<void
     reportUiError(
       'Failed to update contact app relay preference',
       error,
-      'Failed to update relay preference.'
+      t('errors.failedUpdateRelayPreference')
     );
   }
 }
@@ -862,11 +870,11 @@ async function handlePublishSelectedGroupProfile(nextProfile: ContactProfileForm
 
     $q.notify({
       type: 'positive',
-      message: 'Group profile published.',
+      message: t('group.groupProfilePublished'),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to publish group profile metadata', error, 'Failed to publish group profile.');
+    reportUiError('Failed to publish group profile metadata', error, t('errors.failedPublishGroupProfile'));
   } finally {
     isPublishingSelectedGroupProfile.value = false;
   }

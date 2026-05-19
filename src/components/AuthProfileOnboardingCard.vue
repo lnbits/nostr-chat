@@ -10,7 +10,7 @@
           icon="arrow_back"
           color="primary"
           class="auth-onboarding-card__back-button"
-          aria-label="Back"
+          :aria-label="$t('common.back')"
           :disable="isOnboardingContinuing"
           @click="goBackToOnboardingRelays"
         />
@@ -25,9 +25,9 @@
       <div v-if="onboardingStatus === 'checking'" class="onboarding-checking">
         <q-spinner color="primary" size="42px" />
         <div class="onboarding-checking__text">
-          <div class="onboarding-checking__title">Looking for your profile</div>
+          <div class="onboarding-checking__title">{{ $t('profile.lookingProfile') }}</div>
           <div class="onboarding-checking__subtitle">
-            Checking {{ appRelayCountLabel }} for your Nostr metadata.
+            {{ $t('profile.checkingNostrMetadata', { count: appRelayCountLabel }) }}
           </div>
         </div>
       </div>
@@ -60,7 +60,7 @@
         <template #avatar>
           <q-icon name="person_search" color="primary" />
         </template>
-        No profile was found on the current app relays.
+        {{ $t('relays.profileFoundCurrentApp') }}
       </q-banner>
 
       <q-banner
@@ -82,7 +82,7 @@
           dense
           outlined
           rounded
-          label="Name (optional)"
+          :label="$t('common.nameOptional')"
           data-testid="auth-onboarding-profile-name-input"
           @keydown.enter.prevent="completeOnboardingProfileSetup"
         />
@@ -95,7 +95,7 @@
           rounded
           type="textarea"
           autogrow
-          label="About (optional)"
+          :label="$t('common.aboutOptional')"
           data-testid="auth-onboarding-profile-about-input"
         />
 
@@ -103,7 +103,7 @@
           v-if="hasSelectedOnboardingRelays"
           v-model="shouldUpdateOnboardingRelays"
           color="primary"
-          label="Use selected relays for my profile"
+          :label="$t('relays.useSelectedRelaysProfile')"
           data-testid="auth-onboarding-update-relays-checkbox"
           class="onboarding-profile-setup__checkbox"
         />
@@ -116,7 +116,7 @@
           dense
           outlined
           rounded
-          label="Relay URL"
+          :label="$t('relays.relayUrl')"
           placeholder="wss://example-relay.io"
           data-testid="auth-onboarding-relay-input"
           :error="Boolean(onboardingRelayValidationError)"
@@ -131,7 +131,7 @@
               color="primary"
               icon="add"
               size="sm"
-              aria-label="Add relay"
+              :aria-label="$t('relays.addRelay')"
               data-testid="auth-onboarding-add-relay-button"
               :disable="!canAddOnboardingRelay"
               @click="handleOnboardingAddRelay"
@@ -147,14 +147,14 @@
                 color="primary"
                 size="24px"
                 class="onboarding-relay-list__spinner"
-                :aria-label="`Checking ${relay.url}`"
+                :aria-label="$t('relays.checking', { relay: relay.url })"
               />
               <q-checkbox
                 v-else
                 dense
                 color="primary"
                 :model-value="relay.selected"
-                :aria-label="`Use ${relay.url} when searching for profile`"
+                :aria-label="$t('relays.useSearchingProfile', { relay: relay.url })"
                 class="onboarding-relay-list__checkbox"
                 @update:model-value="
                   (value) => setOnboardingRelaySelected(relay.url, Boolean(value))
@@ -181,7 +181,7 @@
                 dense
                 icon="delete"
                 color="negative"
-                :aria-label="`Delete ${relay.url}`"
+                :aria-label="$t('relays.delete', { relay: relay.url })"
                 @click="removeOnboardingRelay(relay.url)"
               />
             </q-item-section>
@@ -198,7 +198,7 @@
           color="negative"
           no-caps
           icon="logout"
-          label="Logout"
+          :label="$t('settings.logout')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-logout-button"
           :disable="isOnboardingContinuing"
@@ -208,7 +208,7 @@
           unelevated
           color="primary"
           no-caps
-          label="Confirm and start using app"
+          :label="$t('common.confirmStartUsingApp')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-continue-button"
           :loading="isOnboardingContinuing"
@@ -221,7 +221,7 @@
           outline
           color="primary"
           no-caps
-          label="Skip for now"
+          :label="$t('common.skipNow')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-skip-button"
           :loading="isOnboardingContinuing"
@@ -231,7 +231,7 @@
           unelevated
           color="primary"
           no-caps
-          label="Add relays"
+          :label="$t('relays.addRelays')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-add-relays-button"
           @click="showOnboardingRelaySetup"
@@ -246,7 +246,7 @@
           unelevated
           color="primary"
           no-caps
-          label="Try again"
+          :label="$t('common.tryAgain')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-retry-button"
           @click="findProfileFromOnboardingRelays"
@@ -256,7 +256,7 @@
             outline
             color="primary"
             no-caps
-            label="Edit relays"
+            :label="$t('relays.editRelays')"
             class="auth-onboarding-card__button"
             @click="showOnboardingRelaySetup"
           />
@@ -264,7 +264,7 @@
             flat
             color="primary"
             no-caps
-            label="Continue"
+            :label="$t('common.continue')"
             class="auth-onboarding-card__button"
             data-testid="auth-onboarding-skip-button"
             :loading="isOnboardingContinuing"
@@ -282,7 +282,7 @@
           color="negative"
           no-caps
           icon="logout"
-          label="Logout"
+          :label="$t('settings.logout')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-logout-button"
           :disable="isOnboardingContinuing"
@@ -292,7 +292,7 @@
           unelevated
           color="primary"
           no-caps
-          label="Next"
+          :label="$t('common.next')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-relays-next-button"
           :disable="!canSearchSelectedOnboardingRelays"
@@ -308,7 +308,7 @@
           unelevated
           color="primary"
           no-caps
-          label="Save and start using app"
+          :label="$t('common.saveStartUsingApp')"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-profile-start-button"
           :disable="!canCompleteOnboardingProfileSetup"
@@ -343,6 +343,7 @@ import { useRelayStore } from 'src/stores/relayStore';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { buildRelayLookupKey, uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+import { t } from 'src/i18n';
 
 type OnboardingStatus =
   | 'idle'
@@ -387,51 +388,53 @@ const onboardingRelayCheckTimeouts = new Map<
 
 const onboardingTitle = computed(() => {
   if (onboardingStatus.value === 'found') {
-    return 'Confirm profile';
+    return t('profile.confirmProfile');
   }
 
   if (onboardingStatus.value === 'relay-setup') {
-    return 'App relays';
+    return t('relays.appRelays.label');
   }
 
   if (onboardingStatus.value === 'profile-setup') {
-    return 'Set up profile';
+    return t('profile.setUpProfile');
   }
 
   if (onboardingStatus.value === 'error') {
-    return 'Profile check failed';
+    return t('profile.profileCheckFailed');
   }
 
-  return 'Checking profile';
+  return t('profile.checkingProfile');
 });
 const onboardingSubtitle = computed(() => {
   if (onboardingStatus.value === 'found') {
-    return 'This profile was found on your app relays';
+    return t('relays.profileFoundAppRelays');
   }
 
   if (onboardingStatus.value === 'relay-setup') {
-    return 'Add or remove relays before searching for your profile';
+    return t('relays.addRemoveRelaysSearching');
   }
 
   if (onboardingStatus.value === 'profile-setup') {
-    return 'This is the final step before entering the app';
+    return t('common.finalStepEnteringApp');
   }
 
   if (onboardingStatus.value === 'not-found') {
-    return 'You can add relays or skip this step';
+    return t('relays.youAddRelaysSkip');
   }
 
   if (onboardingStatus.value === 'error') {
-    return 'The app could not finish checking your relays';
+    return t('relays.appCouldFinishChecking');
   }
 
-  return 'Stay here while the app checks your relays';
+  return t('relays.stayHereAppChecks');
 });
 const appRelayCountLabel = computed(() => {
   const count = relayStore.relays.length;
-  return `${count} app relay${count === 1 ? '' : 's'}`;
+  return count === 1
+    ? t('relays.appRelayCount.one', { count })
+    : t('relays.appRelayCount.many', { count });
 });
-const onboardingProfileName = computed(() => onboardingProfile.value?.name ?? 'Unknown profile');
+const onboardingProfileName = computed(() => onboardingProfile.value?.name ?? t('profile.unknownProfile'));
 const onboardingProfilePubkey = computed(() => {
   if (onboardingNpub.value) {
     return onboardingNpub.value;
@@ -446,11 +449,11 @@ const onboardingProfilePubkey = computed(() => {
 const onboardingProfilePicture = computed(() => onboardingProfile.value?.picture ?? '');
 const onboardingProfileAvatar = computed(() => buildAvatarText(onboardingProfileName.value));
 const onboardingProfileAbout = computed(
-  () => onboardingProfile.value?.about || 'No description published.'
+  () => onboardingProfile.value?.about || t('common.descriptionPublished')
 );
 const onboardingProfileNip05 = computed(() => onboardingProfile.value?.nip05 ?? '');
 const onboardingErrorMessage = computed(
-  () => onboardingError.value || 'Profile lookup failed. You can retry, edit relays, or continue.'
+  () => onboardingError.value || t('relays.profileLookupFailedYou')
 );
 const onboardingRelayValidationError = computed(() =>
   validateRelayUrlForOnboarding(onboardingRelayInput.value.trim())
@@ -474,7 +477,7 @@ const onboardingRelayRows = computed(() => {
       selected: selectedOnboardingRelayKeys.value.has(relayKey),
       statusColor: checking ? 'primary' : connected ? 'positive' : 'warning',
       statusIcon: checking ? 'hourglass_empty' : connected ? 'check' : 'warning_amber',
-      statusLabel: checking ? 'Checking' : connected ? 'Connected' : 'Warning',
+      statusLabel: checking ? t('common.checking') : connected ? t('common.connected') : t('common.warning'),
     };
   });
 });
@@ -500,7 +503,7 @@ async function startProfileOnboarding(): Promise<void> {
   if (!publicKey) {
     reportUiError('Failed to start profile onboarding', new Error('Missing logged-in public key.'));
     onboardingStatus.value = 'error';
-    onboardingError.value = 'Failed to resolve the logged-in public key.';
+    onboardingError.value = t('errors.failedResolveLoggedPublic');
     return;
   }
 
@@ -564,7 +567,7 @@ async function runProfileLookup(
     onboardingError.value =
       error instanceof Error && error.message
         ? error.message
-        : 'Profile lookup failed. You can retry, edit relays, or continue.';
+        : t('relays.profileLookupFailedYou');
     onboardingStatus.value = 'error';
   }
 }
@@ -572,7 +575,7 @@ async function runProfileLookup(
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
-      reject(new Error('Profile lookup timed out. Check your relays or try again.'));
+      reject(new Error(t('relays.profileLookupTimedOut')));
     }, timeoutMs);
 
     promise
@@ -641,7 +644,7 @@ async function handleOnboardingAddRelay(): Promise<void> {
       clearResolvedOnboardingRelayChecks([normalizedRelay]);
     }
   } catch (error) {
-    reportUiError('Failed to add relay during onboarding', error, 'Failed to add relay.');
+    reportUiError('Failed to add relay during onboarding', error, t('errors.failedAddRelay'));
   }
 }
 
@@ -654,7 +657,7 @@ function removeOnboardingRelay(relayUrl: string): void {
     setOnboardingRelaySelected(relayUrl, false);
     clearOnboardingRelayChecking(relayUrl);
   } catch (error) {
-    reportUiError('Failed to remove relay during onboarding', error, 'Failed to remove relay.');
+    reportUiError('Failed to remove relay during onboarding', error, t('errors.failedRemoveRelay'));
   }
 }
 
@@ -867,7 +870,7 @@ async function completeOnboardingProfileSetup(): Promise<void> {
     await handleBrowserNotificationsAfterLogin();
     await router.push({ name: 'chats' });
   } catch (error) {
-    reportUiError('Failed to finish profile onboarding', error, 'Failed to finish onboarding.');
+    reportUiError('Failed to finish profile onboarding', error, t('errors.failedFinishOnboarding'));
   } finally {
     isOnboardingContinuing.value = false;
   }
@@ -881,22 +884,22 @@ function validateRelayUrlForOnboarding(value: string): string {
   try {
     const url = new URL(value);
     if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-      return 'Relay must use ws:// or wss://';
+      return t('relays.relayMustUseWs');
     }
 
     if (!url.hostname) {
-      return 'Relay URL must include a hostname';
+      return t('relays.relayUrlMustInclude');
     }
 
     const nextRelayKey = buildRelayLookupKey(normalizeRelayUrl(value));
     const existingRelayKeys = new Set(relayStore.relays.map((relay) => buildRelayLookupKey(relay)));
     if (existingRelayKeys.has(nextRelayKey)) {
-      return 'Relay is already added';
+      return t('relays.validation.alreadyAddedState');
     }
 
     return '';
   } catch {
-    return 'Relay must be a valid ws:// or wss:// URL';
+    return t('relays.relayMustValidWs');
   }
 }
 
@@ -911,7 +914,7 @@ async function continueFromOnboarding(): Promise<void> {
     await handleBrowserNotificationsAfterLogin();
     await router.push({ name: 'chats' });
   } catch (error) {
-    reportUiError('Failed to continue after profile onboarding', error, 'Failed to continue.');
+    reportUiError('Failed to continue after profile onboarding', error, t('errors.failedContinue'));
   } finally {
     isOnboardingContinuing.value = false;
   }

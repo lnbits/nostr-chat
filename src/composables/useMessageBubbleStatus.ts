@@ -1,3 +1,4 @@
+import { t } from 'src/i18n';
 import type { Message, MessageRelayStatus } from 'src/types/chat';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
 import { uniqueRelayUrls } from 'src/utils/relayUrls';
@@ -199,11 +200,13 @@ export function useMessageBubbleStatus(options: {
   });
 
   const contactRelaysTitle = computed(() => {
-    return `${options.contactName.value || 'Contact'} Relays`;
+    return t('relays.contactTitle', {
+      name: options.contactName.value || t('contacts.contact.label'),
+    });
   });
 
   const statusDialogTitle = computed(() => {
-    return options.isMine.value ? 'Relay Status' : 'Received Relay Status';
+    return options.isMine.value ? t('relays.relayStatus') : t('relays.receivedRelayStatus');
   });
 
   const statusSegments = computed<StatusSegment[]>(() => {
@@ -291,7 +294,7 @@ export function useMessageBubbleStatus(options: {
       return {
         key: `${status}-contact-${relayUrl}`,
         relayUrl,
-        detail: status === 'missing' ? 'This message was not received from this relay.' : undefined,
+        detail: status === 'missing' ? t('relays.messageReceivedRelay') : undefined,
         dotClass: getStatusDotClassName(status),
         scope: 'derived',
         status,
@@ -319,7 +322,7 @@ export function useMessageBubbleStatus(options: {
       .map((relayUrl) => ({
         key: `received-extra-${relayUrl}`,
         relayUrl,
-        detail: 'Received from a relay outside the contact relay list.',
+        detail: t('relays.receivedRelayOutsideContact'),
         dotClass: getStatusDotClassName('received'),
         scope: 'subscription',
         status: 'received',
@@ -334,16 +337,16 @@ export function useMessageBubbleStatus(options: {
           key: 'recipient',
           title: contactRelaysTitle.value,
           items: contactStatusListItems.value,
-          emptyLabel: 'No relays',
+          emptyLabel: t('relays.empty.noRelays'),
         },
       ];
 
       if (myStatusListItems.value.length > 0) {
         sections.push({
           key: 'self',
-          title: 'My Relays (message backup)',
+          title: t('relays.relaysMessageBackup'),
           items: myStatusListItems.value,
-          emptyLabel: 'No relays',
+          emptyLabel: t('relays.empty.noRelays'),
         });
       }
 
@@ -356,16 +359,16 @@ export function useMessageBubbleStatus(options: {
           key: 'contact',
           title: contactRelaysTitle.value,
           items: inboundContactStatusListItems.value,
-          emptyLabel: 'No relays',
+          emptyLabel: t('relays.empty.noRelays'),
         },
       ];
 
       if (inboundExtraReceivedStatusListItems.value.length > 0) {
         sections.push({
           key: 'extra-received',
-          title: 'Other Received Relays',
+          title: t('relays.otherReceivedRelays'),
           items: inboundExtraReceivedStatusListItems.value,
-          emptyLabel: 'No relays',
+          emptyLabel: t('relays.empty.noRelays'),
         });
       }
 
@@ -376,9 +379,9 @@ export function useMessageBubbleStatus(options: {
       ? [
           {
             key: 'received',
-            title: 'Received From',
+            title: t('common.received'),
             items: inboundReceivedStatusListItems.value,
-            emptyLabel: 'No relays',
+            emptyLabel: t('relays.empty.noRelays'),
           },
         ]
       : [];
