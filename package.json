@@ -57,6 +57,7 @@
     "test:e2e:local:session-smoke": "node ./scripts/run-e2e-local.cjs e2e/session.spec.ts"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "^8.0.0",
     "@capacitor/core": "^8.3.4",
     "@capacitor/push-notifications": "^8.1.1",
     "@nostr-dev-kit/ndk": "^3.0.3",

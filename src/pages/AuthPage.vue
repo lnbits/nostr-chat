@@ -1066,7 +1066,7 @@ async function handleKeyLogin(): Promise<void> {
     }
 
     isKeyLoginInProgress.value = true;
-    const validation = nostrStore.savePrivateKey(privateKey.value);
+    const validation = await nostrStore.savePrivateKey(privateKey.value);
     if (!validation.isValid) {
       return;
     }

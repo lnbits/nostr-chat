@@ -226,7 +226,7 @@ async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2E
     nostrStore.setDeveloperDiagnosticsEnabled(options.developerDiagnosticsEnabled);
   }
 
-  const validation = nostrStore.savePrivateKey(privateKey);
+  const validation = await nostrStore.savePrivateKey(privateKey);
   if (!validation.isValid) {
     throw new Error('Invalid private key supplied for e2e bootstrap.');
   }

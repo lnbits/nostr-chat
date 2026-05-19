@@ -3,14 +3,10 @@ prompt
 
 add `Encrypted private key import using ncryptsec` on all
 
-do not have multiple subscriptions for the same events
 
-do not subscribe to contacts relays, only to my relay
-fetch contact updates with the watchdog r manual refresh
 
 - login and secrets on mobile and desktop app
 
-URL for notifications firebase
 
 refresh contacts should refresh priofiels
 No relays found for this contact -> if this is the case do a refresh profile beforehand
@@ -21,7 +17,7 @@ No relays found for this contact -> if this is the case do a refresh profile bef
 for group restore make sure to start with the last epoch, then work backwards
 In the Gropu > Members show the updating relays status bar for each member (pulsing when it is sending) slowly filling up to be green or read.
 
-
+mark all messages as read when opening android app
 
 chat with contact from group
 dektop app -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
