@@ -26,10 +26,28 @@
                 class="app-status__history-entry app-status__history-expansion"
               >
                 <template #header>
-                  <div class="app-status__history-item">
+                  <div
+                    class="app-status__history-item"
+                    :class="{ 'app-status__history-item--rerunnable': allowStepRerun }"
+                  >
                     <div class="app-status__history-counter">
                       {{ index + 1 }}/{{ startupHistory.length }}
                     </div>
+                    <q-btn
+                      v-if="allowStepRerun"
+                      dense
+                      flat
+                      round
+                      icon="refresh"
+                      size="sm"
+                      :aria-label="startupStepRefreshLabel(step)"
+                      :disable="isStartupStepRefreshDisabled(step)"
+                      :loading="isStartupStepRerunning(step.id)"
+                      class="app-status__step-refresh"
+                      @click.stop.prevent="handleStartupStepRefresh(step.id)"
+                    >
+                      <q-tooltip>{{ startupStepRefreshLabel(step) }}</q-tooltip>
+                    </q-btn>
                     <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
                       <q-linear-progress
                         indeterminate
@@ -54,7 +72,7 @@
                           class="app-status__lock-icon"
                           aria-hidden="true"
                         />
-                        <span>{{ $t(step.label) }}</span>
+                        <span>{{ startupStepLabel(step) }}</span>
                       </div>
                       <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
                     </div>
@@ -93,10 +111,28 @@
               </q-expansion-item>
 
               <div v-else class="app-status__history-entry app-status__history-static">
-                <div class="app-status__history-item">
+                <div
+                  class="app-status__history-item"
+                  :class="{ 'app-status__history-item--rerunnable': allowStepRerun }"
+                >
                   <div class="app-status__history-counter">
                     {{ index + 1 }}/{{ startupHistory.length }}
                   </div>
+                  <q-btn
+                    v-if="allowStepRerun"
+                    dense
+                    flat
+                    round
+                    icon="refresh"
+                    size="sm"
+                    :aria-label="startupStepRefreshLabel(step)"
+                    :disable="isStartupStepRefreshDisabled(step)"
+                    :loading="isStartupStepRerunning(step.id)"
+                    class="app-status__step-refresh"
+                    @click.stop.prevent="handleStartupStepRefresh(step.id)"
+                  >
+                    <q-tooltip>{{ startupStepRefreshLabel(step) }}</q-tooltip>
+                  </q-btn>
                   <div v-if="step.status === 'in_progress'" class="app-status__progress-track">
                     <q-linear-progress
                       indeterminate
@@ -121,7 +157,7 @@
                         class="app-status__lock-icon"
                         aria-hidden="true"
                       />
-                      <span>{{ $t(step.label) }}</span>
+                      <span>{{ startupStepLabel(step) }}</span>
                     </div>
                     <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
                   </div>
@@ -137,22 +173,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { useQuasar } from 'quasar';
+import { computed, ref } from 'vue';
 import { isStartupLockedStepIdValue } from 'src/stores/nostr/startupState';
-import type { StartupStepStatus, StartupTimedSnapshot } from 'src/stores/nostrStore';
+import type {
+  StartupStepId,
+  StartupStepSnapshot,
+  StartupStepStatus,
+  StartupTimedSnapshot,
+} from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { t } from 'src/i18n';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
+    allowStepRerun?: boolean;
     embedded?: boolean;
   }>(),
   {
+    allowStepRerun: false,
     embedded: false
   }
 );
 
+const $q = useQuasar();
 const nostrStore = useNostrStore();
+const rerunningStartupStepIds = ref<Partial<Record<StartupStepId, boolean>>>({});
 
 const startupSteps = computed(() => nostrStore.startupSteps);
 
@@ -186,9 +233,13 @@ const hasHeaderActivity = computed(() => {
   );
 });
 
+const isAnyStartupStepRerunning = computed(() => {
+  return Object.values(rerunningStartupStepIds.value).some((value) => value === true);
+});
+
 const cardSubtitle = computed(() => {
   if (hasHeaderActivity.value && displayedStartupStep.value?.showProgress === true) {
-    return t(displayedStartupStep.value.label);
+    return startupStepLabel(displayedStartupStep.value);
   }
 
   return t('startup.recentActivity');
@@ -250,6 +301,10 @@ function startupStepMeta(step: StartupTimedSnapshot & { showProgress?: boolean }
 }
 
 function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
+  if (startupStepEntryCount(step) !== null) {
+    return null;
+  }
+
   if (typeof step.eventCount !== 'number' || !Number.isFinite(step.eventCount)) {
     return null;
   }
@@ -268,6 +323,91 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
   }
 
   return `${(step.durationMs / 1000).toFixed(step.durationMs >= 10000 ? 0 : 1)} s`;
+}
+
+function startupStepEntryCount(
+  step: Pick<StartupTimedSnapshot, 'eventCount' | 'id'>
+): number | null {
+  if (step.id !== 'private-contact-list-restore') {
+    return null;
+  }
+
+  if (typeof step.eventCount !== 'number' || !Number.isFinite(step.eventCount)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor(step.eventCount));
+}
+
+function startupStepLabel(step: Pick<StartupTimedSnapshot, 'eventCount' | 'id' | 'label'>): string {
+  const label = t(step.label);
+  const entryCount = startupStepEntryCount(step);
+  return entryCount === null ? label : `${label} (${entryCount} entries)`;
+}
+
+function startupStepRefreshLabel(
+  step: Pick<StartupStepSnapshot, 'eventCount' | 'id' | 'label'>
+): string {
+  return `${t('common.refresh')}: ${startupStepLabel(step)}`;
+}
+
+function isStartupStepRerunning(stepId: StartupStepId): boolean {
+  return rerunningStartupStepIds.value[stepId] === true;
+}
+
+function isStartupStepRefreshDisabled(step: StartupStepSnapshot): boolean {
+  return (
+    !props.allowStepRerun ||
+    nostrStore.isRestoringStartupState ||
+    isAnyStartupStepRerunning.value ||
+    step.status === 'in_progress'
+  );
+}
+
+async function handleStartupStepRefresh(stepId: StartupStepId): Promise<void> {
+  const step = startupSteps.value.find((entry) => entry.id === stepId);
+  if (!step || isStartupStepRefreshDisabled(step)) {
+    return;
+  }
+
+  rerunningStartupStepIds.value = {
+    ...rerunningStartupStepIds.value,
+    [stepId]: true,
+  };
+
+  try {
+    await nostrStore.rerunStartupStep(stepId);
+    notifyStartupStepRefreshComplete(stepId);
+  } catch (error) {
+    reportUiError('Failed to refresh startup step', error, 'Failed to refresh startup step.');
+  } finally {
+    const nextRerunningStepIds = { ...rerunningStartupStepIds.value };
+    delete nextRerunningStepIds[stepId];
+    rerunningStartupStepIds.value = nextRerunningStepIds;
+  }
+}
+
+function notifyStartupStepRefreshComplete(stepId: StartupStepId): void {
+  if (stepId !== 'private-contact-list-restore') {
+    return;
+  }
+
+  const step = startupSteps.value.find((entry) => entry.id === stepId);
+  if (!step) {
+    return;
+  }
+
+  const entryCount = startupStepEntryCount(step);
+  if (entryCount === null) {
+    return;
+  }
+
+  $q.notify({
+    type: 'positive',
+    message: `Fetched ${entryCount} private contact list ${entryCount === 1 ? 'entry' : 'entries'}.`,
+    position: 'top',
+    timeout: 2500,
+  });
 }
 </script>
 
@@ -388,6 +528,11 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
   min-height: var(--app-status-history-item-height);
 }
 
+.app-status__history-item--rerunnable {
+  grid-template-columns: 40px 28px 30px minmax(0, 1fr) auto;
+  column-gap: 6px;
+}
+
 .app-status__history-counter {
   padding-top: 1px;
   font-size: 12px;
@@ -464,6 +609,21 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
   white-space: nowrap;
 }
 
+.q-btn.app-status__step-refresh {
+  align-self: start;
+  min-width: 24px;
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  margin-top: -5px;
+  padding: 0;
+  color: var(--nc-text-secondary);
+}
+
+.q-btn.app-status__step-refresh :deep(.q-icon) {
+  font-size: 16px;
+}
+
 .app-status__status-icon {
   margin-top: 1px;
 }
@@ -523,8 +683,17 @@ body.body--dark .app-status__status-icon--pending {
     grid-template-columns: 38px 26px minmax(0, 1fr);
   }
 
+  .app-status__history-item--rerunnable {
+    grid-template-columns: 36px 28px 26px minmax(0, 1fr);
+    column-gap: 6px;
+  }
+
   .app-status__history-duration {
     grid-column: 3;
+  }
+
+  .app-status__history-item--rerunnable .app-status__history-duration {
+    grid-column: 4;
   }
 
   .app-status__internal-list {

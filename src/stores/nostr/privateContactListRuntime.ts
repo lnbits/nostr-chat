@@ -75,6 +75,10 @@ interface PrivateContactListRuntimeDeps {
     details?: Record<string, unknown>
   ) => ReturnType<NDK['subscribe']>;
   updateStoredEventSinceFromCreatedAt: (value: unknown) => void;
+  updateStartupStep: (
+    stepId: 'private-contact-list-restore',
+    updates: { eventCount?: number | null; label?: string }
+  ) => void;
 }
 
 export function createPrivateContactListRuntime({
@@ -110,11 +114,27 @@ export function createPrivateContactListRuntime({
   shouldApplyPrivateContactListEvent,
   subscribeWithReqLogging,
   updateStoredEventSinceFromCreatedAt,
+  updateStartupStep,
 }: PrivateContactListRuntimeDeps) {
   let restorePrivateContactListPromise: Promise<void> | null = null;
   let privateContactListSubscription: ReturnType<NDK['subscribe']> | null = null;
   let privateContactListSubscriptionSignature = '';
   let privateContactListApplyQueue = Promise.resolve();
+
+  function countPrivateContactListEntries(pubkeys: string[]): number {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    return pubkeys.filter((pubkey) => !loggedInPubkeyHex || pubkey !== loggedInPubkeyHex).length;
+  }
+
+  function updatePrivateContactListStartupEntryCount(entryCount: number): void {
+    if (getStartupStepSnapshot('private-contact-list').status !== 'in_progress') {
+      return;
+    }
+
+    updateStartupStep('private-contact-list-restore', {
+      eventCount: Math.max(0, Math.floor(entryCount)),
+    });
+  }
 
   async function applyPrivateContactListPubkeys(pubkeys: string[]): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
@@ -195,6 +215,7 @@ export function createPrivateContactListRuntime({
     }
 
     const pubkeys = await decryptPrivateContactListContent(event.content);
+    updatePrivateContactListStartupEntryCount(countPrivateContactListEntries(pubkeys));
     await applyPrivateContactListPubkeys(pubkeys);
     markPrivateContactListEventApplied(event);
   }
@@ -254,6 +275,7 @@ export function createPrivateContactListRuntime({
     }
 
     beginStartupStep('private-contact-list');
+    updatePrivateContactListStartupEntryCount(0);
     restorePrivateContactListPromise = (async () => {
       try {
         const loggedInPubkeyHex = getLoggedInPublicKeyHex();

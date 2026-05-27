@@ -62,6 +62,7 @@ import { createStartupRuntime } from 'src/stores/nostr/startupRuntime';
 import {
   createInitialStartupStepSnapshots,
   type StartupDisplaySnapshot,
+  type StartupStepId,
   type StartupStepSnapshot,
 } from 'src/stores/nostr/startupState';
 import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
@@ -374,8 +375,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     failStartupInternalTask,
     failStartupStep,
     getStartupStepSnapshot,
+    resetStartupStep,
     resetStartupStepTracking,
     updateStartupInternalTask,
+    updateStartupStep,
   } = createStartupRuntime({
     startupDisplay,
     startupState: startupRuntimeState,
@@ -1499,6 +1502,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     shouldApplyPrivateContactListEvent,
     subscribeWithReqLogging,
     updateStoredEventSinceFromCreatedAt,
+    updateStartupStep,
   });
 
   const {
@@ -1663,6 +1667,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     refreshAllStoredContacts: refreshAllStoredContactsImpl,
+    rerunStartupStep,
     restoreStartupState,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
@@ -1687,6 +1692,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     reloadChats: () => chatStore.reload(),
     refreshContactByPublicKey,
     refreshGroupRelayListsOnStartup,
+    resetStartupStep,
     resetStartupStepTracking,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
@@ -2085,6 +2091,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     reconnectAllDeveloperRelays,
     reconnectDeveloperRelay,
+    rerunStartupStep: (stepId: StartupStepId, seedRelayUrls?: string[]) =>
+      rerunStartupStep(stepId, seedRelayUrls),
     repairMissingMessageDependency: (
       chatPublicKey: string,
       targetEventId: string,

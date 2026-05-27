@@ -354,6 +354,11 @@ describe('nostr runtime core logic', () => {
       showProgress: true,
     });
 
+    runtime.updateStartupStep('my-relays-restore', { eventCount: 2 });
+    expect(runtime.getStartupStepSnapshot('my-relays-restore')).toMatchObject({
+      eventCount: 2,
+    });
+
     runtime.completeStartupStep('my-relays-restore');
     expect(startupDisplay.value.status).toBe('in_progress');
     await vi.advanceTimersByTimeAsync(100);
@@ -388,6 +393,16 @@ describe('nostr runtime core logic', () => {
     ).toMatchObject({
       status: 'error',
       errorMessage: 'boom',
+    });
+
+    runtime.resetStartupStep('private-messages-subscribe');
+    expect(runtime.getStartupStepSnapshot('private-messages-subscribe')).toMatchObject({
+      status: 'pending',
+      startedAt: null,
+      completedAt: null,
+      durationMs: null,
+      errorMessage: null,
+      internalTasks: [],
     });
 
     runtime.resetStartupStepTracking();

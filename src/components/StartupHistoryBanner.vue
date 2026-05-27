@@ -48,7 +48,7 @@
                   class="startup-history-banner__lock-icon"
                   aria-hidden="true"
                 />
-                <span>{{ $t(step.label) }}</span>
+                <span>{{ startupStepLabel(step) }}</span>
               </div>
               <div class="startup-history-banner__meta">{{ startupStepMeta(step) }}</div>
             </div>
@@ -165,7 +165,7 @@ const summaryLabel = computed(() => {
   const activeIndex = startupHistory.value.findIndex((step) => step.id === activeStep.value?.id);
   const counter =
     activeIndex >= 0 ? `${activeIndex + 1}/${startupHistory.value.length}` : t('startup.startup');
-  return `${counter} ${t(activeStep.value.label)}`;
+  return `${counter} ${startupStepLabel(activeStep.value)}`;
 });
 
 const detailsButtonLabel = computed(() =>
@@ -244,12 +244,36 @@ function startupStepMeta(step: StartupTimedSnapshot): string {
 }
 
 function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
+  if (startupStepEntryCount(step) !== null) {
+    return null;
+  }
+
   if (typeof step.eventCount !== 'number' || !Number.isFinite(step.eventCount)) {
     return null;
   }
 
   const eventCount = Math.max(0, Math.floor(step.eventCount));
   return eventCount === 1 ? t('common.eventCount.one', { count: eventCount }) : t('common.eventCount.many', { count: eventCount });
+}
+
+function startupStepEntryCount(
+  step: Pick<StartupTimedSnapshot, 'eventCount' | 'id'>
+): number | null {
+  if (step.id !== 'private-contact-list-restore') {
+    return null;
+  }
+
+  if (typeof step.eventCount !== 'number' || !Number.isFinite(step.eventCount)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor(step.eventCount));
+}
+
+function startupStepLabel(step: Pick<StartupTimedSnapshot, 'eventCount' | 'id' | 'label'>): string {
+  const label = t(step.label);
+  const entryCount = startupStepEntryCount(step);
+  return entryCount === null ? label : `${label} (${entryCount} entries)`;
 }
 
 function startupStepDuration(step: StartupTimedSnapshot): string {
