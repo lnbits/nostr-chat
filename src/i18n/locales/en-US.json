@@ -251,6 +251,7 @@
   "developer.activeDmSubscriptionRelays": "No active DM subscription relays.",
   "developer.appBundle": "App Bundle",
   "developer.appBundle.description": "Loaded web bundle metadata used for app-shell cache update checks.",
+  "developer.buildTime": "Build time",
   "developer.bundleId": "Bundle id",
   "developer.clearTrace": "Clear Trace",
   "developer.connectedAt": "Connected at",

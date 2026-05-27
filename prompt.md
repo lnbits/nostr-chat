@@ -26,11 +26,6 @@ copy to clipboard button does not work on mobile apps
 underad always at the top & group events do not count as unread
 new epoch results in unread message
 
-- Add i18n to this app. Extract all labels that are visible in the UI and create translation file for them.
-  Based on the extracted file make translation files for the top 20 languages.
-  In Settings > Languages add a language selector.
-
-
 
 
 backrefs
