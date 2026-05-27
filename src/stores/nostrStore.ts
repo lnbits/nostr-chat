@@ -1465,6 +1465,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     publishPrivateContactList,
+    refreshPrivateContactListWithOutgoingMessages,
     resetPrivateContactListRuntimeState,
     restorePrivateContactList,
     subscribePrivateContactListUpdates,
@@ -2077,6 +2078,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchContactPreviewByPublicKey,
     fetchUserProfileFromRelays,
     refreshContactByPublicKey,
+    refreshPrivateContactListWithOutgoingMessages,
     refreshGroupMembershipRoster,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,

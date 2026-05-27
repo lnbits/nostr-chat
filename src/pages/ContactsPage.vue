@@ -724,6 +724,7 @@ async function handleRefreshContacts(): Promise<void> {
   isRefreshingContacts.value = true;
 
   try {
+    await nostrStore.refreshPrivateContactListWithOutgoingMessages();
     await contactsService.init();
     const storedContacts = await contactsService.listContacts();
 
