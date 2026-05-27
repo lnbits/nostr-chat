@@ -69,6 +69,11 @@ export const STARTUP_INTERNAL_TASK_DEFINITIONS = [
     label: 'startup.privateContactRelayLists',
   },
   {
+    id: 'mute-list',
+    parentId: 'contact-cursor-state',
+    label: 'startup.fetchApplyMuteList',
+  },
+  {
     id: 'contact-cursor-data',
     parentId: 'contact-cursor-state',
     label: 'startup.fetchApplyContactCursorData',

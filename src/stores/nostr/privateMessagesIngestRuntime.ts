@@ -692,6 +692,7 @@ export function createPrivateMessagesIngestRuntime({
           unread_count: 0,
           meta: {
             ...(contact?.meta.picture ? { picture: contact.meta.picture } : {}),
+            ...(contact?.meta.muted === true ? { muted: true } : {}),
             ...(incomingChatInboxState === 'accepted'
               ? {
                   inbox_state: 'accepted',

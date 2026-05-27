@@ -20,6 +20,14 @@
       <div class="chat-item__headline">
         <q-item-label class="chat-item__name" lines="1">{{ chatTitle }}</q-item-label>
         <q-item-label class="chat-item__time" caption>{{ formattedTime }}</q-item-label>
+        <span
+          v-if="isMuted"
+          class="chat-item__mute-indicator"
+          :aria-label="$t('common.mute')"
+        >
+          <q-icon name="notifications_off" size="15px" aria-hidden="true" />
+          <AppTooltip>{{ $t('common.mute') }}</AppTooltip>
+        </span>
       </div>
       <q-item-label class="chat-item__caption" caption lines="1">{{ chat.lastMessage }}</q-item-label>
     </q-item-section>
@@ -70,8 +78,8 @@
             >
               <q-item-section>{{ $t('group.refreshGroupChat') }}</q-item-section>
             </q-item>
-            <q-item clickable v-close-popup :disable="isMuted" @click="emitMute">
-              <q-item-section>{{ $t('common.mute') }}</q-item-section>
+            <q-item clickable v-close-popup @click="isMuted ? emitUnmute() : emitMute()">
+              <q-item-section>{{ isMuted ? $t('common.unmute') : $t('common.mute') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitMarkAsRead">
               <q-item-section>{{ $t('chat.markAsRead') }}</q-item-section>
@@ -89,6 +97,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Chat } from 'src/types/chat';
+import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import { getDateTimeLocale, t } from 'src/i18n';
@@ -104,6 +113,7 @@ const emit = defineEmits<{
   (event: 'refresh-profile', chatId: string): void;
   (event: 'refresh-chat', chatId: string): void;
   (event: 'mute', chatId: string): void;
+  (event: 'unmute', chatId: string): void;
   (event: 'mark-as-read', chatId: string): void;
   (event: 'delete-chat', chatId: string): void;
 }>();
@@ -223,6 +233,14 @@ function emitMute(): void {
   }
 }
 
+function emitUnmute(): void {
+  try {
+    emit('unmute', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit chat unmute action', error);
+  }
+}
+
 function emitMarkAsRead(): void {
   try {
     emit('mark-as-read', props.chat.id);
@@ -308,6 +326,13 @@ function emitDeleteChat(): void {
 .chat-item__time {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
+}
+
+.chat-item__mute-indicator {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--nc-text-secondary);
 }
 
 .chat-item__badges {

@@ -79,6 +79,7 @@ interface AuthSessionRuntimeDeps {
   resetEventSinceForFreshLogin: () => void;
   resetGroupRosterSubscriptionRuntimeState: (reason?: string) => void;
   resetMyRelayListRuntimeState: (reason?: string) => void;
+  resetMuteListRuntimeState: () => void;
   resetPrivateContactListRuntimeState: (reason?: string) => void;
   resetPrivateMessagesBackfillRuntimeState: () => void;
   resetReconnectHealingRuntimeState: () => void;
@@ -138,6 +139,7 @@ export function createAuthSessionRuntime({
   resetEventSinceForFreshLogin,
   resetGroupRosterSubscriptionRuntimeState,
   resetMyRelayListRuntimeState,
+  resetMuteListRuntimeState,
   resetOutboundMessageReplayRuntimeState,
   resetPrivateContactListRuntimeState,
   resetPrivateMessagesBackfillRuntimeState,
@@ -439,6 +441,7 @@ export function createAuthSessionRuntime({
     resetContactSubscriptionsRuntimeState('clear-private-key');
     resetGroupRosterSubscriptionRuntimeState('clear-private-key');
     resetMyRelayListRuntimeState('clear-private-key');
+    resetMuteListRuntimeState();
     resetOutboundMessageReplayRuntimeState();
     resetPrivateMessagesBackfillRuntimeState();
     resetReconnectHealingRuntimeState();

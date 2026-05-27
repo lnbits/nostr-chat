@@ -11,6 +11,7 @@ export const DEVELOPER_DIAGNOSTICS_STORAGE_KEY = 'developer-diagnostics-enabled'
 export const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
 export const PRIVATE_CONTACT_LIST_D_TAG = 'contacts';
 export const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
+export const MUTE_LIST_KIND = 10000;
 export const GROUP_MEMBERS_FOLLOW_SET_D_TAG = 'members';
 export const GROUP_SHARED_ROSTER_FOLLOW_SET_D_TAG = 'roster';
 export const PRIVATE_PREFERENCES_KIND = 30078;

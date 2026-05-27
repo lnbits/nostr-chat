@@ -107,6 +107,7 @@ interface StartupContactSyncRuntimeDeps {
   restoreContactCursorState: (seedRelayUrls?: string[]) => Promise<void>;
   restoreGroupIdentitySecrets: (seedRelayUrls?: string[]) => Promise<void>;
   restoreMyRelayList: (seedRelayUrls?: string[]) => Promise<void>;
+  restoreMuteList: (seedRelayUrls?: string[]) => Promise<void>;
   restorePrivateContactList: (seedRelayUrls?: string[]) => Promise<void>;
   restorePrivatePreferences: (seedRelayUrls?: string[]) => Promise<void>;
   startOutboundMessageReplay: () => Promise<void>;
@@ -161,6 +162,7 @@ export function createStartupContactSyncRuntime({
   restoreContactCursorState,
   restoreGroupIdentitySecrets,
   restoreMyRelayList,
+  restoreMuteList,
   restorePrivateContactList,
   restorePrivatePreferences,
   startOutboundMessageReplay,
@@ -427,6 +429,7 @@ export function createStartupContactSyncRuntime({
         await refreshGroupRelayListsOnStartup(seedRelayUrls);
         return;
       case 'contact-cursor-state':
+        await restoreMuteList(seedRelayUrls);
         await restoreContactCursorState(seedRelayUrls);
         return;
       case 'logged-in-contact-profile':

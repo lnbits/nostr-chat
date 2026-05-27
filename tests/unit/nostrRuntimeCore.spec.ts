@@ -697,6 +697,12 @@ describe('nostr runtime core logic', () => {
     expect(
       await runtime.shouldNotifyForAcceptedChatOnly(PUBKEY_A, { inbox_state: 'blocked' })
     ).toBe(false);
+    expect(
+      await runtime.shouldNotifyForAcceptedChatOnly(PUBKEY_A, {
+        inbox_state: 'accepted',
+        muted: true,
+      })
+    ).toBe(false);
     expect(await runtime.shouldNotifyForAcceptedChatOnly(PUBKEY_A, { accepted_at: 'now' })).toBe(
       true
     );
