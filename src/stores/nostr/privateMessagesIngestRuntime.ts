@@ -9,6 +9,7 @@ import type {
   PrivateMessagesIngestRuntimeDeps,
 } from 'src/stores/nostr/privateMessagesIngestTypes';
 import { isPlainRecord } from 'src/stores/nostr/shared';
+import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type { NostrEventDirection } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 
@@ -740,11 +741,14 @@ export function createPrivateMessagesIngestRuntime({
     const chatLastSeenReceivedActivityAt = normalizeTimestamp(
       isPlainRecord(chat.meta) ? chat.meta[lastSeenReceivedActivityAtMetaKey] : null
     );
-    const effectiveLastSeenIncomingActivityAt =
-      toComparableTimestamp(contactLastSeenIncomingActivityAt) >=
-      toComparableTimestamp(chatLastSeenReceivedActivityAt)
-        ? contactLastSeenIncomingActivityAt
-        : chatLastSeenReceivedActivityAt;
+    const chatLastOutgoingMessageAt = normalizeTimestamp(
+      isPlainRecord(chat.meta) ? chat.meta.last_outgoing_message_at : null
+    );
+    const effectiveLastSeenIncomingActivityAt = resolveLatestReadBoundaryAtValue(
+      contactLastSeenIncomingActivityAt,
+      chatLastSeenReceivedActivityAt,
+      chatLastOutgoingMessageAt
+    );
     const replyPreview = replyTargetEventId
       ? await buildReplyPreviewFromTargetEvent(
           replyTargetEventId,

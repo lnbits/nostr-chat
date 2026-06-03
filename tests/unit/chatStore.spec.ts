@@ -90,20 +90,22 @@ describe('chatStore logic', () => {
     expect(countUnreadMessagesAfter(undefined, '2026-01-02T00:00:00.000Z')).toBe(0);
   });
 
-  it('uses the newer of the chat and contact seen boundaries during restore', () => {
+  it('uses the newest chat, contact, or own-message boundary during restore', () => {
     expect(
       resolveEffectiveLastSeenReceivedActivityAt(
         '2026-01-02T00:00:00.000Z',
-        '2026-01-03T00:00:00.000Z'
+        '2026-01-03T00:00:00.000Z',
+        '2026-01-01T00:00:00.000Z'
       )
     ).toBe('2026-01-03T00:00:00.000Z');
 
     expect(
       resolveEffectiveLastSeenReceivedActivityAt(
         '2026-01-04T00:00:00.000Z',
-        '2026-01-03T00:00:00.000Z'
+        '2026-01-03T00:00:00.000Z',
+        '2026-01-05T00:00:00.000Z'
       )
-    ).toBe('2026-01-04T00:00:00.000Z');
+    ).toBe('2026-01-05T00:00:00.000Z');
   });
 
   it('resolves the durable mark-as-read boundary from the newest incoming message', () => {
@@ -242,6 +244,7 @@ describe('chatStore logic', () => {
     ).toEqual({
       inbox_state: 'accepted',
       accepted_at: '2026-01-03T00:00:00.000Z',
+      last_seen_received_activity_at: '2026-01-02T00:00:00.000Z',
       last_outgoing_message_at: '2026-01-02T00:00:00.000Z',
     });
   });

@@ -16,6 +16,7 @@ const {
   readUnseenReactionCountFromMeta,
   resolveChatDeliveryTarget,
   resolveChatRecipientPublicKey,
+  resolveLatestOwnMessageAt,
   resolveReplyTargetEventId,
   resolveSendRelayUrls,
   takeLeadingRowsWithAuthor,
@@ -378,6 +379,30 @@ describe('messageStore logic', () => {
         'me'
       )
     ).toBe(1);
+  });
+
+  it('resolves the latest own message timestamp for read-boundary sync', () => {
+    expect(
+      resolveLatestOwnMessageAt(
+        [
+          {
+            author_public_key: 'them',
+            created_at: '2026-01-04T00:00:00.000Z',
+          },
+          {
+            author_public_key: 'ME',
+            created_at: '2026-01-02T00:00:00.000Z',
+          },
+          {
+            author_public_key: 'me',
+            created_at: '2026-01-03T00:00:00.000Z',
+          },
+        ] as never,
+        'me'
+      )
+    ).toBe('2026-01-03T00:00:00.000Z');
+
+    expect(resolveLatestOwnMessageAt([] as never, null)).toBe('');
   });
 
   it('treats missing logged-in identity as a startup-safe zero for unseen reactions', () => {

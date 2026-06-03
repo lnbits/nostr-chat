@@ -10,6 +10,7 @@ import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useChatStore } from 'src/stores/chatStore';
+import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type {
   DeletedMessageMetadata,
   Message,
@@ -298,6 +299,26 @@ function countOwnUnseenReactions(
   }, 0);
 }
 
+function resolveLatestOwnMessageAt(
+  rows: Array<Pick<MessageRow, 'author_public_key' | 'created_at'>>,
+  loggedInPublicKey: string | null | undefined
+): string {
+  const normalizedLoggedInPublicKey = normalizeChatIdentifier(loggedInPublicKey);
+  if (!normalizedLoggedInPublicKey) {
+    return '';
+  }
+
+  return rows.reduce((latest, row) => {
+    if (normalizeChatIdentifier(row.author_public_key) !== normalizedLoggedInPublicKey) {
+      return latest;
+    }
+
+    return toComparableTimestamp(row.created_at) > toComparableTimestamp(latest)
+      ? row.created_at
+      : latest;
+  }, '');
+}
+
 function areReactionListsEqualValue(
   currentReactions: MessageReaction[],
   nextReactions: MessageReaction[]
@@ -566,6 +587,7 @@ export const __messageStoreTestUtils = {
   countOwnUnseenReactions,
   mergeMessagesById,
   readUnseenReactionCountFromMeta: readUnseenReactionCountFromMetaValue,
+  resolveLatestOwnMessageAt,
   resolveChatDeliveryTarget: resolveChatDeliveryTargetValue,
   resolveChatRecipientPublicKey: resolveChatRecipientPublicKeyFromRow,
   resolveReplyTargetEventId: resolveReplyTargetEventIdValue,
@@ -2010,11 +2032,12 @@ export const useMessageStore = defineStore('messageStore', () => {
         'last_seen_received_activity_at'
       );
       const contactLastSeenIncomingActivityAt = seenBoundaryByChat.get(normalizedChatId) ?? '';
-      const boundaryAt =
-        toComparableTimestamp(contactLastSeenIncomingActivityAt) >
-        toComparableTimestamp(currentLastSeenReceivedActivityAt)
-          ? contactLastSeenIncomingActivityAt
-          : currentLastSeenReceivedActivityAt;
+      const chatMessageRows = messageRowsByChat.get(normalizedChatId) ?? [];
+      const boundaryAt = resolveLatestReadBoundaryAtValue(
+        currentLastSeenReceivedActivityAt,
+        contactLastSeenIncomingActivityAt,
+        resolveLatestOwnMessageAt(chatMessageRows, loggedInPublicKey)
+      );
       const boundaryTimestamp = toComparableTimestamp(boundaryAt);
 
       if (
@@ -2028,7 +2051,6 @@ export const useMessageStore = defineStore('messageStore', () => {
         summary.boundaryAdvancedCount += 1;
       }
 
-      const chatMessageRows = messageRowsByChat.get(normalizedChatId) ?? [];
       const nextUnreadCount = chatMessageRows.reduce((count, row) => {
         if (normalizeChatIdentifier(row.author_public_key) === loggedInPublicKey) {
           return count;

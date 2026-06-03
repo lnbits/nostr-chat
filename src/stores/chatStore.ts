@@ -3,6 +3,7 @@ import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { CHAT_REQUEST_CLEARED_AT_META_KEY } from 'src/stores/nostr/constants';
+import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
@@ -346,12 +347,14 @@ function findLatestIncomingMessageAt(
 
 function resolveEffectiveLastSeenReceivedActivityAt(
   chatLastSeenReceivedActivityAt: string,
-  contactLastSeenIncomingActivityAt: string
+  contactLastSeenIncomingActivityAt: string,
+  lastOutgoingMessageAt = ''
 ): string {
-  return toComparableTimestamp(contactLastSeenIncomingActivityAt) >
-    toComparableTimestamp(chatLastSeenReceivedActivityAt)
-    ? contactLastSeenIncomingActivityAt
-    : chatLastSeenReceivedActivityAt;
+  return resolveLatestReadBoundaryAtValue(
+    chatLastSeenReceivedActivityAt,
+    contactLastSeenIncomingActivityAt,
+    lastOutgoingMessageAt
+  );
 }
 
 function resolveMarkAsReadBoundaryAt(
@@ -546,6 +549,11 @@ function buildAcceptedChatMeta(
     if (toComparableTimestamp(lastOutgoingMessageAt) > toComparableTimestamp(currentOutgoingAt)) {
       nextMeta[CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY] = lastOutgoingMessageAt;
     }
+    syncMetaLatestTimestamp(
+      nextMeta,
+      LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
+      lastOutgoingMessageAt
+    );
   }
 
   delete nextMeta[CHAT_BLOCKED_AT_META_KEY];
@@ -680,7 +688,8 @@ export const useChatStore = defineStore('chatStore', () => {
         );
         const effectiveLastSeenReceivedActivityAt = resolveEffectiveLastSeenReceivedActivityAt(
           readMetaString(nextMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY),
-          contactContext?.lastSeenIncomingActivityAt ?? ''
+          contactContext?.lastSeenIncomingActivityAt ?? '',
+          readMetaString(nextMeta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY)
         );
         if (
           toComparableTimestamp(effectiveLastSeenReceivedActivityAt) >
@@ -933,6 +942,14 @@ export const useChatStore = defineStore('chatStore', () => {
     }
 
     let nextMetaToPersist: ChatMetadata | null = null;
+    let nextUnreadCountToPersist: number | null = null;
+    let outgoingBoundaryMessageRows: Awaited<
+      ReturnType<typeof chatDataService.listMessages>
+    > | null = null;
+    if (lastOutgoingMessageAt) {
+      await chatDataService.init();
+      outgoingBoundaryMessageRows = await chatDataService.listMessages(normalizedChatId);
+    }
     const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
 
     if (existingChat) {
@@ -940,14 +957,6 @@ export const useChatStore = defineStore('chatStore', () => {
         existingChat.meta as Record<string, unknown>,
         acceptedAt,
         lastOutgoingMessageAt
-      );
-      chats.value = chats.value.map((chat) =>
-        chat.id === normalizedChatId
-          ? {
-              ...chat,
-              meta: nextMetaToPersist ?? chat.meta,
-            }
-          : chat
       );
     } else {
       await chatDataService.init();
@@ -967,8 +976,40 @@ export const useChatStore = defineStore('chatStore', () => {
       return;
     }
 
+    if (outgoingBoundaryMessageRows) {
+      const loggedInPublicKey = getLoggedInPublicKey();
+      const incomingTimestamps = outgoingBoundaryMessageRows
+        .filter((row) => {
+          const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
+          return authorPublicKey && authorPublicKey !== loggedInPublicKey;
+        })
+        .map((row) => row.created_at);
+      nextUnreadCountToPersist = countUnreadMessagesAfter(
+        incomingTimestamps,
+        readMetaString(nextMetaToPersist, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY)
+      );
+    }
+
+    if (existingChat) {
+      chats.value = chats.value.map((chat) =>
+        chat.id === normalizedChatId
+          ? {
+              ...chat,
+              meta: nextMetaToPersist ?? chat.meta,
+              unreadCount:
+                nextUnreadCountToPersist === null ? chat.unreadCount : nextUnreadCountToPersist,
+            }
+          : chat
+      );
+    }
+
     try {
-      await chatDataService.updateChatMeta(normalizedChatId, nextMetaToPersist);
+      await Promise.all([
+        chatDataService.updateChatMeta(normalizedChatId, nextMetaToPersist),
+        ...(nextUnreadCountToPersist === null
+          ? []
+          : [chatDataService.updateChatUnreadCount(normalizedChatId, nextUnreadCountToPersist)]),
+      ]);
     } catch (error) {
       console.error('Failed to accept chat request', error);
     }
