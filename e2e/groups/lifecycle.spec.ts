@@ -84,6 +84,17 @@ test('group owner can create a group, invite a member, and exchange messages bot
     await acceptFirstRequest(bob.page);
 
     await navigateToChat(alice.page, groupPublicKey);
+    await alice.page.getByPlaceholder('Write a message').click();
+    await alice.page.keyboard.type('@');
+    await expect(
+      alice.page
+        .getByTestId('message-mention-option')
+        .filter({ hasText: bob.session.publicKey.slice(0, 16) })
+        .first()
+    ).toBeVisible();
+    await alice.page.keyboard.press('Escape');
+    await alice.page.getByPlaceholder('Write a message').fill('');
+
     await sendMessage(alice.page, aliceGroupMessage, {
       chatId: groupPublicKey,
     });

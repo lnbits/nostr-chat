@@ -407,6 +407,8 @@
   "message.lastEventId": "Last event id",
   "message.message": "Message",
   "message.messageCopied": "Message copied.",
+  "message.mentionFound": "No members found.",
+  "message.mentionSuggestions": "Mention suggestions",
   "message.openMoreEmoji": "Open more emoji",
   "message.openRepliedMessage": "Open replied message",
   "message.pendingReactions.empty": "No pending reactions.",

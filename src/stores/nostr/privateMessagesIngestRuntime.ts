@@ -12,6 +12,7 @@ import { isPlainRecord } from 'src/stores/nostr/shared';
 import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type { NostrEventDirection } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
+import { buildMentionMetadata } from 'src/utils/nostrMentions';
 
 export function createPrivateMessagesIngestRuntime({
   appendRelayStatusesToMessageEvent,
@@ -847,6 +848,7 @@ export function createPrivateMessagesIngestRuntime({
         source: 'nostr',
         kind: NDKKind.PrivateDirectMessage,
         wrapper_event_id: wrappedEvent.id ?? '',
+        ...buildMentionMetadata(messageText, loggedInPubkeyHex),
         ...(replyPreview ? { reply: replyPreview } : {}),
       },
     });

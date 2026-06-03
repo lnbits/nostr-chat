@@ -150,7 +150,18 @@
             'bubble__text--deleted': isDeletedMessage
           }"
         >
-          {{ bubbleMessageText }}
+          <template v-for="part in bubbleMessageTextParts" :key="part.key">
+            <button
+              v-if="part.type === 'mention'"
+              type="button"
+              class="bubble__mention"
+              data-testid="message-mention-link"
+              @click.stop="handleOpenMentionProfile(part.publicKey)"
+            >
+              {{ part.text }}
+            </button>
+            <span v-else>{{ part.text }}</span>
+          </template>
         </p>
         <button
           v-if="canExpandMessage && !isMessageExpanded"
@@ -473,6 +484,10 @@ import type {
 } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isReactionUnseenForAuthor } from 'src/utils/messageReactions';
+import {
+  buildNostrMentionTextParts,
+  type NostrMentionProfile,
+} from 'src/utils/nostrMentions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import { getDateTimeLocale, t } from 'src/i18n';
 
@@ -483,6 +498,7 @@ const props = defineProps<{
   authorLabel?: string;
   contactName?: string;
   contactRelayUrls?: string[];
+  mentionProfiles?: NostrMentionProfile[];
   showAuthorName?: boolean;
   showAuthorOnMobile?: boolean;
 }>();
@@ -752,6 +768,9 @@ const bubbleMessageText = computed(() => {
 
   return truncateMessageText(baseVisibleMessageText.value);
 });
+const bubbleMessageTextParts = computed(() => {
+  return buildNostrMentionTextParts(bubbleMessageText.value, props.mentionProfiles ?? []);
+});
 
 function openStatusDialog(): void {
   if (!hasRelayStatuses.value) {
@@ -871,6 +890,19 @@ function handleOpenAuthorProfile(): void {
     emit('open-profile', publicKey);
   } catch (error) {
     reportUiError('Failed to open author profile from message bubble', error);
+  }
+}
+
+function handleOpenMentionProfile(publicKey?: string): void {
+  const normalizedPublicKey = publicKey?.trim();
+  if (!normalizedPublicKey) {
+    return;
+  }
+
+  try {
+    emit('open-profile', normalizedPublicKey);
+  } catch (error) {
+    reportUiError('Failed to open mentioned profile from message bubble', error);
   }
 }
 
@@ -1217,6 +1249,22 @@ onBeforeUnmount(() => {
   cursor: pointer;
   color: var(--nc-text);
   line-height: 1.5;
+}
+
+.bubble__mention {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--q-primary);
+  font: inherit;
+  font-weight: 700;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.bubble__mention:hover {
+  text-decoration: underline;
 }
 
 .bubble__more {

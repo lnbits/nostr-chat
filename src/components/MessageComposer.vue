@@ -1,8 +1,37 @@
 <template>
   <div class="composer">
     <div
+      v-if="isMentionAutocompleteVisible"
+      class="composer__autocomplete"
+      role="listbox"
+      :aria-label="$t('message.mentionSuggestions')"
+    >
+      <button
+        v-for="(entry, index) in mentionAutocompleteEntries"
+        :key="entry.publicKey"
+        type="button"
+        class="composer__autocomplete-option"
+        :class="{ 'composer__autocomplete-option--active': index === activeMentionAutocompleteIndex }"
+        :aria-selected="index === activeMentionAutocompleteIndex ? 'true' : 'false'"
+        data-testid="message-mention-option"
+        @mousedown.prevent
+        @click="handleMentionAutocompleteSelect(entry)"
+      >
+        <span class="composer__mention-avatar" aria-hidden="true">{{ entry.displayName.slice(0, 2).toUpperCase() }}</span>
+        <span class="composer__mention-copy">
+          <span class="composer__mention-name">{{ entry.displayName }}</span>
+          <span class="composer__mention-handle">@{{ entry.handle }}</span>
+        </span>
+      </button>
+
+      <div v-if="mentionAutocompleteEntries.length === 0" class="composer__autocomplete-empty">
+        {{ $t('message.mentionFound') }}
+      </div>
+    </div>
+
+    <div
       v-if="isEmojiAutocompleteVisible"
-      class="composer__emoji-autocomplete"
+      class="composer__autocomplete"
       role="listbox"
       :aria-label="$t('message.emojiSuggestions')"
     >
@@ -10,8 +39,8 @@
         v-for="(entry, index) in emojiAutocompleteEntries"
         :key="`${entry.emoji}-${entry.label}`"
         type="button"
-        class="composer__emoji-option"
-        :class="{ 'composer__emoji-option--active': index === activeEmojiAutocompleteIndex }"
+        class="composer__autocomplete-option"
+        :class="{ 'composer__autocomplete-option--active': index === activeEmojiAutocompleteIndex }"
         :aria-selected="index === activeEmojiAutocompleteIndex ? 'true' : 'false'"
         @mousedown.prevent
         @click="handleEmojiAutocompleteSelect(entry.emoji)"
@@ -20,7 +49,7 @@
         <span class="composer__emoji-option-label">{{ entry.label }}</span>
       </button>
 
-      <div v-if="emojiAutocompleteEntries.length === 0" class="composer__emoji-empty">
+      <div v-if="emojiAutocompleteEntries.length === 0" class="composer__autocomplete-empty">
         {{ $t('message.emojiFound') }}
       </div>
     </div>
@@ -115,10 +144,12 @@ import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS, filterEmojiEntries, type EmojiOption } from 'src/data/topEmojis';
 import { useChatStore } from 'src/stores/chatStore';
 import type { MessageReplyPreview } from 'src/types/chat';
+import { serializeMentionDraft, type NostrMentionProfile } from 'src/utils/nostrMentions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = defineProps<{
   chatId?: string | null;
+  mentionProfiles?: NostrMentionProfile[];
   replyTo?: MessageReplyPreview | null;
 }>();
 
@@ -131,8 +162,11 @@ const selectionEnd = ref<number | null>(null);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
 const isEmojiMenuOpen = ref(false);
 const shouldRefocusAfterEmojiMenuHide = ref(false);
+const activeMentionAutocompleteIndex = ref(0);
 const activeEmojiAutocompleteIndex = ref(0);
+const dismissedMentionAutocompleteToken = ref('');
 const dismissedEmojiAutocompleteToken = ref('');
+const MAX_MENTION_AUTOCOMPLETE_RESULTS = 8;
 const MAX_EMOJI_AUTOCOMPLETE_RESULTS = 8;
 let suppressNextSendClick = false;
 
@@ -152,6 +186,7 @@ function normalizeChatIdentifier(value: string | null | undefined): string | nul
 
 const activeChatId = computed(() => normalizeChatIdentifier(props.chatId));
 const sendButtonIcon = computed(() => ($q.screen.lt.md ? 'north' : 'send'));
+const mentionProfiles = computed(() => props.mentionProfiles ?? []);
 
 function setDraftValue(nextDraft: string, options: { persist?: boolean } = {}): void {
   draft.value = nextDraft;
@@ -215,6 +250,68 @@ interface EmojiAutocompleteMatch {
   query: string;
 }
 
+interface MentionAutocompleteMatch {
+  start: number;
+  end: number;
+  query: string;
+}
+
+const mentionAutocompleteMatch = computed<MentionAutocompleteMatch | null>(() => {
+  const start = selectionStart.value ?? draft.value.length;
+  const end = selectionEnd.value ?? start;
+  if (start !== end || mentionProfiles.value.length === 0) {
+    return null;
+  }
+
+  const beforeCursor = draft.value.slice(0, start);
+  const atIndex = beforeCursor.lastIndexOf('@');
+  if (atIndex < 0) {
+    return null;
+  }
+
+  if (atIndex > 0) {
+    const previousChar = beforeCursor.charAt(atIndex - 1);
+    if (!/[\s([{]/u.test(previousChar)) {
+      return null;
+    }
+  }
+
+  const tokenQuery = beforeCursor.slice(atIndex + 1);
+  if (/\s/u.test(tokenQuery)) {
+    return null;
+  }
+
+  return {
+    start: atIndex,
+    end: start,
+    query: tokenQuery
+  };
+});
+
+const mentionAutocompleteEntries = computed<NostrMentionProfile[]>(() => {
+  const match = mentionAutocompleteMatch.value;
+  if (!match) {
+    return [];
+  }
+
+  const normalizedQuery = match.query.trim().toLowerCase();
+  const sortedProfiles = mentionProfiles.value
+    .slice()
+    .sort((first, second) => first.displayName.localeCompare(second.displayName));
+
+  const filteredProfiles = normalizedQuery
+    ? sortedProfiles.filter((profile) => {
+        return [
+          profile.displayName,
+          profile.handle,
+          profile.publicKey
+        ].some((value) => value.toLowerCase().includes(normalizedQuery));
+      })
+    : sortedProfiles;
+
+  return filteredProfiles.slice(0, MAX_MENTION_AUTOCOMPLETE_RESULTS);
+});
+
 const emojiAutocompleteMatch = computed<EmojiAutocompleteMatch | null>(() => {
   const start = selectionStart.value ?? draft.value.length;
   const end = selectionEnd.value ?? start;
@@ -266,6 +363,45 @@ const isEmojiAutocompleteVisible = computed(() => {
   }
 
   return dismissedEmojiAutocompleteToken.value !== `${match.start}:${match.query}`;
+});
+
+const isMentionAutocompleteVisible = computed(() => {
+  const match = mentionAutocompleteMatch.value;
+  if (!match) {
+    return false;
+  }
+
+  return dismissedMentionAutocompleteToken.value !== `${match.start}:${match.query}`;
+});
+
+watch(
+  mentionAutocompleteEntries,
+  (entries) => {
+    if (entries.length === 0) {
+      activeMentionAutocompleteIndex.value = 0;
+      return;
+    }
+
+    activeMentionAutocompleteIndex.value = Math.min(
+      activeMentionAutocompleteIndex.value,
+      entries.length - 1
+    );
+  },
+  { immediate: true }
+);
+
+watch(mentionAutocompleteMatch, () => {
+  activeMentionAutocompleteIndex.value = 0;
+  const match = mentionAutocompleteMatch.value;
+  if (!match) {
+    dismissedMentionAutocompleteToken.value = '';
+    return;
+  }
+
+  const tokenKey = `${match.start}:${match.query}`;
+  if (dismissedMentionAutocompleteToken.value !== tokenKey) {
+    dismissedMentionAutocompleteToken.value = '';
+  }
 });
 
 watch(
@@ -348,7 +484,32 @@ function handleEmojiAutocompleteSelect(emoji: string): void {
   }
 }
 
+function handleMentionAutocompleteSelect(profile: NostrMentionProfile): void {
+  try {
+    const match = mentionAutocompleteMatch.value;
+    if (!match) {
+      return;
+    }
+
+    dismissedMentionAutocompleteToken.value = '';
+    const suffix = draft.value.slice(match.end);
+    const mentionText = suffix.length === 0 ? `@${profile.handle} ` : `@${profile.handle}`;
+    replaceDraftRange(match.start, match.end, mentionText);
+  } catch (error) {
+    reportUiError('Failed to autocomplete mention', error);
+  }
+}
+
 function handleEnterKey(event: KeyboardEvent): void {
+  if (isMentionAutocompleteVisible.value && mentionAutocompleteEntries.value.length > 0) {
+    event.preventDefault();
+    const entry = mentionAutocompleteEntries.value[activeMentionAutocompleteIndex.value] ?? null;
+    if (entry) {
+      handleMentionAutocompleteSelect(entry);
+    }
+    return;
+  }
+
   if (isEmojiAutocompleteVisible.value && emojiAutocompleteEntries.value.length > 0) {
     event.preventDefault();
     const entry = emojiAutocompleteEntries.value[activeEmojiAutocompleteIndex.value] ?? null;
@@ -367,6 +528,13 @@ function handleEnterKey(event: KeyboardEvent): void {
 }
 
 function handleAutocompleteArrowDown(event: KeyboardEvent): void {
+  if (isMentionAutocompleteVisible.value && mentionAutocompleteEntries.value.length > 0) {
+    event.preventDefault();
+    activeMentionAutocompleteIndex.value =
+      (activeMentionAutocompleteIndex.value + 1) % mentionAutocompleteEntries.value.length;
+    return;
+  }
+
   if (!isEmojiAutocompleteVisible.value || emojiAutocompleteEntries.value.length === 0) {
     return;
   }
@@ -377,6 +545,14 @@ function handleAutocompleteArrowDown(event: KeyboardEvent): void {
 }
 
 function handleAutocompleteArrowUp(event: KeyboardEvent): void {
+  if (isMentionAutocompleteVisible.value && mentionAutocompleteEntries.value.length > 0) {
+    event.preventDefault();
+    activeMentionAutocompleteIndex.value =
+      (activeMentionAutocompleteIndex.value - 1 + mentionAutocompleteEntries.value.length) %
+      mentionAutocompleteEntries.value.length;
+    return;
+  }
+
   if (!isEmojiAutocompleteVisible.value || emojiAutocompleteEntries.value.length === 0) {
     return;
   }
@@ -388,6 +564,15 @@ function handleAutocompleteArrowUp(event: KeyboardEvent): void {
 }
 
 function handleAutocompleteTab(event: KeyboardEvent): void {
+  if (isMentionAutocompleteVisible.value && mentionAutocompleteEntries.value.length > 0) {
+    event.preventDefault();
+    const entry = mentionAutocompleteEntries.value[activeMentionAutocompleteIndex.value] ?? null;
+    if (entry) {
+      handleMentionAutocompleteSelect(entry);
+    }
+    return;
+  }
+
   if (!isEmojiAutocompleteVisible.value || emojiAutocompleteEntries.value.length === 0) {
     return;
   }
@@ -400,6 +585,17 @@ function handleAutocompleteTab(event: KeyboardEvent): void {
 }
 
 function handleAutocompleteEscape(event: KeyboardEvent): void {
+  if (isMentionAutocompleteVisible.value) {
+    event.preventDefault();
+    const match = mentionAutocompleteMatch.value;
+    if (!match) {
+      return;
+    }
+
+    dismissedMentionAutocompleteToken.value = `${match.start}:${match.query}`;
+    return;
+  }
+
   if (!isEmojiAutocompleteVisible.value) {
     return;
   }
@@ -443,7 +639,7 @@ function handleSendClick(): void {
 
 function submitDraft(): void {
   try {
-    const cleanText = draft.value.trim();
+    const cleanText = serializeMentionDraft(draft.value.trim(), mentionProfiles.value).trim();
 
     if (!cleanText) {
       return;
@@ -465,7 +661,9 @@ watch(
     setDraftValue(nextDraft, { persist: false });
     selectionStart.value = nextDraft.length;
     selectionEnd.value = nextDraft.length;
+    dismissedMentionAutocompleteToken.value = '';
     dismissedEmojiAutocompleteToken.value = '';
+    activeMentionAutocompleteIndex.value = 0;
     activeEmojiAutocompleteIndex.value = 0;
     isEmojiMenuOpen.value = false;
     shouldRefocusAfterEmojiMenuHide.value = false;
@@ -502,7 +700,7 @@ defineExpose({
   background: var(--nc-panel-header-bg);
 }
 
-.composer__emoji-autocomplete {
+.composer__autocomplete {
   width: min(100%, 360px);
   align-self: flex-start;
   display: flex;
@@ -515,7 +713,7 @@ defineExpose({
   box-shadow: var(--nc-shadow-md);
 }
 
-.composer__emoji-option {
+.composer__autocomplete-option {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -533,8 +731,8 @@ defineExpose({
     transform 0.16s ease;
 }
 
-.composer__emoji-option:hover,
-.composer__emoji-option--active {
+.composer__autocomplete-option:hover,
+.composer__autocomplete-option--active {
   transform: none;
   border-color: transparent;
   background: var(--nc-hover);
@@ -555,7 +753,44 @@ defineExpose({
   text-overflow: ellipsis;
 }
 
-.composer__emoji-empty {
+.composer__mention-avatar {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--q-primary);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.composer__mention-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.composer__mention-name,
+.composer__mention-handle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__mention-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.composer__mention-handle {
+  font-size: 12px;
+  color: var(--nc-text-secondary);
+}
+
+.composer__autocomplete-empty {
   padding: 8px 10px;
   font-size: 13px;
   color: var(--nc-text-secondary);
@@ -648,7 +883,9 @@ defineExpose({
   .composer__reply-title,
   .composer__reply-text,
   .composer__emoji-option-label,
-  .composer__emoji-empty {
+  .composer__mention-name,
+  .composer__mention-handle,
+  .composer__autocomplete-empty {
     font-size: var(--nc-mobile-caption-font-size);
     line-height: var(--nc-mobile-caption-line-height);
     letter-spacing: 0;

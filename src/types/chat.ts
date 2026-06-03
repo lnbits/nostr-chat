@@ -84,11 +84,19 @@ export interface GroupEpochNoticeMetadata {
   epochNumber: number;
 }
 
+export interface MessageMentionMetadata {
+  publicKey: string;
+  relayUrls?: string[];
+  nprofile?: string;
+}
+
 export interface MessageMetadata {
   reply?: MessageReplyPreview;
   reactions?: MessageReaction[];
   deleted?: DeletedMessageMetadata;
   group_epoch_notice?: GroupEpochNoticeMetadata;
+  mentions?: MessageMentionMetadata[];
+  mentions_me?: boolean;
   [key: string]: unknown;
 }
 

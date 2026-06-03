@@ -28,6 +28,7 @@ import {
   normalizeMessageReactions,
 } from 'src/utils/messageReactions';
 import { resolveMessageWindowMerge } from 'src/utils/messageWindowRange';
+import { buildMentionMetadata } from 'src/utils/nostrMentions';
 import { ref } from 'vue';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
@@ -156,7 +157,10 @@ function mapMessageRowToMessage(
     authorPublicKey: authorKey,
     eventId: row.event_id,
     nostrEvent,
-    meta: row.meta,
+    meta: {
+      ...row.meta,
+      ...buildMentionMetadata(row.message, getLoggedInPublicKey()),
+    },
   };
 }
 
@@ -603,6 +607,7 @@ export const __messageStoreTestUtils = {
   compareMessageCursors,
   countUnreadMessageRowsAfterBoundary,
   countOwnUnseenReactions,
+  mapMessageRowToMessage,
   mergeMessagesById,
   readUnseenReactionCountFromMeta: readUnseenReactionCountFromMetaValue,
   resolveLatestOwnMessageAt,
@@ -1497,13 +1502,18 @@ export const useMessageStore = defineStore('messageStore', () => {
         }
       : null;
     const createdAt = typeof options.createdAt === 'string' ? options.createdAt.trim() : '';
+    const mentionMeta = buildMentionMetadata(cleanText, getLoggedInPublicKey());
+    const meta = {
+      ...mentionMeta,
+      ...(replyPreview ? { reply: replyPreview } : {}),
+    };
 
     const created = await chatDataService.createMessage({
       chat_public_key: chat.public_key,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: createdAt || new Date().toISOString(),
-      ...(replyPreview ? { meta: { reply: replyPreview } } : {}),
+      ...(Object.keys(meta).length > 0 ? { meta } : {}),
     });
     if (!created) {
       return null;
