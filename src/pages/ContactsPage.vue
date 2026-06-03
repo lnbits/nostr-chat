@@ -96,7 +96,10 @@
                     :key="contact.id"
                     clickable
                     class="contact-item"
-                    :class="{ 'contact-item--muted': isContactMuted(contact) }"
+                    :class="{
+                      'contact-item--muted': isContactMuted(contact),
+                      'contact-item--blocked': isContactBlocked(contact)
+                    }"
                     :active="contact.id === selectedContactId"
                     active-class="contact-item--active"
                     @click="handleSelectContact(contact)"
@@ -116,7 +119,15 @@
                           {{ contactListTitle(contact) }}
                         </q-item-label>
                         <span
-                          v-if="isContactMuted(contact)"
+                          v-if="isContactBlocked(contact)"
+                          class="contact-item__block-indicator"
+                          :aria-label="$t('common.block')"
+                        >
+                          <q-icon name="block" size="15px" aria-hidden="true" />
+                          <AppTooltip>{{ $t('common.block') }}</AppTooltip>
+                        </span>
+                        <span
+                          v-else-if="isContactMuted(contact)"
                           class="contact-item__mute-indicator"
                           :aria-label="$t('common.mute')"
                         >
@@ -146,10 +157,16 @@
                       >
                         <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
                           <q-list dense class="nc-pop-menu__list">
-                            <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
+                            <q-item
+                              v-if="!isContactBlocked(contact)"
+                              clickable
+                              v-close-popup
+                              @click="handleContactMenuChat(contact)"
+                            >
                               <q-item-section>{{ $t('chat.chat') }}</q-item-section>
                             </q-item>
                             <q-item
+                              v-if="!isContactBlocked(contact)"
                               clickable
                               v-close-popup
                               @click="handleContactMenuRefreshProfile(contact)"
@@ -157,6 +174,7 @@
                               <q-item-section>{{ $t('profile.refreshProfile') }}</q-item-section>
                             </q-item>
                             <q-item
+                              v-if="!isContactBlocked(contact)"
                               clickable
                               v-close-popup
                               @click="
@@ -168,6 +186,24 @@
                               <q-item-section>
                                 {{ isContactMuted(contact) ? $t('common.unmute') : $t('common.mute') }}
                               </q-item-section>
+                            </q-item>
+                            <q-item
+                              v-if="!isContactBlocked(contact)"
+                              clickable
+                              v-close-popup
+                              @click="handleContactMenuBlock(contact)"
+                            >
+                              <q-item-section class="text-negative">
+                                {{ $t('common.block') }}
+                              </q-item-section>
+                            </q-item>
+                            <q-item
+                              v-else
+                              clickable
+                              v-close-popup
+                              @click="handleContactMenuUnblock(contact)"
+                            >
+                              <q-item-section>{{ $t('common.unblock') }}</q-item-section>
                             </q-item>
                             <q-item clickable v-close-popup @click="handleContactMenuDelete(contact)">
                               <q-item-section class="text-negative">
@@ -330,7 +366,7 @@ const selectedContactPubkey = ref('');
 const selectedContactProfile = ref(createEmptyContactProfileForm());
 const contacts = ref<ContactRecord[]>([]);
 const isPublishingSelectedGroupProfile = ref(false);
-type ContactSectionKey = 'active' | 'muted';
+type ContactSectionKey = 'active' | 'muted' | 'blocked';
 
 interface ContactSection {
   key: ContactSectionKey;
@@ -341,7 +377,8 @@ interface ContactSection {
 
 const expandedContactSections = ref<Record<ContactSectionKey, boolean>>({
   active: true,
-  muted: false
+  muted: false,
+  blocked: false
 });
 const selectedContactRecord = computed<ContactRecord | null>(() => {
   const normalizedPubkey = selectedContactPubkey.value.trim().toLowerCase();
@@ -377,8 +414,13 @@ const selectedContactHeaderTitle = computed(() => {
 
   return selectedContactPubkey.value.trim().slice(0, 32) || t('contacts.contact.label');
 });
-const activeContacts = computed(() => contacts.value.filter((contact) => !isContactMuted(contact)));
-const mutedContacts = computed(() => contacts.value.filter((contact) => isContactMuted(contact)));
+const activeContacts = computed(() =>
+  contacts.value.filter((contact) => !isContactMuted(contact) && !isContactBlocked(contact))
+);
+const mutedContacts = computed(() =>
+  contacts.value.filter((contact) => isContactMuted(contact) && !isContactBlocked(contact))
+);
+const blockedContacts = computed(() => contacts.value.filter((contact) => isContactBlocked(contact)));
 const contactSections = computed<ContactSection[]>(() => [
   {
     key: 'active',
@@ -391,6 +433,12 @@ const contactSections = computed<ContactSection[]>(() => [
     label: t('contacts.section.muted'),
     contacts: mutedContacts.value,
     expanded: expandedContactSections.value.muted
+  },
+  {
+    key: 'blocked',
+    label: t('contacts.section.blocked'),
+    contacts: blockedContacts.value,
+    expanded: expandedContactSections.value.blocked
   }
 ]);
 
@@ -475,11 +523,20 @@ function isContactMuted(contact: ContactRecord): boolean {
   return contact.meta.muted === true;
 }
 
+function isContactBlocked(contact: ContactRecord): boolean {
+  return contact.meta.blocked === true;
+}
+
 function toggleContactSection(sectionKey: ContactSectionKey): void {
   expandedContactSections.value[sectionKey] = !expandedContactSections.value[sectionKey];
 }
 
 function expandContactSectionForContact(contact: ContactRecord): void {
+  if (isContactBlocked(contact)) {
+    expandedContactSections.value.blocked = true;
+    return;
+  }
+
   expandedContactSections.value[isContactMuted(contact) ? 'muted' : 'active'] = true;
 }
 
@@ -745,6 +802,10 @@ function selectContactByPublicKey(pubkey: string): void {
 }
 
 async function openChatForContact(contact: ContactRecord): Promise<void> {
+  if (isContactBlocked(contact)) {
+    return;
+  }
+
   const contactPubkey = contact.public_key.trim();
   if (!contactPubkey) {
     return;
@@ -778,6 +839,9 @@ async function handleOpenChat(): Promise<void> {
     if (!selectedContact) {
       return;
     }
+    if (isContactBlocked(selectedContact)) {
+      return;
+    }
 
     await openChatForContact(selectedContact);
   } catch (error) {
@@ -806,6 +870,10 @@ function handleBackToContactsList(): void {
 
 async function handleContactMenuChat(contact: ContactRecord): Promise<void> {
   try {
+    if (isContactBlocked(contact)) {
+      return;
+    }
+
     handleSelectContact(contact, true);
     await openChatForContact(contact);
   } catch (error) {
@@ -814,6 +882,10 @@ async function handleContactMenuChat(contact: ContactRecord): Promise<void> {
 }
 
 async function refreshStoredContact(contact: ContactRecord): Promise<ContactRecord | null> {
+  if (isContactBlocked(contact)) {
+    return contact;
+  }
+
   await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact), {
     refreshRelayList: true
   });
@@ -831,8 +903,9 @@ async function handleRefreshContacts(): Promise<void> {
     await nostrStore.refreshPrivateContactListWithOutgoingMessages();
     await contactsService.init();
     const storedContacts = await contactsService.listContacts();
+    const refreshableContacts = storedContacts.filter((contact) => !isContactBlocked(contact));
 
-    if (storedContacts.length === 0) {
+    if (refreshableContacts.length === 0) {
       await loadContacts(contactQuery.value);
       $q.notify({
         type: 'info',
@@ -845,7 +918,7 @@ async function handleRefreshContacts(): Promise<void> {
     let refreshedCount = 0;
     let failedCount = 0;
 
-    for (const contact of storedContacts) {
+    for (const contact of refreshableContacts) {
       try {
         await refreshStoredContact(contact);
         refreshedCount += 1;
@@ -890,6 +963,10 @@ async function handleRefreshContacts(): Promise<void> {
 
 async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<void> {
   try {
+    if (isContactBlocked(contact)) {
+      return;
+    }
+
     await refreshStoredContact(contact);
     await loadContacts(contactQuery.value);
 
@@ -904,6 +981,10 @@ async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<
 
 async function handleContactMenuMute(contact: ContactRecord): Promise<void> {
   try {
+    if (isContactBlocked(contact)) {
+      return;
+    }
+
     expandedContactSections.value.muted = true;
     await nostrStore.mutePubkey(contact.public_key, relayStore.relays);
     await loadContacts(contactQuery.value);
@@ -919,6 +1000,32 @@ async function handleContactMenuUnmute(contact: ContactRecord): Promise<void> {
     await loadContacts(contactQuery.value);
   } catch (error) {
     reportUiError('Failed to unmute contact from menu', error);
+  }
+}
+
+async function handleContactMenuBlock(contact: ContactRecord): Promise<void> {
+  try {
+    expandedContactSections.value.blocked = true;
+    await nostrStore.blockPubkey(contact.public_key, relayStore.relays, {
+      fallbackName: contactDisplayName(contact),
+      type: contact.type
+    });
+    await loadContacts(contactQuery.value);
+  } catch (error) {
+    reportUiError('Failed to block contact from menu', error);
+  }
+}
+
+async function handleContactMenuUnblock(contact: ContactRecord): Promise<void> {
+  try {
+    expandedContactSections.value.active = true;
+    await nostrStore.unblockPubkey(contact.public_key, relayStore.relays, {
+      fallbackName: contactDisplayName(contact),
+      type: contact.type
+    });
+    await loadContacts(contactQuery.value);
+  } catch (error) {
+    reportUiError('Failed to unblock contact from menu', error);
   }
 }
 
@@ -1280,7 +1387,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   min-width: 0;
 }
 
-.contact-item__mute-indicator {
+.contact-item__mute-indicator,
+.contact-item__block-indicator {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -1289,6 +1397,10 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contact-item--muted .contact-item__mute-indicator {
   color: color-mix(in srgb, var(--nc-text-secondary) 86%, var(--q-primary) 14%);
+}
+
+.contact-item--blocked .contact-item__block-indicator {
+  color: var(--q-negative);
 }
 
 .contact-item__actions {

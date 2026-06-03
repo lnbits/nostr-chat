@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const chatDataServiceMock = vi.hoisted(() => ({
   init: vi.fn(async () => {}),
   listChats: vi.fn(async () => []),
+  markChatAsRead: vi.fn(async () => {}),
   updateChatMeta: vi.fn(async () => {}),
 }));
 
 const contactsServiceMock = vi.hoisted(() => ({
+  createContact: vi.fn(
+    async (_input: { public_key: string; meta?: Record<string, unknown> }) => null
+  ),
   init: vi.fn(async () => {}),
   listContacts: vi.fn(async () => []),
   updateContact: vi.fn(async () => null),
@@ -27,6 +31,7 @@ import { createMuteListRuntime } from 'src/stores/nostr/muteListRuntime';
 const LOGGED_IN_PUBKEY = 'a'.repeat(64);
 const PUBKEY_B = 'b'.repeat(64);
 const PUBKEY_C = 'c'.repeat(64);
+const PUBKEY_D = 'd'.repeat(64);
 
 function createContact(publicKey: string, meta: Record<string, unknown> = {}) {
   return {
@@ -58,11 +63,14 @@ function createRuntime(overrides: Partial<Parameters<typeof createMuteListRuntim
   const ndk = new NDK();
   const deps = {
     beginStartupStep: vi.fn(),
-    buildMuteListTags: vi.fn((pubkeys: string[]) => pubkeys.map((pubkey) => ['p', pubkey])),
+    buildMuteListTags: vi.fn((mutedPubkeys: string[], blockedPubkeys: string[]) => [
+      ...mutedPubkeys.map((pubkey) => ['p', pubkey]),
+      ...blockedPubkeys.map((pubkey) => ['bp', pubkey]),
+    ]),
     bumpContactListVersion: vi.fn(),
     chatStore: { reload: vi.fn(async () => {}) },
     completeStartupStep: vi.fn(),
-    decryptMuteListContent: vi.fn(async () => []),
+    decryptMuteListContent: vi.fn(async () => ({ blockedPubkeys: [], mutedPubkeys: [] })),
     encryptMuteListTags: vi.fn(async () => 'encrypted-mute-list'),
     ensureRelayConnections: vi.fn(async () => {}),
     failStartupStep: vi.fn(),
@@ -88,7 +96,9 @@ describe('mute list runtime', () => {
     vi.clearAllMocks();
     chatDataServiceMock.init.mockResolvedValue(undefined);
     chatDataServiceMock.listChats.mockResolvedValue([]);
+    chatDataServiceMock.markChatAsRead.mockResolvedValue(undefined);
     chatDataServiceMock.updateChatMeta.mockResolvedValue(undefined);
+    contactsServiceMock.createContact.mockResolvedValue(null);
     contactsServiceMock.init.mockResolvedValue(undefined);
     contactsServiceMock.listContacts.mockResolvedValue([]);
     contactsServiceMock.updateContact.mockResolvedValue(null);
@@ -100,12 +110,10 @@ describe('mute list runtime', () => {
 
   it('restores encrypted NIP-51 pubkey mutes into contact and chat metadata', async () => {
     const { deps, ndk, runtime } = createRuntime({
-      decryptMuteListContent: vi.fn(async () => [
-        LOGGED_IN_PUBKEY,
-        PUBKEY_B,
-        PUBKEY_B,
-        'not-a-pubkey',
-      ]),
+      decryptMuteListContent: vi.fn(async () => ({
+        mutedPubkeys: [LOGGED_IN_PUBKEY, PUBKEY_B, PUBKEY_B, 'not-a-pubkey'],
+        blockedPubkeys: [PUBKEY_D, PUBKEY_D],
+      })),
     });
     const muteListEvent = new NDKEvent(ndk, {
       kind: MUTE_LIST_KIND,
@@ -122,7 +130,11 @@ describe('mute list runtime', () => {
     chatDataServiceMock.listChats.mockResolvedValue([
       createChat(PUBKEY_B, { inbox_state: 'accepted' }),
       createChat(PUBKEY_C, { muted: true, inbox_state: 'accepted' }),
+      createChat(PUBKEY_D, { inbox_state: 'accepted' }),
     ]);
+    contactsServiceMock.createContact.mockImplementation(async (input) =>
+      createContact(input.public_key, input.meta)
+    );
 
     await runtime.restoreMuteList();
 
@@ -138,7 +150,7 @@ describe('mute list runtime', () => {
     expect(deps.updateStartupInternalTask).toHaveBeenCalledWith(
       'contact-cursor-state',
       'mute-list',
-      { eventCount: 1 }
+      { eventCount: 2 }
     );
     expect(contactsServiceMock.updateContact).toHaveBeenCalledWith(
       Number.parseInt(PUBKEY_B[0] ?? '0', 16),
@@ -148,6 +160,15 @@ describe('mute list runtime', () => {
       Number.parseInt(PUBKEY_C[0] ?? '0', 16),
       { meta: { name: 'Carol' } }
     );
+    expect(contactsServiceMock.createContact).toHaveBeenCalledWith({
+      public_key: PUBKEY_D,
+      type: 'user',
+      name: PUBKEY_D.slice(0, 16),
+      meta: expect.objectContaining({
+        blocked: true,
+        blocked_at: expect.any(String),
+      }),
+    });
     expect(chatDataServiceMock.updateChatMeta).toHaveBeenCalledWith(PUBKEY_B, {
       inbox_state: 'accepted',
       muted: true,
@@ -155,6 +176,14 @@ describe('mute list runtime', () => {
     expect(chatDataServiceMock.updateChatMeta).toHaveBeenCalledWith(PUBKEY_C, {
       inbox_state: 'accepted',
     });
+    expect(chatDataServiceMock.updateChatMeta).toHaveBeenCalledWith(
+      PUBKEY_D,
+      expect.objectContaining({
+        inbox_state: 'blocked',
+        blocked_at: expect.any(String),
+      })
+    );
+    expect(chatDataServiceMock.markChatAsRead).not.toHaveBeenCalled();
     expect(deps.bumpContactListVersion).toHaveBeenCalledTimes(1);
     expect(deps.chatStore.reload).toHaveBeenCalledTimes(1);
     expect(deps.completeStartupStep).toHaveBeenCalledWith('mute-list');
@@ -170,13 +199,18 @@ describe('mute list runtime', () => {
     });
 
     await runtime.setPubkeyMuted(PUBKEY_B, true);
+    await runtime.setPubkeyBlocked(PUBKEY_C, true);
     await runtime.setPubkeyMuted(PUBKEY_C, true);
     await runtime.setPubkeyMuted(PUBKEY_B, false);
 
-    expect(deps.buildMuteListTags).toHaveBeenNthCalledWith(1, [PUBKEY_B]);
-    expect(deps.buildMuteListTags).toHaveBeenNthCalledWith(2, [PUBKEY_B, PUBKEY_C]);
-    expect(deps.buildMuteListTags).toHaveBeenNthCalledWith(3, [PUBKEY_C]);
+    expect(deps.buildMuteListTags).toHaveBeenNthCalledWith(1, [PUBKEY_B], []);
+    expect(deps.buildMuteListTags).toHaveBeenNthCalledWith(2, [PUBKEY_B], [PUBKEY_C]);
+    expect(deps.buildMuteListTags).toHaveBeenNthCalledWith(3, [], [PUBKEY_C]);
     expect(deps.encryptMuteListTags).toHaveBeenNthCalledWith(1, [['p', PUBKEY_B]]);
+    expect(deps.encryptMuteListTags).toHaveBeenNthCalledWith(2, [
+      ['p', PUBKEY_B],
+      ['bp', PUBKEY_C],
+    ]);
     expect(publishedEvents).toHaveLength(3);
     expect(publishedEvents[0]).toMatchObject({
       kind: MUTE_LIST_KIND,
@@ -185,6 +219,7 @@ describe('mute list runtime', () => {
       tags: [],
     });
     expect(runtime.isPubkeyMuted(PUBKEY_B)).toBe(false);
-    expect(runtime.isPubkeyMuted(PUBKEY_C)).toBe(true);
+    expect(runtime.isPubkeyMuted(PUBKEY_C)).toBe(false);
+    expect(runtime.isPubkeyBlocked(PUBKEY_C)).toBe(true);
   });
 });

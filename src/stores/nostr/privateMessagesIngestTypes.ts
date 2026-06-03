@@ -110,6 +110,7 @@ export interface PrivateMessagesIngestRuntimeDeps {
   isContactListedInPrivateContactList: (
     contact: Pick<ContactRecord, 'meta'> | null | undefined
   ) => boolean;
+  isPubkeyBlocked: (pubkeyHex: string) => boolean;
   lastSeenReceivedActivityAtMetaKey: string;
   logConflictingIncomingEpochNumber: (
     groupPublicKey: string,

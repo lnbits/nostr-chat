@@ -32,6 +32,7 @@ export function createPrivateMessagesIngestRuntime({
   formatSubscriptionLogValue,
   getPrivateMessagesRestoreThrottleMs,
   isContactListedInPrivateContactList,
+  isPubkeyBlocked,
   lastSeenReceivedActivityAtMetaKey,
   logConflictingIncomingEpochNumber,
   logDeveloperTrace,
@@ -294,6 +295,22 @@ export function createPrivateMessagesIngestRuntime({
           rumorEvent,
           loggedInPubkeyHex,
           senderPubkeyHex,
+          relayUrls: wrappedRelayUrls,
+          recipients,
+        }),
+      });
+      return;
+    }
+
+    if (!isSelfSentMessage && (isPubkeyBlocked(senderPubkeyHex) || isPubkeyBlocked(chatPubkey))) {
+      logInboundEvent('drop', {
+        reason: 'blocked-pubkey',
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
           relayUrls: wrappedRelayUrls,
           recipients,
         }),

@@ -39,6 +39,8 @@ export interface ContactMetadata {
   relay_list_event_created_at?: number;
   private_contact_list_member?: boolean;
   muted?: boolean;
+  blocked?: boolean;
+  blocked_at?: string;
   group_private_key_encrypted?: string;
   owner_public_key?: string;
   group_members?: ContactGroupMember[];

@@ -81,6 +81,7 @@ function createDeps() {
     getLoggedInPublicKeyHex: vi.fn(() => null),
     groupContactRefreshPromises: new Map<string, Promise<ContactRecord | null>>(),
     isContactListedInPrivateContactList: vi.fn(() => false),
+    isPubkeyBlocked: vi.fn(() => false),
     markContactProfileEventApplied: vi.fn(),
     markContactRelayListEventApplied: vi.fn(),
     ndk: {

@@ -10,6 +10,7 @@ import NDK, {
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import type { MuteListContent } from 'src/stores/nostr/muteListRuntime';
 import { isPlainRecord } from 'src/stores/nostr/shared';
 import type {
   ContactProfileEventState,
@@ -35,6 +36,7 @@ interface ContactRelayRuntimeDeps {
   ensureRelayConnections: (relayUrls: string[]) => Promise<void>;
   getLoggedInPublicKeyHex: () => string | null;
   getLoggedInSignerUser: () => Promise<NDKUser>;
+  isPubkeyBlocked: (pubkeyHex: string) => boolean;
   markContactRelayListEventApplied: (
     pubkeyHex: string,
     eventState: ContactRelayListEventState
@@ -72,6 +74,7 @@ export function createContactRelayRuntime({
   ensureRelayConnections,
   getLoggedInPublicKeyHex,
   getLoggedInSignerUser,
+  isPubkeyBlocked,
   markContactRelayListEventApplied,
   ndk,
   normalizeRelayStatusUrls,
@@ -101,6 +104,13 @@ export function createContactRelayRuntime({
 
     await contactsService.init();
     const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
+    if (isPubkeyBlocked(normalizedPubkey) || existingContact?.meta.blocked === true) {
+      return {
+        eventState: null,
+        profile: null,
+      };
+    }
+
     const relayUrls = await resolveContactProfileReadRelayUrls(normalizedPubkey, {
       relayEntries: options.relayEntries,
       onlyExplicitRelayEntries: options.onlyExplicitRelayEntries,
@@ -159,6 +169,10 @@ export function createContactRelayRuntime({
 
     await contactsService.init();
     const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
+    if (isPubkeyBlocked(normalizedPubkey) || existingContact?.meta.blocked === true) {
+      return null;
+    }
+
     const relayUrls = await resolveContactRelayListReadRelayUrls(normalizedPubkey, seedRelayUrls);
     if (relayUrls.length === 0) {
       return null;
@@ -306,6 +320,10 @@ export function createContactRelayRuntime({
     for (const contact of await contactsService.listContacts()) {
       const normalizedPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
       if (!normalizedPubkey || normalizedPubkey === loggedInPubkeyHex) {
+        continue;
+      }
+
+      if (isPubkeyBlocked(normalizedPubkey) || contact.meta.blocked === true) {
         continue;
       }
 
@@ -462,22 +480,38 @@ export function createContactRelayRuntime({
     return resolveLoggedInPublishRelayUrls(seedRelayUrls);
   }
 
-  function buildPrivateContactListTags(pubkeys: string[]): string[][] {
+  function normalizeUniquePubkeys(pubkeys: string[]): string[] {
     return pubkeys
       .map((pubkey) => inputSanitizerService.normalizeHexKey(pubkey))
       .filter((pubkey): pubkey is string => Boolean(pubkey))
-      .filter((pubkey, index, list) => list.indexOf(pubkey) === index)
-      .map((pubkey) => ['p', pubkey]);
+      .filter((pubkey, index, list) => list.indexOf(pubkey) === index);
   }
 
-  function parsePrivateContactListPubkeys(value: unknown): string[] {
+  function buildPrivateContactListTags(pubkeys: string[]): string[][] {
+    return normalizeUniquePubkeys(pubkeys).map((pubkey) => ['p', pubkey]);
+  }
+
+  function buildMuteListTags(mutedPubkeys: string[], blockedPubkeys: string[]): string[][] {
+    const normalizedBlockedPubkeys = normalizeUniquePubkeys(blockedPubkeys);
+    const blockedPubkeySet = new Set(normalizedBlockedPubkeys);
+    const normalizedMutedPubkeys = normalizeUniquePubkeys(mutedPubkeys).filter(
+      (pubkey) => !blockedPubkeySet.has(pubkey)
+    );
+
+    return [
+      ...normalizedMutedPubkeys.map((pubkey) => ['p', pubkey]),
+      ...normalizedBlockedPubkeys.map((pubkey) => ['bp', pubkey]),
+    ];
+  }
+
+  function parsePrivateContactListPubkeysByTag(value: unknown, tagName: 'p' | 'bp'): string[] {
     if (!Array.isArray(value)) {
       return [];
     }
 
     const pubkeys = value
       .map((entry) => {
-        if (!Array.isArray(entry) || entry[0] !== 'p') {
+        if (!Array.isArray(entry) || entry[0] !== tagName) {
           return null;
         }
 
@@ -488,6 +522,10 @@ export function createContactRelayRuntime({
     return pubkeys.filter((pubkey, index, list) => list.indexOf(pubkey) === index);
   }
 
+  function parsePrivateContactListPubkeys(value: unknown): string[] {
+    return parsePrivateContactListPubkeysByTag(value, 'p');
+  }
+
   async function encryptPrivateContactListTags(tags: string[][]): Promise<string> {
     const user = await getLoggedInSignerUser();
     ndk.assertSigner();
@@ -495,7 +533,7 @@ export function createContactRelayRuntime({
     return ndk.signer.encrypt(user, JSON.stringify(tags), 'nip44');
   }
 
-  async function decryptPrivateContactListContent(content: string): Promise<string[]> {
+  async function decryptPrivateContactListJson(content: string): Promise<unknown> {
     const normalizedContent = content.trim();
     if (!normalizedContent) {
       return [];
@@ -513,7 +551,20 @@ export function createContactRelayRuntime({
       return [];
     }
 
+    return parsed;
+  }
+
+  async function decryptPrivateContactListContent(content: string): Promise<string[]> {
+    const parsed = await decryptPrivateContactListJson(content);
     return parsePrivateContactListPubkeys(parsed);
+  }
+
+  async function decryptMuteListContent(content: string): Promise<MuteListContent> {
+    const parsed = await decryptPrivateContactListJson(content);
+    return {
+      mutedPubkeys: parsePrivateContactListPubkeysByTag(parsed, 'p'),
+      blockedPubkeys: parsePrivateContactListPubkeysByTag(parsed, 'bp'),
+    };
   }
 
   function parseContactProfileEvent(event: Pick<NDKEvent, 'content'>): NDKUserProfile | null {
@@ -577,7 +628,9 @@ export function createContactRelayRuntime({
   return {
     buildContactProfileEventState,
     buildContactRelayListEventState,
+    buildMuteListTags,
     buildPrivateContactListTags,
+    decryptMuteListContent,
     decryptPrivateContactListContent,
     encryptPrivateContactListTags,
     extractContactProfileEventStateFromProfile,

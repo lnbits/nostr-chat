@@ -11,6 +11,8 @@ describe('inputSanitizerService', () => {
         picture: '   ',
         private_contact_list_member: true,
         muted: true,
+        blocked: true,
+        blocked_at: ' 2026-06-03T00:00:00.000Z ',
         owner_public_key: 'A'.repeat(64),
         group_private_key_encrypted: ' encrypted-secret ',
         group_members: [
@@ -36,6 +38,8 @@ describe('inputSanitizerService', () => {
       about: 'Launch squad',
       private_contact_list_member: true,
       muted: true,
+      blocked: true,
+      blocked_at: '2026-06-03T00:00:00.000Z',
       owner_public_key: 'a'.repeat(64),
       group_private_key_encrypted: 'encrypted-secret',
       group_members: [

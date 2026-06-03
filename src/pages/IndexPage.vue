@@ -992,8 +992,13 @@ async function handleDeleteChat(chatId: string): Promise<void> {
 
 async function handleBlockChat(chatId: string): Promise<void> {
   try {
+    const chat = findChatById(chatId);
     const isActiveChat = activeChatId.value === chatId;
-    await chatStore.blockChat(chatId);
+    const relayStore = await getRelayStore();
+    await nostrStore.blockPubkey(chatId, relayStore.relays, {
+      fallbackName: chat?.name ?? '',
+      type: chat?.type ?? 'user'
+    });
 
     if (isActiveChat) {
       if (!isMobile.value) {
