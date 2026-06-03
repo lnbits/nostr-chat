@@ -72,6 +72,7 @@ function createDeps() {
       ensureRelayConnections: vi.fn().mockResolvedValue(undefined),
       getLoggedInPublicKeyHex: vi.fn(() => null),
       getLoggedInSignerUser: vi.fn().mockResolvedValue({}),
+      isPubkeyBlocked: vi.fn(() => false),
       markContactRelayListEventApplied: vi.fn(),
       ndk: ndk as never,
       normalizeRelayStatusUrls: vi.fn((relayUrls: string[]) => Array.from(new Set(relayUrls))),
@@ -309,5 +310,22 @@ describe('contactRelayRuntime', () => {
       createdAt: 500,
       eventId: RELAY_EVENT_ID,
     });
+  });
+
+  it('builds private mute list tags with encrypted p and bp entries', () => {
+    const { deps } = createDeps();
+    const runtime = createContactRelayRuntime(deps);
+    const mutedPubkey = 'd'.repeat(64);
+    const blockedPubkey = 'e'.repeat(64);
+
+    expect(
+      runtime.buildMuteListTags(
+        [mutedPubkey, blockedPubkey, mutedPubkey],
+        [blockedPubkey, blockedPubkey]
+      )
+    ).toEqual([
+      ['p', mutedPubkey],
+      ['bp', blockedPubkey],
+    ]);
   });
 });

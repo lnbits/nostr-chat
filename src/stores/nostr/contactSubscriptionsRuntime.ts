@@ -69,6 +69,7 @@ interface ContactSubscriptionsRuntimeDeps {
   getFilterSince: () => number;
   getLoggedInPublicKeyHex: () => string | null;
   getLoggedInSignerUser: () => Promise<NDKUser>;
+  isPubkeyBlocked: (pubkeyHex: string) => boolean;
   listTrackedContactPubkeys: () => Promise<string[]>;
   logSubscription: (label: string, stage: string, details?: Record<string, unknown>) => void;
   markContactProfileEventApplied: (
@@ -131,6 +132,7 @@ export function createContactSubscriptionsRuntime({
   getFilterSince,
   getLoggedInPublicKeyHex,
   getLoggedInSignerUser,
+  isPubkeyBlocked,
   listTrackedContactPubkeys,
   logSubscription,
   markContactProfileEventApplied,
@@ -165,6 +167,10 @@ export function createContactSubscriptionsRuntime({
       return;
     }
 
+    if (isPubkeyBlocked(normalizedPubkey)) {
+      return;
+    }
+
     const nextProfile = parseContactProfileEvent(event);
     if (!nextProfile) {
       return;
@@ -175,6 +181,9 @@ export function createContactSubscriptionsRuntime({
     const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
     if (!existingContact) {
       markContactProfileEventApplied(normalizedPubkey, nextEventState);
+      return;
+    }
+    if (existingContact.meta.blocked === true) {
       return;
     }
 
@@ -236,6 +245,10 @@ export function createContactSubscriptionsRuntime({
       return;
     }
 
+    if (isPubkeyBlocked(normalizedPubkey)) {
+      return;
+    }
+
     const nextEventState = buildContactRelayListEventState(event);
     const relayList = NDKRelayList.from(event);
     const nextRelayEntries = relayEntriesFromRelayList(relayList);
@@ -244,6 +257,9 @@ export function createContactSubscriptionsRuntime({
     const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
     if (!existingContact) {
       markContactRelayListEventApplied(normalizedPubkey, nextEventState);
+      return;
+    }
+    if (existingContact.meta.blocked === true) {
       return;
     }
 

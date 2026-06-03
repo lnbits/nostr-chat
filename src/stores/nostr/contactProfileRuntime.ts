@@ -76,6 +76,7 @@ interface ContactProfileRuntimeDeps {
   getLoggedInPublicKeyHex: () => string | null;
   groupContactRefreshPromises: Map<string, Promise<ContactRecord | null>>;
   isContactListedInPrivateContactList: (contact: ContactRecord | null | undefined) => boolean;
+  isPubkeyBlocked: (pubkeyHex: string) => boolean;
   markContactProfileEventApplied: (pubkeyHex: string, eventState: ContactProfileEventState) => void;
   markContactRelayListEventApplied: (
     pubkeyHex: string,
@@ -115,6 +116,7 @@ export function createContactProfileRuntime({
   getLoggedInPublicKeyHex,
   groupContactRefreshPromises,
   isContactListedInPrivateContactList,
+  isPubkeyBlocked,
   markContactProfileEventApplied,
   markContactRelayListEventApplied,
   ndk,
@@ -159,6 +161,10 @@ export function createContactProfileRuntime({
 
     await contactsService.init();
     const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
+    if (isPubkeyBlocked(normalizedTargetPubkey) || existingContact?.meta.blocked === true) {
+      return;
+    }
+
     const identifiers = buildIdentifierFallbacks(normalizedTargetPubkey, existingContact?.meta);
     const resolvedUser = await resolveUserByIdentifiers(identifiers, normalizedTargetPubkey);
     if (!resolvedUser && !existingContact) {

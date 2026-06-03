@@ -236,6 +236,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   };
   let resetGroupRosterSubscriptionRuntimeState = (_reason = 'replace'): void => {};
   let resetMuteListRuntimeStateRuntime: () => void = () => {};
+  let isPubkeyBlockedRuntime: (pubkey: string) => boolean = () => false;
   let _ensurePrivateMessagesWatchdogRuntime: () => void = () => {};
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
@@ -364,10 +365,32 @@ export const useNostrStore = defineStore('nostrStore', () => {
     pruneTrackedContactProfileEventState,
     pruneTrackedContactRelayListEventState,
     resetTrackedContactEventState,
-    shouldApplyContactProfileEvent,
-    shouldApplyContactRelayListEvent,
+    shouldApplyContactProfileEvent: shouldApplyTrackedContactProfileEvent,
+    shouldApplyContactRelayListEvent: shouldApplyTrackedContactRelayListEvent,
     shouldApplyPrivateContactListEvent,
   } = createTrackedContactStateRuntime();
+
+  function shouldApplyContactProfileEvent(
+    event: Pick<NDKEvent, 'created_at' | 'id' | 'pubkey'>
+  ): boolean {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
+    if (!normalizedPubkey || isPubkeyBlockedRuntime(normalizedPubkey)) {
+      return false;
+    }
+
+    return shouldApplyTrackedContactProfileEvent(event);
+  }
+
+  function shouldApplyContactRelayListEvent(
+    event: Pick<NDKEvent, 'created_at' | 'id' | 'pubkey'>
+  ): boolean {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
+    if (!normalizedPubkey || isPubkeyBlockedRuntime(normalizedPubkey)) {
+      return false;
+    }
+
+    return shouldApplyTrackedContactRelayListEvent(event);
+  }
   const {
     beginStartupInternalTask,
     beginStartupStep,
@@ -998,7 +1021,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return getOrCreateSignerRuntime();
   }
   const {
+    buildMuteListTags,
     buildPrivateContactListTags,
+    decryptMuteListContent,
     decryptPrivateContactListContent,
     encryptPrivateContactListTags,
     fetchContactProfile,
@@ -1025,6 +1050,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensureRelayConnections,
     getLoggedInPublicKeyHex,
     getLoggedInSignerUser,
+    isPubkeyBlocked: (pubkeyHex) => isPubkeyBlockedRuntime(pubkeyHex),
     markContactRelayListEventApplied,
     ndk,
     normalizeRelayStatusUrls,
@@ -1251,6 +1277,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     formatSubscriptionLogValue,
     getPrivateMessagesRestoreThrottleMs: () => privateMessagesRestoreThrottleMs,
     isContactListedInPrivateContactList,
+    isPubkeyBlocked: (pubkeyHex) => isPubkeyBlockedRuntime(pubkeyHex),
     lastSeenReceivedActivityAtMetaKey: LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
     logConflictingIncomingEpochNumber,
     logDeveloperTrace,
@@ -1439,6 +1466,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getFilterSince,
     getLoggedInPublicKeyHex,
     getLoggedInSignerUser,
+    isPubkeyBlocked: (pubkeyHex) => isPubkeyBlockedRuntime(pubkeyHex),
     listTrackedContactPubkeys,
     logSubscription,
     markContactProfileEventApplied,
@@ -1508,26 +1536,33 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStartupStep,
   });
 
-  const { isPubkeyMuted, resetMuteListRuntimeState, restoreMuteList, setPubkeyMuted } =
-    createMuteListRuntime({
-      beginStartupStep,
-      buildMuteListTags: buildPrivateContactListTags,
-      bumpContactListVersion,
-      chatStore,
-      completeStartupStep,
-      decryptMuteListContent: decryptPrivateContactListContent,
-      encryptMuteListTags: encryptPrivateContactListTags,
-      ensureRelayConnections,
-      failStartupStep,
-      getLoggedInPublicKeyHex,
-      getLoggedInSignerUser,
-      ndk,
-      resolveLoggedInPublishRelayUrls,
-      resolveLoggedInReadRelayUrls,
-      updateStartupInternalTask,
-      updateStoredEventSinceFromCreatedAt,
-    });
+  const {
+    isPubkeyBlocked,
+    isPubkeyMuted,
+    resetMuteListRuntimeState,
+    restoreMuteList,
+    setPubkeyBlocked,
+    setPubkeyMuted,
+  } = createMuteListRuntime({
+    beginStartupStep,
+    buildMuteListTags,
+    bumpContactListVersion,
+    chatStore,
+    completeStartupStep,
+    decryptMuteListContent,
+    encryptMuteListTags: encryptPrivateContactListTags,
+    ensureRelayConnections,
+    failStartupStep,
+    getLoggedInPublicKeyHex,
+    getLoggedInSignerUser,
+    ndk,
+    resolveLoggedInPublishRelayUrls,
+    resolveLoggedInReadRelayUrls,
+    updateStartupInternalTask,
+    updateStoredEventSinceFromCreatedAt,
+  });
   resetMuteListRuntimeStateRuntime = resetMuteListRuntimeState;
+  isPubkeyBlockedRuntime = isPubkeyBlocked;
 
   const {
     ensureContactStoredAsGroup,
@@ -1554,6 +1589,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     groupContactRefreshPromises,
     isContactListedInPrivateContactList,
+    isPubkeyBlocked: (pubkeyHex) => isPubkeyBlockedRuntime(pubkeyHex),
     markContactProfileEventApplied,
     markContactRelayListEventApplied,
     ndk,
@@ -2091,6 +2127,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     loginWithRemoteSignerBunker: loginWithRemoteSignerBunkerImpl,
     logout: logoutImpl,
     publishPrivateContactList,
+    blockPubkey: (
+      pubkey: string,
+      seedRelayUrls?: string[],
+      options?: { fallbackName?: string; type?: 'user' | 'group' }
+    ) => setPubkeyBlocked(pubkey, true, seedRelayUrls, options),
+    isPubkeyBlocked,
     isPubkeyMuted,
     mutePubkey: (pubkey: string, seedRelayUrls?: string[]) =>
       setPubkeyMuted(pubkey, true, seedRelayUrls),
@@ -2140,6 +2182,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     signHttpAuthHeader,
     sendDirectMessageDeletion,
     sendDirectMessageReaction,
+    unblockPubkey: (
+      pubkey: string,
+      seedRelayUrls?: string[],
+      options?: { fallbackName?: string; type?: 'user' | 'group' }
+    ) => setPubkeyBlocked(pubkey, false, seedRelayUrls, options),
     unmutePubkey: (pubkey: string, seedRelayUrls?: string[]) =>
       setPubkeyMuted(pubkey, false, seedRelayUrls),
     savePrivateKey,

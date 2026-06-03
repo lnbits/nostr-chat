@@ -336,6 +336,8 @@ class InputSanitizerService {
         ? value.private_contact_list_member
         : null;
     const muted = typeof value.muted === 'boolean' ? value.muted : null;
+    const blocked = typeof value.blocked === 'boolean' ? value.blocked : null;
+    const blockedAt = this.readOptionalString(value.blocked_at);
     const groupPrivateKeyEncrypted = this.readOptionalString(value.group_private_key_encrypted);
     const ownerPublicKey = this.normalizeHexKey(
       typeof value.owner_public_key === 'string' ? value.owner_public_key : ''
@@ -429,6 +431,14 @@ class InputSanitizerService {
 
     if (typeof muted === 'boolean') {
       meta.muted = muted;
+    }
+
+    if (typeof blocked === 'boolean') {
+      meta.blocked = blocked;
+    }
+
+    if (blockedAt) {
+      meta.blocked_at = blockedAt;
     }
 
     if (groupPrivateKeyEncrypted) {

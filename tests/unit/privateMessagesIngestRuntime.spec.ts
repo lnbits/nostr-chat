@@ -124,6 +124,7 @@ function createDeps() {
     isContactListedInPrivateContactList: vi.fn(
       (contact) => contact?.meta?.private_contact_list_member === true
     ),
+    isPubkeyBlocked: vi.fn((_pubkeyHex: string) => false),
     lastSeenReceivedActivityAtMetaKey: 'last_seen_received_activity_at',
     logConflictingIncomingEpochNumber: vi.fn(),
     logDeveloperTrace: vi.fn(),
@@ -262,6 +263,35 @@ describe('privateMessagesIngestRuntime', () => {
       reloadChats: true,
       reloadMessages: true,
     });
+  });
+
+  it('drops inbound events from blocked pubkeys before persistence', async () => {
+    const deps = createDeps();
+    deps.isPubkeyBlocked.mockImplementation((pubkeyHex: string) => pubkeyHex === 'a'.repeat(64));
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: 'a'.repeat(64),
+      content: 'Blocked message',
+    });
+
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.logInboundEvent).toHaveBeenCalledWith(
+      'drop',
+      expect.objectContaining({
+        reason: 'blocked-pubkey',
+      })
+    );
+    expect(deps.toStoredNostrEvent).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.init).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+    expect(serviceMocks.nostrEventDataService.upsertEvent).not.toHaveBeenCalled();
   });
 
   it('updates the preview when an incoming message shares the current preview second', async () => {
@@ -952,10 +982,9 @@ describe('privateMessagesIngestRuntime', () => {
     );
   });
 
-  it('persists blocked incoming messages with zero unread count and no browser notification', async () => {
+  it('drops locally blocked incoming messages without persistence or browser notification', async () => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);
-    const createdAt = '2023-11-14T22:13:20.000Z';
     const rumorEvent = makeRumorEvent({
       recipientPubkey: 'b'.repeat(64),
       senderPubkey: 'a'.repeat(64),
@@ -977,32 +1006,25 @@ describe('privateMessagesIngestRuntime', () => {
         inbox_state: 'blocked',
       },
     });
-    serviceMocks.chatDataService.createMessage.mockResolvedValue({
-      id: 55,
-      chat_public_key: 'a'.repeat(64),
-      author_public_key: 'a'.repeat(64),
-      created_at: createdAt,
-      event_id: 'rumor-event',
-      meta: {},
-    });
 
     runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
       uiThrottleMs: 25,
     });
     await runtime.getPrivateMessagesIngestQueue();
 
-    expect(serviceMocks.chatDataService.updateChatPreview).toHaveBeenCalledWith(
-      'a'.repeat(64),
-      'Blocked hello',
-      createdAt,
-      0
+    expect(deps.logInboundEvent).toHaveBeenCalledWith(
+      'drop',
+      expect.objectContaining({
+        reason: 'blocked-pubkey',
+      })
     );
+    expect(serviceMocks.chatDataService.createChat).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.updateChatPreview).not.toHaveBeenCalled();
+    expect(serviceMocks.nostrEventDataService.upsertEvent).not.toHaveBeenCalled();
+    expect(deps.toStoredNostrEvent).not.toHaveBeenCalled();
     expect(deps.showIncomingMessageBrowserNotification).not.toHaveBeenCalled();
-    expect(deps.queuePrivateMessagesUiRefresh).toHaveBeenCalledWith({
-      throttleMs: 25,
-      reloadChats: true,
-      reloadMessages: true,
-    });
+    expect(deps.queuePrivateMessagesUiRefresh).not.toHaveBeenCalled();
   });
 
   it('drops replayed request messages at or before the cleared request boundary', async () => {
