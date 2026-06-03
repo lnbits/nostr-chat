@@ -540,6 +540,7 @@
   "relays.relayUrl": "Relay URL",
   "relays.relayUrlMustInclude": "Relay URL must include a hostname",
   "relays.restoreDefaultRelays": "Restore Default Relays",
+  "relays.retryFailed": "Retry Failed",
   "relays.savedFailed": "Saved to {savedRelays}. Failed on {failedRelays}.",
   "relays.sendViaAppRelays": "Send via App Relays",
   "relays.stayHereAppChecks": "Stay here while the app checks your relays",

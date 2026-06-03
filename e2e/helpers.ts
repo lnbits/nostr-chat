@@ -1368,8 +1368,13 @@ export async function expectPublishedMessageRelayStatus(page: Page, text: string
 }
 
 export async function openMessageRelayStatusDialog(page: Page, text: string): Promise<void> {
+  const statusDialogTitle = page.getByText('Relay Status', { exact: true });
+  if (await statusDialogTitle.isVisible().catch(() => false)) {
+    return;
+  }
+
   await threadMessage(page, text).locator('.bubble__status-hitbox').click();
-  await expect(page.getByText('Relay Status', { exact: true })).toBeVisible({
+  await expect(statusDialogTitle).toBeVisible({
     timeout: 12_000,
   });
 }

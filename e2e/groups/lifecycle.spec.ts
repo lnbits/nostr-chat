@@ -5,14 +5,18 @@ import {
   bootstrapUser,
   createGroup,
   disposeUsers,
+  E2E_DUAL_RELAY_URLS,
   E2E_RELAY_URL,
+  E2E_RELAY_URL_TWO,
   expectNoUnexpectedBrowserErrors,
   navigateToChat,
   openRequests,
+  pauseRelayService,
   reloadAndWaitForApp,
   sendMessage,
   TEST_ACCOUNTS,
   threadMessage,
+  unpauseRelayService,
   waitForThreadMessage,
 } from '../helpers';
 
@@ -21,8 +25,12 @@ test.describe.configure({ mode: 'serial' });
 test('group owner can create a group, invite a member, and exchange messages both ways', async ({
   browser,
 }) => {
-  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupAlice);
-  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupBob);
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupAlice, {
+    relayUrls: E2E_DUAL_RELAY_URLS,
+  });
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupBob, {
+    relayUrls: [E2E_RELAY_URL],
+  });
 
   try {
     const groupName = `Group ${Date.now()}`;
@@ -35,6 +43,7 @@ test('group owner can create a group, invite a member, and exchange messages bot
       about: groupAbout,
     });
 
+    await pauseRelayService('relay-two');
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
     const invitedMemberRow = alice.page
       .locator('.profile-members-list .q-item')
@@ -50,6 +59,24 @@ test('group owner can create a group, invite a member, and exchange messages bot
         hasText: E2E_RELAY_URL,
       })
     ).toBeVisible();
+    const failedTicketRelayRow = alice.page
+      .locator('.profile-member-delivery__dialog-item')
+      .filter({ hasText: E2E_RELAY_URL_TWO });
+    await expect(
+      failedTicketRelayRow.getByRole('button', { name: 'Retry', exact: true }).first()
+    ).toBeVisible({
+      timeout: 12_000,
+    });
+    const retryAllButton = alice.page.getByTestId('group-member-ticket-retry-all-button');
+    await expect(retryAllButton).toBeVisible();
+
+    await unpauseRelayService('relay-two');
+    await retryAllButton.click();
+    await expect(
+      failedTicketRelayRow.getByRole('button', { name: 'Retry', exact: true })
+    ).toHaveCount(0, {
+      timeout: 12_000,
+    });
     await alice.page.keyboard.press('Escape');
 
     await openRequests(bob.page);
@@ -75,8 +102,11 @@ test('group owner can create a group, invite a member, and exchange messages bot
       .getByTestId('thread-author-profile-link')
       .click();
     await alice.page.waitForURL(new RegExp(`#\\/contacts\\/${bob.session.publicKey}$`));
-    await expectNoUnexpectedBrowserErrors([alice, bob]);
+    await expectNoUnexpectedBrowserErrors([alice, bob], {
+      allowPatterns: [/127\.0\.0\.1:7001/i, /relay-two/i, /websocket/i],
+    });
   } finally {
+    await unpauseRelayService('relay-two').catch(() => undefined);
     await disposeUsers(alice, bob);
   }
 });

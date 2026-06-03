@@ -267,6 +267,24 @@
             {{ section.emptyLabel }}
           </li>
         </ul>
+        <div
+          v-if="section.key === 'recipient' && retryableStatusItems.length > 0"
+          class="bubble__status-actions"
+        >
+          <q-btn
+            flat
+            dense
+            no-caps
+            icon="refresh"
+            color="primary"
+            :label="$t('relays.retryFailed')"
+            class="bubble__status-retry-all"
+            data-testid="relay-status-retry-all-button"
+            :loading="isRetryingFailedRelays"
+            :disable="isRetryingFailedRelays || retryableStatusItems.length === 0"
+            @click.stop="retryFailedRelays"
+          />
+        </div>
       </div>
     </template>
   </AppDialog>
@@ -491,6 +509,7 @@ const {
   message: toRef(props, 'message')
 });
 const retryingRelayKeys = ref<string[]>([]);
+const isRetryingFailedRelays = ref(false);
 const replyPreview = computed(() => {
   const candidate = props.message.meta.reply;
   return isMessageReplyPreview(candidate) ? candidate : null;
@@ -850,6 +869,12 @@ function isRetrying(item: StatusListItem): boolean {
   return retryingRelayKeys.value.includes(item.key);
 }
 
+const retryableStatusItems = computed(() =>
+  statusSections.value
+    .flatMap((section) => section.items)
+    .filter((item) => item.retryable && isRetryableStatusScope(item.scope))
+);
+
 async function retryRelay(item: StatusListItem): Promise<void> {
   const messageId = Number.parseInt(props.message.id, 10);
   if (
@@ -869,6 +894,24 @@ async function retryRelay(item: StatusListItem): Promise<void> {
     reportUiError('Failed to retry direct message relay publish', error, t('errors.failedRetryRelay'));
   } finally {
     retryingRelayKeys.value = retryingRelayKeys.value.filter((key) => key !== item.key);
+  }
+}
+
+async function retryFailedRelays(): Promise<void> {
+  if (isRetryingFailedRelays.value) {
+    return;
+  }
+
+  const retryItems = retryableStatusItems.value.filter((item) => !isRetrying(item));
+  if (retryItems.length === 0) {
+    return;
+  }
+
+  isRetryingFailedRelays.value = true;
+  try {
+    await Promise.all(retryItems.map((item) => retryRelay(item)));
+  } finally {
+    isRetryingFailedRelays.value = false;
   }
 }
 
@@ -1603,6 +1646,16 @@ onBeforeUnmount(() => {
   min-width: 0;
   color: var(--nc-text-secondary);
   word-break: break-word;
+}
+
+.bubble__status-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.bubble__status-retry-all {
+  min-height: 28px;
 }
 
 .bubble__status-retry {

@@ -104,9 +104,11 @@ test('pending outbound message survives reload and auto-replays after relay reco
     ).toBeVisible({
       timeout: 12_000,
     });
-    await closeDialogWithEscape(alice.page);
+    const retryAllButton = alice.page.getByTestId('relay-status-retry-all-button');
+    await expect(retryAllButton).toBeVisible();
 
     await unpauseRelayService('relay-two');
+    await retryAllButton.click();
     await waitForMessageRelayRetryToResolve(alice.page, pendingMessage, E2E_RELAY_URL_TWO);
     await closeDialogWithEscape(alice.page);
     await waitForThreadMessage(alice.page, pendingMessage, {

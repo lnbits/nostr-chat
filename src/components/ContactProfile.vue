@@ -927,43 +927,66 @@
       >
         {{ $t('relays.relayStatusRecordedYet') }}
       </div>
-      <ul v-else class="profile-member-delivery__dialog-list">
-        <li
-          v-for="item in selectedGroupMemberTicketStatusItems"
-          :key="item.key"
-          class="profile-member-delivery__dialog-item"
-        >
-          <span class="profile-member-delivery__dialog-item-main">
-            <span
-              class="profile-member-delivery__status-dot"
-              :class="item.dotClass"
-              aria-hidden="true"
-            />
-            <span class="profile-member-delivery__dialog-copy">
-              <span class="profile-member-delivery__dialog-relay">{{ item.relayUrl }}</span>
+      <template v-else>
+        <ul class="profile-member-delivery__dialog-list">
+          <li
+            v-for="item in selectedGroupMemberTicketStatusItems"
+            :key="item.key"
+            class="profile-member-delivery__dialog-item"
+          >
+            <span class="profile-member-delivery__dialog-item-main">
               <span
-                v-if="item.detail"
-                class="profile-member-delivery__dialog-detail"
-              >
-                {{ item.detail }}
+                class="profile-member-delivery__status-dot"
+                :class="item.dotClass"
+                aria-hidden="true"
+              />
+              <span class="profile-member-delivery__dialog-copy">
+                <span class="profile-member-delivery__dialog-relay">{{ item.relayUrl }}</span>
+                <span
+                  v-if="item.detail"
+                  class="profile-member-delivery__dialog-detail"
+                >
+                  {{ item.detail }}
+                </span>
               </span>
             </span>
-          </span>
+            <q-btn
+              v-if="item.retryable"
+              flat
+              dense
+              no-caps
+              size="sm"
+              color="primary"
+              :label="$t('common.retry')"
+              class="profile-member-delivery__dialog-retry"
+              :loading="isRetryingGroupMemberTicketRelay(item)"
+              :disable="isRetryingGroupMemberTicketRelay(item)"
+              @click="retrySelectedGroupMemberTicketRelay(item)"
+            />
+          </li>
+        </ul>
+        <div
+          v-if="selectedGroupMemberTicketRetryableItems.length > 0"
+          class="profile-member-delivery__dialog-actions"
+        >
           <q-btn
-            v-if="item.retryable"
             flat
             dense
             no-caps
-            size="sm"
+            icon="refresh"
             color="primary"
-            :label="$t('common.retry')"
-            class="profile-member-delivery__dialog-retry"
-            :loading="isRetryingGroupMemberTicketRelay(item)"
-            :disable="isRetryingGroupMemberTicketRelay(item)"
-            @click="retrySelectedGroupMemberTicketRelay(item)"
+            :label="$t('relays.retryFailed')"
+            class="profile-member-delivery__dialog-retry-all"
+            data-testid="group-member-ticket-retry-all-button"
+            :loading="isRetryingGroupMemberTicketFailedRelays"
+            :disable="
+              isRetryingGroupMemberTicketFailedRelays ||
+              selectedGroupMemberTicketRetryableItems.length === 0
+            "
+            @click="retrySelectedGroupMemberTicketFailedRelays"
           />
-        </li>
-      </ul>
+        </div>
+      </template>
     </AppDialog>
   </div>
 </template>
@@ -1098,6 +1121,7 @@ const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 const groupMemberTicketEventsById = ref<Record<string, NostrEventEntry | null>>({});
 const selectedGroupMemberTicketStatus = ref<SelectedGroupMemberTicketStatus | null>(null);
 const retryingGroupMemberTicketRelayKeys = ref<string[]>([]);
+const isRetryingGroupMemberTicketFailedRelays = ref(false);
 const {
   isRelayConnected,
   isRelayInfoLoading,
@@ -1323,6 +1347,9 @@ const selectedGroupMemberTicketRelayStatuses = computed(() => {
 });
 const selectedGroupMemberTicketStatusItems = computed<GroupMemberTicketStatusListItem[]>(() => {
   return buildGroupMemberTicketStatusItems(selectedGroupMemberTicketRelayStatuses.value);
+});
+const selectedGroupMemberTicketRetryableItems = computed(() => {
+  return selectedGroupMemberTicketStatusItems.value.filter((item) => item.retryable);
 });
 const selectedGroupMemberTicketStatusTitle = computed(() => {
   const selectedStatus = selectedGroupMemberTicketStatus.value;
@@ -1783,6 +1810,28 @@ async function retrySelectedGroupMemberTicketRelay(
   } finally {
     retryingGroupMemberTicketRelayKeys.value =
       retryingGroupMemberTicketRelayKeys.value.filter((key) => key !== retryKey);
+  }
+}
+
+async function retrySelectedGroupMemberTicketFailedRelays(): Promise<void> {
+  if (isRetryingGroupMemberTicketFailedRelays.value) {
+    return;
+  }
+
+  const retryItems = selectedGroupMemberTicketRetryableItems.value.filter(
+    (item) => !isRetryingGroupMemberTicketRelay(item)
+  );
+  if (retryItems.length === 0) {
+    return;
+  }
+
+  isRetryingGroupMemberTicketFailedRelays.value = true;
+  try {
+    await Promise.all(
+      retryItems.map((item) => retrySelectedGroupMemberTicketRelay(item))
+    );
+  } finally {
+    isRetryingGroupMemberTicketFailedRelays.value = false;
   }
 }
 
@@ -3273,6 +3322,12 @@ body.body--dark .profile-header__action {
   gap: 12px;
 }
 
+.profile-member-delivery__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .profile-member-delivery__dialog-item-main {
   display: inline-flex;
   align-items: flex-start;
@@ -3321,6 +3376,11 @@ body.body--dark .profile-header__action {
 
 .profile-member-delivery__dialog-retry {
   flex-shrink: 0;
+}
+
+.profile-member-delivery__dialog-retry-all {
+  flex-shrink: 0;
+  min-height: 28px;
 }
 
 .profile-members-list__actions {
