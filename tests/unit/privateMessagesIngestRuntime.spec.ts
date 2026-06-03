@@ -982,10 +982,9 @@ describe('privateMessagesIngestRuntime', () => {
     );
   });
 
-  it('persists blocked incoming messages with zero unread count and no browser notification', async () => {
+  it('drops locally blocked incoming messages without persistence or browser notification', async () => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);
-    const createdAt = '2023-11-14T22:13:20.000Z';
     const rumorEvent = makeRumorEvent({
       recipientPubkey: 'b'.repeat(64),
       senderPubkey: 'a'.repeat(64),
@@ -1007,32 +1006,25 @@ describe('privateMessagesIngestRuntime', () => {
         inbox_state: 'blocked',
       },
     });
-    serviceMocks.chatDataService.createMessage.mockResolvedValue({
-      id: 55,
-      chat_public_key: 'a'.repeat(64),
-      author_public_key: 'a'.repeat(64),
-      created_at: createdAt,
-      event_id: 'rumor-event',
-      meta: {},
-    });
 
     runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
       uiThrottleMs: 25,
     });
     await runtime.getPrivateMessagesIngestQueue();
 
-    expect(serviceMocks.chatDataService.updateChatPreview).toHaveBeenCalledWith(
-      'a'.repeat(64),
-      'Blocked hello',
-      createdAt,
-      0
+    expect(deps.logInboundEvent).toHaveBeenCalledWith(
+      'drop',
+      expect.objectContaining({
+        reason: 'blocked-pubkey',
+      })
     );
+    expect(serviceMocks.chatDataService.createChat).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.updateChatPreview).not.toHaveBeenCalled();
+    expect(serviceMocks.nostrEventDataService.upsertEvent).not.toHaveBeenCalled();
+    expect(deps.toStoredNostrEvent).not.toHaveBeenCalled();
     expect(deps.showIncomingMessageBrowserNotification).not.toHaveBeenCalled();
-    expect(deps.queuePrivateMessagesUiRefresh).toHaveBeenCalledWith({
-      throttleMs: 25,
-      reloadChats: true,
-      reloadMessages: true,
-    });
+    expect(deps.queuePrivateMessagesUiRefresh).not.toHaveBeenCalled();
   });
 
   it('drops replayed request messages at or before the cleared request boundary', async () => {

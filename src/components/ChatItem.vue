@@ -88,6 +88,9 @@
             <q-item clickable v-close-popup @click="isMuted ? emitUnmute() : emitMute()">
               <q-item-section>{{ isMuted ? $t('common.unmute') : $t('common.mute') }}</q-item-section>
             </q-item>
+            <q-item clickable v-close-popup @click="emitBlock">
+              <q-item-section class="text-negative">{{ $t('common.block') }}</q-item-section>
+            </q-item>
             <q-item clickable v-close-popup @click="emitMarkAsRead">
               <q-item-section>{{ $t('chat.markAsRead') }}</q-item-section>
             </q-item>
@@ -121,6 +124,7 @@ const emit = defineEmits<{
   (event: 'refresh-chat', chatId: string): void;
   (event: 'mute', chatId: string): void;
   (event: 'unmute', chatId: string): void;
+  (event: 'block', chatId: string): void;
   (event: 'mark-as-read', chatId: string): void;
   (event: 'delete-chat', chatId: string): void;
 }>();
@@ -245,6 +249,14 @@ function emitUnmute(): void {
     emit('unmute', props.chat.id);
   } catch (error) {
     reportUiError('Failed to emit chat unmute action', error);
+  }
+}
+
+function emitBlock(): void {
+  try {
+    emit('block', props.chat.id);
+  } catch (error) {
+    reportUiError('Failed to emit chat block action', error);
   }
 }
 

@@ -318,6 +318,40 @@ export function createPrivateMessagesIngestRuntime({
       return;
     }
 
+    let preflightContact: ContactRecord | null | undefined;
+    let preflightChat: ChatRow | null | undefined;
+    if (!isSelfSentMessage) {
+      await Promise.all([chatDataService.init(), contactsService.init()]);
+      const [blockedContact, blockedSenderContact, blockedChat] = await Promise.all([
+        contactsService.getContactByPublicKey(chatPubkey),
+        senderPubkeyHex === chatPubkey
+          ? Promise.resolve(null)
+          : contactsService.getContactByPublicKey(senderPubkeyHex),
+        chatDataService.getChatByPublicKey(chatPubkey),
+      ]);
+      preflightContact = blockedContact;
+      preflightChat = blockedChat;
+      if (
+        blockedContact?.meta.blocked === true ||
+        blockedSenderContact?.meta.blocked === true ||
+        (isPlainRecord(blockedChat?.meta) && blockedChat.meta.inbox_state === 'blocked')
+      ) {
+        logInboundEvent('drop', {
+          reason: 'blocked-pubkey',
+          ...buildInboundTraceDetails({
+            wrappedEvent,
+            rumorEvent,
+            loggedInPubkeyHex,
+            senderPubkeyHex,
+            chatPubkey,
+            relayUrls: wrappedRelayUrls,
+            recipients,
+          }),
+        });
+        return;
+      }
+    }
+
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
 
     const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
@@ -620,9 +654,15 @@ export function createPrivateMessagesIngestRuntime({
     }
 
     const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
-    const contact = await contactsService.getContactByPublicKey(chatPubkey);
+    const contact =
+      preflightContact !== undefined
+        ? preflightContact
+        : await contactsService.getContactByPublicKey(chatPubkey);
     const isAcceptedContact = isContactListedInPrivateContactList(contact);
-    const existingChat = await chatDataService.getChatByPublicKey(chatPubkey);
+    const existingChat =
+      preflightChat !== undefined
+        ? preflightChat
+        : await chatDataService.getChatByPublicKey(chatPubkey);
     if (resolvedGroupChatPublicKey && resolvedGroupEpochContext?.epochEntry) {
       const incomingEpochNumber = Number(resolvedGroupEpochContext.epochEntry.epoch_number);
       const higherEpochConflict = Number.isInteger(incomingEpochNumber)
@@ -674,6 +714,25 @@ export function createPrivateMessagesIngestRuntime({
       chat: existingChat,
       isAcceptedContact,
     });
+    if (
+      !isSelfSentMessage &&
+      (incomingChatInboxState === 'blocked' || contact?.meta.blocked === true)
+    ) {
+      logInboundEvent('drop', {
+        reason: 'blocked-pubkey',
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients,
+        }),
+      });
+      return;
+    }
+
     const existingRequestClearedAt = normalizeTimestamp(
       isPlainRecord(existingChat?.meta) ? existingChat.meta[CHAT_REQUEST_CLEARED_AT_META_KEY] : null
     );

@@ -111,6 +111,7 @@
           @refresh-chat="handleRefreshChat"
           @mute="handleMuteChat"
           @unmute="handleUnmuteChat"
+          @block="handleBlockChat"
           @mark-as-read="handleMarkChatAsRead"
           @delete-chat="handleDeleteChat"
         />
