@@ -3,10 +3,7 @@ prompt
 
 add `Encrypted private key import using ncryptsec` on all
 
-
-
-- login and secrets on mobile and desktop app
-
+block/mute is important
 
 refresh contacts should refresh priofiels
 No relays found for this contact -> if this is the case do a refresh profile beforehand

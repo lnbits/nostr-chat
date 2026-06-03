@@ -31,6 +31,11 @@ interface StartupInternalTaskUpdate {
   label?: string;
 }
 
+interface StartupStepUpdate {
+  eventCount?: number | null;
+  label?: string;
+}
+
 export function createStartupRuntime({
   startupDisplay,
   startupState,
@@ -267,6 +272,29 @@ export function createStartupRuntime({
     };
   }
 
+  function resetStartupStep(stepId: StartupStepId): void {
+    const step = getStartupStepSnapshot(stepId);
+    const nextStep = resetStartupStepSnapshotsValue().find((entry) => entry.id === stepId);
+    if (!nextStep) {
+      throw new Error(`Unknown startup step: ${stepId}`);
+    }
+
+    Object.assign(step, nextStep);
+    if (startupDisplay.value.stepId !== stepId) {
+      return;
+    }
+
+    clearStartupDisplayTimer();
+    startupState.startupDisplayToken += 1;
+    startupState.startupDisplayShownAt = 0;
+    startupDisplay.value = {
+      stepId: null,
+      label: null,
+      status: null,
+      showProgress: false,
+    };
+  }
+
   function beginStartupInternalTask(
     parentStepId: StartupStepId,
     taskId: string,
@@ -316,6 +344,23 @@ export function createStartupRuntime({
     }
     if (updates.eventCount !== undefined) {
       task.eventCount = updates.eventCount;
+    }
+  }
+
+  function updateStartupStep(stepId: StartupStepId, updates: StartupStepUpdate): void {
+    const step = getStartupStepSnapshot(stepId);
+
+    if (updates.label) {
+      step.label = updates.label;
+      if (startupDisplay.value.stepId === stepId) {
+        startupDisplay.value = {
+          ...startupDisplay.value,
+          label: updates.label,
+        };
+      }
+    }
+    if (updates.eventCount !== undefined) {
+      step.eventCount = updates.eventCount;
     }
   }
 
@@ -427,8 +472,10 @@ export function createStartupRuntime({
     failStartupStep,
     finalizeStartupStepDisplay,
     getStartupStepSnapshot,
+    resetStartupStep,
     resetStartupStepTracking,
     showStartupStepProgress,
     updateStartupInternalTask,
+    updateStartupStep,
   };
 }

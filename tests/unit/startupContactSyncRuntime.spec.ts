@@ -71,10 +71,12 @@ describe('startup contact sync runtime', () => {
       reloadChats: vi.fn(async () => {}),
       refreshContactByPublicKey,
       refreshGroupRelayListsOnStartup: task('group-relay-lists-refresh'),
+      resetStartupStep: vi.fn(),
       resetStartupStepTracking: vi.fn(),
       restoreContactCursorState: task('contact-cursor-state'),
       restoreGroupIdentitySecrets: task('group-identity-secrets'),
       restoreMyRelayList: task('my-relays-restore'),
+      restoreMuteList: task('mute-list'),
       restorePrivateContactList: task('private-contact-list-restore'),
       restorePrivatePreferences: task('private-preferences'),
       startOutboundMessageReplay: task('outbound-message-replay'),
@@ -105,6 +107,7 @@ describe('startup contact sync runtime', () => {
       'private-contact-list-restore',
       'group-identity-secrets',
       'group-relay-lists-refresh',
+      'mute-list',
       'contact-cursor-state',
       'logged-in-contact-profile',
       'recent-chat-contacts-sync',
@@ -118,5 +121,82 @@ describe('startup contact sync runtime', () => {
       restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
       startupTrackStep: true,
     });
+  });
+
+  it('reruns one startup step without resetting the full startup history', async () => {
+    const taskOrder: string[] = [];
+    let restoreStartupStatePromise: Promise<void> | null = null;
+    let syncLoggedInContactProfilePromise: Promise<void> | null = null;
+    let syncRecentChatContactsPromise: Promise<void> | null = null;
+
+    const task = (label: string) =>
+      vi.fn(async () => {
+        taskOrder.push(label);
+      });
+    const beginStartupStep = vi.fn();
+    const completeStartupStep = vi.fn();
+    const resetStartupStep = vi.fn();
+    const resetStartupStepTracking = vi.fn();
+    const subscribeMyRelayListUpdates = task('my-relays-subscribe');
+
+    const runtime = createStartupContactSyncRuntime({
+      applyContactCursorStateToContact: vi.fn(async () => false),
+      beginStartupStep,
+      bumpContactListVersion: vi.fn(),
+      completeStartupStep,
+      createStartupBatchTracker: vi.fn(() => ({
+        beginItem: vi.fn(),
+        finishItem: vi.fn(),
+        seal: vi.fn(),
+      })),
+      deriveContactCursorDTag: vi.fn(async () => null),
+      ensureRelayConnections: vi.fn(async () => {}),
+      ensureStoredEventSince: vi.fn(),
+      fetchContactCursorEvents: vi.fn(async () => new Map()),
+      failStartupStep: vi.fn(),
+      flushPendingEventSinceUpdate: vi.fn(),
+      getLoggedInPublicKeyHex: vi.fn(() => PUBKEY),
+      getRestoreStartupStatePromise: () => restoreStartupStatePromise,
+      getSyncLoggedInContactProfilePromise: () => syncLoggedInContactProfilePromise,
+      getSyncRecentChatContactsPromise: () => syncRecentChatContactsPromise,
+      isRestoringStartupState: ref(false),
+      readPrivatePreferencesFromStorage: vi.fn(() => null),
+      reloadChats: vi.fn(async () => {}),
+      refreshContactByPublicKey: vi.fn(async () => {}),
+      refreshGroupRelayListsOnStartup: task('group-relay-lists-refresh'),
+      resetStartupStep,
+      resetStartupStepTracking,
+      restoreContactCursorState: task('contact-cursor-state'),
+      restoreGroupIdentitySecrets: task('group-identity-secrets'),
+      restoreMyRelayList: task('my-relays-restore'),
+      restoreMuteList: task('mute-list'),
+      restorePrivateContactList: task('private-contact-list-restore'),
+      restorePrivatePreferences: task('private-preferences'),
+      startOutboundMessageReplay: task('outbound-message-replay'),
+      setRestoreStartupStatePromise: (promise) => {
+        restoreStartupStatePromise = promise;
+      },
+      setSyncLoggedInContactProfilePromise: (promise) => {
+        syncLoggedInContactProfilePromise = promise;
+      },
+      setSyncRecentChatContactsPromise: (promise) => {
+        syncRecentChatContactsPromise = promise;
+      },
+      subscribeContactProfileUpdates: task('contact-profile-subscribe'),
+      subscribeContactRelayListUpdates: task('contact-relay-list-subscribe'),
+      subscribeGroupMembershipRosterUpdates: task('group-rosters-subscribe'),
+      subscribeMyRelayListUpdates,
+      subscribePrivateContactListUpdates: task('private-contact-list-subscribe'),
+      subscribePrivateMessagesForLoggedInUser: task('private-messages-subscribe'),
+    });
+
+    await runtime.rerunStartupStep('my-relays-subscribe', ['wss://relay.one/']);
+
+    expect(taskOrder).toEqual(['my-relays-subscribe']);
+    expect(resetStartupStep).toHaveBeenCalledWith('my-relays-subscribe');
+    expect(resetStartupStepTracking).not.toHaveBeenCalled();
+    expect(beginStartupStep).toHaveBeenCalledWith('my-relays-subscribe');
+    expect(subscribeMyRelayListUpdates).toHaveBeenCalledWith(['wss://relay.one/'], true);
+    expect(completeStartupStep).toHaveBeenCalledWith('my-relays-subscribe');
   });
 });

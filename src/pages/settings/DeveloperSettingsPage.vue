@@ -825,7 +825,7 @@
         <q-slide-transition>
           <div v-show="expandedCards.startupHistory">
             <q-card-section class="developer-card__section developer-card__section--startup-history">
-              <AppStatus embedded />
+              <AppStatus embedded allow-step-rerun />
             </q-card-section>
           </div>
         </q-slide-transition>

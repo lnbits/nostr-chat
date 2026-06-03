@@ -110,6 +110,7 @@
           @refresh-profile="handleRefreshChatProfile"
           @refresh-chat="handleRefreshChat"
           @mute="handleMuteChat"
+          @unmute="handleUnmuteChat"
           @mark-as-read="handleMarkChatAsRead"
           @delete-chat="handleDeleteChat"
         />
@@ -942,9 +943,19 @@ async function handleAcceptRequest(chatId: string): Promise<void> {
 
 async function handleMuteChat(chatId: string): Promise<void> {
   try {
-    await chatStore.muteChat(chatId);
+    const relayStore = await getRelayStore();
+    await nostrStore.mutePubkey(chatId, relayStore.relays);
   } catch (error) {
     reportUiError('Failed to mute chat', error);
+  }
+}
+
+async function handleUnmuteChat(chatId: string): Promise<void> {
+  try {
+    const relayStore = await getRelayStore();
+    await nostrStore.unmutePubkey(chatId, relayStore.relays);
+  } catch (error) {
+    reportUiError('Failed to unmute chat', error);
   }
 }
 

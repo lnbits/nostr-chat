@@ -335,6 +335,7 @@ class InputSanitizerService {
       typeof value.private_contact_list_member === 'boolean'
         ? value.private_contact_list_member
         : null;
+    const muted = typeof value.muted === 'boolean' ? value.muted : null;
     const groupPrivateKeyEncrypted = this.readOptionalString(value.group_private_key_encrypted);
     const ownerPublicKey = this.normalizeHexKey(
       typeof value.owner_public_key === 'string' ? value.owner_public_key : ''
@@ -424,6 +425,10 @@ class InputSanitizerService {
 
     if (typeof privateContactListMember === 'boolean') {
       meta.private_contact_list_member = privateContactListMember;
+    }
+
+    if (typeof muted === 'boolean') {
+      meta.muted = muted;
     }
 
     if (groupPrivateKeyEncrypted) {

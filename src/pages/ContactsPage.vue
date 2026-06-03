@@ -83,7 +83,17 @@
               </q-item-section>
 
               <q-item-section class="contact-item__main">
-                <q-item-label class="contact-item__name" lines="1">{{ contactListTitle(contact) }}</q-item-label>
+                <div class="contact-item__headline">
+                  <q-item-label class="contact-item__name" lines="1">{{ contactListTitle(contact) }}</q-item-label>
+                  <span
+                    v-if="isContactMuted(contact)"
+                    class="contact-item__mute-indicator"
+                    :aria-label="$t('common.mute')"
+                  >
+                    <q-icon name="notifications_off" size="15px" aria-hidden="true" />
+                    <AppTooltip>{{ $t('common.mute') }}</AppTooltip>
+                  </span>
+                </div>
                 <q-item-label
                   v-if="contactListCaption(contact)"
                   caption
@@ -111,6 +121,15 @@
                       </q-item>
                       <q-item clickable v-close-popup @click="handleContactMenuRefreshProfile(contact)">
                         <q-item-section>{{ $t('profile.refreshProfile') }}</q-item-section>
+                      </q-item>
+                      <q-item
+                        clickable
+                        v-close-popup
+                        @click="isContactMuted(contact) ? handleContactMenuUnmute(contact) : handleContactMenuMute(contact)"
+                      >
+                        <q-item-section>
+                          {{ isContactMuted(contact) ? $t('common.unmute') : $t('common.mute') }}
+                        </q-item-section>
                       </q-item>
                       <q-item clickable v-close-popup @click="handleContactMenuDelete(contact)">
                         <q-item-section class="text-negative">{{ $t('contacts.deleteContact') }}</q-item-section>
@@ -378,6 +397,10 @@ function contactListTitle(contact: ContactRecord): string {
 
 function contactListCaption(contact: ContactRecord): string {
   return formatContactListCaption(contact, currentContactListOptions());
+}
+
+function isContactMuted(contact: ContactRecord): boolean {
+  return contact.meta.muted === true;
 }
 
 function applyContactListQuery(nextContacts: ContactRecord[], query = ''): ContactRecord[] {
@@ -724,6 +747,7 @@ async function handleRefreshContacts(): Promise<void> {
   isRefreshingContacts.value = true;
 
   try {
+    await nostrStore.refreshPrivateContactListWithOutgoingMessages();
     await contactsService.init();
     const storedContacts = await contactsService.listContacts();
 
@@ -794,6 +818,24 @@ async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<
     }
   } catch (error) {
     reportUiError('Failed to refresh contact profile from menu', error, t('errors.failedRefreshProfile'));
+  }
+}
+
+async function handleContactMenuMute(contact: ContactRecord): Promise<void> {
+  try {
+    await nostrStore.mutePubkey(contact.public_key, relayStore.relays);
+    await loadContacts(contactQuery.value);
+  } catch (error) {
+    reportUiError('Failed to mute contact from menu', error);
+  }
+}
+
+async function handleContactMenuUnmute(contact: ContactRecord): Promise<void> {
+  try {
+    await nostrStore.unmutePubkey(contact.public_key, relayStore.relays);
+    await loadContacts(contactQuery.value);
+  } catch (error) {
+    reportUiError('Failed to unmute contact from menu', error);
   }
 }
 
@@ -1102,6 +1144,20 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contact-item__main {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.contact-item__headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.contact-item__mute-indicator {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--nc-text-secondary);
 }
 
 .contact-item__actions {

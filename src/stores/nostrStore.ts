@@ -45,6 +45,7 @@ import { createInboundPresentationRuntime } from 'src/stores/nostr/inboundPresen
 import { createMessageEventRuntime } from 'src/stores/nostr/messageEventRuntime';
 import { createMessageMutationRuntime } from 'src/stores/nostr/messageMutationRuntime';
 import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
+import { createMuteListRuntime } from 'src/stores/nostr/muteListRuntime';
 import { createMyRelayListRuntime } from 'src/stores/nostr/myRelayListRuntime';
 import { createOutboundMessageReplayRuntime } from 'src/stores/nostr/outboundMessageReplayRuntime';
 import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
@@ -62,6 +63,7 @@ import { createStartupRuntime } from 'src/stores/nostr/startupRuntime';
 import {
   createInitialStartupStepSnapshots,
   type StartupDisplaySnapshot,
+  type StartupStepId,
   type StartupStepSnapshot,
 } from 'src/stores/nostr/startupState';
 import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
@@ -233,6 +235,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     throw new Error('Group roster subscription runtime is not initialized.');
   };
   let resetGroupRosterSubscriptionRuntimeState = (_reason = 'replace'): void => {};
+  let resetMuteListRuntimeStateRuntime: () => void = () => {};
   let _ensurePrivateMessagesWatchdogRuntime: () => void = () => {};
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
@@ -374,8 +377,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     failStartupInternalTask,
     failStartupStep,
     getStartupStepSnapshot,
+    resetStartupStep,
     resetStartupStepTracking,
     updateStartupInternalTask,
+    updateStartupStep,
   } = createStartupRuntime({
     startupDisplay,
     startupState: startupRuntimeState,
@@ -1462,6 +1467,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     publishPrivateContactList,
+    refreshPrivateContactListWithOutgoingMessages,
     resetPrivateContactListRuntimeState,
     restorePrivateContactList,
     subscribePrivateContactListUpdates,
@@ -1499,7 +1505,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
     shouldApplyPrivateContactListEvent,
     subscribeWithReqLogging,
     updateStoredEventSinceFromCreatedAt,
+    updateStartupStep,
   });
+
+  const { isPubkeyMuted, resetMuteListRuntimeState, restoreMuteList, setPubkeyMuted } =
+    createMuteListRuntime({
+      beginStartupStep,
+      buildMuteListTags: buildPrivateContactListTags,
+      bumpContactListVersion,
+      chatStore,
+      completeStartupStep,
+      decryptMuteListContent: decryptPrivateContactListContent,
+      encryptMuteListTags: encryptPrivateContactListTags,
+      ensureRelayConnections,
+      failStartupStep,
+      getLoggedInPublicKeyHex,
+      getLoggedInSignerUser,
+      ndk,
+      resolveLoggedInPublishRelayUrls,
+      resolveLoggedInReadRelayUrls,
+      updateStartupInternalTask,
+      updateStoredEventSinceFromCreatedAt,
+    });
+  resetMuteListRuntimeStateRuntime = resetMuteListRuntimeState;
 
   const {
     ensureContactStoredAsGroup,
@@ -1663,6 +1691,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     refreshAllStoredContacts: refreshAllStoredContactsImpl,
+    rerunStartupStep,
     restoreStartupState,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
@@ -1687,12 +1716,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     reloadChats: () => chatStore.reload(),
     refreshContactByPublicKey,
     refreshGroupRelayListsOnStartup,
+    resetStartupStep,
     resetStartupStepTracking,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
     restoreMyRelayList,
     restorePrivateContactList,
     restorePrivatePreferences,
+    restoreMuteList,
     startOutboundMessageReplay: () => startOutboundMessageReplayRuntime(),
     setRestoreStartupStatePromise: (promise) => {
       restoreStartupStatePromise = promise;
@@ -1806,6 +1837,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resetEventSinceForFreshLogin,
     resetGroupRosterSubscriptionRuntimeState,
     resetMyRelayListRuntimeState,
+    resetMuteListRuntimeState: () => {
+      resetMuteListRuntimeStateRuntime();
+    },
     resetOutboundMessageReplayRuntimeState: () => {
       resetOutboundMessageReplayRuntimeStateRuntime();
     },
@@ -2057,6 +2091,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     loginWithRemoteSignerBunker: loginWithRemoteSignerBunkerImpl,
     logout: logoutImpl,
     publishPrivateContactList,
+    isPubkeyMuted,
+    mutePubkey: (pubkey: string, seedRelayUrls?: string[]) =>
+      setPubkeyMuted(pubkey, true, seedRelayUrls),
     publishGroupRelayList,
     publishGroupMetadata,
     publishGroupMemberChanges,
@@ -2071,7 +2108,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchContactPreviewByPublicKey,
     fetchUserProfileFromRelays,
     refreshContactByPublicKey,
+    refreshPrivateContactListWithOutgoingMessages,
     refreshGroupMembershipRoster,
+    restoreMuteList,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
     restoreGroupEpochHistory: restoreGroupEpochHistoryRuntime,
@@ -2085,6 +2124,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     reconnectAllDeveloperRelays,
     reconnectDeveloperRelay,
+    rerunStartupStep: (stepId: StartupStepId, seedRelayUrls?: string[]) =>
+      rerunStartupStep(stepId, seedRelayUrls),
     repairMissingMessageDependency: (
       chatPublicKey: string,
       targetEventId: string,
@@ -2099,6 +2140,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     signHttpAuthHeader,
     sendDirectMessageDeletion,
     sendDirectMessageReaction,
+    unmutePubkey: (pubkey: string, seedRelayUrls?: string[]) =>
+      setPubkeyMuted(pubkey, false, seedRelayUrls),
     savePrivateKey,
     savePrivateKeyFromNsec,
     savePrivateKeyHex: savePrivateKeyHexImpl,

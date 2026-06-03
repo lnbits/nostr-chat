@@ -218,6 +218,7 @@ function createAuthSessionHarness() {
     resetEventSinceForFreshLogin: vi.fn(),
     resetGroupRosterSubscriptionRuntimeState: vi.fn(),
     resetMyRelayListRuntimeState: vi.fn(),
+    resetMuteListRuntimeState: vi.fn(),
     resetOutboundMessageReplayRuntimeState: vi.fn(),
     resetPrivateMessagesBackfillRuntimeState: vi.fn(),
     resetPrivateContactListRuntimeState: vi.fn(),

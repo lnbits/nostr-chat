@@ -37,6 +37,7 @@
         @refresh-profile="$emit('refresh-profile', $event)"
         @refresh-chat="$emit('refresh-chat', $event)"
         @mute="$emit('mute', $event)"
+        @unmute="$emit('unmute', $event)"
         @mark-as-read="$emit('mark-as-read', $event)"
         @delete-chat="$emit('delete-chat', $event)"
       />
@@ -66,6 +67,7 @@ defineEmits<{
   (event: 'refresh-profile', chatId: string): void;
   (event: 'refresh-chat', chatId: string): void;
   (event: 'mute', chatId: string): void;
+  (event: 'unmute', chatId: string): void;
   (event: 'mark-as-read', chatId: string): void;
   (event: 'delete-chat', chatId: string): void;
   (event: 'open-requests'): void;

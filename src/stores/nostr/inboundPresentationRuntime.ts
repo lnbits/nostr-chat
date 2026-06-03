@@ -180,6 +180,10 @@ export function createInboundPresentationRuntime({
     chatPubkey: string,
     chatMeta: Record<string, unknown> | null | undefined
   ): Promise<boolean> {
+    if (chatMeta?.muted === true) {
+      return false;
+    }
+
     const inboxState =
       chatMeta && typeof chatMeta.inbox_state === 'string' ? chatMeta.inbox_state.trim() : '';
     if (inboxState === 'blocked') {

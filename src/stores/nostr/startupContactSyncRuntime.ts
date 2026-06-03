@@ -27,6 +27,49 @@ interface RefreshAllStoredContactsSummary {
   cursorUiReloaded: boolean;
 }
 
+const STARTUP_RESTORE_STEP_ORDER = [
+  'my-relays-restore',
+  'my-relays-subscribe',
+  'outbound-message-replay',
+  'private-preferences',
+  'private-contact-list-restore',
+  'group-identity-secrets',
+  'group-relay-lists-refresh',
+  'contact-cursor-state',
+  'logged-in-contact-profile',
+  'recent-chat-contacts-sync',
+  'private-contact-list-subscribe',
+  'private-messages-subscribe',
+  'group-rosters-subscribe',
+  'contact-profile-subscribe',
+  'contact-relay-list-subscribe',
+] as const satisfies readonly StartupStepId[];
+
+const STARTUP_TASK_ERROR_MESSAGES: Record<StartupStepId, string> = {
+  'my-relays-restore': 'Failed to restore My Relays on startup',
+  'my-relays-subscribe': 'Failed to subscribe to My Relays updates on startup',
+  'outbound-message-replay': 'Failed to start outbound message replay on startup',
+  'private-preferences': 'Failed to restore private preferences on startup',
+  'private-contact-list-restore': 'Failed to restore private contact list on startup',
+  'group-identity-secrets': 'Failed to restore group identity secrets on startup',
+  'group-relay-lists-refresh': 'Failed to refresh group relay lists on startup',
+  'contact-cursor-state': 'Failed to restore contact cursor state on startup',
+  'logged-in-contact-profile': 'Failed to sync logged-in contact on startup',
+  'recent-chat-contacts-sync': 'Failed to sync recent chat contacts on startup',
+  'private-contact-list-subscribe':
+    'Failed to subscribe to private contact list updates on startup',
+  'private-messages-subscribe': 'Failed to subscribe to private messages on startup',
+  'group-rosters-subscribe': 'Failed to subscribe to group rosters on startup',
+  'contact-profile-subscribe': 'Failed to subscribe to contact profile updates on startup',
+  'contact-relay-list-subscribe': 'Failed to subscribe to contact relay list updates on startup',
+};
+
+interface StartupTaskRunOptions {
+  forceSubscriptions?: boolean;
+  propagateError?: boolean;
+  resetStep?: boolean;
+}
+
 interface StartupContactSyncRuntimeDeps {
   applyContactCursorStateToContact: (
     contact: ContactRecord,
@@ -59,21 +102,26 @@ interface StartupContactSyncRuntimeDeps {
     lifecycle?: ContactRefreshLifecycle
   ) => Promise<unknown>;
   refreshGroupRelayListsOnStartup: (seedRelayUrls?: string[]) => Promise<void>;
+  resetStartupStep: (stepId: StartupStepId) => void;
   resetStartupStepTracking: () => void;
   restoreContactCursorState: (seedRelayUrls?: string[]) => Promise<void>;
   restoreGroupIdentitySecrets: (seedRelayUrls?: string[]) => Promise<void>;
   restoreMyRelayList: (seedRelayUrls?: string[]) => Promise<void>;
+  restoreMuteList: (seedRelayUrls?: string[]) => Promise<void>;
   restorePrivateContactList: (seedRelayUrls?: string[]) => Promise<void>;
   restorePrivatePreferences: (seedRelayUrls?: string[]) => Promise<void>;
   startOutboundMessageReplay: () => Promise<void>;
   setRestoreStartupStatePromise: (promise: Promise<void> | null) => void;
   setSyncLoggedInContactProfilePromise: (promise: Promise<void> | null) => void;
   setSyncRecentChatContactsPromise: (promise: Promise<void> | null) => void;
-  subscribeContactProfileUpdates: (seedRelayUrls?: string[]) => Promise<void>;
-  subscribeContactRelayListUpdates: (seedRelayUrls?: string[]) => Promise<void>;
-  subscribeGroupMembershipRosterUpdates: (seedRelayUrls?: string[]) => Promise<void>;
-  subscribeMyRelayListUpdates: (seedRelayUrls?: string[]) => Promise<void>;
-  subscribePrivateContactListUpdates: (seedRelayUrls?: string[]) => Promise<void>;
+  subscribeContactProfileUpdates: (seedRelayUrls?: string[], force?: boolean) => Promise<void>;
+  subscribeContactRelayListUpdates: (seedRelayUrls?: string[], force?: boolean) => Promise<void>;
+  subscribeGroupMembershipRosterUpdates: (
+    seedRelayUrls?: string[],
+    force?: boolean
+  ) => Promise<void>;
+  subscribeMyRelayListUpdates: (seedRelayUrls?: string[], force?: boolean) => Promise<void>;
+  subscribePrivateContactListUpdates: (seedRelayUrls?: string[], force?: boolean) => Promise<void>;
   subscribePrivateMessagesForLoggedInUser: (
     force?: boolean,
     options?: SubscribePrivateMessagesOptions
@@ -109,10 +157,12 @@ export function createStartupContactSyncRuntime({
   reloadChats,
   refreshContactByPublicKey,
   refreshGroupRelayListsOnStartup,
+  resetStartupStep,
   resetStartupStepTracking,
   restoreContactCursorState,
   restoreGroupIdentitySecrets,
   restoreMyRelayList,
+  restoreMuteList,
   restorePrivateContactList,
   restorePrivatePreferences,
   startOutboundMessageReplay,
@@ -349,6 +399,116 @@ export function createStartupContactSyncRuntime({
     return nextPromise;
   }
 
+  async function runStartupTaskBody(
+    stepId: StartupStepId,
+    seedRelayUrls: string[],
+    options: StartupTaskRunOptions
+  ): Promise<void> {
+    const forceSubscriptions = options.forceSubscriptions === true;
+
+    switch (stepId) {
+      case 'my-relays-restore':
+        await restoreMyRelayList(seedRelayUrls);
+        return;
+      case 'my-relays-subscribe':
+        await subscribeMyRelayListUpdates(seedRelayUrls, forceSubscriptions);
+        return;
+      case 'outbound-message-replay':
+        await startOutboundMessageReplay();
+        return;
+      case 'private-preferences':
+        await restorePrivatePreferences(seedRelayUrls);
+        return;
+      case 'private-contact-list-restore':
+        await restorePrivateContactList(seedRelayUrls);
+        return;
+      case 'group-identity-secrets':
+        await restoreGroupIdentitySecrets(seedRelayUrls);
+        return;
+      case 'group-relay-lists-refresh':
+        await refreshGroupRelayListsOnStartup(seedRelayUrls);
+        return;
+      case 'contact-cursor-state':
+        await restoreMuteList(seedRelayUrls);
+        await restoreContactCursorState(seedRelayUrls);
+        return;
+      case 'logged-in-contact-profile':
+        await syncLoggedInContactProfile(seedRelayUrls);
+        return;
+      case 'recent-chat-contacts-sync':
+        await syncRecentChatContacts(seedRelayUrls);
+        return;
+      case 'private-contact-list-subscribe':
+        await subscribePrivateContactListUpdates(seedRelayUrls, forceSubscriptions);
+        return;
+      case 'private-messages-subscribe':
+        await subscribePrivateMessagesForLoggedInUser(true, {
+          restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+          startupTrackStep: true,
+        });
+        return;
+      case 'group-rosters-subscribe':
+        await subscribeGroupMembershipRosterUpdates(seedRelayUrls, forceSubscriptions);
+        return;
+      case 'contact-profile-subscribe':
+        await subscribeContactProfileUpdates(seedRelayUrls, forceSubscriptions);
+        return;
+      case 'contact-relay-list-subscribe':
+        await subscribeContactRelayListUpdates(seedRelayUrls, forceSubscriptions);
+        return;
+    }
+  }
+
+  async function runStartupTask(
+    stepId: StartupStepId,
+    seedRelayUrls: string[],
+    options: StartupTaskRunOptions = {}
+  ): Promise<void> {
+    const taskStartedAt = Date.now();
+    if (options.resetStep === true) {
+      resetStartupStep(stepId);
+    }
+
+    beginStartupStep(stepId);
+    logStartupRestore('task-start', {
+      task: stepId,
+    });
+    try {
+      await runStartupTaskBody(stepId, seedRelayUrls, options);
+      if (stepId !== 'private-messages-subscribe') {
+        completeStartupStep(stepId);
+      }
+      logStartupRestore('task-complete', {
+        task: stepId,
+        durationMs: Date.now() - taskStartedAt,
+      });
+    } catch (error) {
+      failStartupStep(stepId, error);
+      console.error(STARTUP_TASK_ERROR_MESSAGES[stepId], error);
+      logStartupRestore('task-error', {
+        task: stepId,
+        durationMs: Date.now() - taskStartedAt,
+        error: formatStartupRestoreError(error),
+      });
+
+      if (options.propagateError === true) {
+        throw error;
+      }
+    }
+  }
+
+  async function rerunStartupStep(
+    stepId: StartupStepId,
+    seedRelayUrls: string[] = []
+  ): Promise<void> {
+    ensureStoredEventSince();
+    await runStartupTask(stepId, seedRelayUrls, {
+      forceSubscriptions: true,
+      propagateError: true,
+      resetStep: true,
+    });
+  }
+
   async function restoreStartupState(seedRelayUrls: string[] = []): Promise<void> {
     const existingPromise = getRestoreStartupStatePromise();
     if (existingPromise) {
@@ -363,36 +523,6 @@ export function createStartupContactSyncRuntime({
     resetStartupStepTracking();
     const startupRestoreStartedAt = Date.now();
 
-    const runStartupTask = async (
-      taskLabel: StartupStepId,
-      errorMessage: string,
-      task: () => Promise<void>
-    ): Promise<void> => {
-      const taskStartedAt = Date.now();
-      beginStartupStep(taskLabel);
-      logStartupRestore('task-start', {
-        task: taskLabel,
-      });
-      try {
-        await task();
-        if (taskLabel !== 'private-messages-subscribe') {
-          completeStartupStep(taskLabel);
-        }
-        logStartupRestore('task-complete', {
-          task: taskLabel,
-          durationMs: Date.now() - taskStartedAt,
-        });
-      } catch (error) {
-        failStartupStep(taskLabel, error);
-        console.error(errorMessage, error);
-        logStartupRestore('task-error', {
-          task: taskLabel,
-          durationMs: Date.now() - taskStartedAt,
-          error: formatStartupRestoreError(error),
-        });
-      }
-    };
-
     isRestoringStartupState.value = true;
     logStartupRestore('start', {
       hasLoggedInPubkey: Boolean(getLoggedInPublicKeyHex()),
@@ -400,83 +530,9 @@ export function createStartupContactSyncRuntime({
     });
     const nextPromise = (async () => {
       try {
-        await runStartupTask('my-relays-restore', 'Failed to restore My Relays on startup', () =>
-          restoreMyRelayList(seedRelayUrls)
-        );
-        await runStartupTask(
-          'my-relays-subscribe',
-          'Failed to subscribe to My Relays updates on startup',
-          () => subscribeMyRelayListUpdates(seedRelayUrls)
-        );
-        await runStartupTask(
-          'outbound-message-replay',
-          'Failed to start outbound message replay on startup',
-          () => startOutboundMessageReplay()
-        );
-        await runStartupTask(
-          'private-preferences',
-          'Failed to restore private preferences on startup',
-          () => restorePrivatePreferences(seedRelayUrls)
-        );
-        await runStartupTask(
-          'private-contact-list-restore',
-          'Failed to restore private contact list on startup',
-          () => restorePrivateContactList(seedRelayUrls)
-        );
-        await runStartupTask(
-          'group-identity-secrets',
-          'Failed to restore group identity secrets on startup',
-          () => restoreGroupIdentitySecrets(seedRelayUrls)
-        );
-        await runStartupTask(
-          'group-relay-lists-refresh',
-          'Failed to refresh group relay lists on startup',
-          () => refreshGroupRelayListsOnStartup(seedRelayUrls)
-        );
-        await runStartupTask(
-          'contact-cursor-state',
-          'Failed to restore contact cursor state on startup',
-          () => restoreContactCursorState(seedRelayUrls)
-        );
-        await runStartupTask(
-          'logged-in-contact-profile',
-          'Failed to sync logged-in contact on startup',
-          () => syncLoggedInContactProfile(seedRelayUrls)
-        );
-        await runStartupTask(
-          'recent-chat-contacts-sync',
-          'Failed to sync recent chat contacts on startup',
-          () => syncRecentChatContacts(seedRelayUrls)
-        );
-        await runStartupTask(
-          'private-contact-list-subscribe',
-          'Failed to subscribe to private contact list updates on startup',
-          () => subscribePrivateContactListUpdates(seedRelayUrls)
-        );
-        await runStartupTask(
-          'private-messages-subscribe',
-          'Failed to subscribe to private messages on startup',
-          () =>
-            subscribePrivateMessagesForLoggedInUser(true, {
-              restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-              startupTrackStep: true,
-            })
-        );
-        await runStartupTask(
-          'group-rosters-subscribe',
-          'Failed to subscribe to group rosters on startup',
-          () => subscribeGroupMembershipRosterUpdates(seedRelayUrls)
-        );
-        await runStartupTask(
-          'contact-profile-subscribe',
-          'Failed to subscribe to contact profile updates on startup',
-          () => subscribeContactProfileUpdates(seedRelayUrls)
-        );
-        await runStartupTask(
-          'contact-relay-list-subscribe',
-          'Failed to subscribe to contact relay list updates on startup',
-          () => subscribeContactRelayListUpdates(seedRelayUrls)
-        );
+        for (const stepId of STARTUP_RESTORE_STEP_ORDER) {
+          await runStartupTask(stepId, seedRelayUrls);
+        }
       } finally {
         isRestoringStartupState.value = false;
         flushPendingEventSinceUpdate();
@@ -493,6 +549,7 @@ export function createStartupContactSyncRuntime({
 
   return {
     refreshAllStoredContacts,
+    rerunStartupStep,
     restoreStartupState,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
