@@ -241,6 +241,8 @@
   "contacts.refreshedFailed": "Refreshed {count} {contactLabel}; {failedCount} failed.",
   "contacts.search.addPrompt": "Search your contacts or enter a valid identifier to add someone new.",
   "contacts.search.chatPrompt": "Search your contacts or enter a valid identifier to start chatting.",
+  "contacts.section.active": "Active",
+  "contacts.section.muted": "Muted",
   "contacts.selectContactViewProfile": "Select a contact to view profile.",
   "contacts.shareContact": "Share Contact",
   "contacts.showNpub": "Show npub",

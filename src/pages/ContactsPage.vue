@@ -64,81 +64,124 @@
 
         <q-scroll-area class="contacts-list">
           <q-list>
-            <q-item
-              v-for="contact in contacts"
-              :key="contact.id"
-              clickable
-              class="contact-item"
-              :active="contact.id === selectedContactId"
-              active-class="contact-item--active"
-              @click="handleSelectContact(contact)"
-            >
-              <q-item-section avatar>
-                <CachedAvatar
-                  :src="contactPictureUrl(contact)"
-                  :alt="contactListTitle(contact)"
-                  :fallback="contactAvatar(contact)"
-                  class="contact-item__avatar"
-                />
-              </q-item-section>
-
-              <q-item-section class="contact-item__main">
-                <div class="contact-item__headline">
-                  <q-item-label class="contact-item__name" lines="1">{{ contactListTitle(contact) }}</q-item-label>
-                  <span
-                    v-if="isContactMuted(contact)"
-                    class="contact-item__mute-indicator"
-                    :aria-label="$t('common.mute')"
-                  >
-                    <q-icon name="notifications_off" size="15px" aria-hidden="true" />
-                    <AppTooltip>{{ $t('common.mute') }}</AppTooltip>
-                  </span>
-                </div>
-                <q-item-label
-                  v-if="contactListCaption(contact)"
-                  caption
-                  class="contact-item__caption"
-                  lines="1"
-                >
-                  {{ contactListCaption(contact) }}
-                </q-item-label>
-              </q-item-section>
-
-              <q-item-section side class="contact-item__actions">
-                <q-btn
-                  flat
+            <template v-if="!isLoadingContacts && contacts.length > 0">
+              <template v-for="section in contactSections" :key="section.key">
+                <q-item
+                  clickable
                   dense
-                  round
-                  icon="more_vert"
-                  class="contact-item__more"
-                  :aria-label="$t('contacts.contactActions')"
-                  @click.stop
+                  class="contacts-section-toggle"
+                  :aria-expanded="section.expanded ? 'true' : 'false'"
+                  @click="toggleContactSection(section.key)"
                 >
-                  <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
-                    <q-list dense class="nc-pop-menu__list">
-                      <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
-                        <q-item-section>{{ $t('chat.chat') }}</q-item-section>
-                      </q-item>
-                      <q-item clickable v-close-popup @click="handleContactMenuRefreshProfile(contact)">
-                        <q-item-section>{{ $t('profile.refreshProfile') }}</q-item-section>
-                      </q-item>
-                      <q-item
-                        clickable
-                        v-close-popup
-                        @click="isContactMuted(contact) ? handleContactMenuUnmute(contact) : handleContactMenuMute(contact)"
+                  <q-item-section avatar class="contacts-section-toggle__icon">
+                    <q-icon
+                      :name="section.expanded ? 'expand_more' : 'chevron_right'"
+                      size="18px"
+                      aria-hidden="true"
+                    />
+                  </q-item-section>
+                  <q-item-section>
+                    <q-item-label class="contacts-section-toggle__label">
+                      {{ section.label }}
+                    </q-item-label>
+                  </q-item-section>
+                  <q-item-section side>
+                    <span class="contacts-section-toggle__count">{{ section.contacts.length }}</span>
+                  </q-item-section>
+                </q-item>
+
+                <template v-if="section.expanded">
+                  <q-item
+                    v-for="contact in section.contacts"
+                    :key="contact.id"
+                    clickable
+                    class="contact-item"
+                    :class="{ 'contact-item--muted': isContactMuted(contact) }"
+                    :active="contact.id === selectedContactId"
+                    active-class="contact-item--active"
+                    @click="handleSelectContact(contact)"
+                  >
+                    <q-item-section avatar>
+                      <CachedAvatar
+                        :src="contactPictureUrl(contact)"
+                        :alt="contactListTitle(contact)"
+                        :fallback="contactAvatar(contact)"
+                        class="contact-item__avatar"
+                      />
+                    </q-item-section>
+
+                    <q-item-section class="contact-item__main">
+                      <div class="contact-item__headline">
+                        <q-item-label class="contact-item__name" lines="1">
+                          {{ contactListTitle(contact) }}
+                        </q-item-label>
+                        <span
+                          v-if="isContactMuted(contact)"
+                          class="contact-item__mute-indicator"
+                          :aria-label="$t('common.mute')"
+                        >
+                          <q-icon name="notifications_off" size="15px" aria-hidden="true" />
+                          <AppTooltip>{{ $t('common.mute') }}</AppTooltip>
+                        </span>
+                      </div>
+                      <q-item-label
+                        v-if="contactListCaption(contact)"
+                        caption
+                        class="contact-item__caption"
+                        lines="1"
                       >
-                        <q-item-section>
-                          {{ isContactMuted(contact) ? $t('common.unmute') : $t('common.mute') }}
-                        </q-item-section>
-                      </q-item>
-                      <q-item clickable v-close-popup @click="handleContactMenuDelete(contact)">
-                        <q-item-section class="text-negative">{{ $t('contacts.deleteContact') }}</q-item-section>
-                      </q-item>
-                    </q-list>
-                  </q-menu>
-                </q-btn>
-              </q-item-section>
-            </q-item>
+                        {{ contactListCaption(contact) }}
+                      </q-item-label>
+                    </q-item-section>
+
+                    <q-item-section side class="contact-item__actions">
+                      <q-btn
+                        flat
+                        dense
+                        round
+                        icon="more_vert"
+                        class="contact-item__more"
+                        :aria-label="$t('contacts.contactActions')"
+                        @click.stop
+                      >
+                        <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
+                          <q-list dense class="nc-pop-menu__list">
+                            <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
+                              <q-item-section>{{ $t('chat.chat') }}</q-item-section>
+                            </q-item>
+                            <q-item
+                              clickable
+                              v-close-popup
+                              @click="handleContactMenuRefreshProfile(contact)"
+                            >
+                              <q-item-section>{{ $t('profile.refreshProfile') }}</q-item-section>
+                            </q-item>
+                            <q-item
+                              clickable
+                              v-close-popup
+                              @click="
+                                isContactMuted(contact)
+                                  ? handleContactMenuUnmute(contact)
+                                  : handleContactMenuMute(contact)
+                              "
+                            >
+                              <q-item-section>
+                                {{ isContactMuted(contact) ? $t('common.unmute') : $t('common.mute') }}
+                              </q-item-section>
+                            </q-item>
+                            <q-item clickable v-close-popup @click="handleContactMenuDelete(contact)">
+                              <q-item-section class="text-negative">
+                                {{ $t('contacts.deleteContact') }}
+                              </q-item-section>
+                            </q-item>
+                          </q-list>
+                        </q-menu>
+                      </q-btn>
+                    </q-item-section>
+                  </q-item>
+                </template>
+              </template>
+            </template>
 
             <div v-if="isLoadingContacts" class="contacts-empty">{{ $t('contacts.loadingContacts') }}</div>
 
@@ -287,6 +330,19 @@ const selectedContactPubkey = ref('');
 const selectedContactProfile = ref(createEmptyContactProfileForm());
 const contacts = ref<ContactRecord[]>([]);
 const isPublishingSelectedGroupProfile = ref(false);
+type ContactSectionKey = 'active' | 'muted';
+
+interface ContactSection {
+  key: ContactSectionKey;
+  label: string;
+  contacts: ContactRecord[];
+  expanded: boolean;
+}
+
+const expandedContactSections = ref<Record<ContactSectionKey, boolean>>({
+  active: true,
+  muted: false
+});
 const selectedContactRecord = computed<ContactRecord | null>(() => {
   const normalizedPubkey = selectedContactPubkey.value.trim().toLowerCase();
   if (!normalizedPubkey) {
@@ -321,6 +377,22 @@ const selectedContactHeaderTitle = computed(() => {
 
   return selectedContactPubkey.value.trim().slice(0, 32) || t('contacts.contact.label');
 });
+const activeContacts = computed(() => contacts.value.filter((contact) => !isContactMuted(contact)));
+const mutedContacts = computed(() => contacts.value.filter((contact) => isContactMuted(contact)));
+const contactSections = computed<ContactSection[]>(() => [
+  {
+    key: 'active',
+    label: t('contacts.section.active'),
+    contacts: activeContacts.value,
+    expanded: expandedContactSections.value.active
+  },
+  {
+    key: 'muted',
+    label: t('contacts.section.muted'),
+    contacts: mutedContacts.value,
+    expanded: expandedContactSections.value.muted
+  }
+]);
 
 let latestSearchRequestId = 0;
 
@@ -401,6 +473,14 @@ function contactListCaption(contact: ContactRecord): string {
 
 function isContactMuted(contact: ContactRecord): boolean {
   return contact.meta.muted === true;
+}
+
+function toggleContactSection(sectionKey: ContactSectionKey): void {
+  expandedContactSections.value[sectionKey] = !expandedContactSections.value[sectionKey];
+}
+
+function expandContactSectionForContact(contact: ContactRecord): void {
+  expandedContactSections.value[isContactMuted(contact) ? 'muted' : 'active'] = true;
 }
 
 function applyContactListQuery(nextContacts: ContactRecord[], query = ''): ContactRecord[] {
@@ -563,6 +643,7 @@ function handleSelectContact(contact: ContactRecord, syncRoute = true): void {
     selectedContactId.value = contact.id;
     selectedContactPubkey.value = contact.public_key;
     selectedContactProfile.value = mapContactToProfileForm(contact);
+    expandContactSectionForContact(contact);
 
     if (!syncRoute) {
       return;
@@ -823,6 +904,7 @@ async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<
 
 async function handleContactMenuMute(contact: ContactRecord): Promise<void> {
   try {
+    expandedContactSections.value.muted = true;
     await nostrStore.mutePubkey(contact.public_key, relayStore.relays);
     await loadContacts(contactQuery.value);
   } catch (error) {
@@ -832,6 +914,7 @@ async function handleContactMenuMute(contact: ContactRecord): Promise<void> {
 
 async function handleContactMenuUnmute(contact: ContactRecord): Promise<void> {
   try {
+    expandedContactSections.value.active = true;
     await nostrStore.unmutePubkey(contact.public_key, relayStore.relays);
     await loadContacts(contactQuery.value);
   } catch (error) {
@@ -1105,6 +1188,50 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   width: 100%;
 }
 
+.contacts-section-toggle {
+  min-height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--nc-border);
+  color: var(--nc-text-secondary);
+  background: color-mix(in srgb, var(--nc-panel-sidebar-bg) 92%, var(--nc-hover) 8%);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.contacts-section-toggle:hover {
+  background: var(--nc-hover);
+  color: var(--nc-text);
+}
+
+.contacts-section-toggle__icon {
+  flex: 0 0 28px;
+  min-width: 28px !important;
+  padding-right: 0;
+}
+
+.contacts-section-toggle__label {
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: inherit;
+}
+
+.contacts-section-toggle__count {
+  min-width: 24px;
+  padding: 2px 7px;
+  border: 1px solid var(--nc-border);
+  border-radius: 999px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--nc-text-secondary);
+  background: var(--nc-panel-thread-bg);
+  font-variant-numeric: tabular-nums;
+}
+
 .contact-item {
   min-width: 0;
   margin: 0;
@@ -1158,6 +1285,10 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   display: inline-flex;
   align-items: center;
   color: var(--nc-text-secondary);
+}
+
+.contact-item--muted .contact-item__mute-indicator {
+  color: color-mix(in srgb, var(--nc-text-secondary) 86%, var(--q-primary) 14%);
 }
 
 .contact-item__actions {
