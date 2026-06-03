@@ -17,6 +17,12 @@ interface ChatContactContext {
   lastSeenIncomingActivityAt: string;
 }
 
+interface AddContactOptions {
+  contactName?: string;
+  givenName?: string;
+  picture?: string;
+}
+
 interface LiveChatPreviewInput {
   publicKey: string;
   fallbackName: string;
@@ -76,6 +82,10 @@ function normalizeEventId(value: string | null | undefined): string | null {
 
 function readMetaString(meta: Record<string, unknown>, key: string): string {
   const value = meta[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readOptionalInputString(value: string | null | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
@@ -458,6 +468,25 @@ function toContactContext(contact: ContactRecord): ChatContactContext {
     givenName: contact.given_name?.trim() ?? '',
     contactName: contact.name.trim(),
     lastSeenIncomingActivityAt: readMetaString(contactMeta, 'last_seen_incoming_activity_at'),
+  };
+}
+
+function toContactContextFromOptions(
+  options: AddContactOptions | undefined,
+  fallbackName: string
+): ChatContactContext | undefined {
+  const picture = readOptionalInputString(options?.picture);
+  const givenName = readOptionalInputString(options?.givenName);
+  const contactName = readOptionalInputString(options?.contactName);
+  if (!picture && !givenName && !contactName) {
+    return undefined;
+  }
+
+  return {
+    picture,
+    givenName,
+    contactName: contactName || givenName || fallbackName.trim(),
+    lastSeenIncomingActivityAt: '',
   };
 }
 
@@ -1442,7 +1471,8 @@ export const useChatStore = defineStore('chatStore', () => {
 
   async function addContact(
     nameOrIdentifier: string,
-    publicKey = nameOrIdentifier
+    publicKey = nameOrIdentifier,
+    options: AddContactOptions = {}
   ): Promise<Chat | null> {
     const cleanName = nameOrIdentifier.trim();
     const cleanPublicKey =
@@ -1454,7 +1484,9 @@ export const useChatStore = defineStore('chatStore', () => {
 
     await contactsService.init();
     const contact = await contactsService.getContactByPublicKey(cleanPublicKey);
-    const contactContext = contact ? toContactContext(contact) : undefined;
+    const contactContext = contact
+      ? toContactContext(contact)
+      : toContactContextFromOptions(options, cleanName);
 
     const existingInStore = chats.value.find(
       (chat) => chat.publicKey.toLowerCase() === cleanPublicKey.toLowerCase()

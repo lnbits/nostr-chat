@@ -1192,6 +1192,27 @@ export async function acceptFirstRequest(page: Page): Promise<void> {
   await expect(page.getByTestId('chat-request-item')).toHaveCount(0);
 }
 
+export async function expectPrivateContactListMember(page: Page, publicKey: string): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        evaluateWithAppBridgeRetry(
+          page,
+          async ({ nextPublicKey }) => {
+            const bridge = window.__appE2E__;
+            if (!bridge) {
+              throw new Error('E2E bridge is not available.');
+            }
+
+            return bridge.isPrivateContactListMember({ publicKey: nextPublicKey });
+          },
+          { nextPublicKey: publicKey }
+        ),
+      { timeout: 12_000 }
+    )
+    .toBe(true);
+}
+
 export async function navigateToChat(page: Page, publicKey: string): Promise<void> {
   await page.goto(`/#/chats/${publicKey}`);
   await expect(composerInput(page)).toBeVisible();

@@ -190,6 +190,7 @@
               :show-author-name="item.showSenderName"
               :show-author-on-mobile="chat?.type === 'group' && item.message.sender === 'them'"
               @open-profile="handleOpenAuthorProfile"
+              @open-mention-chat="handleOpenMentionChat"
               @reply="handleReplyToMessage"
               @react="handleReactToMessage"
               @delete-message="handleDeleteMessage"
@@ -330,6 +331,15 @@ const emit = defineEmits<{
   (event: 'send', payload: { text: string; replyTo: MessageReplyPreview | null }): void;
   (event: 'back'): void;
   (event: 'open-profile', publicKey: string): void;
+  (
+    event: 'open-chat',
+    payload: {
+      publicKey: string;
+      displayName?: string;
+      picture?: string;
+      avatar?: string;
+    }
+  ): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
@@ -2138,6 +2148,26 @@ function handleOpenAuthorProfile(publicKey: string): void {
     emitOpenProfile(publicKey);
   } catch (error) {
     reportUiError('Failed to open message author profile from chat thread', error);
+  }
+}
+
+function handleOpenMentionChat(publicKey: string): void {
+  const normalizedPublicKey = publicKey.trim().toLowerCase();
+  if (!normalizedPublicKey) {
+    return;
+  }
+
+  try {
+    const mentionProfile =
+      mentionProfiles.value.find((profile) => profile.publicKey === normalizedPublicKey) ?? null;
+    emit('open-chat', {
+      publicKey: normalizedPublicKey,
+      ...(mentionProfile?.displayName ? { displayName: mentionProfile.displayName } : {}),
+      ...(mentionProfile?.picture ? { picture: mentionProfile.picture } : {}),
+      ...(mentionProfile?.avatar ? { avatar: mentionProfile.avatar } : {}),
+    });
+  } catch (error) {
+    reportUiError('Failed to open mentioned chat from chat thread', error);
   }
 }
 

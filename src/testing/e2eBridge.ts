@@ -1,4 +1,5 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY } from 'src/stores/nostr/constants';
 import type { DeveloperDiagnosticsSnapshot } from 'src/stores/nostr/types';
 import { saveBrowserNotificationsPreference } from 'src/utils/browserNotificationPreference';
 
@@ -25,6 +26,10 @@ export interface AppE2ERotateGroupEpochOptions {
 export interface AppE2EUpdateContactRelaysOptions {
   publicKey: string;
   relayUrls: string[];
+}
+
+export interface AppE2EContactListMemberOptions {
+  publicKey: string;
 }
 
 export interface AppE2EReplaceStoredGroupMembersOptions {
@@ -67,6 +72,7 @@ export interface AppE2EBridge {
   bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot>;
   getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot>;
   getSessionSnapshot(): Promise<AppE2ESessionSnapshot>;
+  isPrivateContactListMember(options: AppE2EContactListMemberOptions): Promise<boolean>;
   refreshSession(options?: AppE2ERefreshOptions): Promise<void>;
   refreshPrivateMessagesLiveReconnect(
     options?: AppE2EPrivateMessagesLiveReconnectOptions
@@ -295,6 +301,20 @@ async function getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSn
   return JSON.parse(
     JSON.stringify(await nostrStore.getDeveloperDiagnosticsSnapshot())
   ) as DeveloperDiagnosticsSnapshot;
+}
+
+async function isPrivateContactListMember(
+  options: AppE2EContactListMemberOptions
+): Promise<boolean> {
+  const normalizedPublicKey = inputSanitizerService.normalizeHexKey(options.publicKey);
+  if (!normalizedPublicKey) {
+    return false;
+  }
+
+  const { contactsService } = await import('src/services/contactsService');
+  await contactsService.init();
+  const contact = await contactsService.getContactByPublicKey(normalizedPublicKey);
+  return contact?.meta?.[PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY] === true;
 }
 
 async function waitForAppReady(options: AppE2EWaitForAppReadyOptions = {}): Promise<void> {
@@ -623,6 +643,7 @@ export function installAppE2EBridge(): void {
     bootstrapSession,
     getDeveloperDiagnosticsSnapshot,
     getSessionSnapshot,
+    isPrivateContactListMember,
     refreshSession,
     refreshPrivateMessagesLiveReconnect,
     logout,

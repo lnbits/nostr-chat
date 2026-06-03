@@ -156,7 +156,7 @@
               type="button"
               class="bubble__mention"
               data-testid="message-mention-link"
-              @click.stop="handleOpenMentionProfile(part.publicKey)"
+              @click.stop="handleOpenMentionChat(part.publicKey)"
             >
               {{ part.text }}
             </button>
@@ -507,6 +507,7 @@ const emit = defineEmits<{
   (event: 'reply', message: Message): void;
   (event: 'open-reply-target', messageId: string, referenceSentAt?: string): void;
   (event: 'open-profile', publicKey: string): void;
+  (event: 'open-mention-chat', publicKey: string): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
@@ -893,16 +894,16 @@ function handleOpenAuthorProfile(): void {
   }
 }
 
-function handleOpenMentionProfile(publicKey?: string): void {
+function handleOpenMentionChat(publicKey?: string): void {
   const normalizedPublicKey = publicKey?.trim();
   if (!normalizedPublicKey) {
     return;
   }
 
   try {
-    emit('open-profile', normalizedPublicKey);
+    emit('open-mention-chat', normalizedPublicKey);
   } catch (error) {
-    reportUiError('Failed to open mentioned profile from message bubble', error);
+    reportUiError('Failed to open mentioned chat from message bubble', error);
   }
 }
 

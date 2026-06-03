@@ -9,6 +9,7 @@ import {
   E2E_RELAY_URL,
   E2E_RELAY_URL_TWO,
   expectNoUnexpectedBrowserErrors,
+  expectPrivateContactListMember,
   navigateToChat,
   openRequests,
   pauseRelayService,
@@ -37,6 +38,8 @@ test('group owner can create a group, invite a member, and exchange messages bot
     const groupAbout = 'Relay-backed group e2e';
     const aliceGroupMessage = `group-hello-from-alice-${Date.now()}`;
     const bobGroupMessage = `group-hello-from-bob-${Date.now()}`;
+    const aliceMentionMessage = `group-mention-bob-${Date.now()}`;
+    const aliceMentionDmMessage = `mention-opened-dm-${Date.now()}`;
 
     const groupPublicKey = await createGroup(alice.page, {
       name: groupName,
@@ -113,6 +116,29 @@ test('group owner can create a group, invite a member, and exchange messages bot
       .getByTestId('thread-author-profile-link')
       .click();
     await alice.page.waitForURL(new RegExp(`#\\/contacts\\/${bob.session.publicKey}$`));
+
+    await navigateToChat(alice.page, groupPublicKey);
+    await alice.page.getByPlaceholder('Write a message').click();
+    await alice.page.keyboard.type('@');
+    await alice.page
+      .getByTestId('message-mention-option')
+      .filter({ hasText: bob.session.publicKey.slice(0, 16) })
+      .first()
+      .click();
+    await alice.page.keyboard.type(` ${aliceMentionMessage}`);
+    await alice.page.getByTestId('message-composer-send').click();
+    await waitForThreadMessage(alice.page, aliceMentionMessage, {
+      chatId: groupPublicKey,
+    });
+    await threadMessage(alice.page, aliceMentionMessage)
+      .getByTestId('message-mention-link')
+      .first()
+      .click();
+    await alice.page.waitForURL(new RegExp(`#\\/chats\\/${bob.session.publicKey}$`));
+    await sendMessage(alice.page, aliceMentionDmMessage, {
+      chatId: bob.session.publicKey,
+    });
+    await expectPrivateContactListMember(alice.page, bob.session.publicKey);
     await expectNoUnexpectedBrowserErrors([alice, bob], {
       allowPatterns: [/127\.0\.0\.1:7001/i, /relay-two/i, /websocket/i],
     });
