@@ -2,6 +2,7 @@
   <q-item
     clickable
     class="chat-item"
+    :class="{ 'chat-item--muted': isMuted }"
     data-testid="chat-item"
     :active="active"
     active-class="chat-item--active"
@@ -45,7 +46,13 @@
           <span class="chat-item__reaction-count">{{ formatReactionCount(unseenReactionCount) }}</span>
         </div>
 
-        <q-badge v-if="chat.unreadCount > 0" rounded color="primary">
+        <q-badge
+          v-if="chat.unreadCount > 0"
+          rounded
+          color="primary"
+          class="chat-item__unread-badge"
+          :class="{ 'chat-item__unread-badge--muted': isMuted }"
+        >
           {{ chat.unreadCount }}
         </q-badge>
       </div>
@@ -335,6 +342,10 @@ function emitDeleteChat(): void {
   color: var(--nc-text-secondary);
 }
 
+.chat-item--muted .chat-item__mute-indicator {
+  color: color-mix(in srgb, var(--nc-text-secondary) 86%, var(--q-primary) 14%);
+}
+
 .chat-item__badges {
   display: flex;
   align-items: center;
@@ -354,6 +365,12 @@ function emitDeleteChat(): void {
   color: var(--nc-reaction-accent-text);
 }
 
+.chat-item--muted .chat-item__reaction-badge {
+  background: transparent;
+  border-color: var(--nc-border);
+  color: var(--nc-text-secondary);
+}
+
 .chat-item__reaction-icon-shell {
   width: 18px;
   height: 18px;
@@ -364,8 +381,16 @@ function emitDeleteChat(): void {
   background: var(--nc-reaction-accent-icon-bg);
 }
 
+.chat-item--muted .chat-item__reaction-icon-shell {
+  background: var(--nc-hover);
+}
+
 .chat-item__reaction-icon {
   color: #ffffff;
+}
+
+.chat-item--muted .chat-item__reaction-icon {
+  color: var(--nc-text-secondary);
 }
 
 .chat-item__reaction-count {
@@ -376,6 +401,16 @@ function emitDeleteChat(): void {
   font-weight: 800;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.chat-item__unread-badge {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-item__unread-badge--muted {
+  background: transparent !important;
+  border: 1px solid var(--nc-border);
+  color: var(--nc-text-secondary) !important;
 }
 
 .q-btn.chat-item__more {
@@ -430,6 +465,12 @@ function emitDeleteChat(): void {
 
 .chat-item--active .chat-item__reaction-icon-shell {
   background: rgba(255, 255, 255, 0.22);
+}
+
+.chat-item--active .chat-item__unread-badge--muted {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.24);
+  color: var(--nc-active-text) !important;
 }
 
 @media (max-width: 1023px) {
