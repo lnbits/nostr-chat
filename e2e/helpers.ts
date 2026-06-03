@@ -2,7 +2,13 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { type Browser, type BrowserContext, expect, type Page } from '@playwright/test';
+import {
+  type Browser,
+  type BrowserContext,
+  expect,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 import type { DeveloperDiagnosticsSnapshot } from 'src/stores/nostr/types';
 
 export interface TestAccount {
@@ -1379,9 +1385,25 @@ export async function openMessageRelayStatusDialog(page: Page, text: string): Pr
   });
 }
 
+async function visibleRelayStatusRoot(page: Page): Promise<Page | Locator> {
+  const tabPanels = [
+    page.getByTestId('relay-status-panel-recipient'),
+    page.getByTestId('relay-status-panel-self'),
+  ];
+
+  for (const tabPanel of tabPanels) {
+    if (await tabPanel.isVisible().catch(() => false)) {
+      return tabPanel;
+    }
+  }
+
+  return page;
+}
+
 export async function retryMessageRelay(page: Page, text: string, relayUrl: string): Promise<void> {
   await openMessageRelayStatusDialog(page, text);
-  const retryButtons = page
+  const statusRoot = await visibleRelayStatusRoot(page);
+  const retryButtons = statusRoot
     .locator('.bubble__status-list-item--dialog')
     .filter({ hasText: relayUrl })
     .getByRole('button', { name: 'Retry', exact: true });
@@ -1395,7 +1417,8 @@ export async function waitForMessageRelayRetryToResolve(
   relayUrl: string
 ): Promise<void> {
   await openMessageRelayStatusDialog(page, text);
-  const retryButtons = page
+  const statusRoot = await visibleRelayStatusRoot(page);
+  const retryButtons = statusRoot
     .locator('.bubble__status-list-item--dialog')
     .filter({ hasText: relayUrl })
     .getByRole('button', { name: 'Retry', exact: true });

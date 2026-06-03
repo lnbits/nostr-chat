@@ -33,6 +33,10 @@ export interface StatusListItem {
 export interface StatusSection {
   key: string;
   title: string;
+  tabLabel?: string;
+  successCount?: number;
+  totalCount?: number;
+  retryableCount?: number;
   items: StatusListItem[];
   emptyLabel: string;
 }
@@ -112,6 +116,38 @@ function buildStatusListItems(
       status: relayStatus.status,
       retryable: relayStatus.status === 'failed',
     }));
+}
+
+function buildStatusTabLabel(title: string, successCount: number, totalCount: number): string {
+  return `${title} (${successCount}/${totalCount})`;
+}
+
+function countPublishedItems(items: StatusListItem[]): number {
+  return items.filter((item) => item.status === 'published').length;
+}
+
+function countRetryableItems(items: StatusListItem[]): number {
+  return items.filter((item) => item.retryable && isRetryableStatusScope(item.scope)).length;
+}
+
+function buildOutboundStatusSection(
+  key: RetryableStatusScope,
+  title: string,
+  items: StatusListItem[]
+): StatusSection {
+  const successCount = countPublishedItems(items);
+  const totalCount = items.length;
+
+  return {
+    key,
+    title,
+    tabLabel: buildStatusTabLabel(title, successCount, totalCount),
+    successCount,
+    totalCount,
+    retryableCount: countRetryableItems(items),
+    items,
+    emptyLabel: t('relays.empty.noRelays'),
+  };
 }
 
 export function isRetryableStatusScope(scope: StatusListScope): scope is RetryableStatusScope {
@@ -204,6 +240,9 @@ export function useMessageBubbleStatus(options: {
       name: options.contactName.value || t('contacts.contact.label'),
     });
   });
+
+  const outboundContactRelaysTitle = computed(() => t('relays.contactRelays'));
+  const outboundMyRelaysTitle = computed(() => t('relays.myRelays'));
 
   const statusDialogTitle = computed(() => {
     return options.isMine.value ? t('relays.relayStatus') : t('relays.receivedRelayStatus');
@@ -332,25 +371,14 @@ export function useMessageBubbleStatus(options: {
 
   const statusSections = computed<StatusSection[]>(() => {
     if (options.isMine.value) {
-      const sections: StatusSection[] = [
-        {
-          key: 'recipient',
-          title: contactRelaysTitle.value,
-          items: contactStatusListItems.value,
-          emptyLabel: t('relays.empty.noRelays'),
-        },
+      return [
+        buildOutboundStatusSection(
+          'recipient',
+          outboundContactRelaysTitle.value,
+          contactStatusListItems.value
+        ),
+        buildOutboundStatusSection('self', outboundMyRelaysTitle.value, myStatusListItems.value),
       ];
-
-      if (myStatusListItems.value.length > 0) {
-        sections.push({
-          key: 'self',
-          title: t('relays.relaysMessageBackup'),
-          items: myStatusListItems.value,
-          emptyLabel: t('relays.empty.noRelays'),
-        });
-      }
-
-      return sections;
     }
 
     if (normalizedContactRelayUrls.value.length > 0) {
