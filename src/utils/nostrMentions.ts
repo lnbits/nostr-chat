@@ -5,6 +5,8 @@ export interface NostrMentionProfile {
   publicKey: string;
   displayName: string;
   handle: string;
+  picture?: string;
+  avatar?: string;
   nprofile?: string;
   relayUrls?: string[];
 }
@@ -28,6 +30,8 @@ export interface NostrMentionTextPart {
 interface MentionProfileInput {
   publicKey?: string | null;
   displayName?: string | null;
+  picture?: string | null;
+  avatar?: string | null;
   nprofile?: string | null;
   relayUrls?: string[] | null;
 }
@@ -151,6 +155,8 @@ export function buildMentionProfiles(inputs: MentionProfileInput[]): NostrMentio
     const isDecodedNprofileForPublicKey = decodedNprofile.publicKey === publicKey;
     const safeNprofile = isDecodedNprofileForPublicKey ? inputNprofile : '';
     const displayName = input.displayName?.trim() || publicKey.slice(0, 12);
+    const picture = input.picture?.trim() ?? '';
+    const avatar = input.avatar?.trim() ?? '';
     const relayUrls = normalizeRelayUrls([
       ...(isDecodedNprofileForPublicKey ? decodedNprofile.relayUrls : []),
       ...(input.relayUrls ?? []),
@@ -160,6 +166,8 @@ export function buildMentionProfiles(inputs: MentionProfileInput[]): NostrMentio
       publicKey,
       displayName,
       handle: buildMentionHandle(displayName, publicKey, usedHandles),
+      ...(picture ? { picture } : {}),
+      ...(avatar ? { avatar } : {}),
       ...(safeNprofile ? { nprofile: safeNprofile } : {}),
       ...(relayUrls.length > 0 ? { relayUrls } : {}),
     });

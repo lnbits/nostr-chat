@@ -531,6 +531,8 @@ const mentionProfiles = computed<NostrMentionProfile[]>(() => {
     ...groupMembers.map((member) => ({
       publicKey: member.public_key,
       displayName: member.given_name?.trim() || member.name.trim() || member.public_key,
+      picture: member.picture ?? null,
+      avatar: member.avatar ?? null,
       nprofile: member.nprofile ?? null,
     })),
     ...(ownerPublicKey
@@ -538,6 +540,14 @@ const mentionProfiles = computed<NostrMentionProfile[]>(() => {
           {
             publicKey: ownerPublicKey,
             displayName: ownerDisplayName,
+            picture:
+              ownerPublicKey === loggedInPublicKey.value
+                ? selfAvatarImageUrl.value
+                : ownerIdentity?.avatarSrc ?? null,
+            avatar:
+              ownerPublicKey === loggedInPublicKey.value
+                ? selfAvatarFallback.value
+                : ownerIdentity?.avatarFallback ?? null,
           },
         ]
       : []),

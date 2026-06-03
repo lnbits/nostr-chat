@@ -19,6 +19,8 @@ describe('nostr mention utilities', () => {
       {
         publicKey: ALICE_PUBKEY,
         displayName: 'Alice',
+        picture: ' https://example.com/alice.png ',
+        avatar: ' AL ',
         relayUrls: [' wss://relay.example ', 'wss://relay.example'],
       },
     ]);
@@ -27,6 +29,8 @@ describe('nostr mention utilities', () => {
       publicKey: ALICE_PUBKEY,
       displayName: 'Alice',
       handle: 'Alice',
+      picture: 'https://example.com/alice.png',
+      avatar: 'AL',
       relayUrls: ['wss://relay.example'],
     });
 

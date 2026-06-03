@@ -17,7 +17,13 @@
         @mousedown.prevent
         @click="handleMentionAutocompleteSelect(entry)"
       >
-        <span class="composer__mention-avatar" aria-hidden="true">{{ entry.displayName.slice(0, 2).toUpperCase() }}</span>
+        <CachedAvatar
+          :src="entry.picture ?? ''"
+          :alt="entry.displayName"
+          :fallback="entry.avatar || entry.displayName.slice(0, 2).toUpperCase()"
+          class="composer__mention-avatar"
+          aria-hidden="true"
+        />
         <span class="composer__mention-copy">
           <span class="composer__mention-name">{{ entry.displayName }}</span>
           <span class="composer__mention-handle">@{{ entry.handle }}</span>
@@ -140,6 +146,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
+import CachedAvatar from 'src/components/CachedAvatar.vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS, filterEmojiEntries, type EmojiOption } from 'src/data/topEmojis';
 import { useChatStore } from 'src/stores/chatStore';

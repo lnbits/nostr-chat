@@ -2518,6 +2518,12 @@ function buildStoredGroupMember(
     preview.meta?.display_name?.trim() ||
     preview.name.trim() ||
     preview.public_key;
+  const previewPicture =
+    'picture' in preview && typeof preview.picture === 'string' ? preview.picture.trim() : '';
+  const previewAvatar =
+    'avatar' in preview && typeof preview.avatar === 'string' ? preview.avatar.trim() : '';
+  const picture = preview.meta?.picture?.trim() || previewPicture;
+  const avatar = preview.meta?.avatar?.trim() || previewAvatar;
   const about =
     preview.meta?.about?.trim() || ('about' in preview ? preview.about?.trim() || '' : '');
 
@@ -2525,6 +2531,8 @@ function buildStoredGroupMember(
     public_key: preview.public_key,
     name,
     given_name: preview.given_name?.trim() || null,
+    ...(picture ? { picture } : {}),
+    ...(avatar ? { avatar } : {}),
     ...(about ? { about } : {}),
     ...(identifierType === 'nip05' && nip05 ? { nip05 } : {}),
     ...(nprofile ? { nprofile } : {}),
@@ -2537,6 +2545,8 @@ function cloneGroupMember(member: ContactGroupMember): GroupMemberDraft {
     public_key: member.public_key,
     name: member.name,
     given_name: member.given_name ?? null,
+    picture: member.picture,
+    avatar: member.avatar,
     about: member.about,
     nip05: member.nip05,
     nprofile: member.nprofile
@@ -2674,12 +2684,11 @@ function memberDisplayName(member: GroupMemberDraft): string {
 }
 
 function memberAvatar(member: GroupMemberDraft): string {
-  return buildAvatarText(memberDisplayName(member) || member.public_key);
+  return member.avatar?.trim() || buildAvatarText(memberDisplayName(member) || member.public_key);
 }
 
 function memberPictureUrl(member: GroupMemberDraft): string {
-  void member;
-  return '';
+  return member.picture?.trim() || '';
 }
 
 function memberListCandidates(member: GroupMemberDraft): string[] {

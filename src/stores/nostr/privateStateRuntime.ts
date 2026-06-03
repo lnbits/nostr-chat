@@ -1084,6 +1084,8 @@ export function createPrivateStateRuntime({
     const fallbackName =
       existingMember?.name?.trim() || storedContact?.name?.trim() || memberPublicKey.slice(0, 16);
     const about = storedContact?.meta?.about?.trim() || existingMember?.about?.trim() || '';
+    const picture = storedContact?.meta?.picture?.trim() || existingMember?.picture?.trim() || '';
+    const avatar = storedContact?.meta?.avatar?.trim() || existingMember?.avatar?.trim() || '';
     const nip05 = storedContact?.meta?.nip05?.trim() || existingMember?.nip05?.trim() || '';
     const nprofile =
       storedContact?.meta?.nprofile?.trim() || existingMember?.nprofile?.trim() || '';
@@ -1102,6 +1104,8 @@ export function createPrivateStateRuntime({
           }
         : {}),
       ...(about ? { about } : {}),
+      ...(picture ? { picture } : {}),
+      ...(avatar ? { avatar } : {}),
       ...(nip05 ? { nip05 } : {}),
       ...(nprofile ? { nprofile } : {}),
     };

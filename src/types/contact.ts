@@ -10,6 +10,8 @@ export interface ContactGroupMember {
   public_key: string;
   name: string;
   given_name?: string | null;
+  picture?: string;
+  avatar?: string;
   about?: string;
   nip05?: string;
   nprofile?: string;
