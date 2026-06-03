@@ -39,6 +39,25 @@ function parseOptionalUnixTimestampValue(value: string | null | undefined): numb
   return Math.floor(parsed / 1000);
 }
 
+function toComparableIsoTimestampValue(value: string | null | undefined): number {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+export function resolveLatestReadBoundaryAtValue(
+  ...candidates: Array<string | null | undefined>
+): string {
+  return candidates.reduce((latest, candidate) => {
+    return toComparableIsoTimestampValue(candidate) > toComparableIsoTimestampValue(latest)
+      ? candidate?.trim() || latest
+      : latest;
+  }, '');
+}
+
 function normalizeOptionalUnixSecondsValue(value: number | null | undefined): number | null {
   if (!Number.isFinite(value)) {
     return null;

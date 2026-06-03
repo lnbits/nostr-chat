@@ -33,6 +33,7 @@ import type {
 import {
   resolveCurrentGroupChatEpochEntryValue,
   resolveGroupPublishRelayUrlsValue,
+  resolveLatestReadBoundaryAtValue,
 } from 'src/stores/nostr/valueUtils';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 import {
@@ -1925,14 +1926,28 @@ export function createPrivateStateRuntime({
       typeof chatRow.meta?.[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY] === 'string'
         ? chatRow.meta[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY].trim()
         : '';
-    const effectiveCursorAt =
-      [
-        cursor.last_seen_incoming_activity_at,
-        contactMeta.last_seen_incoming_activity_at,
-        currentChatLastSeenReceivedActivityAt,
-      ].reduce((latest, candidate) =>
-        toComparableTimestamp(candidate) > toComparableTimestamp(latest) ? candidate : latest
-      ) || '';
+    const currentChatLastOutgoingMessageAt =
+      typeof chatRow.meta?.last_outgoing_message_at === 'string'
+        ? chatRow.meta.last_outgoing_message_at.trim()
+        : '';
+    const latestOwnMessageAt = messageRows.reduce((latest, messageRow) => {
+      if (
+        inputSanitizerService.normalizeHexKey(messageRow.author_public_key) !== loggedInPubkeyHex
+      ) {
+        return latest;
+      }
+
+      return toComparableTimestamp(messageRow.created_at) > toComparableTimestamp(latest)
+        ? messageRow.created_at
+        : latest;
+    }, '');
+    const effectiveCursorAt = resolveLatestReadBoundaryAtValue(
+      cursor.last_seen_incoming_activity_at,
+      contactMeta.last_seen_incoming_activity_at,
+      currentChatLastSeenReceivedActivityAt,
+      currentChatLastOutgoingMessageAt,
+      latestOwnMessageAt
+    );
     const cursorTimestamp = toComparableTimestamp(effectiveCursorAt);
     const nextUnreadMessageCount = messageRows.reduce((count, messageRow) => {
       if (

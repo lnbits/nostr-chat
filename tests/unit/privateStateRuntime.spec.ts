@@ -1281,7 +1281,7 @@ describe('privateStateRuntime', () => {
     expect(deps.scheduleChatChecks).toHaveBeenCalledWith([contactPublicKey]);
   });
 
-  it('does not move the local read boundary backward when the relay cursor is older than chat state', async () => {
+  it('uses the latest own message as the local read boundary when the relay cursor is older', async () => {
     const deps = createDeps();
     const runtime = createPrivateStateRuntime(deps);
     const contactPublicKey = 'a'.repeat(64);
@@ -1352,10 +1352,12 @@ describe('privateStateRuntime', () => {
         last_seen_incoming_activity_event_id: 'cursor-event',
       },
     });
-    expect(serviceMocks.chatDataService.updateChatMeta).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.updateChatMeta).toHaveBeenCalledWith(contactPublicKey, {
+      last_seen_received_activity_at: '2026-01-07T00:00:00.000Z',
+    });
     expect(serviceMocks.chatDataService.updateChatUnreadCount).toHaveBeenCalledWith(
       contactPublicKey,
-      1
+      0
     );
   });
 
