@@ -19,6 +19,7 @@ import type {
   NostrEventEntry,
 } from 'src/types/chat';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
+import { isIncomingUnreadMessageActivity } from 'src/utils/messageActivity';
 import {
   areMessageReactionsEqual,
   buildMetaWithReactions,
@@ -319,6 +320,22 @@ function resolveLatestOwnMessageAt(
   }, '');
 }
 
+function countUnreadMessageRowsAfterBoundary(
+  rows: Array<Pick<MessageRow, 'author_public_key' | 'created_at' | 'meta'>>,
+  loggedInPublicKey: string | null | undefined,
+  boundaryAt: string
+): number {
+  const boundaryTimestamp = toComparableTimestamp(boundaryAt);
+
+  return rows.reduce((count, row) => {
+    if (!isIncomingUnreadMessageActivity(row, loggedInPublicKey)) {
+      return count;
+    }
+
+    return count + (toComparableTimestamp(row.created_at) > boundaryTimestamp ? 1 : 0);
+  }, 0);
+}
+
 function areReactionListsEqualValue(
   currentReactions: MessageReaction[],
   nextReactions: MessageReaction[]
@@ -584,6 +601,7 @@ export const __messageStoreTestUtils = {
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
   compareMessageCursors,
+  countUnreadMessageRowsAfterBoundary,
   countOwnUnseenReactions,
   mergeMessagesById,
   readUnseenReactionCountFromMeta: readUnseenReactionCountFromMetaValue,
@@ -2051,13 +2069,11 @@ export const useMessageStore = defineStore('messageStore', () => {
         summary.boundaryAdvancedCount += 1;
       }
 
-      const nextUnreadCount = chatMessageRows.reduce((count, row) => {
-        if (normalizeChatIdentifier(row.author_public_key) === loggedInPublicKey) {
-          return count;
-        }
-
-        return count + (toComparableTimestamp(row.created_at) > boundaryTimestamp ? 1 : 0);
-      }, 0);
+      const nextUnreadCount = countUnreadMessageRowsAfterBoundary(
+        chatMessageRows,
+        loggedInPublicKey,
+        boundaryAt
+      );
 
       if (Number(chatRow.unread_count ?? 0) !== nextUnreadCount) {
         await chatDataService.updateChatUnreadCount(normalizedChatId, nextUnreadCount);

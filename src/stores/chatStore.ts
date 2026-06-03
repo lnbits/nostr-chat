@@ -7,6 +7,7 @@ import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
+import { isIncomingUnreadMessageActivity } from 'src/utils/messageActivity';
 import { computed, ref } from 'vue';
 
 interface ChatContactContext {
@@ -250,6 +251,7 @@ function buildChatActivitySnapshotByPublicKey(
         snapshot.lastOutgoingMessageAt = row.created_at;
       }
     } else if (
+      isIncomingUnreadMessageActivity(row, loggedInPublicKey) &&
       toComparableTimestamp(row.created_at) > toComparableTimestamp(snapshot.lastIncomingMessageAt)
     ) {
       snapshot.lastIncomingMessageAt = row.created_at;
@@ -273,7 +275,11 @@ function buildIncomingMessageTimestampsByPublicKey(
   for (const row of messageRows) {
     const chatPublicKey = normalizeChatIdentifier(row.chat_public_key);
     const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
-    if (!chatPublicKey || !authorPublicKey || authorPublicKey === loggedInPublicKey) {
+    if (
+      !chatPublicKey ||
+      !authorPublicKey ||
+      !isIncomingUnreadMessageActivity(row, loggedInPublicKey)
+    ) {
       continue;
     }
 
@@ -311,8 +317,7 @@ function findLatestIncomingMessageActivity(
   let latestIncomingTimestamp = 0;
   let latestIncomingRowId = 0;
   for (const row of messageRows) {
-    const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
-    if (!authorPublicKey || authorPublicKey === loggedInPublicKey) {
+    if (!isIncomingUnreadMessageActivity(row, loggedInPublicKey)) {
       continue;
     }
 

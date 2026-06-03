@@ -11,6 +11,7 @@ const {
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
   compareMessageCursors,
+  countUnreadMessageRowsAfterBoundary,
   countOwnUnseenReactions,
   mergeMessagesById,
   readUnseenReactionCountFromMeta,
@@ -403,6 +404,37 @@ describe('messageStore logic', () => {
     ).toBe('2026-01-03T00:00:00.000Z');
 
     expect(resolveLatestOwnMessageAt([] as never, null)).toBe('');
+  });
+
+  it('excludes group epoch notices from unread message row counts', () => {
+    expect(
+      countUnreadMessageRowsAfterBoundary(
+        [
+          {
+            author_public_key: 'them',
+            created_at: '2026-01-02T00:00:00.000Z',
+            meta: {},
+          },
+          {
+            author_public_key: 'group',
+            created_at: '2026-01-03T00:00:00.000Z',
+            meta: {
+              kind: 1014,
+              group_epoch_notice: {
+                epochNumber: 1,
+              },
+            },
+          },
+          {
+            author_public_key: 'me',
+            created_at: '2026-01-04T00:00:00.000Z',
+            meta: {},
+          },
+        ] as never,
+        'me',
+        '2026-01-01T00:00:00.000Z'
+      )
+    ).toBe(1);
   });
 
   it('treats missing logged-in identity as a startup-safe zero for unseen reactions', () => {

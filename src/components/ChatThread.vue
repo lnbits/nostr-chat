@@ -289,6 +289,7 @@ import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/ty
 import type { ContactMetadata } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
+import { isGroupEpochNoticeMessageMeta } from 'src/utils/messageActivity';
 import {
   countUnseenReactionsForAuthor,
   normalizeMessageReactions
@@ -597,7 +598,7 @@ function readCurrentLastSeenReceivedActivityAt(): string {
 
 function getIncomingMessageTimestampAfter(message: Message, afterTimestamp: string): number | null {
   const afterComparableTimestamp = toComparableTimestamp(afterTimestamp);
-  if (message.sender !== 'them') {
+  if (message.sender !== 'them' || isGroupEpochNoticeMessageMeta(message.meta)) {
     return null;
   }
 
@@ -1701,7 +1702,7 @@ async function syncVisibleReactionViews(): Promise<void> {
     eventId: string | null;
   } | null = null;
   visibleMessages.forEach((message) => {
-    if (message.sender === 'them') {
+    if (message.sender === 'them' && !isGroupEpochNoticeMessageMeta(message.meta)) {
       if (
         !latestVisibleReceivedActivity ||
         toComparableTimestamp(message.sentAt) > toComparableTimestamp(latestVisibleReceivedActivity.at)
@@ -1753,6 +1754,7 @@ async function syncVisibleReactionViews(): Promise<void> {
     const nextUnreadMessageCount = props.messages.reduce((count, message) => {
       if (
         message.sender !== 'them' ||
+        isGroupEpochNoticeMessageMeta(message.meta) ||
         toComparableTimestamp(message.sentAt) <=
           toComparableTimestamp(effectiveLastSeenReceivedActivityAt)
       ) {

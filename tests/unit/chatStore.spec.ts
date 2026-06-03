@@ -127,6 +127,19 @@ describe('chatStore logic', () => {
         author_public_key: 'them',
         created_at: '2026-01-03T00:00:00.000Z',
         event_id: 'latest-event',
+        meta: {},
+      },
+      {
+        id: 4,
+        author_public_key: 'group',
+        created_at: '2026-01-04T00:00:00.000Z',
+        event_id: 'epoch-event',
+        meta: {
+          kind: 1014,
+          group_epoch_notice: {
+            epochNumber: 1,
+          },
+        },
       },
     ] as never;
     const latestIncomingActivity = findLatestIncomingMessageActivity(rows, 'me');
@@ -210,6 +223,18 @@ describe('chatStore logic', () => {
           chat_public_key: 'chat-a',
           author_public_key: 'them',
           created_at: '2026-01-03T00:00:00.000Z',
+          meta: {},
+        },
+        {
+          chat_public_key: 'chat-a',
+          author_public_key: 'group',
+          created_at: '2026-01-05T00:00:00.000Z',
+          meta: {
+            kind: 1014,
+            group_epoch_notice: {
+              epochNumber: 1,
+            },
+          },
         },
         {
           chat_public_key: 'chat-b',
