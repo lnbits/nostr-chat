@@ -1,6 +1,8 @@
 prompt
 
 
+cross test with other chat apps
+
 add `Encrypted private key import using ncryptsec` on all
 
 No relays found for this contact -> if this is the case do a refresh profile beforehand
@@ -14,22 +16,11 @@ chat with contact from group
 dektop app -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
 copy to clipboard button does not work on mobile apps
 
-underad always at the top & group events do not count as unread
-new epoch results in unread message
+unread always at the top 
 
-
-
-backrefs
 
 confety emoji
 
-
-### Groups
-@someUser
- - more clear membership management in group chats
-
-
- 
 
 Priority	Number	Scenario	Why it matters
 P0	9	New current group epoch / rotation	Group push notifications can silently stop after an epoch rotation because Android push still watches the old epoch pubkey.
