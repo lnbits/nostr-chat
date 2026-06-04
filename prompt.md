@@ -8,9 +8,6 @@ No relays found for this contact -> if this is the case do a refresh profile bef
 - when refreshing a users's profile also use the app relays (the user might not have relays) 
 
 
-for group restore make sure to start with the last epoch, then work backwards
-In the Gropu > Members show the updating relays status bar for each member (pulsing when it is sending) slowly filling up to be green or read.
-
 mark all messages as read when opening android app
 
 chat with contact from group
