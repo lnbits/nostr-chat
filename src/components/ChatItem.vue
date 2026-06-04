@@ -30,7 +30,7 @@
           <AppTooltip>{{ $t('common.mute') }}</AppTooltip>
         </span>
       </div>
-      <q-item-label class="chat-item__caption" caption lines="1">{{ chat.lastMessage }}</q-item-label>
+      <q-item-label class="chat-item__caption" caption lines="1">{{ chatPreview }}</q-item-label>
     </q-item-section>
 
     <q-item-section v-if="hasMetaBadges" side class="chat-item__meta">
@@ -109,6 +109,7 @@ import { computed } from 'vue';
 import type { Chat } from 'src/types/chat';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import { formatGroupMentionsForDisplay } from 'src/utils/nostrMentions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import { getDateTimeLocale, t } from 'src/i18n';
 
@@ -199,6 +200,11 @@ const avatarImageUrl = computed(() => {
 const isMuted = computed(() => props.chat.meta.muted === true);
 const unseenReactionCount = computed(() => readMetaCount('unseen_reaction_count'));
 const hasMetaBadges = computed(() => props.chat.unreadCount > 0 || unseenReactionCount.value > 0);
+const chatPreview = computed(() =>
+  props.chat.type === 'group'
+    ? formatGroupMentionsForDisplay(props.chat.lastMessage, props.chat.meta)
+    : props.chat.lastMessage
+);
 
 function formatReactionCount(value: number): string {
   return value > 99 ? '99+' : String(value);

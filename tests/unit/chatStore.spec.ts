@@ -1,3 +1,4 @@
+import { nip19 } from '@nostr-dev-kit/ndk';
 import { __chatStoreTestUtils } from 'src/stores/chatStore';
 import { describe, expect, it } from 'vitest';
 
@@ -441,6 +442,7 @@ describe('chatStore logic', () => {
           picture: 'https://example.com/group.png',
           givenName: 'Alpha Team',
           contactName: 'Alpha Group',
+          groupMembers: [],
           lastSeenIncomingActivityAt: '2026-01-04T00:00:00.000Z',
         }
       )
@@ -463,5 +465,40 @@ describe('chatStore logic', () => {
         current_epoch_public_key: 'epoch-key',
       },
     });
+  });
+
+  it('formats NIP-27 mentions in mapped group chat previews', () => {
+    const bobPubkey = 'b'.repeat(64);
+    const nprofile = nip19.nprofileEncode({
+      pubkey: bobPubkey,
+      relays: ['wss://group.example'],
+    });
+
+    expect(
+      mapChatRowToChat(
+        {
+          public_key: 'group-chat',
+          type: 'group',
+          name: 'Fallback Group',
+          last_message: `nostr:${nprofile} hello`,
+          last_message_at: '2026-01-05T00:00:00.000Z',
+          unread_count: 1,
+          meta: {},
+        } as never,
+        {
+          picture: '',
+          givenName: 'Alpha Team',
+          contactName: 'Alpha Group',
+          groupMembers: [
+            {
+              public_key: bobPubkey,
+              name: 'Bob Member',
+              given_name: 'Bobby',
+            },
+          ],
+          lastSeenIncomingActivityAt: '',
+        }
+      ).lastMessage
+    ).toBe('@Bobby hello');
   });
 });

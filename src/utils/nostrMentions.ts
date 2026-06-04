@@ -1,5 +1,6 @@
 import { isValidPubkey, nip19 } from '@nostr-dev-kit/ndk';
 import type { MessageMentionMetadata, MessageMetadata } from 'src/types/chat';
+import type { ContactGroupMember, ContactMetadata } from 'src/types/contact';
 
 export interface NostrMentionProfile {
   publicKey: string;
@@ -35,6 +36,8 @@ interface MentionProfileInput {
   nprofile?: string | null;
   relayUrls?: string[] | null;
 }
+
+type GroupMentionMetadata = Pick<ContactMetadata, 'group_members'> | Record<string, unknown>;
 
 const NOSTR_URI_PATTERN = /nostr:([A-Za-z0-9]+)/gu;
 
@@ -124,6 +127,22 @@ function buildMentionHandle(
   return handle;
 }
 
+function isGroupMemberLike(value: unknown): value is ContactGroupMember {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<ContactGroupMember>;
+  return typeof candidate.public_key === 'string' && candidate.public_key.trim().length > 0;
+}
+
+function readGroupMentionMembers(
+  meta: GroupMentionMetadata | null | undefined
+): ContactGroupMember[] {
+  const groupMembers = meta?.group_members;
+  return Array.isArray(groupMembers) ? groupMembers.filter(isGroupMemberLike) : [];
+}
+
 export function createNprofileMentionUri(
   publicKey: string,
   relayUrls: string[] = []
@@ -175,6 +194,20 @@ export function buildMentionProfiles(inputs: MentionProfileInput[]): NostrMentio
   }
 
   return profiles;
+}
+
+export function buildGroupMemberMentionProfiles(
+  meta: GroupMentionMetadata | null | undefined
+): NostrMentionProfile[] {
+  return buildMentionProfiles(
+    readGroupMentionMembers(meta).map((member) => ({
+      publicKey: member.public_key,
+      displayName: member.given_name?.trim() || member.name.trim() || member.public_key,
+      picture: member.picture ?? null,
+      avatar: member.avatar ?? null,
+      nprofile: member.nprofile ?? null,
+    }))
+  );
 }
 
 export function parseNostrMentions(text: string): ParsedNostrMention[] {
@@ -303,6 +336,17 @@ export function formatNostrMentionsForDisplay(
   return buildNostrMentionTextParts(text, profiles)
     .map((part) => part.text)
     .join('');
+}
+
+export function formatGroupMentionsForDisplay(
+  text: string,
+  meta: GroupMentionMetadata | null | undefined
+): string {
+  if (!text.includes('nostr:')) {
+    return text;
+  }
+
+  return formatNostrMentionsForDisplay(text, buildGroupMemberMentionProfiles(meta));
 }
 
 export function buildNostrMentionTextParts(

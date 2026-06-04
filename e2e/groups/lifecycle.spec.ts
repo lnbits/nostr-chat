@@ -130,6 +130,24 @@ test('group owner can create a group, invite a member, and exchange messages bot
     await waitForThreadMessage(alice.page, aliceMentionMessage, {
       chatId: groupPublicKey,
     });
+    const mentionLink = threadMessage(alice.page, aliceMentionMessage)
+      .getByTestId('message-mention-link')
+      .first();
+    await expect(mentionLink).toContainText(/^@/);
+    const mentionLabel = (await mentionLink.textContent())?.trim() ?? '';
+    expect(mentionLabel).not.toContain('nostr:');
+    await waitForThreadMessage(bob.page, aliceMentionMessage, {
+      chatId: groupPublicKey,
+    });
+    await bob.page.goto('/#/chats');
+    const groupChatItem = bob.page
+      .getByTestId('chat-item')
+      .filter({ hasText: aliceMentionMessage })
+      .first();
+    await expect(groupChatItem).toBeVisible();
+    await expect(groupChatItem).toContainText(mentionLabel);
+    await expect(groupChatItem).not.toContainText('nostr:nprofile');
+    await navigateToChat(alice.page, groupPublicKey);
     await threadMessage(alice.page, aliceMentionMessage)
       .getByTestId('message-mention-link')
       .first()

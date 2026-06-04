@@ -1,8 +1,10 @@
 import { nip19 } from '@nostr-dev-kit/ndk';
 import {
+  buildGroupMemberMentionProfiles,
   buildMentionMetadata,
   buildMentionProfiles,
   buildNostrMentionTextParts,
+  formatGroupMentionsForDisplay,
   formatNostrMentionsForDisplay,
   parseNostrMentions,
   serializeMentionDraft,
@@ -92,6 +94,36 @@ describe('nostr mention utilities', () => {
         text: '!',
       },
     ]);
+  });
+
+  it('formats group member mentions in preview text', () => {
+    const nprofile = nip19.nprofileEncode({
+      pubkey: BOB_PUBKEY,
+      relays: ['wss://group.example'],
+    });
+    const meta = {
+      group_members: [
+        {
+          public_key: BOB_PUBKEY,
+          name: 'Bob Member',
+          given_name: 'Bobby',
+          picture: 'https://example.com/bob.png',
+          avatar: 'BM',
+          nprofile,
+        },
+      ],
+    };
+
+    expect(buildGroupMemberMentionProfiles(meta)).toEqual([
+      expect.objectContaining({
+        publicKey: BOB_PUBKEY,
+        displayName: 'Bobby',
+        picture: 'https://example.com/bob.png',
+        avatar: 'BM',
+        nprofile,
+      }),
+    ]);
+    expect(formatGroupMentionsForDisplay(`nostr:${nprofile} hello`, meta)).toBe('@Bobby hello');
   });
 
   it('ignores nprofile values that do not match the provided public key', () => {

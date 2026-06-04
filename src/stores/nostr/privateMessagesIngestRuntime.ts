@@ -12,7 +12,7 @@ import { isPlainRecord } from 'src/stores/nostr/shared';
 import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type { NostrEventDirection } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
-import { buildMentionMetadata } from 'src/utils/nostrMentions';
+import { buildMentionMetadata, formatGroupMentionsForDisplay } from 'src/utils/nostrMentions';
 
 export function createPrivateMessagesIngestRuntime({
   appendRelayStatusesToMessageEvent,
@@ -770,6 +770,9 @@ export function createPrivateMessagesIngestRuntime({
           unread_count: 0,
           meta: {
             ...(contact?.meta.picture ? { picture: contact.meta.picture } : {}),
+            ...(Array.isArray(contact?.meta.group_members)
+              ? { group_members: contact.meta.group_members }
+              : {}),
             ...(contact?.meta.muted === true ? { muted: true } : {}),
             ...(incomingChatInboxState === 'accepted'
               ? {
@@ -889,6 +892,9 @@ export function createPrivateMessagesIngestRuntime({
     }
 
     const currentUnreadCount = Math.max(0, Number(chat.unread_count ?? 0));
+    const messagePreviewText = resolvedGroupChatPublicKey
+      ? formatGroupMentionsForDisplay(messageText, contact?.meta ?? null)
+      : messageText;
     const isAfterSeenBoundary = isIncomingActivityAfterSeenBoundary(
       createdAt,
       effectiveLastSeenIncomingActivityAt
@@ -926,7 +932,7 @@ export function createPrivateMessagesIngestRuntime({
     if (shouldUpdateChatPreview) {
       await chatDataService.updateChatPreview(
         chat.public_key,
-        messageText,
+        messagePreviewText,
         nextPreviewAt,
         nextUnreadCount
       );
@@ -1013,7 +1019,7 @@ export function createPrivateMessagesIngestRuntime({
       showIncomingMessageBrowserNotification({
         chatPubkey: chat.public_key,
         title: resolveIncomingNotificationTitle(chat, contact, chatPubkey),
-        messageText,
+        messageText: messagePreviewText,
         iconUrl: contact?.meta.picture?.trim() || undefined,
       });
     }
@@ -1032,12 +1038,15 @@ export function createPrivateMessagesIngestRuntime({
         chatStore.applyIncomingMessage({
           publicKey: chat.public_key,
           fallbackName: deriveChatName(contact, chatPubkey),
-          messageText,
+          messageText: messagePreviewText,
           at: nextPreviewAt,
           unreadCount: nextUnreadCount,
           meta: {
             ...(chat.meta ?? {}),
             ...(contact?.meta.picture ? { picture: contact.meta.picture } : {}),
+            ...(Array.isArray(contact?.meta.group_members)
+              ? { group_members: contact.meta.group_members }
+              : {}),
           },
         });
       } else if (nextUnreadCount !== currentUnreadCount) {
