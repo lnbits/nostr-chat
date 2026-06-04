@@ -1,5 +1,5 @@
 import NDK, {
-  type NDKEvent,
+  NDKEvent,
   NDKKind,
   NDKRelayList,
   NDKRelaySet,
@@ -274,10 +274,12 @@ describe('relay and subscription runtimes', () => {
     });
 
     const relaySetSpy = vi.spyOn(NDKRelaySet, 'fromRelayUrls').mockReturnValue({} as never);
+    let publishReplaceableCount = 0;
     const publishReplaceableSpy = vi
-      .spyOn(NDKRelayList.prototype, 'publishReplaceable')
-      .mockImplementation(async function publishReplaceable() {
-        this.created_at = 1111;
+      .spyOn(NDKEvent.prototype, 'publishReplaceable')
+      .mockImplementation(async function publishReplaceable(this: NDKEvent) {
+        publishReplaceableCount += 1;
+        this.created_at = 1110 + publishReplaceableCount;
         return new Set();
       } as never);
 
@@ -358,12 +360,31 @@ describe('relay and subscription runtimes', () => {
           read: true,
           write: true,
         },
+        {
+          url: 'wss://relay.two',
+          read: false,
+          write: true,
+        },
+        {
+          url: 'wss://relay.three',
+          read: true,
+          write: false,
+        },
       ],
       ['wss://seed.example']
     );
     expect(ensureRelayConnections).toHaveBeenCalledWith(['wss://relay.one/']);
-    expect(publishReplaceableSpy).toHaveBeenCalledTimes(1);
+    expect(publishReplaceableSpy).toHaveBeenCalledTimes(2);
+    expect((publishReplaceableSpy.mock.contexts[0] as NDKEvent).kind).toBe(NDKKind.RelayList);
+    const directMessageRelayListEvent = publishReplaceableSpy.mock.contexts[1] as NDKEvent;
+    expect(directMessageRelayListEvent.kind).toBe(NDKKind.DirectMessageReceiveRelayList);
+    expect(directMessageRelayListEvent.content).toBe('');
+    expect(directMessageRelayListEvent.tags).toEqual([
+      ['relay', 'wss://relay.one/'],
+      ['relay', 'wss://relay.three/'],
+    ]);
     expect(updateStoredEventSinceFromCreatedAt).toHaveBeenCalledWith(1111);
+    expect(updateStoredEventSinceFromCreatedAt).toHaveBeenCalledWith(1112);
 
     await runtime.updateLoggedInUserRelayList([
       {
