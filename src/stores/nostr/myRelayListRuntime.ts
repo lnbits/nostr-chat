@@ -14,6 +14,8 @@ import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import type { AuthMethod, RelayListMetadataEntry } from 'src/stores/nostr/types';
 import type { ContactRelay } from 'src/types/contact';
 
+const DIRECT_MESSAGE_RECEIVE_RELAY_TAG = 'relay';
+
 interface MyRelayListRuntimeDeps {
   beginStartupStep: (stepId: 'my-relay-list') => void;
   buildSubscriptionEventDetails: (
@@ -92,6 +94,9 @@ export function createMyRelayListRuntime({
   ): Promise<void> {
     const normalizedRelayEntries =
       inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
+    const directMessageReceiveRelayUrls = normalizedRelayEntries
+      .filter((relay) => relay.read)
+      .map((relay) => relay.url);
     const relayUrls = await resolveLoggedInPublishRelayUrls([
       ...publishRelayUrls,
       ...normalizedRelayEntries.map((relay) => relay.url),
@@ -119,6 +124,17 @@ export function createMyRelayListRuntime({
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     await relayListEvent.publishReplaceable(relaySet);
     updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
+
+    const directMessageRelayListEvent = new NDKEvent(ndk);
+    directMessageRelayListEvent.kind = NDKKind.DirectMessageReceiveRelayList;
+    directMessageRelayListEvent.content = '';
+    directMessageRelayListEvent.tags = directMessageReceiveRelayUrls.map((relayUrl) => [
+      DIRECT_MESSAGE_RECEIVE_RELAY_TAG,
+      relayUrl,
+    ]);
+
+    await directMessageRelayListEvent.publishReplaceable(relaySet);
+    updateStoredEventSinceFromCreatedAt(directMessageRelayListEvent.created_at);
   }
 
   async function updateLoggedInUserRelayList(
