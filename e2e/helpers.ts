@@ -615,10 +615,13 @@ export async function bootstrapSessionOnPage(
       ? options.relayUrls
       : [E2E_RELAY_URL];
 
+  await seedRelayStorage(page.context(), relayUrls, {
+    disableBrowserNotificationsPrompt: true,
+  });
   await page.goto('/#/login');
-  await page.waitForFunction(() => Boolean(window.__appE2E__));
 
-  const bootstrapResult = await page.evaluate(
+  const bootstrapResult = await evaluateWithAppBridgeRetry(
+    page,
     async ({ privateKey, relayUrls }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {
@@ -649,14 +652,18 @@ export async function bootstrapSessionOnPage(
     throw new Error(`E2E bootstrap failed: ${bootstrapResult.message}`);
   }
 
-  const session = await page.evaluate(async () => {
-    const bridge = window.__appE2E__;
-    if (!bridge) {
-      throw new Error('E2E bridge is not available.');
-    }
+  const session = await evaluateWithAppBridgeRetry(
+    page,
+    async () => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
 
-    return bridge.getSessionSnapshot();
-  });
+      return bridge.getSessionSnapshot();
+    },
+    null
+  );
 
   await waitForChatsShell(page);
 
