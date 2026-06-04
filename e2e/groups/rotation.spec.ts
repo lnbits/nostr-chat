@@ -16,6 +16,8 @@ import {
   sendMessage,
   TEST_ACCOUNTS,
   waitForAppBridge,
+  waitForNoChatUnreadBadge,
+  waitForNoUnreadChatTotalBadge,
   waitForThreadMessage,
 } from '../helpers';
 
@@ -78,8 +80,9 @@ test('group messages continue both ways after an explicit epoch rotation', async
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupRotateBob);
 
   try {
+    const groupName = `Rotated Group ${Date.now()}`;
     const groupPublicKey = await createGroup(alice.page, {
-      name: `Rotated Group ${Date.now()}`,
+      name: groupName,
       about: 'Post-rotation messaging coverage',
     });
     const rotatedOwnerMessage = `owner-after-rotation-${Date.now()}`;
@@ -91,6 +94,14 @@ test('group messages continue both ways after an explicit epoch rotation', async
     await acceptFirstRequest(bob.page);
 
     await rotateGroupEpoch(alice.page, groupPublicKey, [bob.session.publicKey], [E2E_RELAY_URL]);
+
+    await openGroupContact(bob.page, groupPublicKey);
+    await openGroupEpochsTab(bob.page);
+    await expect.poll(() => readGroupEpochNumbers(bob.page), { timeout: 12_000 }).toEqual([1, 0]);
+    await navigateToChat(bob.page, groupPublicKey);
+    await waitForNoChatUnreadBadge(bob.page, groupName);
+    await waitForNoUnreadChatTotalBadge(bob.page);
+    await expect(bob.page.locator('[data-unread-separator="true"]')).toHaveCount(0);
 
     await navigateToChat(alice.page, groupPublicKey);
     await sendMessage(alice.page, rotatedOwnerMessage, {

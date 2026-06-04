@@ -270,6 +270,7 @@
             <ContactProfile
               v-model="selectedContactProfile"
               v-model:pubkey="selectedContactPubkey"
+              :auto-refresh-on-pubkey-change="true"
               :read-only="!canPublishSelectedGroupProfile"
               :show-header="true"
               :show-share-action="true"
@@ -500,6 +501,20 @@ function contactDisplayName(contact: ContactRecord): string {
   return contact.name || contact.public_key;
 }
 
+function selectedProfileDisplayName(fallbackPublicKey: string): string {
+  const displayName = selectedContactProfile.value.display_name.trim();
+  if (displayName) {
+    return displayName;
+  }
+
+  const name = selectedContactProfile.value.name.trim();
+  if (name) {
+    return name;
+  }
+
+  return fallbackPublicKey.slice(0, 16);
+}
+
 function contactPubkeySnippet(contact: ContactRecord): string {
   return contact.public_key.trim().slice(0, 32);
 }
@@ -525,6 +540,10 @@ function isContactMuted(contact: ContactRecord): boolean {
 
 function isContactBlocked(contact: ContactRecord): boolean {
   return contact.meta.blocked === true;
+}
+
+function shouldEnsureContactBeforeChat(contact: ContactRecord): boolean {
+  return contact.type !== 'group' && contact.meta.private_contact_list_member !== true;
 }
 
 function toggleContactSection(sectionKey: ContactSectionKey): void {
@@ -826,6 +845,75 @@ async function openChatForContact(contact: ContactRecord): Promise<void> {
   void router.push({ name: 'chats', params: { pubkey: chat.publicKey } });
 }
 
+async function ensureSelectedContactForChat(publicKey: string): Promise<ContactRecord | null> {
+  const normalizedPublicKey = publicKey.trim().toLowerCase();
+  if (!normalizedPublicKey) {
+    return null;
+  }
+
+  await contactsService.init();
+  const existingContact = await contactsService.getContactByPublicKey(normalizedPublicKey);
+  if (existingContact) {
+    if (isContactBlocked(existingContact)) {
+      return null;
+    }
+
+    if (!shouldEnsureContactBeforeChat(existingContact)) {
+      return existingContact;
+    }
+  }
+
+  const fallbackName = selectedProfileDisplayName(normalizedPublicKey);
+  await nostrStore.ensureRespondedPubkeyIsContact(normalizedPublicKey, fallbackName);
+
+  let nextContact = await contactsService.getContactByPublicKey(normalizedPublicKey);
+  if (!nextContact) {
+    const profileName = selectedContactProfile.value.name.trim();
+    const profileDisplayName = selectedContactProfile.value.display_name.trim();
+    const profilePicture = selectedContactProfile.value.picture.trim();
+    const profileAbout = selectedContactProfile.value.about.trim();
+    const profileNip05 = selectedContactProfile.value.nip05.trim();
+    const profileMeta: ContactMetadata = {
+      private_contact_list_member: true,
+      ...(profileName ? { name: profileName } : {}),
+      ...(profileDisplayName ? { display_name: profileDisplayName } : {}),
+      ...(profilePicture ? { picture: profilePicture } : {}),
+      ...(profileAbout ? { about: profileAbout } : {}),
+      ...(profileNip05 ? { nip05: profileNip05 } : {})
+    };
+    nextContact = await contactsService.createContact({
+      public_key: normalizedPublicKey,
+      name: fallbackName,
+      given_name: profileDisplayName || null,
+      meta: profileMeta,
+      relays: selectedContactProfile.value.relays.map((url) => ({
+        url,
+        read: true,
+        write: true
+      }))
+    });
+    try {
+      await nostrStore.publishPrivateContactList(relayStore.relays);
+    } catch (error) {
+      reportUiError(
+        'Failed to publish private contact list after creating chat contact',
+        error,
+        t('contacts.contactSavedContactList')
+      );
+    }
+  }
+
+  if (!nextContact || isContactBlocked(nextContact)) {
+    return null;
+  }
+
+  await loadContacts(contactQuery.value);
+  const refreshedContact =
+    (await contactsService.getContactByPublicKey(normalizedPublicKey)) ?? nextContact;
+  handleSelectContact(refreshedContact, false);
+  return refreshedContact;
+}
+
 async function handleOpenChat(): Promise<void> {
   try {
     const contactPubkey = selectedContactPubkey.value.trim().toLowerCase();
@@ -836,14 +924,18 @@ async function handleOpenChat(): Promise<void> {
     const selectedContact = contacts.value.find(
       (contact) => contact.public_key.trim().toLowerCase() === contactPubkey
     );
-    if (!selectedContact) {
-      return;
-    }
-    if (isContactBlocked(selectedContact)) {
+    const contactForChat =
+      selectedContact &&
+      !isContactBlocked(selectedContact) &&
+      !shouldEnsureContactBeforeChat(selectedContact)
+        ? selectedContact
+        : await ensureSelectedContactForChat(contactPubkey);
+
+    if (!contactForChat) {
       return;
     }
 
-    await openChatForContact(selectedContact);
+    await openChatForContact(contactForChat);
   } catch (error) {
     reportUiError('Failed to open chat for contact', error);
   }

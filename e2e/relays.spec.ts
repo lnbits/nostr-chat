@@ -96,7 +96,16 @@ test('pending outbound message survives reload and auto-replays after relay reco
     });
 
     await openMessageRelayStatusDialog(alice.page, pendingMessage);
-    const failedRelayRow = alice.page
+    const contactRelayTab = alice.page.getByTestId('relay-status-tab-recipient');
+    const myRelayTab = alice.page.getByTestId('relay-status-tab-self');
+    await expect(contactRelayTab).toContainText(/^Contact Relays \(\d+\/\d+\)$/);
+    await expect(myRelayTab).toContainText(/^My Relays \(\d+\/\d+\)$/);
+    const contactRelayPanel = alice.page.getByTestId('relay-status-panel-recipient');
+    await expect(contactRelayPanel).toBeVisible();
+    await myRelayTab.click();
+    const myRelayPanel = alice.page.getByTestId('relay-status-panel-self');
+    await expect(myRelayPanel).toBeVisible();
+    const failedRelayRow = myRelayPanel
       .locator('.bubble__status-list-item--dialog')
       .filter({ hasText: E2E_RELAY_URL_TWO });
     await expect(
@@ -104,9 +113,11 @@ test('pending outbound message survives reload and auto-replays after relay reco
     ).toBeVisible({
       timeout: 12_000,
     });
-    await closeDialogWithEscape(alice.page);
+    const retryAllButton = alice.page.getByTestId('relay-status-retry-all-button');
+    await expect(retryAllButton).toBeVisible();
 
     await unpauseRelayService('relay-two');
+    await retryAllButton.click();
     await waitForMessageRelayRetryToResolve(alice.page, pendingMessage, E2E_RELAY_URL_TWO);
     await closeDialogWithEscape(alice.page);
     await waitForThreadMessage(alice.page, pendingMessage, {

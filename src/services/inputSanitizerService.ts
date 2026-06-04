@@ -285,6 +285,8 @@ class InputSanitizerService {
       const name = (typeof rawMember.name === 'string' ? rawMember.name.trim() : '') || publicKey;
       const givenName =
         typeof rawMember.given_name === 'string' ? rawMember.given_name.trim() || null : null;
+      const picture = this.readOptionalString(rawMember.picture);
+      const avatar = this.readOptionalString(rawMember.avatar);
       const about = this.readOptionalString(rawMember.about);
       const nip05 = this.readOptionalString(rawMember.nip05);
       const nprofile = this.readOptionalString(rawMember.nprofile);
@@ -293,6 +295,8 @@ class InputSanitizerService {
         public_key: publicKey,
         name,
         given_name: givenName,
+        ...(picture ? { picture } : {}),
+        ...(avatar ? { avatar } : {}),
         ...(about ? { about } : {}),
         ...(nip05 ? { nip05 } : {}),
         ...(nprofile ? { nprofile } : {}),

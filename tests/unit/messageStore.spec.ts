@@ -1,3 +1,4 @@
+import { nip19 } from '@nostr-dev-kit/ndk';
 import { __messageStoreTestUtils, MissingContactRelaysError } from 'src/stores/messageStore';
 import { describe, expect, it } from 'vitest';
 
@@ -11,7 +12,9 @@ const {
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
   compareMessageCursors,
+  countUnreadMessageRowsAfterBoundary,
   countOwnUnseenReactions,
+  mapMessageRowToMessage,
   mergeMessagesById,
   readUnseenReactionCountFromMeta,
   resolveChatDeliveryTarget,
@@ -403,6 +406,88 @@ describe('messageStore logic', () => {
     ).toBe('2026-01-03T00:00:00.000Z');
 
     expect(resolveLatestOwnMessageAt([] as never, null)).toBe('');
+  });
+
+  it('excludes group epoch notices from unread message row counts', () => {
+    expect(
+      countUnreadMessageRowsAfterBoundary(
+        [
+          {
+            author_public_key: 'them',
+            created_at: '2026-01-02T00:00:00.000Z',
+            meta: {},
+          },
+          {
+            author_public_key: 'group',
+            created_at: '2026-01-03T00:00:00.000Z',
+            meta: {
+              kind: 1014,
+              group_epoch_notice: {
+                epochNumber: 1,
+              },
+            },
+          },
+          {
+            author_public_key: 'me',
+            created_at: '2026-01-04T00:00:00.000Z',
+            meta: {},
+          },
+        ] as never,
+        'me',
+        '2026-01-01T00:00:00.000Z'
+      )
+    ).toBe(1);
+  });
+
+  it('derives mention metadata when restored rows are mapped', () => {
+    const originalWindow = globalThis.window;
+    const loggedInPublicKey = 'd'.repeat(64);
+    const mentionedNpub = `nostr:${nip19.npubEncode(loggedInPublicKey)}`;
+
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: {
+          getItem: (key: string) => (key === 'npub' ? loggedInPublicKey : null),
+        },
+      },
+      configurable: true,
+    });
+
+    try {
+      const message = mapMessageRowToMessage(
+        {
+          id: 7,
+          chat_public_key: 'chat',
+          author_public_key: 'e'.repeat(64),
+          message: `hi ${mentionedNpub}`,
+          created_at: '2026-01-02T00:00:00.000Z',
+          event_id: 'event',
+          meta: {
+            source: 'nostr',
+          },
+        } as never,
+        'chat'
+      );
+
+      expect(message.meta).toEqual({
+        source: 'nostr',
+        mentions: [
+          {
+            publicKey: loggedInPublicKey,
+          },
+        ],
+        mentions_me: true,
+      });
+    } finally {
+      if (typeof originalWindow === 'undefined') {
+        Reflect.deleteProperty(globalThis, 'window');
+      } else {
+        Object.defineProperty(globalThis, 'window', {
+          value: originalWindow,
+          configurable: true,
+        });
+      }
+    }
   });
 
   it('treats missing logged-in identity as a startup-safe zero for unseen reactions', () => {

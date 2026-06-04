@@ -166,6 +166,7 @@
           @send="handleSend"
           @back="handleBackToChatList"
           @open-profile="handleOpenProfile"
+          @open-chat="handleOpenChat"
           @react="handleReactToMessage"
           @delete-message="handleDeleteMessage"
           @remove-reaction="handleRemoveReaction"
@@ -261,6 +262,12 @@ const ChatThread = defineAsyncComponent(() => import('src/components/ChatThread.
 type NostrStore = ReturnType<typeof useNostrStore>;
 type RelayStoreModule = typeof import('src/stores/relayStore');
 type RelayStore = ReturnType<RelayStoreModule['useRelayStore']>;
+
+interface OpenChatPayload {
+  publicKey: string;
+  displayName?: string;
+  picture?: string;
+}
 
 const $q = useQuasar();
 const route = useRoute();
@@ -732,6 +739,31 @@ function handleOpenProfile(publicKey: string): void {
     void router.push({ name: 'contacts', params: { pubkey: normalized } });
   } catch (error) {
     reportUiError('Failed to open contact profile from chat', error);
+  }
+}
+
+async function handleOpenChat(payload: OpenChatPayload): Promise<void> {
+  try {
+    const normalizedPublicKey = payload.publicKey.trim().toLowerCase();
+    if (!normalizedPublicKey) {
+      return;
+    }
+
+    await chatStore.init();
+    const fallbackName = normalizedPublicKey.slice(0, 32);
+    const displayName = payload.displayName?.trim() || fallbackName;
+    const chat = await chatStore.addContact(displayName, normalizedPublicKey, {
+      contactName: displayName,
+      picture: payload.picture,
+    });
+    if (!chat) {
+      return;
+    }
+
+    chatStore.selectChat(chat.id);
+    await router.push({ name: 'chats', params: { pubkey: chat.publicKey } });
+  } catch (error) {
+    reportUiError('Failed to open chat from mention', error, t('errors.failedContinueChat'));
   }
 }
 

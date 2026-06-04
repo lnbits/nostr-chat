@@ -1,10 +1,11 @@
 import { useMessageBubbleStatus } from 'src/composables/useMessageBubbleStatus';
+import type { Message } from 'src/types/chat';
 import { describe, expect, it } from 'vitest';
 import { computed, ref } from 'vue';
 
 describe('useMessageBubbleStatus', () => {
-  it('omits the backup relay section when an outbound message has no self-copy relay statuses', () => {
-    const message = ref({
+  it('builds outbound relay status tabs with published success counts', () => {
+    const message = ref<Message>({
       id: '1',
       chatId: 'self-chat',
       text: 'hello',
@@ -31,6 +32,21 @@ describe('useMessageBubbleStatus', () => {
             status: 'published' as const,
             updated_at: '2026-01-01T00:00:00.000Z',
           },
+          {
+            relay_url: 'wss://backup.example',
+            direction: 'outbound' as const,
+            scope: 'recipient' as const,
+            status: 'failed' as const,
+            detail: 'publish failed',
+            updated_at: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            relay_url: 'wss://my.example',
+            direction: 'outbound' as const,
+            scope: 'self' as const,
+            status: 'pending' as const,
+            updated_at: '2026-01-01T00:00:00.000Z',
+          },
         ],
       },
       meta: {},
@@ -46,9 +62,20 @@ describe('useMessageBubbleStatus', () => {
     expect(statusSections.value).toEqual([
       expect.objectContaining({
         key: 'recipient',
-        title: 'My Self Relays',
+        title: 'Contact Relays',
+        tabLabel: 'Contact Relays (1/2)',
+        successCount: 1,
+        totalCount: 2,
+        retryableCount: 1,
+      }),
+      expect.objectContaining({
+        key: 'self',
+        title: 'My Relays',
+        tabLabel: 'My Relays (0/1)',
+        successCount: 0,
+        totalCount: 1,
+        retryableCount: 0,
       }),
     ]);
-    expect(statusSections.value.some((section) => section.key === 'self')).toBe(false);
   });
 });

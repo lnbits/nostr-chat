@@ -1,4 +1,5 @@
 import type { NostrEvent } from '@nostr-dev-kit/ndk';
+import type { ContactGroupMember } from 'src/types/contact';
 
 export type ChatInboxState = 'accepted' | 'blocked';
 export type ChatType = 'user' | 'group';
@@ -34,6 +35,7 @@ export interface ChatMetadata {
   last_incoming_message_at?: string;
   last_outgoing_message_at?: string;
   group_epoch_keys?: ChatGroupEpochKey[];
+  group_members?: ContactGroupMember[];
   group_member_ticket_deliveries?: GroupMemberTicketDelivery[];
   current_epoch_public_key?: string;
   current_epoch_private_key_encrypted?: string;
@@ -84,11 +86,19 @@ export interface GroupEpochNoticeMetadata {
   epochNumber: number;
 }
 
+export interface MessageMentionMetadata {
+  publicKey: string;
+  relayUrls?: string[];
+  nprofile?: string;
+}
+
 export interface MessageMetadata {
   reply?: MessageReplyPreview;
   reactions?: MessageReaction[];
   deleted?: DeletedMessageMetadata;
   group_epoch_notice?: GroupEpochNoticeMetadata;
+  mentions?: MessageMentionMetadata[];
+  mentions_me?: boolean;
   [key: string]: unknown;
 }
 

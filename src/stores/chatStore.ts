@@ -5,15 +5,24 @@ import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { CHAT_REQUEST_CLEARED_AT_META_KEY } from 'src/stores/nostr/constants';
 import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
-import type { ContactRecord } from 'src/types/contact';
+import type { ContactGroupMember, ContactRecord } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
+import { isIncomingUnreadMessageActivity } from 'src/utils/messageActivity';
+import { formatGroupMentionsForDisplay } from 'src/utils/nostrMentions';
 import { computed, ref } from 'vue';
 
 interface ChatContactContext {
   picture: string;
   givenName: string;
   contactName: string;
+  groupMembers: ContactGroupMember[];
   lastSeenIncomingActivityAt: string;
+}
+
+interface AddContactOptions {
+  contactName?: string;
+  givenName?: string;
+  picture?: string;
 }
 
 interface LiveChatPreviewInput {
@@ -76,6 +85,35 @@ function normalizeEventId(value: string | null | undefined): string | null {
 function readMetaString(meta: Record<string, unknown>, key: string): string {
   const value = meta[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function readOptionalInputString(value: string | null | undefined): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isContactGroupMemberLike(value: unknown): value is ContactGroupMember {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<ContactGroupMember>;
+  return typeof candidate.public_key === 'string' && candidate.public_key.trim().length > 0;
+}
+
+function cloneGroupMembers(value: unknown): ContactGroupMember[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(isContactGroupMemberLike).map((member) => ({ ...member }));
+}
+
+function formatChatLastMessagePreview(
+  text: string,
+  meta: Record<string, unknown>,
+  type: Chat['type']
+): string {
+  return type === 'group' ? formatGroupMentionsForDisplay(text, meta) : text;
 }
 
 function readMetaInboxState(meta: Record<string, unknown>): ChatInboxState | null {
@@ -250,6 +288,7 @@ function buildChatActivitySnapshotByPublicKey(
         snapshot.lastOutgoingMessageAt = row.created_at;
       }
     } else if (
+      isIncomingUnreadMessageActivity(row, loggedInPublicKey) &&
       toComparableTimestamp(row.created_at) > toComparableTimestamp(snapshot.lastIncomingMessageAt)
     ) {
       snapshot.lastIncomingMessageAt = row.created_at;
@@ -273,7 +312,11 @@ function buildIncomingMessageTimestampsByPublicKey(
   for (const row of messageRows) {
     const chatPublicKey = normalizeChatIdentifier(row.chat_public_key);
     const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
-    if (!chatPublicKey || !authorPublicKey || authorPublicKey === loggedInPublicKey) {
+    if (
+      !chatPublicKey ||
+      !authorPublicKey ||
+      !isIncomingUnreadMessageActivity(row, loggedInPublicKey)
+    ) {
       continue;
     }
 
@@ -311,8 +354,7 @@ function findLatestIncomingMessageActivity(
   let latestIncomingTimestamp = 0;
   let latestIncomingRowId = 0;
   for (const row of messageRows) {
-    const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
-    if (!authorPublicKey || authorPublicKey === loggedInPublicKey) {
+    if (!isIncomingUnreadMessageActivity(row, loggedInPublicKey)) {
       continue;
     }
 
@@ -452,8 +494,50 @@ function toContactContext(contact: ContactRecord): ChatContactContext {
     picture: resolvePictureFromContactMeta(contactMeta),
     givenName: contact.given_name?.trim() ?? '',
     contactName: contact.name.trim(),
+    groupMembers: cloneGroupMembers(contactMeta.group_members),
     lastSeenIncomingActivityAt: readMetaString(contactMeta, 'last_seen_incoming_activity_at'),
   };
+}
+
+function toContactContextFromOptions(
+  options: AddContactOptions | undefined,
+  fallbackName: string
+): ChatContactContext | undefined {
+  const picture = readOptionalInputString(options?.picture);
+  const givenName = readOptionalInputString(options?.givenName);
+  const contactName = readOptionalInputString(options?.contactName);
+  if (!picture && !givenName && !contactName) {
+    return undefined;
+  }
+
+  return {
+    picture,
+    givenName,
+    contactName: contactName || givenName || fallbackName.trim(),
+    groupMembers: [],
+    lastSeenIncomingActivityAt: '',
+  };
+}
+
+function syncMetaJsonValue(
+  meta: Record<string, unknown>,
+  key: string,
+  value: unknown[] | undefined
+): boolean {
+  const nextValue = Array.isArray(value) ? value : [];
+  const currentValue = Array.isArray(meta[key]) ? (meta[key] as unknown[]) : [];
+  if (JSON.stringify(currentValue) === JSON.stringify(nextValue)) {
+    return false;
+  }
+
+  if (nextValue.length === 0) {
+    delete meta[key];
+  } else {
+    meta[key] = nextValue.map((entry) =>
+      entry && typeof entry === 'object' ? { ...(entry as Record<string, unknown>) } : entry
+    );
+  }
+  return true;
 }
 
 function syncChatMeta(
@@ -485,11 +569,17 @@ function syncChatMeta(
       LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
       contactContext.lastSeenIncomingActivityAt
     );
+    const didChangeGroupMembers = syncMetaJsonValue(
+      writableMeta,
+      'group_members',
+      contactContext.groupMembers
+    );
 
     if (
       !didChangePicture &&
       !didChangeGivenName &&
       !didChangeContactName &&
+      !didChangeGroupMembers &&
       !didChangeLastSeenReceivedActivityAt &&
       nextMeta !== meta
     ) {
@@ -518,6 +608,7 @@ function mapChatRowToChat(
   );
   const avatarFromMeta = readMetaString(nextMeta, 'avatar');
   const avatar = avatarFromMeta || buildAvatarText(nextName || row.public_key);
+  const lastMessage = formatChatLastMessagePreview(row.last_message || '', nextMeta, row.type);
 
   return {
     id: row.public_key,
@@ -526,7 +617,7 @@ function mapChatRowToChat(
     type: row.type,
     name: nextName,
     avatar,
-    lastMessage: row.last_message || '',
+    lastMessage,
     lastMessageAt: row.last_message_at || new Date(0).toISOString(),
     unreadCount: row.unread_count,
     meta: nextMeta,
@@ -572,7 +663,7 @@ function buildBlockedChatMeta(meta: Record<string, unknown>, blockedAt: string):
 function buildUpdatedChatPreview(chat: Chat, text: string, at: string, isVisible: boolean): Chat {
   return {
     ...chat,
-    lastMessage: text,
+    lastMessage: formatChatLastMessagePreview(text, chat.meta, chat.type),
     lastMessageAt: at,
     unreadCount: isVisible ? 0 : chat.unreadCount,
   };
@@ -1304,25 +1395,44 @@ export const useChatStore = defineStore('chatStore', () => {
     }
 
     let nextUnreadCount = 0;
+    let previewText = text;
+    let previewChatType: Chat['type'] | null = null;
     chats.value = sortByLatest(
       chats.value.map((chat) => {
         if (chat.id !== normalizedChatId) {
           return chat;
         }
 
+        previewChatType = chat.type;
         const nextChat = buildUpdatedChatPreview(
           chat,
           text,
           at,
           visibleChatId.value === normalizedChatId
         );
+        previewText = nextChat.lastMessage;
         nextUnreadCount = nextChat.unreadCount;
         return nextChat;
       })
     );
 
     try {
-      await chatDataService.updateChatPreview(normalizedChatId, text, at, nextUnreadCount);
+      if (text.includes('nostr:') && previewChatType !== 'user') {
+        await contactsService.init();
+        const contact = await contactsService.getContactByPublicKey(normalizedChatId);
+        const contactPreviewText =
+          contact?.type === 'group' ? formatGroupMentionsForDisplay(text, contact.meta) : text;
+        if (contactPreviewText !== text && contactPreviewText !== previewText) {
+          previewText = contactPreviewText;
+          chats.value = sortByLatest(
+            chats.value.map((chat) =>
+              chat.id === normalizedChatId ? { ...chat, lastMessage: previewText } : chat
+            )
+          );
+        }
+      }
+
+      await chatDataService.updateChatPreview(normalizedChatId, previewText, at, nextUnreadCount);
     } catch (error) {
       console.error('Failed to update chat preview', error);
     }
@@ -1405,6 +1515,8 @@ export const useChatStore = defineStore('chatStore', () => {
     }
     const nextName = existingChat?.name || fallbackName;
     const nextMeta = syncChatMeta(currentMeta, undefined, nextName || nextPublicKey);
+    const nextType =
+      existingChat?.type ?? (Array.isArray(input.meta?.group_members) ? 'group' : 'user');
     const nextAvatar =
       readMetaString(nextMeta, 'avatar') ||
       existingChat?.avatar ||
@@ -1416,10 +1528,10 @@ export const useChatStore = defineStore('chatStore', () => {
         existingChat?.epochPublicKey ||
         readMetaString(nextMeta, 'current_epoch_public_key') ||
         null,
-      type: existingChat?.type ?? 'user',
+      type: nextType,
       name: nextName,
       avatar: nextAvatar,
-      lastMessage: input.messageText,
+      lastMessage: formatChatLastMessagePreview(input.messageText, nextMeta, nextType),
       lastMessageAt: input.at,
       unreadCount: visibleChatId.value === nextChatId ? 0 : Math.max(0, input.unreadCount),
       meta: nextMeta,
@@ -1437,7 +1549,8 @@ export const useChatStore = defineStore('chatStore', () => {
 
   async function addContact(
     nameOrIdentifier: string,
-    publicKey = nameOrIdentifier
+    publicKey = nameOrIdentifier,
+    options: AddContactOptions = {}
   ): Promise<Chat | null> {
     const cleanName = nameOrIdentifier.trim();
     const cleanPublicKey =
@@ -1449,7 +1562,9 @@ export const useChatStore = defineStore('chatStore', () => {
 
     await contactsService.init();
     const contact = await contactsService.getContactByPublicKey(cleanPublicKey);
-    const contactContext = contact ? toContactContext(contact) : undefined;
+    const contactContext = contact
+      ? toContactContext(contact)
+      : toContactContextFromOptions(options, cleanName);
 
     const existingInStore = chats.value.find(
       (chat) => chat.publicKey.toLowerCase() === cleanPublicKey.toLowerCase()

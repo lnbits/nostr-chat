@@ -186,9 +186,11 @@
               :author-avatar-fallback="item.authorAvatarFallback"
               :author-avatar-src="item.authorAvatarSrc"
               :author-label="item.authorLabel"
+              :mention-profiles="mentionProfiles"
               :show-author-name="item.showSenderName"
               :show-author-on-mobile="chat?.type === 'group' && item.message.sender === 'them'"
               @open-profile="handleOpenAuthorProfile"
+              @open-mention-chat="handleOpenMentionChat"
               @reply="handleReplyToMessage"
               @react="handleReactToMessage"
               @delete-message="handleDeleteMessage"
@@ -247,6 +249,7 @@
         <MessageComposer
           ref="composerRef"
           :chat-id="chat.id"
+          :mention-profiles="mentionProfiles"
           :reply-to="activeReply"
           @send="handleSend"
           @cancel-reply="handleCancelReply"
@@ -286,13 +289,15 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
-import type { ContactMetadata } from 'src/types/contact';
+import type { ContactGroupMember, ContactMetadata } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
+import { isGroupEpochNoticeMessageMeta } from 'src/utils/messageActivity';
 import {
   countUnseenReactionsForAuthor,
   normalizeMessageReactions
 } from 'src/utils/messageReactions';
+import { buildMentionProfiles, type NostrMentionProfile } from 'src/utils/nostrMentions';
 import { formatCompactPublicKey } from 'src/utils/publicKeyText';
 import {
   getWrappedThreadSearchIndex,
@@ -326,6 +331,15 @@ const emit = defineEmits<{
   (event: 'send', payload: { text: string; replyTo: MessageReplyPreview | null }): void;
   (event: 'back'): void;
   (event: 'open-profile', publicKey: string): void;
+  (
+    event: 'open-chat',
+    payload: {
+      publicKey: string;
+      displayName?: string;
+      picture?: string;
+      avatar?: string;
+    }
+  ): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
@@ -349,6 +363,7 @@ const hasJumpedToLastReadMessage = ref(false);
 const pendingInitialPositionChatId = ref<string | null>(null);
 const openedUnreadBoundaryAt = ref<string | null>(null);
 const contactRelayUrls = ref<string[]>([]);
+const groupMentionContactMeta = ref<ContactMetadata | null>(null);
 const selfAvatarImageUrl = ref('');
 const selfAvatarFallback = ref('YO');
 const isThreadSearchOpen = ref(false);
@@ -395,6 +410,7 @@ let pendingPaginationContext:
     }
   | null = null;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
+let groupMentionContactRefreshToken = 0;
 let selfAuthorIdentityRefreshToken = 0;
 let authorIdentityRefreshToken = 0;
 
@@ -409,6 +425,15 @@ function readMetaString(
 ): string {
   const value = meta?.[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isContactGroupMember(value: unknown): value is ContactGroupMember {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<ContactGroupMember>;
+  return typeof candidate.public_key === 'string' && candidate.public_key.trim().length > 0;
 }
 
 type ThreadItem =
@@ -475,6 +500,68 @@ const contactAvatarFallback = computed(() => {
 
 const loggedInPublicKey = computed(() => {
   return nostrStore.getLoggedInPublicKeyHex()?.trim().toLowerCase() ?? '';
+});
+
+function readGroupMentionMembers(
+  meta: ContactMetadata | Record<string, unknown>
+): ContactGroupMember[] {
+  const groupMembers = meta.group_members;
+  return Array.isArray(groupMembers) ? groupMembers.filter(isContactGroupMember) : [];
+}
+
+function readGroupMentionOwnerPublicKey(
+  meta: ContactMetadata | Record<string, unknown>
+): string {
+  return typeof meta.owner_public_key === 'string'
+    ? meta.owner_public_key.trim().toLowerCase()
+    : '';
+}
+
+const mentionProfiles = computed<NostrMentionProfile[]>(() => {
+  if (props.chat?.type !== 'group') {
+    return [];
+  }
+
+  const contactMeta = groupMentionContactMeta.value;
+  const chatGroupMembers = readGroupMentionMembers(props.chat.meta);
+  const contactGroupMembers = contactMeta ? readGroupMentionMembers(contactMeta) : [];
+  const groupMembers = contactGroupMembers.length > 0 ? contactGroupMembers : chatGroupMembers;
+  const ownerPublicKey =
+    (contactMeta ? readGroupMentionOwnerPublicKey(contactMeta) : '') ||
+    readGroupMentionOwnerPublicKey(props.chat.meta);
+  const ownerIdentity = ownerPublicKey
+    ? authorIdentityByPublicKey.value[ownerPublicKey] ?? null
+    : null;
+  const ownerDisplayName =
+    ownerPublicKey === loggedInPublicKey.value
+      ? t('common.you')
+      : ownerIdentity?.label || formatCompactPublicKey(ownerPublicKey);
+
+  return buildMentionProfiles([
+    ...groupMembers.map((member) => ({
+      publicKey: member.public_key,
+      displayName: member.given_name?.trim() || member.name.trim() || member.public_key,
+      picture: member.picture ?? null,
+      avatar: member.avatar ?? null,
+      nprofile: member.nprofile ?? null,
+    })),
+    ...(ownerPublicKey
+      ? [
+          {
+            publicKey: ownerPublicKey,
+            displayName: ownerDisplayName,
+            picture:
+              ownerPublicKey === loggedInPublicKey.value
+                ? selfAvatarImageUrl.value
+                : ownerIdentity?.avatarSrc ?? null,
+            avatar:
+              ownerPublicKey === loggedInPublicKey.value
+                ? selfAvatarFallback.value
+                : ownerIdentity?.avatarFallback ?? null,
+          },
+        ]
+      : []),
+  ]);
 });
 
 const latestMessageId = computed(() => {
@@ -597,7 +684,7 @@ function readCurrentLastSeenReceivedActivityAt(): string {
 
 function getIncomingMessageTimestampAfter(message: Message, afterTimestamp: string): number | null {
   const afterComparableTimestamp = toComparableTimestamp(afterTimestamp);
-  if (message.sender !== 'them') {
+  if (message.sender !== 'them' || isGroupEpochNoticeMessageMeta(message.meta)) {
     return null;
   }
 
@@ -770,6 +857,31 @@ async function refreshContactRelayUrls(chatPublicKey: string | null): Promise<vo
 
     contactRelayUrls.value = [];
     console.error('Failed to load contact relay urls for chat thread', chatPublicKey, error);
+  }
+}
+
+async function refreshGroupMentionContactMeta(chat: Chat | null): Promise<void> {
+  const refreshToken = ++groupMentionContactRefreshToken;
+  if (!chat || chat.type !== 'group') {
+    groupMentionContactMeta.value = null;
+    return;
+  }
+
+  try {
+    await contactsService.init();
+    const contact = await contactsService.getContactByPublicKey(chat.publicKey);
+    if (refreshToken !== groupMentionContactRefreshToken) {
+      return;
+    }
+
+    groupMentionContactMeta.value = contact?.type === 'group' ? contact.meta : null;
+  } catch (error) {
+    if (refreshToken !== groupMentionContactRefreshToken) {
+      return;
+    }
+
+    groupMentionContactMeta.value = null;
+    console.error('Failed to load group mention members for chat thread', chat.publicKey, error);
   }
 }
 
@@ -1701,7 +1813,7 @@ async function syncVisibleReactionViews(): Promise<void> {
     eventId: string | null;
   } | null = null;
   visibleMessages.forEach((message) => {
-    if (message.sender === 'them') {
+    if (message.sender === 'them' && !isGroupEpochNoticeMessageMeta(message.meta)) {
       if (
         !latestVisibleReceivedActivity ||
         toComparableTimestamp(message.sentAt) > toComparableTimestamp(latestVisibleReceivedActivity.at)
@@ -1753,6 +1865,7 @@ async function syncVisibleReactionViews(): Promise<void> {
     const nextUnreadMessageCount = props.messages.reduce((count, message) => {
       if (
         message.sender !== 'them' ||
+        isGroupEpochNoticeMessageMeta(message.meta) ||
         toComparableTimestamp(message.sentAt) <=
           toComparableTimestamp(effectiveLastSeenReceivedActivityAt)
       ) {
@@ -2038,6 +2151,26 @@ function handleOpenAuthorProfile(publicKey: string): void {
   }
 }
 
+function handleOpenMentionChat(publicKey: string): void {
+  const normalizedPublicKey = publicKey.trim().toLowerCase();
+  if (!normalizedPublicKey) {
+    return;
+  }
+
+  try {
+    const mentionProfile =
+      mentionProfiles.value.find((profile) => profile.publicKey === normalizedPublicKey) ?? null;
+    emit('open-chat', {
+      publicKey: normalizedPublicKey,
+      ...(mentionProfile?.displayName ? { displayName: mentionProfile.displayName } : {}),
+      ...(mentionProfile?.picture ? { picture: mentionProfile.picture } : {}),
+      ...(mentionProfile?.avatar ? { avatar: mentionProfile.avatar } : {}),
+    });
+  } catch (error) {
+    reportUiError('Failed to open mentioned chat from chat thread', error);
+  }
+}
+
 function handleThreadFocusIn(event: FocusEvent): void {
   const target = event.target instanceof HTMLElement ? event.target : null;
   if (!target?.closest('.composer')) {
@@ -2048,9 +2181,16 @@ function handleThreadFocusIn(event: FocusEvent): void {
 }
 
 watch(
-  () => [props.chat?.publicKey ?? null, loggedInPublicKey.value, nostrStore.contactListVersion] as const,
-  ([chatPublicKey, loggedInPublicKeyValue]) => {
+  () =>
+    [
+      props.chat?.publicKey ?? null,
+      props.chat?.type ?? null,
+      loggedInPublicKey.value,
+      nostrStore.contactListVersion,
+    ] as const,
+  ([chatPublicKey, , loggedInPublicKeyValue]) => {
     void refreshContactRelayUrls(chatPublicKey);
+    void refreshGroupMentionContactMeta(props.chat);
     void refreshSelfAuthorIdentity(loggedInPublicKeyValue);
     void refreshMessageAuthorIdentities();
   },

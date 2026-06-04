@@ -3,16 +3,10 @@ prompt
 
 add `Encrypted private key import using ncryptsec` on all
 
-block/mute is important
-
-refresh contacts should refresh priofiels
 No relays found for this contact -> if this is the case do a refresh profile beforehand
  - keep last profile refresh in mind
 - when refreshing a users's profile also use the app relays (the user might not have relays) 
 
-
-for group restore make sure to start with the last epoch, then work backwards
-In the Gropu > Members show the updating relays status bar for each member (pulsing when it is sending) slowly filling up to be green or read.
 
 mark all messages as read when opening android app
 

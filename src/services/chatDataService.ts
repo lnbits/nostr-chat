@@ -1,5 +1,6 @@
 import type { ChatType } from 'src/types/chat';
 import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
+import { isIncomingUnreadMessageActivity } from 'src/utils/messageActivity';
 import {
   isDeletedMessageMeta,
   messageRecordMatchesSearchQuery,
@@ -761,7 +762,7 @@ class ChatDataService {
         }
 
         const record = cursorValue.value as MessageRecord;
-        if (normalizePublicKeyValue(record.author_public_key) !== normalizedLoggedInPublicKey) {
+        if (isIncomingUnreadMessageActivity(record, normalizedLoggedInPublicKey)) {
           resolve(toMessageRow(record));
           return;
         }

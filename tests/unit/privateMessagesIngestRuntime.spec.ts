@@ -1,4 +1,4 @@
-import { type NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
+import { type NDKEvent, NDKKind, nip19 } from '@nostr-dev-kit/ndk';
 import { createPrivateMessagesIngestRuntime } from 'src/stores/nostr/privateMessagesIngestRuntime';
 import type { MessageRelayStatus } from 'src/types/chat';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -405,11 +405,17 @@ describe('privateMessagesIngestRuntime', () => {
     const groupPublicKey = 'c'.repeat(64);
     const epochPublicKey = 'd'.repeat(64);
     const senderPublicKey = 'a'.repeat(64);
+    const mentionedMemberPublicKey = 'e'.repeat(64);
+    const mentionedMemberNprofile = nip19.nprofileEncode({
+      pubkey: mentionedMemberPublicKey,
+      relays: ['wss://group.example'],
+    });
+    const rawMentionMessage = `nostr:${mentionedMemberNprofile} Group hello`;
     const createdAt = '2023-11-14T22:13:20.000Z';
     const rumorEvent = makeRumorEvent({
       recipientPubkey: epochPublicKey,
       senderPubkey: senderPublicKey,
-      content: '  Group hello  ',
+      content: `  ${rawMentionMessage}  `,
     });
     const groupChat = {
       id: groupPublicKey,
@@ -440,6 +446,25 @@ describe('privateMessagesIngestRuntime', () => {
     deps.resolveIncomingChatInboxStateValue.mockReturnValue('accepted');
     deps.shouldNotifyForAcceptedChatOnly.mockResolvedValue(true);
     ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue({
+      id: 9,
+      public_key: groupPublicKey,
+      type: 'group',
+      name: 'Group cccccccc',
+      given_name: null,
+      meta: {
+        group_members: [
+          {
+            public_key: mentionedMemberPublicKey,
+            name: 'Bob Member',
+            given_name: 'Bobby',
+            nprofile: mentionedMemberNprofile,
+          },
+        ],
+      },
+      relays: [],
+      sendMessagesToAppRelays: false,
+    });
     serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(groupChat);
     serviceMocks.chatDataService.createMessage.mockResolvedValue({
       id: 45,
@@ -455,11 +480,22 @@ describe('privateMessagesIngestRuntime', () => {
     });
     await runtime.getPrivateMessagesIngestQueue();
 
+    expect(serviceMocks.chatDataService.createMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: rawMentionMessage,
+      })
+    );
+    expect(serviceMocks.chatDataService.updateChatPreview).toHaveBeenCalledWith(
+      groupPublicKey,
+      '@Bobby Group hello',
+      createdAt,
+      1
+    );
     expect(deps.showIncomingMessageBrowserNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         chatPubkey: groupPublicKey,
         title: 'Nostr Group',
-        messageText: 'Group hello',
+        messageText: '@Bobby Group hello',
       })
     );
   });

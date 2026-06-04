@@ -624,6 +624,8 @@ describe('privateStateRuntime', () => {
             given_name: 'Charlie',
             meta: {
               about: 'New member',
+              picture: 'https://example.com/charlie.png',
+              avatar: 'CH',
               nip05: 'charlie@example.com',
               nprofile: 'nprofile-charlie',
             },
@@ -674,6 +676,8 @@ describe('privateStateRuntime', () => {
             given_name: 'Charlie',
             meta: {
               about: 'New member',
+              picture: 'https://example.com/charlie.png',
+              avatar: 'CH',
               nip05: 'charlie@example.com',
               nprofile: 'nprofile-charlie',
             },
@@ -696,6 +700,8 @@ describe('privateStateRuntime', () => {
             name: 'Charlie',
             given_name: 'Charlie',
             about: 'New member',
+            picture: 'https://example.com/charlie.png',
+            avatar: 'CH',
             nip05: 'charlie@example.com',
             nprofile: 'nprofile-charlie',
           },
@@ -740,6 +746,8 @@ describe('privateStateRuntime', () => {
           expect.objectContaining({
             public_key: 'c'.repeat(64),
             name: 'Charlie',
+            picture: 'https://example.com/charlie.png',
+            avatar: 'CH',
           }),
         ],
       }),

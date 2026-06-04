@@ -19,6 +19,7 @@ import type {
   NostrEventEntry,
 } from 'src/types/chat';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
+import { isIncomingUnreadMessageActivity } from 'src/utils/messageActivity';
 import {
   areMessageReactionsEqual,
   buildMetaWithReactions,
@@ -27,6 +28,7 @@ import {
   normalizeMessageReactions,
 } from 'src/utils/messageReactions';
 import { resolveMessageWindowMerge } from 'src/utils/messageWindowRange';
+import { buildMentionMetadata } from 'src/utils/nostrMentions';
 import { ref } from 'vue';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
@@ -155,7 +157,10 @@ function mapMessageRowToMessage(
     authorPublicKey: authorKey,
     eventId: row.event_id,
     nostrEvent,
-    meta: row.meta,
+    meta: {
+      ...row.meta,
+      ...buildMentionMetadata(row.message, getLoggedInPublicKey()),
+    },
   };
 }
 
@@ -317,6 +322,22 @@ function resolveLatestOwnMessageAt(
       ? row.created_at
       : latest;
   }, '');
+}
+
+function countUnreadMessageRowsAfterBoundary(
+  rows: Array<Pick<MessageRow, 'author_public_key' | 'created_at' | 'meta'>>,
+  loggedInPublicKey: string | null | undefined,
+  boundaryAt: string
+): number {
+  const boundaryTimestamp = toComparableTimestamp(boundaryAt);
+
+  return rows.reduce((count, row) => {
+    if (!isIncomingUnreadMessageActivity(row, loggedInPublicKey)) {
+      return count;
+    }
+
+    return count + (toComparableTimestamp(row.created_at) > boundaryTimestamp ? 1 : 0);
+  }, 0);
 }
 
 function areReactionListsEqualValue(
@@ -584,7 +605,9 @@ export const __messageStoreTestUtils = {
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
   compareMessageCursors,
+  countUnreadMessageRowsAfterBoundary,
   countOwnUnseenReactions,
+  mapMessageRowToMessage,
   mergeMessagesById,
   readUnseenReactionCountFromMeta: readUnseenReactionCountFromMetaValue,
   resolveLatestOwnMessageAt,
@@ -1479,13 +1502,18 @@ export const useMessageStore = defineStore('messageStore', () => {
         }
       : null;
     const createdAt = typeof options.createdAt === 'string' ? options.createdAt.trim() : '';
+    const mentionMeta = buildMentionMetadata(cleanText, getLoggedInPublicKey());
+    const meta = {
+      ...mentionMeta,
+      ...(replyPreview ? { reply: replyPreview } : {}),
+    };
 
     const created = await chatDataService.createMessage({
       chat_public_key: chat.public_key,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: createdAt || new Date().toISOString(),
-      ...(replyPreview ? { meta: { reply: replyPreview } } : {}),
+      ...(Object.keys(meta).length > 0 ? { meta } : {}),
     });
     if (!created) {
       return null;
@@ -2051,13 +2079,11 @@ export const useMessageStore = defineStore('messageStore', () => {
         summary.boundaryAdvancedCount += 1;
       }
 
-      const nextUnreadCount = chatMessageRows.reduce((count, row) => {
-        if (normalizeChatIdentifier(row.author_public_key) === loggedInPublicKey) {
-          return count;
-        }
-
-        return count + (toComparableTimestamp(row.created_at) > boundaryTimestamp ? 1 : 0);
-      }, 0);
+      const nextUnreadCount = countUnreadMessageRowsAfterBoundary(
+        chatMessageRows,
+        loggedInPublicKey,
+        boundaryAt
+      );
 
       if (Number(chatRow.unread_count ?? 0) !== nextUnreadCount) {
         await chatDataService.updateChatUnreadCount(normalizedChatId, nextUnreadCount);

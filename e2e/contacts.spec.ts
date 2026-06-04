@@ -4,6 +4,7 @@ import {
   disposeUsers,
   establishAcceptedDirectChat,
   expectNoUnexpectedBrowserErrors,
+  expectPrivateContactListMember,
   publishOwnProfile,
   TEST_ACCOUNTS,
 } from './helpers';
@@ -28,7 +29,6 @@ test('contact refresh pulls newly published remote profile metadata into an exis
 
     await alice.page.goto(`/#/contacts/${bob.session.publicKey}`);
     await expect(alice.page.getByTestId('contact-profile-refresh-button')).toBeVisible();
-    await alice.page.getByTestId('contact-profile-refresh-button').click();
     await expect(alice.page.getByPlaceholder('Your profile name').first()).toHaveValue(
       refreshedName,
       {
@@ -41,6 +41,25 @@ test('contact refresh pulls newly published remote profile metadata into an exis
     await expectNoUnexpectedBrowserErrors([alice, bob]);
   } finally {
     await disposeUsers(alice, bob);
+  }
+});
+
+test('contact profile chat action creates a missing contact and opens the chat', async ({
+  browser,
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.profileRefreshAlice);
+  const charlie = await bootstrapUser(browser, TEST_ACCOUNTS.groupCharlie);
+
+  try {
+    const unknownPubkey = charlie.session.publicKey;
+    await alice.page.goto(`/#/contacts/${unknownPubkey}`);
+    await expect(alice.page.getByLabel('Open Chat')).toBeVisible();
+    await alice.page.getByLabel('Open Chat').click();
+    await alice.page.waitForURL(new RegExp(`#\\/chats\\/${unknownPubkey}$`));
+    await expectPrivateContactListMember(alice.page, unknownPubkey);
+    await expectNoUnexpectedBrowserErrors([alice, charlie]);
+  } finally {
+    await disposeUsers(alice, charlie);
   }
 });
 

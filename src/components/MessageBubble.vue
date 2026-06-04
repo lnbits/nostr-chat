@@ -150,7 +150,18 @@
             'bubble__text--deleted': isDeletedMessage
           }"
         >
-          {{ bubbleMessageText }}
+          <template v-for="part in bubbleMessageTextParts" :key="part.key">
+            <button
+              v-if="part.type === 'mention'"
+              type="button"
+              class="bubble__mention"
+              data-testid="message-mention-link"
+              @click.stop="handleOpenMentionChat(part.publicKey)"
+            >
+              {{ part.text }}
+            </button>
+            <span v-else>{{ part.text }}</span>
+          </template>
         </p>
         <button
           v-if="canExpandMessage && !isMessageExpanded"
@@ -225,6 +236,98 @@
     <div v-if="statusSections.length === 0" class="bubble__status-empty">
       {{ $t('relays.relayStatusRecordedYet') }}
     </div>
+    <template v-else-if="isMine">
+      <q-tabs
+        v-model="statusDialogTab"
+        dense
+        no-caps
+        align="justify"
+        active-color="primary"
+        indicator-color="primary"
+        class="bubble__status-tabs"
+      >
+        <q-tab
+          v-for="section in statusSections"
+          :key="section.key"
+          :name="section.key"
+          :label="section.tabLabel ?? section.title"
+          :data-testid="`relay-status-tab-${section.key}`"
+        />
+      </q-tabs>
+
+      <q-tab-panels
+        v-model="statusDialogTab"
+        animated
+        class="bubble__status-tab-panels"
+      >
+        <q-tab-panel
+          v-for="section in statusSections"
+          :key="section.key"
+          :name="section.key"
+          class="bubble__status-tab-panel"
+          :data-testid="`relay-status-panel-${section.key}`"
+        >
+          <ul class="bubble__status-list bubble__status-list--dialog">
+            <li
+              v-for="item in section.items"
+              :key="item.key"
+              class="bubble__status-list-item bubble__status-list-item--dialog"
+            >
+              <span class="bubble__status-list-item-main">
+                <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
+                <span class="bubble__status-list-copy">
+                  <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+                  <span v-if="item.detail" class="bubble__status-list-detail">{{
+                    item.detail
+                  }}</span>
+                </span>
+              </span>
+              <q-btn
+                v-if="item.retryable"
+                flat
+                dense
+                no-caps
+                size="sm"
+                color="primary"
+                :label="$t('common.retry')"
+                class="bubble__status-retry"
+                :loading="isRetrying(item)"
+                :disable="isRetrying(item) || !item.retryable"
+                @click.stop="retryRelay(item)"
+              />
+            </li>
+            <li
+              v-if="section.items.length === 0"
+              class="bubble__status-list-item bubble__status-list-item--empty"
+            >
+              {{ section.emptyLabel }}
+            </li>
+          </ul>
+          <div
+            v-if="
+              section.key === statusDialogTab &&
+              typeof section.retryableCount === 'number' &&
+              section.retryableCount > 0
+            "
+            class="bubble__status-actions"
+          >
+            <q-btn
+              flat
+              dense
+              no-caps
+              icon="refresh"
+              color="primary"
+              :label="$t('relays.retryFailed')"
+              class="bubble__status-retry-all"
+              data-testid="relay-status-retry-all-button"
+              :loading="isRetryingFailedRelays"
+              :disable="isRetryingFailedRelays || section.retryableCount === 0"
+              @click.stop="retryFailedRelays(section)"
+            />
+          </div>
+        </q-tab-panel>
+      </q-tab-panels>
+    </template>
     <template v-else>
       <div
         v-for="(section, sectionIndex) in statusSections"
@@ -267,6 +370,24 @@
             {{ section.emptyLabel }}
           </li>
         </ul>
+        <div
+          v-if="section.key === 'recipient' && retryableStatusItems.length > 0"
+          class="bubble__status-actions"
+        >
+          <q-btn
+            flat
+            dense
+            no-caps
+            icon="refresh"
+            color="primary"
+            :label="$t('relays.retryFailed')"
+            class="bubble__status-retry-all"
+            data-testid="relay-status-retry-all-button"
+            :loading="isRetryingFailedRelays"
+            :disable="isRetryingFailedRelays || retryableStatusItems.length === 0"
+            @click.stop="retryFailedRelays()"
+          />
+        </div>
       </div>
     </template>
   </AppDialog>
@@ -351,6 +472,7 @@ import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import {
   isRetryableStatusScope,
   type StatusListItem,
+  type StatusSection,
   useMessageBubbleStatus
 } from 'src/composables/useMessageBubbleStatus';
 import { getEmojiEntryByValue, type EmojiOption } from 'src/data/topEmojis';
@@ -362,6 +484,10 @@ import type {
 } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isReactionUnseenForAuthor } from 'src/utils/messageReactions';
+import {
+  buildNostrMentionTextParts,
+  type NostrMentionProfile,
+} from 'src/utils/nostrMentions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import { getDateTimeLocale, t } from 'src/i18n';
 
@@ -372,6 +498,7 @@ const props = defineProps<{
   authorLabel?: string;
   contactName?: string;
   contactRelayUrls?: string[];
+  mentionProfiles?: NostrMentionProfile[];
   showAuthorName?: boolean;
   showAuthorOnMobile?: boolean;
 }>();
@@ -380,6 +507,7 @@ const emit = defineEmits<{
   (event: 'reply', message: Message): void;
   (event: 'open-reply-target', messageId: string, referenceSentAt?: string): void;
   (event: 'open-profile', publicKey: string): void;
+  (event: 'open-mention-chat', publicKey: string): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
@@ -456,6 +584,7 @@ function isDeletedMessageMetadata(value: unknown): value is DeletedMessageMetada
 }
 
 const isStatusDialogOpen = ref(false);
+const statusDialogTab = ref('recipient');
 const showAuthorName = computed(() => props.showAuthorName === true);
 const authorLabel = computed(() => {
   const explicitLabel = props.authorLabel?.trim();
@@ -491,6 +620,7 @@ const {
   message: toRef(props, 'message')
 });
 const retryingRelayKeys = ref<string[]>([]);
+const isRetryingFailedRelays = ref(false);
 const replyPreview = computed(() => {
   const candidate = props.message.meta.reply;
   return isMessageReplyPreview(candidate) ? candidate : null;
@@ -639,12 +769,17 @@ const bubbleMessageText = computed(() => {
 
   return truncateMessageText(baseVisibleMessageText.value);
 });
+const bubbleMessageTextParts = computed(() => {
+  return buildNostrMentionTextParts(bubbleMessageText.value, props.mentionProfiles ?? []);
+});
 
 function openStatusDialog(): void {
   if (!hasRelayStatuses.value) {
     return;
   }
 
+  const hasRecipientTab = statusSections.value.some((section) => section.key === 'recipient');
+  statusDialogTab.value = hasRecipientTab ? 'recipient' : (statusSections.value[0]?.key ?? 'recipient');
   isStatusDialogOpen.value = true;
 }
 
@@ -759,6 +894,19 @@ function handleOpenAuthorProfile(): void {
   }
 }
 
+function handleOpenMentionChat(publicKey?: string): void {
+  const normalizedPublicKey = publicKey?.trim();
+  if (!normalizedPublicKey) {
+    return;
+  }
+
+  try {
+    emit('open-mention-chat', normalizedPublicKey);
+  } catch (error) {
+    reportUiError('Failed to open mentioned chat from message bubble', error);
+  }
+}
+
 function handleOpenReplyTarget(): void {
   if (!replyPreview.value) {
     return;
@@ -850,6 +998,24 @@ function isRetrying(item: StatusListItem): boolean {
   return retryingRelayKeys.value.includes(item.key);
 }
 
+const activeStatusSection = computed(() => {
+  return (
+    statusSections.value.find((section) => section.key === statusDialogTab.value) ??
+    statusSections.value[0] ??
+    null
+  );
+});
+
+function retryableStatusItemsForSection(section: StatusSection | null): StatusListItem[] {
+  return (
+    section?.items.filter((item) => item.retryable && isRetryableStatusScope(item.scope)) ?? []
+  );
+}
+
+const retryableStatusItems = computed(() =>
+  retryableStatusItemsForSection(activeStatusSection.value)
+);
+
 async function retryRelay(item: StatusListItem): Promise<void> {
   const messageId = Number.parseInt(props.message.id, 10);
   if (
@@ -869,6 +1035,24 @@ async function retryRelay(item: StatusListItem): Promise<void> {
     reportUiError('Failed to retry direct message relay publish', error, t('errors.failedRetryRelay'));
   } finally {
     retryingRelayKeys.value = retryingRelayKeys.value.filter((key) => key !== item.key);
+  }
+}
+
+async function retryFailedRelays(section: StatusSection | null = activeStatusSection.value): Promise<void> {
+  if (isRetryingFailedRelays.value) {
+    return;
+  }
+
+  const retryItems = retryableStatusItemsForSection(section).filter((item) => !isRetrying(item));
+  if (retryItems.length === 0) {
+    return;
+  }
+
+  isRetryingFailedRelays.value = true;
+  try {
+    await Promise.all(retryItems.map((item) => retryRelay(item)));
+  } finally {
+    isRetryingFailedRelays.value = false;
   }
 }
 
@@ -1066,6 +1250,22 @@ onBeforeUnmount(() => {
   cursor: pointer;
   color: var(--nc-text);
   line-height: 1.5;
+}
+
+.bubble__mention {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--q-primary);
+  font: inherit;
+  font-weight: 700;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.bubble__mention:hover {
+  text-decoration: underline;
 }
 
 .bubble__more {
@@ -1529,6 +1729,33 @@ onBeforeUnmount(() => {
   background: rgba(148, 163, 184, 0.2);
 }
 
+.bubble__status-tabs {
+  min-height: 34px;
+  margin: -4px 0 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+:deep(.bubble__status-tabs .q-tab) {
+  min-height: 34px;
+  padding: 0 8px;
+}
+
+:deep(.bubble__status-tabs .q-tab__label) {
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+}
+
+.bubble__status-tab-panels {
+  background: transparent;
+  color: inherit;
+}
+
+.bubble__status-tab-panel {
+  padding: 4px 0 0;
+}
+
 .bubble__status-list-item {
   font-size: 10px;
   line-height: 1.35;
@@ -1603,6 +1830,16 @@ onBeforeUnmount(() => {
   min-width: 0;
   color: var(--nc-text-secondary);
   word-break: break-word;
+}
+
+.bubble__status-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.bubble__status-retry-all {
+  min-height: 28px;
 }
 
 .bubble__status-retry {

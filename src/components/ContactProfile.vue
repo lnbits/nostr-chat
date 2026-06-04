@@ -44,7 +44,7 @@
           <q-tab
             v-if="isGroupContact"
             name="members"
-            :label="$t('group.members')"
+            :label="membersTabLabel"
             no-caps
             class="profile-tab"
             data-testid="contact-profile-members-tab"
@@ -598,7 +598,9 @@
                 <q-item
                   v-for="member in visibleGroupMembers"
                   :key="member.public_key"
+                  clickable
                   class="profile-members-list__item"
+                  @click="handleOpenMemberProfile(member)"
                 >
                   <q-item-section avatar>
                     <CachedAvatar
@@ -647,7 +649,7 @@
                         class="profile-member-delivery__status-hitbox"
                         data-testid="group-member-ticket-status"
                         :aria-label="$t('relays.openRelayDeliveryStatus', { name: memberListTitle(member) })"
-                        @click="openGroupMemberTicketStatus(member)"
+                        @click.stop="openGroupMemberTicketStatus(member)"
                       >
                         <div class="profile-member-delivery__status">
                           <span
@@ -671,7 +673,7 @@
                       color="primary"
                       :aria-label="$t('group.refreshMember')"
                       :loading="isMemberRefreshing(member.public_key)"
-                      @click="handleRefreshMember(member.public_key)"
+                      @click.stop="handleRefreshMember(member.public_key)"
                     />
                     <q-btn
                       v-if="canEditGroupMembers && !isGroupOwnerMember(member)"
@@ -681,7 +683,7 @@
                       icon="delete"
                       color="negative"
                       :aria-label="$t('group.removeMember')"
-                      @click="handleRemoveMember(member.public_key)"
+                      @click.stop="handleRemoveMember(member.public_key)"
                     />
                   </q-item-section>
                 </q-item>
@@ -829,7 +831,7 @@
           :text-color="activeTab === 'members' ? 'white' : undefined"
           no-caps
           icon="groups"
-          :label="$t('group.members')"
+          :label="membersTabLabel"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeTab === 'members' }"
           @click="activeTab = 'members'"
@@ -927,49 +929,73 @@
       >
         {{ $t('relays.relayStatusRecordedYet') }}
       </div>
-      <ul v-else class="profile-member-delivery__dialog-list">
-        <li
-          v-for="item in selectedGroupMemberTicketStatusItems"
-          :key="item.key"
-          class="profile-member-delivery__dialog-item"
-        >
-          <span class="profile-member-delivery__dialog-item-main">
-            <span
-              class="profile-member-delivery__status-dot"
-              :class="item.dotClass"
-              aria-hidden="true"
-            />
-            <span class="profile-member-delivery__dialog-copy">
-              <span class="profile-member-delivery__dialog-relay">{{ item.relayUrl }}</span>
+      <template v-else>
+        <ul class="profile-member-delivery__dialog-list">
+          <li
+            v-for="item in selectedGroupMemberTicketStatusItems"
+            :key="item.key"
+            class="profile-member-delivery__dialog-item"
+          >
+            <span class="profile-member-delivery__dialog-item-main">
               <span
-                v-if="item.detail"
-                class="profile-member-delivery__dialog-detail"
-              >
-                {{ item.detail }}
+                class="profile-member-delivery__status-dot"
+                :class="item.dotClass"
+                aria-hidden="true"
+              />
+              <span class="profile-member-delivery__dialog-copy">
+                <span class="profile-member-delivery__dialog-relay">{{ item.relayUrl }}</span>
+                <span
+                  v-if="item.detail"
+                  class="profile-member-delivery__dialog-detail"
+                >
+                  {{ item.detail }}
+                </span>
               </span>
             </span>
-          </span>
+            <q-btn
+              v-if="item.retryable"
+              flat
+              dense
+              no-caps
+              size="sm"
+              color="primary"
+              :label="$t('common.retry')"
+              class="profile-member-delivery__dialog-retry"
+              :loading="isRetryingGroupMemberTicketRelay(item)"
+              :disable="isRetryingGroupMemberTicketRelay(item)"
+              @click="retrySelectedGroupMemberTicketRelay(item)"
+            />
+          </li>
+        </ul>
+        <div
+          v-if="selectedGroupMemberTicketRetryableItems.length > 0"
+          class="profile-member-delivery__dialog-actions"
+        >
           <q-btn
-            v-if="item.retryable"
             flat
             dense
             no-caps
-            size="sm"
+            icon="refresh"
             color="primary"
-            :label="$t('common.retry')"
-            class="profile-member-delivery__dialog-retry"
-            :loading="isRetryingGroupMemberTicketRelay(item)"
-            :disable="isRetryingGroupMemberTicketRelay(item)"
-            @click="retrySelectedGroupMemberTicketRelay(item)"
+            :label="$t('relays.retryFailed')"
+            class="profile-member-delivery__dialog-retry-all"
+            data-testid="group-member-ticket-retry-all-button"
+            :loading="isRetryingGroupMemberTicketFailedRelays"
+            :disable="
+              isRetryingGroupMemberTicketFailedRelays ||
+              selectedGroupMemberTicketRetryableItems.length === 0
+            "
+            @click="retrySelectedGroupMemberTicketFailedRelays"
           />
-        </li>
-      </ul>
+        </div>
+      </template>
     </AppDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { isValidPubkey, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
@@ -1039,6 +1065,7 @@ interface SelectedGroupMemberTicketStatus {
 interface Props {
   modelValue: ContactProfileForm;
   pubkey: string;
+  autoRefreshOnPubkeyChange?: boolean;
   readOnly?: boolean;
   showHeader?: boolean;
   showRelaysEditAction?: boolean;
@@ -1048,6 +1075,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  autoRefreshOnPubkeyChange: false,
   readOnly: false,
   showHeader: false,
   showRelaysEditAction: false,
@@ -1066,6 +1094,7 @@ const emit = defineEmits<{
 }>();
 
 const $q = useQuasar();
+const router = useRouter();
 const nostrStore = useNostrStore();
 const chatStore = useChatStore();
 const localPubkey = computed({
@@ -1079,6 +1108,7 @@ const currentGroupChat = ref<ChatRow | null>(null);
 const groupOwnerMember = ref<GroupMemberDraft | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
+let refreshRequestId = 0;
 const isShareDialogOpen = ref(false);
 const isRefreshingGroupMembersFromFollowSet = ref(false);
 const displayedPubkeyFormat = ref<PubkeyDisplayFormat>('hex');
@@ -1098,6 +1128,7 @@ const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 const groupMemberTicketEventsById = ref<Record<string, NostrEventEntry | null>>({});
 const selectedGroupMemberTicketStatus = ref<SelectedGroupMemberTicketStatus | null>(null);
 const retryingGroupMemberTicketRelayKeys = ref<string[]>([]);
+const isRetryingGroupMemberTicketFailedRelays = ref(false);
 const {
   isRelayConnected,
   isRelayInfoLoading,
@@ -1243,6 +1274,7 @@ const visibleGroupMembers = computed(() => {
 
   return [ownerMember, ...visibleMembers];
 });
+const membersTabLabel = computed(() => `${t('group.members')} (${visibleGroupMembers.value.length})`);
 const nextPublishedGroupMembers = computed(() => {
   const pendingRemovedMemberPubkeys = pendingRemovedGroupMemberPubkeys.value;
   const remainingMembers = groupMembers.value
@@ -1324,6 +1356,9 @@ const selectedGroupMemberTicketRelayStatuses = computed(() => {
 const selectedGroupMemberTicketStatusItems = computed<GroupMemberTicketStatusListItem[]>(() => {
   return buildGroupMemberTicketStatusItems(selectedGroupMemberTicketRelayStatuses.value);
 });
+const selectedGroupMemberTicketRetryableItems = computed(() => {
+  return selectedGroupMemberTicketStatusItems.value.filter((item) => item.retryable);
+});
 const selectedGroupMemberTicketStatusTitle = computed(() => {
   const selectedStatus = selectedGroupMemberTicketStatus.value;
   if (!selectedStatus) {
@@ -1396,6 +1431,11 @@ watch(
 watch(
   () => props.pubkey,
   (value) => {
+    if (props.autoRefreshOnPubkeyChange) {
+      void refreshContactProfileFromPubkey(value ?? '');
+      return;
+    }
+
     void loadContactFromPubkey(value ?? '');
   },
   { immediate: true }
@@ -1783,6 +1823,28 @@ async function retrySelectedGroupMemberTicketRelay(
   } finally {
     retryingGroupMemberTicketRelayKeys.value =
       retryingGroupMemberTicketRelayKeys.value.filter((key) => key !== retryKey);
+  }
+}
+
+async function retrySelectedGroupMemberTicketFailedRelays(): Promise<void> {
+  if (isRetryingGroupMemberTicketFailedRelays.value) {
+    return;
+  }
+
+  const retryItems = selectedGroupMemberTicketRetryableItems.value.filter(
+    (item) => !isRetryingGroupMemberTicketRelay(item)
+  );
+  if (retryItems.length === 0) {
+    return;
+  }
+
+  isRetryingGroupMemberTicketFailedRelays.value = true;
+  try {
+    await Promise.all(
+      retryItems.map((item) => retrySelectedGroupMemberTicketRelay(item))
+    );
+  } finally {
+    isRetryingGroupMemberTicketFailedRelays.value = false;
   }
 }
 
@@ -2469,6 +2531,12 @@ function buildStoredGroupMember(
     preview.meta?.display_name?.trim() ||
     preview.name.trim() ||
     preview.public_key;
+  const previewPicture =
+    'picture' in preview && typeof preview.picture === 'string' ? preview.picture.trim() : '';
+  const previewAvatar =
+    'avatar' in preview && typeof preview.avatar === 'string' ? preview.avatar.trim() : '';
+  const picture = preview.meta?.picture?.trim() || previewPicture;
+  const avatar = preview.meta?.avatar?.trim() || previewAvatar;
   const about =
     preview.meta?.about?.trim() || ('about' in preview ? preview.about?.trim() || '' : '');
 
@@ -2476,6 +2544,8 @@ function buildStoredGroupMember(
     public_key: preview.public_key,
     name,
     given_name: preview.given_name?.trim() || null,
+    ...(picture ? { picture } : {}),
+    ...(avatar ? { avatar } : {}),
     ...(about ? { about } : {}),
     ...(identifierType === 'nip05' && nip05 ? { nip05 } : {}),
     ...(nprofile ? { nprofile } : {}),
@@ -2488,6 +2558,8 @@ function cloneGroupMember(member: ContactGroupMember): GroupMemberDraft {
     public_key: member.public_key,
     name: member.name,
     given_name: member.given_name ?? null,
+    picture: member.picture,
+    avatar: member.avatar,
     about: member.about,
     nip05: member.nip05,
     nprofile: member.nprofile
@@ -2625,12 +2697,11 @@ function memberDisplayName(member: GroupMemberDraft): string {
 }
 
 function memberAvatar(member: GroupMemberDraft): string {
-  return buildAvatarText(memberDisplayName(member) || member.public_key);
+  return member.avatar?.trim() || buildAvatarText(memberDisplayName(member) || member.public_key);
 }
 
 function memberPictureUrl(member: GroupMemberDraft): string {
-  void member;
-  return '';
+  return member.picture?.trim() || '';
 }
 
 function memberListCandidates(member: GroupMemberDraft): string[] {
@@ -2708,6 +2779,19 @@ function handleOpenChat(): void {
   }
 }
 
+function handleOpenMemberProfile(member: GroupMemberDraft): void {
+  try {
+    const publicKey = member.public_key.trim();
+    if (!publicKey) {
+      return;
+    }
+
+    void router.push({ name: 'contacts', params: { pubkey: publicKey } });
+  } catch (error) {
+    reportUiError('Failed to open group member profile', error);
+  }
+}
+
 function handleOpenShareDialog(): void {
   try {
     if (!shareNostrAddress.value) {
@@ -2771,20 +2855,29 @@ async function handleCopyProfileValue(value: string, label: string): Promise<voi
   }
 }
 
-async function handleRefreshContactProfile(): Promise<void> {
+async function refreshContactProfileFromPubkey(input: string): Promise<void> {
+  const refreshRequest = ++refreshRequestId;
+  const normalizedPubkey = normalizePubkeyInput(input);
+
+  if (!input.trim() || !normalizedPubkey) {
+    await loadContactFromPubkey(input);
+    return;
+  }
+
+  isRefreshingContact.value = true;
+  pubkeyError.value = '';
+  pubkeyInfo.value = '';
+
   try {
-    const normalizedPubkey = normalizePubkeyInput(localPubkey.value);
-    if (!normalizedPubkey || isRefreshingContact.value) {
-      return;
-    }
-
-    isRefreshingContact.value = true;
-    pubkeyError.value = '';
-    pubkeyInfo.value = '';
-
     await nostrStore.refreshContactByPublicKey(normalizedPubkey, headerName.value, {
       refreshRelayList: true
     });
+    if (
+      refreshRequest !== refreshRequestId ||
+      normalizePubkeyInput(props.pubkey ?? '') !== normalizedPubkey
+    ) {
+      return;
+    }
     await loadContactFromPubkey(normalizedPubkey);
   } catch (error) {
     reportUiError('Failed to refresh profile', error, t('errors.failedRefreshProfile'));
@@ -2792,8 +2885,18 @@ async function handleRefreshContactProfile(): Promise<void> {
       error instanceof Error ? error.message : t('errors.failedRefreshContactProfile');
     pubkeyInfo.value = '';
   } finally {
-    isRefreshingContact.value = false;
+    if (refreshRequest === refreshRequestId) {
+      isRefreshingContact.value = false;
+    }
   }
+}
+
+async function handleRefreshContactProfile(): Promise<void> {
+  if (isRefreshingContact.value) {
+    return;
+  }
+
+  await refreshContactProfileFromPubkey(localPubkey.value);
 }
 
 function isSameProfile(a: ContactProfileForm, b: ContactProfileForm): boolean {
@@ -3273,6 +3376,12 @@ body.body--dark .profile-header__action {
   gap: 12px;
 }
 
+.profile-member-delivery__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .profile-member-delivery__dialog-item-main {
   display: inline-flex;
   align-items: flex-start;
@@ -3321,6 +3430,11 @@ body.body--dark .profile-header__action {
 
 .profile-member-delivery__dialog-retry {
   flex-shrink: 0;
+}
+
+.profile-member-delivery__dialog-retry-all {
+  flex-shrink: 0;
+  min-height: 28px;
 }
 
 .profile-members-list__actions {
