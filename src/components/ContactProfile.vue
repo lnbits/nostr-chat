@@ -1065,6 +1065,7 @@ interface SelectedGroupMemberTicketStatus {
 interface Props {
   modelValue: ContactProfileForm;
   pubkey: string;
+  autoRefreshOnPubkeyChange?: boolean;
   readOnly?: boolean;
   showHeader?: boolean;
   showRelaysEditAction?: boolean;
@@ -1074,6 +1075,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  autoRefreshOnPubkeyChange: false,
   readOnly: false,
   showHeader: false,
   showRelaysEditAction: false,
@@ -1106,6 +1108,7 @@ const currentGroupChat = ref<ChatRow | null>(null);
 const groupOwnerMember = ref<GroupMemberDraft | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
+let refreshRequestId = 0;
 const isShareDialogOpen = ref(false);
 const isRefreshingGroupMembersFromFollowSet = ref(false);
 const displayedPubkeyFormat = ref<PubkeyDisplayFormat>('hex');
@@ -1428,6 +1431,11 @@ watch(
 watch(
   () => props.pubkey,
   (value) => {
+    if (props.autoRefreshOnPubkeyChange) {
+      void refreshContactProfileFromPubkey(value ?? '');
+      return;
+    }
+
     void loadContactFromPubkey(value ?? '');
   },
   { immediate: true }
@@ -2847,20 +2855,29 @@ async function handleCopyProfileValue(value: string, label: string): Promise<voi
   }
 }
 
-async function handleRefreshContactProfile(): Promise<void> {
+async function refreshContactProfileFromPubkey(input: string): Promise<void> {
+  const refreshRequest = ++refreshRequestId;
+  const normalizedPubkey = normalizePubkeyInput(input);
+
+  if (!input.trim() || !normalizedPubkey) {
+    await loadContactFromPubkey(input);
+    return;
+  }
+
+  isRefreshingContact.value = true;
+  pubkeyError.value = '';
+  pubkeyInfo.value = '';
+
   try {
-    const normalizedPubkey = normalizePubkeyInput(localPubkey.value);
-    if (!normalizedPubkey || isRefreshingContact.value) {
-      return;
-    }
-
-    isRefreshingContact.value = true;
-    pubkeyError.value = '';
-    pubkeyInfo.value = '';
-
     await nostrStore.refreshContactByPublicKey(normalizedPubkey, headerName.value, {
       refreshRelayList: true
     });
+    if (
+      refreshRequest !== refreshRequestId ||
+      normalizePubkeyInput(props.pubkey ?? '') !== normalizedPubkey
+    ) {
+      return;
+    }
     await loadContactFromPubkey(normalizedPubkey);
   } catch (error) {
     reportUiError('Failed to refresh profile', error, t('errors.failedRefreshProfile'));
@@ -2868,8 +2885,18 @@ async function handleRefreshContactProfile(): Promise<void> {
       error instanceof Error ? error.message : t('errors.failedRefreshContactProfile');
     pubkeyInfo.value = '';
   } finally {
-    isRefreshingContact.value = false;
+    if (refreshRequest === refreshRequestId) {
+      isRefreshingContact.value = false;
+    }
   }
+}
+
+async function handleRefreshContactProfile(): Promise<void> {
+  if (isRefreshingContact.value) {
+    return;
+  }
+
+  await refreshContactProfileFromPubkey(localPubkey.value);
 }
 
 function isSameProfile(a: ContactProfileForm, b: ContactProfileForm): boolean {
