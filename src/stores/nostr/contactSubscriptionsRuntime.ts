@@ -11,6 +11,10 @@ import NDK, {
 } from '@nostr-dev-kit/ndk';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import {
+  mergeRelayEntriesWithDirectMessageReceiveRelayEntriesValue,
+  relayEntriesFromDirectMessageReceiveRelayEventValue,
+} from 'src/stores/nostr/valueUtils';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 interface ContactSubscriptionsRuntimeDeps {
@@ -157,6 +161,46 @@ export function createContactSubscriptionsRuntime({
   let contactRelayListSubscriptionSignature = '';
   let contactRelayListApplyQueue = Promise.resolve();
 
+  async function fetchDirectMessageReceiveRelayEntries(
+    pubkeyHex: string,
+    seedRelayUrls: string[] = []
+  ): Promise<ContactRelay[]> {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    if (!normalizedPubkey) {
+      return [];
+    }
+
+    const relayUrls = await resolveTrackedContactReadRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return [];
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
+    const directMessageReceiveRelayEvent = await ndk.fetchEvent(
+      {
+        kinds: [NDKKind.DirectMessageReceiveRelayList],
+        authors: [normalizedPubkey],
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+      },
+      relaySet
+    );
+    if (!directMessageReceiveRelayEvent) {
+      return [];
+    }
+
+    const wrappedEvent =
+      directMessageReceiveRelayEvent instanceof NDKEvent
+        ? directMessageReceiveRelayEvent
+        : new NDKEvent(ndk, directMessageReceiveRelayEvent);
+    updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+
+    return relayEntriesFromDirectMessageReceiveRelayEventValue(wrappedEvent);
+  }
+
   async function applyContactProfileEvent(event: NDKEvent): Promise<void> {
     if (!shouldApplyContactProfileEvent(event)) {
       return;
@@ -251,7 +295,23 @@ export function createContactSubscriptionsRuntime({
 
     const nextEventState = buildContactRelayListEventState(event);
     const relayList = NDKRelayList.from(event);
-    const nextRelayEntries = relayEntriesFromRelayList(relayList);
+    let directMessageReceiveRelayEntries: ContactRelay[] = [];
+    try {
+      directMessageReceiveRelayEntries = await fetchDirectMessageReceiveRelayEntries(
+        normalizedPubkey,
+        extractRelayUrlsFromEvent(event)
+      );
+    } catch (error) {
+      console.warn(
+        'Failed to fetch direct message receive relays for contact',
+        normalizedPubkey,
+        error
+      );
+    }
+    const nextRelayEntries = mergeRelayEntriesWithDirectMessageReceiveRelayEntriesValue(
+      relayEntriesFromRelayList(relayList),
+      directMessageReceiveRelayEntries
+    );
 
     await contactsService.init();
     const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const USER_PUBKEY = 'a'.repeat(64);
 const PROFILE_EVENT_ID = 'b'.repeat(64);
 const RELAY_EVENT_ID = 'c'.repeat(64);
+const DM_RELAY_EVENT_ID = 'd'.repeat(64);
 const DEFAULT_RELAY_URL = 'wss://relay.example/';
 
 const serviceMocks = vi.hoisted(() => ({
@@ -143,7 +144,7 @@ describe('contactRelayRuntime', () => {
 
     await runtime.fetchContactRelayList(USER_PUBKEY);
 
-    expect(ndk.fetchEvent).toHaveBeenCalledTimes(1);
+    expect(ndk.fetchEvent).toHaveBeenCalledTimes(2);
     expect(ndk.fetchEvent.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         authors: [USER_PUBKEY],
@@ -151,6 +152,139 @@ describe('contactRelayRuntime', () => {
       })
     );
     expect(ndk.fetchEvent.mock.calls[0][0]).not.toHaveProperty('since');
+    expect(ndk.fetchEvent.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        authors: [USER_PUBKEY],
+        kinds: [NDKKind.DirectMessageReceiveRelayList],
+      })
+    );
+    expect(ndk.fetchEvent.mock.calls[1][0]).not.toHaveProperty('since');
+  });
+
+  it('merges direct message receive relays into fetched contact relay entries as read relays', async () => {
+    const { deps, ndk } = createDeps();
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(
+      makeContact(USER_PUBKEY, {
+        relays: [],
+      })
+    );
+    vi.spyOn(NDKRelayList, 'from').mockReturnValue({
+      bothRelayUrls: new Set<string>(),
+      created_at: 42,
+      id: RELAY_EVENT_ID,
+      readRelayUrls: new Set<string>(),
+      writeRelayUrls: new Set<string>(),
+    } as never);
+    deps.relayEntriesFromRelayList.mockReturnValue([
+      {
+        url: 'wss://write.example/',
+        read: false,
+        write: true,
+      },
+      {
+        url: 'wss://both.example/',
+        read: true,
+        write: true,
+      },
+    ]);
+    ndk.fetchEvent.mockImplementation(async (filter) => {
+      const kind = Array.isArray(filter.kinds) ? filter.kinds[0] : undefined;
+      if (kind === NDKKind.RelayList) {
+        return new NDKEvent({} as never, {
+          created_at: 42,
+          id: RELAY_EVENT_ID,
+          kind: NDKKind.RelayList,
+          pubkey: USER_PUBKEY,
+        });
+      }
+
+      if (kind === NDKKind.DirectMessageReceiveRelayList) {
+        return new NDKEvent({} as never, {
+          created_at: 43,
+          id: DM_RELAY_EVENT_ID,
+          kind: NDKKind.DirectMessageReceiveRelayList,
+          pubkey: USER_PUBKEY,
+          tags: [
+            ['relay', 'wss://write.example'],
+            ['relay', 'wss://dm.example'],
+          ],
+        });
+      }
+
+      return null;
+    });
+
+    const runtime = createContactRelayRuntime(deps);
+
+    await expect(runtime.fetchContactRelayList(USER_PUBKEY)).resolves.toEqual({
+      createdAt: 42,
+      eventId: RELAY_EVENT_ID,
+      relayEntries: [
+        {
+          url: 'wss://write.example/',
+          read: true,
+          write: true,
+        },
+        {
+          url: 'wss://both.example/',
+          read: true,
+          write: true,
+        },
+        {
+          url: 'wss://dm.example/',
+          read: true,
+          write: false,
+        },
+      ],
+    });
+  });
+
+  it('adds direct message receive relays to existing contact relays when no NIP-65 event is found', async () => {
+    const { deps, ndk } = createDeps();
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(
+      makeContact(USER_PUBKEY, {
+        relays: [
+          {
+            url: 'wss://write.example/',
+            read: false,
+            write: true,
+          },
+        ],
+      })
+    );
+    ndk.fetchEvent.mockImplementation(async (filter) => {
+      const kind = Array.isArray(filter.kinds) ? filter.kinds[0] : undefined;
+      if (kind === NDKKind.DirectMessageReceiveRelayList) {
+        return new NDKEvent({} as never, {
+          created_at: 43,
+          id: DM_RELAY_EVENT_ID,
+          kind: NDKKind.DirectMessageReceiveRelayList,
+          pubkey: USER_PUBKEY,
+          tags: [['relay', 'wss://dm.example']],
+        });
+      }
+
+      return null;
+    });
+
+    const runtime = createContactRelayRuntime(deps);
+
+    await expect(runtime.fetchContactRelayList(USER_PUBKEY)).resolves.toEqual({
+      createdAt: 0,
+      eventId: '',
+      relayEntries: [
+        {
+          url: 'wss://write.example/',
+          read: false,
+          write: true,
+        },
+        {
+          url: 'wss://dm.example/',
+          read: true,
+          write: false,
+        },
+      ],
+    });
   });
 
   it('uses the stored profile event created_at as since when refreshing a contact profile', async () => {
