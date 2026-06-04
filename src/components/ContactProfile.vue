@@ -44,7 +44,7 @@
           <q-tab
             v-if="isGroupContact"
             name="members"
-            :label="$t('group.members')"
+            :label="membersTabLabel"
             no-caps
             class="profile-tab"
             data-testid="contact-profile-members-tab"
@@ -598,7 +598,9 @@
                 <q-item
                   v-for="member in visibleGroupMembers"
                   :key="member.public_key"
+                  clickable
                   class="profile-members-list__item"
+                  @click="handleOpenMemberProfile(member)"
                 >
                   <q-item-section avatar>
                     <CachedAvatar
@@ -647,7 +649,7 @@
                         class="profile-member-delivery__status-hitbox"
                         data-testid="group-member-ticket-status"
                         :aria-label="$t('relays.openRelayDeliveryStatus', { name: memberListTitle(member) })"
-                        @click="openGroupMemberTicketStatus(member)"
+                        @click.stop="openGroupMemberTicketStatus(member)"
                       >
                         <div class="profile-member-delivery__status">
                           <span
@@ -671,7 +673,7 @@
                       color="primary"
                       :aria-label="$t('group.refreshMember')"
                       :loading="isMemberRefreshing(member.public_key)"
-                      @click="handleRefreshMember(member.public_key)"
+                      @click.stop="handleRefreshMember(member.public_key)"
                     />
                     <q-btn
                       v-if="canEditGroupMembers && !isGroupOwnerMember(member)"
@@ -681,7 +683,7 @@
                       icon="delete"
                       color="negative"
                       :aria-label="$t('group.removeMember')"
-                      @click="handleRemoveMember(member.public_key)"
+                      @click.stop="handleRemoveMember(member.public_key)"
                     />
                   </q-item-section>
                 </q-item>
@@ -829,7 +831,7 @@
           :text-color="activeTab === 'members' ? 'white' : undefined"
           no-caps
           icon="groups"
-          :label="$t('group.members')"
+          :label="membersTabLabel"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeTab === 'members' }"
           @click="activeTab = 'members'"
@@ -993,6 +995,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { isValidPubkey, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
@@ -1089,6 +1092,7 @@ const emit = defineEmits<{
 }>();
 
 const $q = useQuasar();
+const router = useRouter();
 const nostrStore = useNostrStore();
 const chatStore = useChatStore();
 const localPubkey = computed({
@@ -1267,6 +1271,7 @@ const visibleGroupMembers = computed(() => {
 
   return [ownerMember, ...visibleMembers];
 });
+const membersTabLabel = computed(() => `${t('group.members')} (${visibleGroupMembers.value.length})`);
 const nextPublishedGroupMembers = computed(() => {
   const pendingRemovedMemberPubkeys = pendingRemovedGroupMemberPubkeys.value;
   const remainingMembers = groupMembers.value
@@ -2763,6 +2768,19 @@ function handleOpenChat(): void {
     emit('open-chat');
   } catch (error) {
     reportUiError('Failed to open chat from contact profile', error);
+  }
+}
+
+function handleOpenMemberProfile(member: GroupMemberDraft): void {
+  try {
+    const publicKey = member.public_key.trim();
+    if (!publicKey) {
+      return;
+    }
+
+    void router.push({ name: 'contacts', params: { pubkey: publicKey } });
+  } catch (error) {
+    reportUiError('Failed to open group member profile', error);
   }
 }
 

@@ -81,6 +81,15 @@ test('group owner can create a group, invite a member, and exchange messages bot
       timeout: 12_000,
     });
     await alice.page.keyboard.press('Escape');
+    await expect(alice.page.getByTestId('contact-profile-members-tab')).toContainText(
+      'Members (2)'
+    );
+    await invitedMemberRow.locator('.profile-members-list__name').click();
+    await alice.page.waitForURL(new RegExp(`#\\/contacts\\/${bob.session.publicKey}$`));
+    await alice.page.goto(`/#/contacts/${groupPublicKey}`);
+    await expect(alice.page.getByTestId('contact-profile-members-tab')).toContainText(
+      'Members (2)'
+    );
 
     await openRequests(bob.page);
     await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
