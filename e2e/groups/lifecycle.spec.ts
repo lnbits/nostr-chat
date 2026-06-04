@@ -38,8 +38,9 @@ test('group owner can create a group, invite a member, and exchange messages bot
     const groupAbout = 'Relay-backed group e2e';
     const aliceGroupMessage = `group-hello-from-alice-${Date.now()}`;
     const bobGroupMessage = `group-hello-from-bob-${Date.now()}`;
-    const aliceMentionMessage = `group-mention-bob-${Date.now()}`;
+    const aliceMentionMessage = `mention-bob-${Date.now()}`;
     const aliceMentionDmMessage = `mention-opened-dm-${Date.now()}`;
+    const bobPublicKeyPrefix = bob.session.publicKey.slice(0, 8);
 
     const groupPublicKey = await createGroup(alice.page, {
       name: groupName,
@@ -50,7 +51,7 @@ test('group owner can create a group, invite a member, and exchange messages bot
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
     const invitedMemberRow = alice.page
       .locator('.profile-members-list .q-item')
-      .filter({ hasText: bob.session.publicKey.slice(0, 16) })
+      .filter({ hasText: bobPublicKeyPrefix })
       .first();
     await expect(invitedMemberRow.getByTestId('group-member-ticket-epoch-badge')).toContainText(
       'Epoch 0'
@@ -101,7 +102,7 @@ test('group owner can create a group, invite a member, and exchange messages bot
     await expect(
       alice.page
         .getByTestId('message-mention-option')
-        .filter({ hasText: bob.session.publicKey.slice(0, 16) })
+        .filter({ hasText: bobPublicKeyPrefix })
         .first()
     ).toBeVisible();
     await alice.page.keyboard.press('Escape');
@@ -131,7 +132,7 @@ test('group owner can create a group, invite a member, and exchange messages bot
     await alice.page.keyboard.type('@');
     await alice.page
       .getByTestId('message-mention-option')
-      .filter({ hasText: bob.session.publicKey.slice(0, 16) })
+      .filter({ hasText: bobPublicKeyPrefix })
       .first()
       .click();
     await alice.page.keyboard.type(` ${aliceMentionMessage}`);
@@ -154,7 +155,7 @@ test('group owner can create a group, invite a member, and exchange messages bot
       .filter({ hasText: aliceMentionMessage })
       .first();
     await expect(groupChatItem).toBeVisible();
-    await expect(groupChatItem).toContainText(mentionLabel);
+    await expect(groupChatItem).toContainText(`@${bobPublicKeyPrefix}`);
     await expect(groupChatItem).not.toContainText('nostr:nprofile');
     await navigateToChat(alice.page, groupPublicKey);
     await threadMessage(alice.page, aliceMentionMessage)
