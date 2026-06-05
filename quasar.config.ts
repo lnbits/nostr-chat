@@ -296,7 +296,8 @@ export default configure((ctx) => {
         linux: {
           category: 'Network',
           icon: 'icons/icon.png',
-          target: ['AppImage'],
+          maintainer: 'LNbits',
+          target: ['AppImage', 'deb', 'rpm'],
         },
       },
     },
