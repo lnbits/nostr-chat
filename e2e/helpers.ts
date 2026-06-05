@@ -468,7 +468,11 @@ async function seedRelayStorage(
   const relayEntries = createRelayEntries(relayUrls);
   await context.addInitScript(
     ({ nextRelayEntries, disableBrowserNotificationsPrompt, pendingLogoutCleanupKey }) => {
-      if (window.sessionStorage.getItem(pendingLogoutCleanupKey) !== '1') {
+      const storedRelays = window.localStorage.getItem('relays');
+      if (
+        window.sessionStorage.getItem(pendingLogoutCleanupKey) !== '1' &&
+        (!storedRelays || storedRelays.trim().length === 0)
+      ) {
         window.localStorage.setItem('relays', JSON.stringify(nextRelayEntries));
       }
       if (disableBrowserNotificationsPrompt) {
