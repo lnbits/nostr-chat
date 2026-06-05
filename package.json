@@ -3,6 +3,8 @@
   "productName": "Nostr Chat",
   "version": "0.2.0",
   "description": "Desktop and web Nostr chat client.",
+  "author": "LNbits",
+  "homepage": "https://github.com/lnbits/nostr-chat/",
   "private": true,
   "scripts": {
     "dev": "node ./scripts/quasar.cjs dev",

@@ -5,6 +5,8 @@ required_env_vars=(GH_TOKEN TAG COMMIT REPOSITORY)
 required_assets=(
   nostr-chat-android.apk
   nostr-chat-linux.AppImage
+  nostr-chat-linux.deb
+  nostr-chat-linux.rpm
   nostr-chat-macos.zip
   nostr-chat-windows.exe
 )
@@ -49,6 +51,8 @@ Versioned asset URLs:
 
 - Android debug APK: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-android.apk
 - Linux AppImage: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-linux.AppImage
+- Linux DEB: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-linux.deb
+- Linux RPM: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-linux.rpm
 - macOS ZIP: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-macos.zip
 - Windows EXE: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-windows.exe
 
@@ -56,6 +60,8 @@ Latest asset URLs:
 
 - Android debug APK: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-android.apk
 - Linux AppImage: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-linux.AppImage
+- Linux DEB: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-linux.deb
+- Linux RPM: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-linux.rpm
 - macOS ZIP: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-macos.zip
 - Windows EXE: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-windows.exe
 EOF

@@ -56,7 +56,7 @@ jobs:
           if-no-files-found: error
 
   build-linux:
-    name: Build Linux AppImage
+    name: Build Linux Packages
     needs: validate-tag
     runs-on: ubuntu-latest
 
@@ -74,19 +74,27 @@ jobs:
       - name: Prepare Quasar files
         run: npm run prepare:quasar
 
-      - name: Build Linux AppImage
+      - name: Install Linux package tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes rpm xz-utils
+
+      - name: Build Linux packages
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run build:electron:linux
 
-      - name: Stage Linux release asset
+      - name: Stage Linux release assets
         shell: bash
-        run: bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.AppImage' release-assets/nostr-chat-linux.AppImage
+        run: |
+          bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.AppImage' release-assets/nostr-chat-linux.AppImage
+          bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.deb' release-assets/nostr-chat-linux.deb
+          bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.rpm' release-assets/nostr-chat-linux.rpm
 
       - uses: actions/upload-artifact@v6
         with:
           name: release-linux
-          path: release-assets/nostr-chat-linux.AppImage
+          path: release-assets/nostr-chat-linux.*
           if-no-files-found: error
 
   build-macos:
