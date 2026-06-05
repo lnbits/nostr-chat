@@ -694,6 +694,38 @@ export function relayEntriesFromRelayListValue(
   ]);
 }
 
+export function relayEntriesFromDirectMessageReceiveRelayEventValue(
+  event: { tags?: string[][] } | null | undefined
+): ContactRelay[] {
+  if (!Array.isArray(event?.tags)) {
+    return [];
+  }
+
+  return inputSanitizerService.normalizeRelayListMetadataEntries(
+    event.tags
+      .filter((tag) => tag[0] === 'relay' || tag[0] === 'r')
+      .map((tag) => ({
+        url: String(tag[1] ?? ''),
+        read: true,
+        write: false,
+      }))
+  );
+}
+
+export function mergeRelayEntriesWithDirectMessageReceiveRelayEntriesValue(
+  relayEntries: ContactRelay[] | undefined,
+  directMessageReceiveRelayEntries: ContactRelay[] | undefined
+): ContactRelay[] {
+  return inputSanitizerService.normalizeRelayListMetadataEntries([
+    ...(relayEntries ?? []),
+    ...(directMessageReceiveRelayEntries ?? []).map((relay) => ({
+      url: relay.url,
+      read: true,
+      write: false,
+    })),
+  ]);
+}
+
 export function contactRelayListsEqualValue(
   first: ContactRelay[] | undefined,
   second: ContactRelay[] | undefined

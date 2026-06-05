@@ -17,6 +17,10 @@ import type {
   ContactRelayListEventState,
   ContactRelayListFetchResult,
 } from 'src/stores/nostr/types';
+import {
+  mergeRelayEntriesWithDirectMessageReceiveRelayEntriesValue,
+  relayEntriesFromDirectMessageReceiveRelayEventValue,
+} from 'src/stores/nostr/valueUtils';
 import type { ContactRecord, ContactRelay } from 'src/types/contact';
 
 interface ContactRelayRuntimeDeps {
@@ -182,31 +186,66 @@ export function createContactRelayRuntime({
 
     const since = readContactRelayListEventSince(existingContact?.meta);
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
-    const relayListEvent = await ndk.fetchEvent(
-      {
-        kinds: [NDKKind.RelayList],
-        authors: [normalizedPubkey],
-        ...(since !== null ? { since } : {}),
-      },
-      {
-        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
-      },
-      relaySet
-    );
-    if (!relayListEvent) {
+    const [relayListEvent, directMessageReceiveRelayEvent] = await Promise.all([
+      ndk.fetchEvent(
+        {
+          kinds: [NDKKind.RelayList],
+          authors: [normalizedPubkey],
+          ...(since !== null ? { since } : {}),
+        },
+        {
+          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+        },
+        relaySet
+      ),
+      ndk.fetchEvent(
+        {
+          kinds: [NDKKind.DirectMessageReceiveRelayList],
+          authors: [normalizedPubkey],
+        },
+        {
+          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+        },
+        relaySet
+      ),
+    ]);
+    if (!relayListEvent && !directMessageReceiveRelayEvent) {
       return null;
     }
 
-    updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
+    let relayList: NDKRelayList | null = null;
+    if (relayListEvent) {
+      updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
 
-    const relayList = NDKRelayList.from(
-      relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent)
+      relayList = NDKRelayList.from(
+        relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent)
+      );
+    }
+
+    const wrappedDirectMessageReceiveRelayEvent = directMessageReceiveRelayEvent
+      ? directMessageReceiveRelayEvent instanceof NDKEvent
+        ? directMessageReceiveRelayEvent
+        : new NDKEvent(ndk, directMessageReceiveRelayEvent)
+      : null;
+    if (wrappedDirectMessageReceiveRelayEvent) {
+      updateStoredEventSinceFromCreatedAt(wrappedDirectMessageReceiveRelayEvent.created_at);
+    }
+
+    const relayEntries = relayList
+      ? relayEntriesFromRelayList(relayList)
+      : inputSanitizerService.normalizeRelayListMetadataEntries(existingContact?.relays ?? []);
+    const directMessageReceiveRelayEntries = relayEntriesFromDirectMessageReceiveRelayEventValue(
+      wrappedDirectMessageReceiveRelayEvent
+    );
+    const mergedRelayEntries = mergeRelayEntriesWithDirectMessageReceiveRelayEntriesValue(
+      relayEntries,
+      directMessageReceiveRelayEntries
     );
 
     return {
-      createdAt: Number(relayList.created_at ?? 0),
-      eventId: relayList.id?.trim() ?? '',
-      relayEntries: relayEntriesFromRelayList(relayList),
+      createdAt: Number(relayList?.created_at ?? 0),
+      eventId: relayList?.id?.trim() ?? '',
+      relayEntries: mergedRelayEntries,
     };
   }
 
