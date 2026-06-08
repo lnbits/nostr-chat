@@ -192,16 +192,37 @@
                   loading="lazy"
                 />
               </button>
-              <a
-                class="bubble__image-link"
-                data-testid="message-image-link"
-                :href="item.attachment.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                @click.stop
-              >
-                {{ item.attachment.url }}
-              </a>
+              <div class="bubble__image-actions">
+                <q-btn
+                  flat
+                  dense
+                  round
+                  color="primary"
+                  icon="content_copy"
+                  class="bubble__image-action bubble__image-copy"
+                  data-testid="message-image-copy-link"
+                  :aria-label="$t('message.copyImageLink')"
+                  @click.stop="handleCopyImageLink(item.attachment.url)"
+                >
+                  <AppTooltip>{{ $t('message.copyImageLink') }}</AppTooltip>
+                </q-btn>
+                <q-btn
+                  flat
+                  dense
+                  round
+                  color="primary"
+                  icon="open_in_new"
+                  class="bubble__image-action bubble__image-open"
+                  data-testid="message-image-link"
+                  :href="item.attachment.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="$t('message.openImageLinkNewTab')"
+                  @click.stop
+                >
+                  <AppTooltip>{{ $t('message.openImageLinkNewTab') }}</AppTooltip>
+                </q-btn>
+              </div>
             </div>
             <div v-else class="bubble__image-gate" data-testid="message-image-gate">
               <q-icon
@@ -210,16 +231,37 @@
                 class="bubble__image-gate-icon"
                 aria-hidden="true"
               />
-              <a
-                class="bubble__image-link bubble__image-link--gate"
-                data-testid="message-image-link"
-                :href="item.attachment.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                @click.stop
-              >
-                {{ item.attachment.url }}
-              </a>
+              <div class="bubble__image-actions bubble__image-actions--gate">
+                <q-btn
+                  flat
+                  dense
+                  round
+                  color="primary"
+                  icon="content_copy"
+                  class="bubble__image-action bubble__image-copy"
+                  data-testid="message-image-copy-link"
+                  :aria-label="$t('message.copyImageLink')"
+                  @click.stop="handleCopyImageLink(item.attachment.url)"
+                >
+                  <AppTooltip>{{ $t('message.copyImageLink') }}</AppTooltip>
+                </q-btn>
+                <q-btn
+                  flat
+                  dense
+                  round
+                  color="primary"
+                  icon="open_in_new"
+                  class="bubble__image-action bubble__image-open"
+                  data-testid="message-image-link"
+                  :href="item.attachment.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :aria-label="$t('message.openImageLinkNewTab')"
+                  @click.stop
+                >
+                  <AppTooltip>{{ $t('message.openImageLinkNewTab') }}</AppTooltip>
+                </q-btn>
+              </div>
               <q-btn
                 flat
                 dense
@@ -1178,6 +1220,20 @@ async function handleCopy(): Promise<void> {
   }
 }
 
+async function handleCopyImageLink(url: string): Promise<void> {
+  try {
+    await copyText(url);
+    $q.notify({
+      type: 'positive',
+      message: t('message.imageLinkCopied'),
+      position: 'top',
+      timeout: 1600
+    });
+  } catch (error) {
+    reportUiError('Failed to copy image link', error, t('errors.failedCopyImageLink'));
+  }
+}
+
 function handlePin(): void {
   notifyUnimplemented(t('common.pin'));
 }
@@ -1574,21 +1630,24 @@ onBeforeUnmount(() => {
   color: var(--nc-text-secondary);
 }
 
-.bubble__image-link {
+.bubble__image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  color: var(--q-primary);
-  font-size: 12px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  text-decoration: none;
 }
 
-.bubble__image-link:hover {
-  text-decoration: underline;
+.bubble__image-action {
+  min-height: 30px;
 }
 
-.bubble__image-link--gate {
-  color: var(--nc-text);
+.bubble__image-copy,
+.bubble__image-open {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
 }
 
 .bubble__image-show {
