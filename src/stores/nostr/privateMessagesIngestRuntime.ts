@@ -12,6 +12,7 @@ import { isPlainRecord } from 'src/stores/nostr/shared';
 import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type { NostrEventDirection } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
+import { extractMediaAttachmentsFromTags } from 'src/utils/messageAttachments';
 import { buildMentionMetadata, formatGroupMentionsForDisplay } from 'src/utils/nostrMentions';
 
 export function createPrivateMessagesIngestRuntime({
@@ -841,6 +842,7 @@ export function createPrivateMessagesIngestRuntime({
           }
         )
       : null;
+    const attachments = extractMediaAttachmentsFromTags(rumorEvent.tags);
     const createdMessage = await chatDataService.createMessage({
       chat_public_key: chat.public_key,
       author_public_key: senderPubkeyHex,
@@ -853,6 +855,7 @@ export function createPrivateMessagesIngestRuntime({
         wrapper_event_id: wrappedEvent.id ?? '',
         ...buildMentionMetadata(messageText, loggedInPubkeyHex),
         ...(replyPreview ? { reply: replyPreview } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
       },
     });
     if (!createdMessage) {

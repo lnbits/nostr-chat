@@ -14,12 +14,18 @@ import { resolveLatestReadBoundaryAtValue } from 'src/stores/nostr/valueUtils';
 import type {
   DeletedMessageMetadata,
   Message,
+  MessageAttachmentMetadata,
   MessageReaction,
   MessageReplyPreview,
   NostrEventEntry,
 } from 'src/types/chat';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
 import { isIncomingUnreadMessageActivity } from 'src/utils/messageActivity';
+import {
+  buildAttachmentMessageMeta,
+  buildAttachmentMessageText,
+  buildNip92ImetaTag,
+} from 'src/utils/messageAttachments';
 import {
   areMessageReactionsEqual,
   buildMetaWithReactions,
@@ -1559,6 +1565,103 @@ export const useMessageStore = defineStore('messageStore', () => {
     return finalMessage;
   }
 
+  async function sendMediaAttachment(
+    chatId: string,
+    attachment: MessageAttachmentMetadata,
+    replyTo: MessageReplyPreview | null = null,
+    options: RelaySendOptions = {}
+  ): Promise<Message | null> {
+    const messageText = buildAttachmentMessageText(attachment);
+    const attachmentMeta = buildAttachmentMessageMeta(attachment);
+    const imetaTag = buildNip92ImetaTag(attachment);
+
+    if (!messageText || imetaTag.length === 0 || !('attachments' in attachmentMeta)) {
+      return null;
+    }
+
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return null;
+    }
+
+    await chatDataService.init();
+    const chat = await chatDataService.getChatByPublicKey(normalizedChatId);
+    if (!chat) {
+      return null;
+    }
+
+    const recipientPublicKey = resolveChatRecipientPublicKeyFromRow(chat);
+    if (!recipientPublicKey) {
+      throw new Error('Group chat is missing the current epoch public key.');
+    }
+
+    const recipientRelayUrls = await resolveSendRelayUrls(chat.public_key, options.relayUrls);
+
+    const replyTargetEventId = await resolveReplyTargetEventId(replyTo);
+    const replyPreview = replyTo
+      ? {
+          ...replyTo,
+          eventId: replyTargetEventId ?? replyTo.eventId,
+        }
+      : null;
+    const createdAt = typeof options.createdAt === 'string' ? options.createdAt.trim() : '';
+    const meta = {
+      ...attachmentMeta,
+      ...(replyPreview ? { reply: replyPreview } : {}),
+    };
+
+    const created = await chatDataService.createMessage({
+      chat_public_key: chat.public_key,
+      author_public_key: window.localStorage.getItem('npub'),
+      message: messageText,
+      created_at: createdAt || new Date().toISOString(),
+      meta,
+    });
+    if (!created) {
+      return null;
+    }
+
+    const newMessage = mapMessageRowToMessage(created, normalizedChatId);
+
+    loadedChatIds.add(normalizedChatId);
+    upsertMessageInState(normalizedChatId, newMessage, {
+      allowOutsideLoadedWindow: true,
+    });
+    let sendError: unknown = null;
+
+    try {
+      const nostrStore = await getNostrStore();
+      await nostrStore.sendDirectMessage(recipientPublicKey, newMessage.text, recipientRelayUrls, {
+        localMessageId: created.id,
+        createdAt: created.created_at,
+        replyToEventId: replyTargetEventId,
+        publishSelfCopy: shouldPublishSelfCopyForChatRow(chat),
+        additionalTags: [imetaTag],
+      });
+    } catch (error) {
+      sendError = error;
+    }
+
+    const updatedMessageRow = await chatDataService.getMessageById(created.id);
+    const finalMessage = updatedMessageRow
+      ? await hydrateMessageRow(updatedMessageRow, normalizedChatId)
+      : newMessage;
+    replaceMessageInState(normalizedChatId, finalMessage);
+
+    if (sendError) {
+      throw sendError;
+    }
+
+    try {
+      const nostrStore = await getNostrStore();
+      await nostrStore.ensureRespondedPubkeyIsContact(chat.public_key, chat.name);
+    } catch (error) {
+      console.warn('Failed to add responded pubkey to contacts', chat.public_key, error);
+    }
+
+    return finalMessage;
+  }
+
   async function updateMessageReactions(
     chatId: string,
     messageId: string,
@@ -2180,6 +2283,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     getMessages,
     getPaginationState,
     sendMessage,
+    sendMediaAttachment,
     addReaction,
     removeReaction,
     deleteMessage,

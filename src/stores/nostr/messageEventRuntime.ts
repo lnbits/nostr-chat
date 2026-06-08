@@ -53,12 +53,24 @@ export function createMessageEventRuntime({
     recipientPubkey: string,
     message: string,
     createdAt: number,
-    replyToEventId?: string | null
+    replyToEventId?: string | null,
+    additionalTags: string[][] = []
   ): NDKEvent {
     const tags: string[][] = [['p', recipientPubkey]];
     const normalizedReplyTargetEventId = normalizeEventId(replyToEventId);
     if (normalizedReplyTargetEventId) {
       tags.push(['e', normalizedReplyTargetEventId, '', 'reply']);
+    }
+
+    for (const tag of additionalTags) {
+      if (!Array.isArray(tag) || tag.length === 0) {
+        continue;
+      }
+
+      const normalizedTag = tag.map((entry) => String(entry).trim()).filter(Boolean);
+      if (normalizedTag.length > 0) {
+        tags.push(normalizedTag);
+      }
     }
 
     return new NDKEvent(ndk, {

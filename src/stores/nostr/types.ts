@@ -95,6 +95,7 @@ export interface SendGiftWrappedRumorOptions {
 
 export interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {
   replyToEventId?: string | null;
+  additionalTags?: string[][];
 }
 
 export interface SendDirectMessageReactionOptions {
