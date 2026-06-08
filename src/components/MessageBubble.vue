@@ -1614,7 +1614,10 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   max-width: none;
+  max-height: 100vh;
+  max-height: 100dvh;
   border-radius: 0;
   background: rgba(3, 7, 18, 0.96);
   color: white;
@@ -1649,19 +1652,26 @@ onBeforeUnmount(() => {
 }
 
 .bubble__image-dialog-body {
+  box-sizing: border-box;
   display: grid;
   place-items: center;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
   padding: calc(max(56px, env(safe-area-inset-top)) + 12px)
     max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
     max(16px, env(safe-area-inset-left));
+  overflow: hidden;
 }
 
 .bubble__image-dialog-media {
   display: block;
   max-width: 100%;
   max-height: 100%;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
   border-radius: 6px;
 }
