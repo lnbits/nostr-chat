@@ -106,6 +106,9 @@
         @keydown.up="handleAutocompleteArrowUp"
         @keydown.tab="handleAutocompleteTab"
         @keydown.esc="handleAutocompleteEscape"
+        @paste="handleComposerPaste"
+        @dragover="handleComposerDragOver"
+        @drop="handleComposerDrop"
       >
         <template #prepend>
           <q-btn
@@ -206,7 +209,7 @@
           no-caps
           :disable="isNostrBuildAuthInProgress"
           :label="$t('common.cancel')"
-          @click="isMediaPrivacyDialogOpen = false"
+          @click="handleMediaConsentCancel"
         />
         <q-btn
           unelevated
@@ -266,6 +269,12 @@ import {
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { MessageAttachmentMetadata, MessageReplyPreview } from 'src/types/chat';
+import {
+  hasImageTransferFile,
+  hasTransferFiles,
+  hasTransferText,
+  readFirstImageTransferFile,
+} from 'src/utils/mediaTransfer';
 import { serializeMentionDraft, type NostrMentionProfile } from 'src/utils/nostrMentions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -290,6 +299,7 @@ const isMediaPrivacyDialogOpen = ref(false);
 const isNostrBuildAuthInProgress = ref(false);
 const isMediaUploadDialogOpen = ref(false);
 const isMediaUploadInProgress = ref(false);
+const pendingInlineMediaFile = ref<File | null>(null);
 const mediaUploadStatus = ref<'uploading' | 'sending'>('uploading');
 const mediaUploadError = ref('');
 const shouldRefocusAfterEmojiMenuHide = ref(false);
@@ -575,6 +585,12 @@ watch(emojiAutocompleteMatch, () => {
   }
 });
 
+watch(isMediaPrivacyDialogOpen, (isOpen) => {
+  if (!isOpen && !isNostrBuildAuthInProgress.value) {
+    pendingInlineMediaFile.value = null;
+  }
+});
+
 function replaceDraftRange(start: number, end: number, replacement: string): void {
   setDraftValue(`${draft.value.slice(0, start)}${replacement}${draft.value.slice(end)}`);
   const nextCursor = start + replacement.length;
@@ -611,7 +627,7 @@ function handleEmojiMenuHide(): void {
 
 function handlePhotoVideoAction(): void {
   isComposerMenuOpen.value = false;
-  isMediaPrivacyDialogOpen.value = true;
+  openMediaPrivacyDialog();
 }
 
 function resetMediaFileInput(): void {
@@ -625,6 +641,36 @@ function openMediaFileBrowser(): void {
   mediaFileInputRef.value?.click();
 }
 
+function openMediaPrivacyDialog(file: File | null = null): void {
+  if (isNostrBuildAuthInProgress.value || isMediaUploadInProgress.value) {
+    return;
+  }
+
+  if (file) {
+    const validationError = validateNostrBuildMediaFile(file);
+    if (validationError) {
+      $q.notify({
+        type: 'warning',
+        message: validationError,
+        position: 'top',
+      });
+      return;
+    }
+  }
+
+  pendingInlineMediaFile.value = file;
+  isMediaPrivacyDialogOpen.value = true;
+}
+
+function handleMediaConsentCancel(): void {
+  if (isNostrBuildAuthInProgress.value) {
+    return;
+  }
+
+  pendingInlineMediaFile.value = null;
+  isMediaPrivacyDialogOpen.value = false;
+}
+
 async function handleMediaConsentConfirm(): Promise<void> {
   if (isNostrBuildAuthInProgress.value) {
     return;
@@ -633,7 +679,14 @@ async function handleMediaConsentConfirm(): Promise<void> {
   isNostrBuildAuthInProgress.value = true;
   try {
     await nostrStore.ensureNostrBuildUploadAuthentication();
+    const inlineFile = pendingInlineMediaFile.value;
+    pendingInlineMediaFile.value = null;
     isMediaPrivacyDialogOpen.value = false;
+    if (inlineFile) {
+      void uploadAndSendMediaFile(inlineFile);
+      return;
+    }
+
     void nextTick(() => {
       openMediaFileBrowser();
     });
@@ -668,6 +721,54 @@ async function handleMediaFileInputChange(event: Event): Promise<void> {
   }
 
   await uploadAndSendMediaFile(file);
+}
+
+function handleComposerPaste(event: ClipboardEvent): void {
+  try {
+    const imageFile = readFirstImageTransferFile(event.clipboardData);
+    if (!imageFile) {
+      return;
+    }
+
+    if (!hasTransferText(event.clipboardData)) {
+      event.preventDefault();
+    }
+
+    openMediaPrivacyDialog(imageFile);
+  } catch (error) {
+    reportUiError('Failed to handle pasted image', error);
+  }
+}
+
+function handleComposerDragOver(event: DragEvent): void {
+  const transfer = event.dataTransfer;
+  if (!hasTransferFiles(transfer)) {
+    return;
+  }
+
+  event.preventDefault();
+  if (transfer) {
+    transfer.dropEffect = hasImageTransferFile(transfer) ? 'copy' : 'none';
+  }
+}
+
+function handleComposerDrop(event: DragEvent): void {
+  try {
+    const transfer = event.dataTransfer;
+    const imageFile = readFirstImageTransferFile(transfer);
+    if (!imageFile) {
+      if (hasTransferFiles(transfer)) {
+        event.preventDefault();
+      }
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    openMediaPrivacyDialog(imageFile);
+  } catch (error) {
+    reportUiError('Failed to handle dropped image', error);
+  }
 }
 
 async function uploadAndSendMediaFile(file: File): Promise<void> {
@@ -919,6 +1020,7 @@ watch(
     isNostrBuildAuthInProgress.value = false;
     isMediaUploadDialogOpen.value = false;
     isMediaUploadInProgress.value = false;
+    pendingInlineMediaFile.value = null;
     mediaUploadError.value = '';
     shouldRefocusAfterEmojiMenuHide.value = false;
   },
