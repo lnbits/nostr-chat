@@ -111,8 +111,8 @@
           >
             <q-menu
               v-model="isComposerMenuOpen"
-              anchor="top right"
-              self="bottom right"
+              anchor="top left"
+              self="bottom left"
               class="nc-pop-menu"
             >
               <q-list dense class="composer__menu-list">
@@ -135,27 +135,27 @@
                     <q-icon name="sentiment_satisfied" />
                   </q-item-section>
                   <q-item-section>{{ $t('message.emoji') }}</q-item-section>
-
-                  <q-menu
-                    v-model="isEmojiMenuOpen"
-                    anchor="top right"
-                    self="bottom right"
-                    class="nc-pop-menu"
-                    @show="handleEmojiMenuShow"
-                    @hide="handleEmojiMenuHide"
-                  >
-                    <EmojiPickerPanel
-                      ref="emojiPickerRef"
-                      width="360px"
-                      max-height="300px"
-                      :columns="6"
-                      item-min-height="42px"
-                      item-padding="10px 6px"
-                      @select="insertEmoji"
-                    />
-                  </q-menu>
                 </q-item>
               </q-list>
+            </q-menu>
+            <q-menu
+              v-model="isEmojiMenuOpen"
+              no-parent-event
+              anchor="top right"
+              self="bottom right"
+              class="nc-pop-menu"
+              @show="handleEmojiMenuShow"
+              @hide="handleEmojiMenuHide"
+            >
+              <EmojiPickerPanel
+                ref="emojiPickerRef"
+                width="360px"
+                max-height="300px"
+                :columns="6"
+                item-min-height="42px"
+                item-padding="10px 6px"
+                @select="insertEmoji"
+              />
             </q-menu>
           </q-btn>
         </template>
@@ -544,7 +544,10 @@ function handleFileAction(): void {
 
 function handleEmojiAction(): void {
   rememberSelection();
-  isEmojiMenuOpen.value = true;
+  isComposerMenuOpen.value = false;
+  void nextTick(() => {
+    isEmojiMenuOpen.value = true;
+  });
 }
 
 function handleEmojiAutocompleteSelect(emoji: string): void {
