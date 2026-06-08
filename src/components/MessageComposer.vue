@@ -103,28 +103,59 @@
           <q-btn
             flat
             dense
-            icon="sentiment_satisfied"
-            :aria-label="$t('message.addEmoji')"
-           
+            icon="add"
+            class="composer__menu-trigger"
+            data-testid="message-composer-menu"
+            :aria-label="$t('message.openComposerMenu')"
             @click="rememberSelection"
           >
             <q-menu
-              v-model="isEmojiMenuOpen"
+              v-model="isComposerMenuOpen"
               anchor="top right"
               self="bottom right"
               class="nc-pop-menu"
-              @show="handleEmojiMenuShow"
-              @hide="handleEmojiMenuHide"
             >
-              <EmojiPickerPanel
-                ref="emojiPickerRef"
-                width="360px"
-                max-height="300px"
-                :columns="6"
-                item-min-height="42px"
-                item-padding="10px 6px"
-                @select="insertEmoji"
-              />
+              <q-list dense class="composer__menu-list">
+                <q-item clickable v-close-popup @click="handlePhotoVideoAction">
+                  <q-item-section avatar class="composer__menu-icon">
+                    <q-icon name="photo_library" />
+                  </q-item-section>
+                  <q-item-section>{{ $t('message.photoOrVideo') }}</q-item-section>
+                </q-item>
+
+                <q-item clickable v-close-popup @click="handleFileAction">
+                  <q-item-section avatar class="composer__menu-icon">
+                    <q-icon name="insert_drive_file" />
+                  </q-item-section>
+                  <q-item-section>{{ $t('message.file') }}</q-item-section>
+                </q-item>
+
+                <q-item clickable @click="handleEmojiAction">
+                  <q-item-section avatar class="composer__menu-icon">
+                    <q-icon name="sentiment_satisfied" />
+                  </q-item-section>
+                  <q-item-section>{{ $t('message.emoji') }}</q-item-section>
+
+                  <q-menu
+                    v-model="isEmojiMenuOpen"
+                    anchor="top right"
+                    self="bottom right"
+                    class="nc-pop-menu"
+                    @show="handleEmojiMenuShow"
+                    @hide="handleEmojiMenuHide"
+                  >
+                    <EmojiPickerPanel
+                      ref="emojiPickerRef"
+                      width="360px"
+                      max-height="300px"
+                      :columns="6"
+                      item-min-height="42px"
+                      item-padding="10px 6px"
+                      @select="insertEmoji"
+                    />
+                  </q-menu>
+                </q-item>
+              </q-list>
             </q-menu>
           </q-btn>
         </template>
@@ -140,15 +171,35 @@
         @click="handleSendClick"
       />
     </div>
+
+    <AppDialog
+      v-model="isMediaPrivacyDialogOpen"
+      :title="$t('message.photoOrVideo')"
+      max-width="420px"
+    >
+      <div class="composer__media-warning">{{ $t('message.mediaUrlWarning') }}</div>
+
+      <template #actions>
+        <q-btn
+          unelevated
+          no-caps
+          color="primary"
+          :label="$t('common.ok')"
+          @click="isMediaPrivacyDialogOpen = false"
+        />
+      </template>
+    </AppDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
+import AppDialog from 'src/components/AppDialog.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS, filterEmojiEntries, type EmojiOption } from 'src/data/topEmojis';
+import { t } from 'src/i18n';
 import { useChatStore } from 'src/stores/chatStore';
 import type { MessageReplyPreview } from 'src/types/chat';
 import { serializeMentionDraft, type NostrMentionProfile } from 'src/utils/nostrMentions';
@@ -167,7 +218,9 @@ const inputRef = ref<{ $el: HTMLElement } | null>(null);
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
+const isComposerMenuOpen = ref(false);
 const isEmojiMenuOpen = ref(false);
+const isMediaPrivacyDialogOpen = ref(false);
 const shouldRefocusAfterEmojiMenuHide = ref(false);
 const activeMentionAutocompleteIndex = ref(0);
 const activeEmojiAutocompleteIndex = ref(0);
@@ -475,6 +528,25 @@ function handleEmojiMenuHide(): void {
   focusInputAt(selectionStart.value ?? draft.value.length);
 }
 
+function handlePhotoVideoAction(): void {
+  isComposerMenuOpen.value = false;
+  isMediaPrivacyDialogOpen.value = true;
+}
+
+function handleFileAction(): void {
+  isComposerMenuOpen.value = false;
+  $q.notify({
+    type: 'info',
+    message: t('message.fileUploadNotSupportedYet'),
+    position: 'top'
+  });
+}
+
+function handleEmojiAction(): void {
+  rememberSelection();
+  isEmojiMenuOpen.value = true;
+}
+
 function handleEmojiAutocompleteSelect(emoji: string): void {
   try {
     const match = emojiAutocompleteMatch.value;
@@ -672,7 +744,9 @@ watch(
     dismissedEmojiAutocompleteToken.value = '';
     activeMentionAutocompleteIndex.value = 0;
     activeEmojiAutocompleteIndex.value = 0;
+    isComposerMenuOpen.value = false;
     isEmojiMenuOpen.value = false;
+    isMediaPrivacyDialogOpen.value = false;
     shouldRefocusAfterEmojiMenuHide.value = false;
   },
   { immediate: true }
@@ -857,8 +931,30 @@ defineExpose({
   flex: 1;
 }
 
-.composer__emoji-trigger {
+.composer__menu-trigger {
   color: var(--nc-text-secondary);
+}
+
+.composer__menu-list {
+  min-width: 190px;
+  padding: 4px;
+}
+
+.composer__menu-list :deep(.q-item) {
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+.composer__menu-icon {
+  min-width: 34px;
+  padding-right: 8px;
+  color: var(--nc-text-secondary);
+}
+
+.composer__media-warning {
+  color: var(--nc-text);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .composer__send {
@@ -975,7 +1071,7 @@ defineExpose({
     padding-bottom: 2px;
   }
 
-  .composer__emoji-trigger {
+  .composer__menu-trigger {
     width: 30px;
     min-width: 30px;
     height: 30px;
@@ -986,11 +1082,11 @@ defineExpose({
     background: #f4f6f7 !important;
   }
 
-  .composer__emoji-trigger :deep(.q-btn__content) {
+  .composer__menu-trigger :deep(.q-btn__content) {
     justify-content: center;
   }
 
-  .composer__emoji-trigger :deep(.q-icon) {
+  .composer__menu-trigger :deep(.q-icon) {
     font-size: 18px;
   }
 
@@ -1034,7 +1130,7 @@ body.body--dark .composer__reply {
     background: color-mix(in srgb, var(--nc-panel-header-bg) 94%, transparent);
   }
 
-  body.body--dark .composer__emoji-trigger {
+  body.body--dark .composer__menu-trigger {
     border-color: #516173;
     background: color-mix(in srgb, var(--nc-panel-header-bg) 94%, #263341 6%) !important;
     color: #a9b8c8 !important;
