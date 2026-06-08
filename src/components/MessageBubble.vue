@@ -177,13 +177,21 @@
             @click.stop
           >
             <div v-if="item.isVisible" class="bubble__image-preview">
-              <img
-                class="bubble__image-preview-media"
-                data-testid="message-image-preview"
-                :src="item.attachment.url"
-                :alt="resolveImageAttachmentAlt(item.attachment)"
-                loading="lazy"
-              />
+              <button
+                type="button"
+                class="bubble__image-preview-button"
+                data-testid="message-image-preview-button"
+                :aria-label="resolveImageAttachmentAlt(item.attachment)"
+                @click.stop="openImageAttachmentDialog(item.attachment)"
+              >
+                <img
+                  class="bubble__image-preview-media"
+                  data-testid="message-image-preview"
+                  :src="item.attachment.url"
+                  :alt="resolveImageAttachmentAlt(item.attachment)"
+                  loading="lazy"
+                />
+              </button>
               <a
                 class="bubble__image-link"
                 data-testid="message-image-link"
@@ -532,6 +540,44 @@
   >
     <div class="bubble__deleted-message-dialog">{{ message.text }}</div>
   </AppDialog>
+
+  <q-dialog v-model="isImageDialogOpen" maximized class="bubble__image-dialog">
+    <q-card class="bubble__image-dialog-card">
+      <div class="bubble__image-dialog-toolbar">
+        <a
+          v-if="fullscreenImageAttachment"
+          class="bubble__image-dialog-action"
+          :href="fullscreenImageAttachment.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          :aria-label="$t('common.open')"
+          :title="$t('common.open')"
+          @click.stop
+        >
+          <q-icon name="open_in_new" size="20px" />
+        </a>
+        <q-btn
+          flat
+          dense
+          round
+          icon="close"
+          color="white"
+          :aria-label="$t('common.closeDialog')"
+          class="bubble__image-dialog-close"
+          @click="closeImageAttachmentDialog"
+        />
+      </div>
+      <div class="bubble__image-dialog-body">
+        <img
+          v-if="fullscreenImageAttachment"
+          class="bubble__image-dialog-media"
+          data-testid="message-image-fullscreen"
+          :src="fullscreenImageAttachment.url"
+          :alt="resolveImageAttachmentAlt(fullscreenImageAttachment)"
+        />
+      </div>
+    </q-card>
+  </q-dialog>
 </template>
 
 <script setup lang="ts">
@@ -605,6 +651,8 @@ const shouldOpenEmojiPickerAfterActionMenu = ref(false);
 const lastActionMenuClickPosition = ref<{ left: number; top: number } | null>(null);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
 const revealedImageAttachmentKeys = ref<string[]>([]);
+const isImageDialogOpen = ref(false);
+const fullscreenImageAttachment = ref<MessageAttachmentMetadata | null>(null);
 
 interface MessageReactionItem {
   key: string;
@@ -935,6 +983,15 @@ function handleTrustSenderUpdate(value: boolean): void {
 
 function resolveImageAttachmentAlt(attachment: MessageAttachmentMetadata): string {
   return attachment.name?.trim() || t('message.imageAttachment');
+}
+
+function openImageAttachmentDialog(attachment: MessageAttachmentMetadata): void {
+  fullscreenImageAttachment.value = attachment;
+  isImageDialogOpen.value = true;
+}
+
+function closeImageAttachmentDialog(): void {
+  isImageDialogOpen.value = false;
 }
 
 function openStatusDialog(): void {
@@ -1269,12 +1326,19 @@ watch(
   () => {
     isMessageExpanded.value = false;
     revealedImageAttachmentKeys.value = [];
+    closeImageAttachmentDialog();
   }
 );
 
 watch(isInfoDialogOpen, (isOpen) => {
   if (!isOpen) {
     isEventJsonViewOpen.value = false;
+  }
+});
+
+watch(isImageDialogOpen, (isOpen) => {
+  if (!isOpen) {
+    fullscreenImageAttachment.value = null;
   }
 });
 
@@ -1466,6 +1530,17 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
+.bubble__image-preview-button {
+  display: block;
+  width: fit-content;
+  max-width: min(100%, 360px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: zoom-in;
+}
+
 .bubble__image-preview-media {
   display: block;
   width: auto;
@@ -1475,6 +1550,12 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: var(--nc-surface-soft-strong);
   object-fit: contain;
+}
+
+.bubble__image-preview-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--q-primary) 54%, transparent);
+  outline-offset: 3px;
+  border-radius: 8px;
 }
 
 .bubble__image-gate {
@@ -1523,6 +1604,66 @@ onBeforeUnmount(() => {
 .bubble__image-trust :deep(.q-checkbox__label) {
   font-size: 12px;
   line-height: 1.3;
+}
+
+.bubble__image-dialog :deep(.q-dialog__inner) {
+  padding: 0;
+}
+
+.bubble__image-dialog-card {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border-radius: 0;
+  background: rgba(3, 7, 18, 0.96);
+  color: white;
+  overflow: hidden;
+}
+
+.bubble__image-dialog-toolbar {
+  position: absolute;
+  z-index: 2;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bubble__image-dialog-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: white;
+  text-decoration: none;
+}
+
+.bubble__image-dialog-close {
+  background: rgba(15, 23, 42, 0.72);
+  color: white;
+}
+
+.bubble__image-dialog-body {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: calc(max(56px, env(safe-area-inset-top)) + 12px)
+    max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+}
+
+.bubble__image-dialog-media {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
 }
 
 .bubble__text--deleted {
