@@ -4,6 +4,7 @@ import {
   buildAttachmentMessageText,
   buildNip92ImetaTag,
   extractMediaAttachmentsFromTags,
+  readImageAttachmentsFromMeta,
 } from 'src/utils/messageAttachments';
 import { describe, expect, it } from 'vitest';
 
@@ -60,6 +61,39 @@ describe('message attachment helpers', () => {
         mimeType: 'image/png',
         size: 1234,
         sha256: 'abcdef',
+      },
+    ]);
+  });
+
+  it('reads only image attachments from message metadata', () => {
+    expect(
+      readImageAttachmentsFromMeta({
+        attachments: [
+          attachment,
+          {
+            type: 'media',
+            url: 'https://nostr.build/v/example.mp4',
+            mimeType: 'video/mp4',
+            size: 456,
+          },
+          {
+            type: 'media',
+            url: '',
+            mimeType: 'image/png',
+            size: 123,
+          },
+        ],
+      })
+    ).toEqual([
+      {
+        type: 'media',
+        url: 'https://nostr.build/i/example.png',
+        mimeType: 'image/png',
+        size: 1234,
+        sha256: 'abcdef',
+        name: 'example.png',
+        service: 'nostr.build',
+        uploadedAt: '2026-06-08T10:00:00.000Z',
       },
     ]);
   });

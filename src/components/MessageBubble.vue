@@ -144,6 +144,7 @@
         </button>
 
         <p
+          v-if="shouldShowMessageText"
           class="bubble__text"
           :class="{
             'bubble__text--emoji': isSingleEmojiMessage,
@@ -163,6 +164,77 @@
             <span v-else>{{ part.text }}</span>
           </template>
         </p>
+        <div
+          v-if="imageAttachmentItems.length > 0"
+          class="bubble__attachments"
+          data-testid="message-image-attachments"
+        >
+          <div
+            v-for="item in imageAttachmentItems"
+            :key="item.key"
+            class="bubble__image-attachment"
+            data-testid="message-image-attachment"
+            @click.stop
+          >
+            <div v-if="item.isVisible" class="bubble__image-preview">
+              <img
+                class="bubble__image-preview-media"
+                data-testid="message-image-preview"
+                :src="item.attachment.url"
+                :alt="resolveImageAttachmentAlt(item.attachment)"
+                loading="lazy"
+              />
+              <a
+                class="bubble__image-link"
+                data-testid="message-image-link"
+                :href="item.attachment.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click.stop
+              >
+                {{ item.attachment.url }}
+              </a>
+            </div>
+            <div v-else class="bubble__image-gate" data-testid="message-image-gate">
+              <q-icon
+                name="image"
+                size="20px"
+                class="bubble__image-gate-icon"
+                aria-hidden="true"
+              />
+              <a
+                class="bubble__image-link bubble__image-link--gate"
+                data-testid="message-image-link"
+                :href="item.attachment.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click.stop
+              >
+                {{ item.attachment.url }}
+              </a>
+              <q-btn
+                flat
+                dense
+                no-caps
+                icon="visibility"
+                color="primary"
+                class="bubble__image-show"
+                data-testid="message-image-show"
+                :label="$t('message.showImage')"
+                @click.stop="revealImageAttachment(item.key)"
+              />
+              <q-checkbox
+                dense
+                class="bubble__image-trust"
+                data-testid="message-image-trust-sender"
+                :model-value="false"
+                :label="$t('message.alwaysTrustSender')"
+                @click.stop
+                @update:model-value="handleTrustSenderUpdate"
+              />
+            </div>
+          </div>
+        </div>
         <button
           v-if="canExpandMessage && !isMessageExpanded"
           type="button"
@@ -479,10 +551,13 @@ import { getEmojiEntryByValue, type EmojiOption } from 'src/data/topEmojis';
 import type {
   DeletedMessageMetadata,
   Message,
+  MessageAttachmentMetadata,
   MessageReaction,
   MessageReplyPreview
 } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { useTrustedMediaStore } from 'src/stores/trustedMediaStore';
+import { readImageAttachmentsFromMeta } from 'src/utils/messageAttachments';
 import { isReactionUnseenForAuthor } from 'src/utils/messageReactions';
 import {
   buildNostrMentionTextParts,
@@ -515,6 +590,7 @@ const emit = defineEmits<{
 
 const $q = useQuasar();
 const nostrStore = useNostrStore();
+const trustedMediaStore = useTrustedMediaStore();
 const isMine = computed(() => props.message.sender === 'me');
 const showAuthorOnMobile = computed(() => props.showAuthorOnMobile === true);
 const loggedInPublicKey = computed(() => nostrStore.getLoggedInPublicKeyHex()?.toLowerCase() ?? '');
@@ -528,11 +604,18 @@ const isDeletedMessageDialogOpen = ref(false);
 const shouldOpenEmojiPickerAfterActionMenu = ref(false);
 const lastActionMenuClickPosition = ref<{ left: number; top: number } | null>(null);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
+const revealedImageAttachmentKeys = ref<string[]>([]);
 
 interface MessageReactionItem {
   key: string;
   reaction: MessageReaction;
   isFreshCandidate: boolean;
+}
+
+interface ImageAttachmentItem {
+  key: string;
+  attachment: MessageAttachmentMetadata;
+  isVisible: boolean;
 }
 
 function isMessageReaction(value: unknown): value is MessageReaction {
@@ -740,6 +823,45 @@ const baseVisibleMessageText = computed(() => {
   const [firstLine = ''] = props.message.text.split(/\r?\n/u);
   return firstLine;
 });
+
+const imageAttachments = computed(() => {
+  if (isDeletedMessage.value) {
+    return [];
+  }
+
+  return readImageAttachmentsFromMeta(props.message.meta);
+});
+
+function removeImageAttachmentUrls(text: string, attachments: MessageAttachmentMetadata[]): string {
+  let nextText = text;
+  const urls = Array.from(
+    new Set(attachments.map((attachment) => attachment.url.trim()).filter(Boolean))
+  );
+
+  for (const url of urls) {
+    nextText = nextText.split(url).join('');
+  }
+
+  return nextText
+    .replace(/[ \t]+\n/gu, '\n')
+    .replace(/\n[ \t]+/gu, '\n')
+    .replace(/[ \t]{2,}/gu, ' ')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim();
+}
+
+const visibleMessageText = computed(() => {
+  if (imageAttachments.value.length === 0) {
+    return baseVisibleMessageText.value;
+  }
+
+  return removeImageAttachmentUrls(baseVisibleMessageText.value, imageAttachments.value);
+});
+
+const shouldShowMessageText = computed(() => {
+  return isDeletedMessage.value || visibleMessageText.value.length > 0;
+});
+
 const DEFAULT_QUICK_REACTION_EMOJIS = ['👍', '👎', '🙏', '❤️', '😂'] as const;
 
 const quickReactionEntries = DEFAULT_QUICK_REACTION_EMOJIS
@@ -752,26 +874,68 @@ const isSingleEmojiMessage = computed(() => {
     return false;
   }
 
-  const trimmedText = props.message.text.trim();
+  const trimmedText = visibleMessageText.value.trim();
   return trimmedText.length > 0 && SINGLE_EMOJI_PATTERN.test(trimmedText);
 });
 const canExpandMessage = computed(() => {
   return (
     !isDeletedMessage.value &&
     !isSingleEmojiMessage.value &&
-    isMessageTooLong(baseVisibleMessageText.value)
+    isMessageTooLong(visibleMessageText.value)
   );
 });
 const bubbleMessageText = computed(() => {
   if (!canExpandMessage.value || isMessageExpanded.value) {
-    return baseVisibleMessageText.value;
+    return visibleMessageText.value;
   }
 
-  return truncateMessageText(baseVisibleMessageText.value);
+  return truncateMessageText(visibleMessageText.value);
 });
 const bubbleMessageTextParts = computed(() => {
   return buildNostrMentionTextParts(bubbleMessageText.value, props.mentionProfiles ?? []);
 });
+
+function buildImageAttachmentKey(attachment: MessageAttachmentMetadata, index: number): string {
+  return `${props.message.id}::${index}::${attachment.url}`;
+}
+
+const isSenderTrustedForImages = computed(() => {
+  return (
+    isMine.value ||
+    trustedMediaStore.isImageSenderTrusted(props.message.authorPublicKey, loggedInPublicKey.value)
+  );
+});
+
+const imageAttachmentItems = computed<ImageAttachmentItem[]>(() => {
+  return imageAttachments.value.map((attachment, index) => {
+    const key = buildImageAttachmentKey(attachment, index);
+    return {
+      key,
+      attachment,
+      isVisible: isSenderTrustedForImages.value || revealedImageAttachmentKeys.value.includes(key)
+    };
+  });
+});
+
+function revealImageAttachment(key: string): void {
+  if (revealedImageAttachmentKeys.value.includes(key)) {
+    return;
+  }
+
+  revealedImageAttachmentKeys.value = [...revealedImageAttachmentKeys.value, key];
+}
+
+function handleTrustSenderUpdate(value: boolean): void {
+  if (!value) {
+    return;
+  }
+
+  trustedMediaStore.trustImageSender(props.message.authorPublicKey);
+}
+
+function resolveImageAttachmentAlt(attachment: MessageAttachmentMetadata): string {
+  return attachment.name?.trim() || t('message.imageAttachment');
+}
 
 function openStatusDialog(): void {
   if (!hasRelayStatuses.value) {
@@ -1104,6 +1268,7 @@ watch(
   () => [props.message.id, props.message.text, isDeletedMessage.value],
   () => {
     isMessageExpanded.value = false;
+    revealedImageAttachmentKeys.value = [];
   }
 );
 
@@ -1282,6 +1447,82 @@ onBeforeUnmount(() => {
 
 .bubble__more:hover {
   text-decoration: underline;
+}
+
+.bubble__attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.bubble__image-attachment {
+  max-width: min(100%, 360px);
+}
+
+.bubble__image-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bubble__image-preview-media {
+  display: block;
+  width: auto;
+  max-width: min(100%, 360px);
+  max-height: 320px;
+  border: 1px solid var(--nc-border);
+  border-radius: 8px;
+  background: var(--nc-surface-soft-strong);
+  object-fit: contain;
+}
+
+.bubble__image-gate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--nc-border);
+  border-radius: 8px;
+  background: var(--nc-surface-soft-strong);
+}
+
+.bubble__image-gate-icon {
+  color: var(--nc-text-secondary);
+}
+
+.bubble__image-link {
+  min-width: 0;
+  color: var(--q-primary);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.bubble__image-link:hover {
+  text-decoration: underline;
+}
+
+.bubble__image-link--gate {
+  color: var(--nc-text);
+}
+
+.bubble__image-show {
+  min-height: 30px;
+}
+
+.bubble__image-trust {
+  grid-column: 2 / -1;
+  min-width: 0;
+  color: var(--nc-text-secondary);
+}
+
+.bubble__image-trust :deep(.q-checkbox__label) {
+  font-size: 12px;
+  line-height: 1.3;
 }
 
 .bubble__text--deleted {
@@ -1628,6 +1869,26 @@ onBeforeUnmount(() => {
   .bubble__more {
     font-size: var(--nc-mobile-caption-font-size);
     line-height: var(--nc-mobile-caption-line-height);
+  }
+
+  .bubble__image-attachment,
+  .bubble__image-preview-media {
+    max-width: 100%;
+  }
+
+  .bubble__image-gate {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .bubble__image-show,
+  .bubble__image-trust {
+    grid-column: 1 / -1;
+  }
+
+  .bubble__image-trust :deep(.q-checkbox__label) {
+    font-size: var(--nc-mobile-caption-font-size);
+    line-height: var(--nc-mobile-caption-line-height);
+    letter-spacing: 0;
   }
 
   .bubble__reactions {

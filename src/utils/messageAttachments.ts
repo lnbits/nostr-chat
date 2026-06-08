@@ -2,6 +2,10 @@ import type { MessageAttachmentMetadata } from 'src/types/chat';
 
 const IMETA_TAG_NAME = 'imeta';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -20,7 +24,11 @@ function readImetaField(entry: string, key: string): string {
   return entry.startsWith(prefix) ? entry.slice(prefix.length).trim() : '';
 }
 
-function normalizeAttachment(input: MessageAttachmentMetadata): MessageAttachmentMetadata | null {
+export function normalizeMessageAttachment(input: unknown): MessageAttachmentMetadata | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
   const url = normalizeText(input.url);
   const mimeType = normalizeText(input.mimeType);
   const size = normalizePositiveInteger(input.size);
@@ -52,12 +60,12 @@ export function buildAttachmentMessageText(attachment: MessageAttachmentMetadata
 export function buildAttachmentMessageMeta(
   attachment: MessageAttachmentMetadata
 ): { attachments: MessageAttachmentMetadata[] } | Record<string, never> {
-  const normalized = normalizeAttachment(attachment);
+  const normalized = normalizeMessageAttachment(attachment);
   return normalized ? { attachments: [normalized] } : {};
 }
 
 export function buildNip92ImetaTag(attachment: MessageAttachmentMetadata): string[] {
-  const normalized = normalizeAttachment(attachment);
+  const normalized = normalizeMessageAttachment(attachment);
   if (!normalized) {
     return [];
   }
@@ -120,4 +128,22 @@ export function extractMediaAttachmentsFromTags(tags: string[][]): MessageAttach
   }
 
   return attachments;
+}
+
+export function isImageAttachment(attachment: MessageAttachmentMetadata): boolean {
+  return attachment.type === 'media' && /^image\//iu.test(attachment.mimeType);
+}
+
+export function readImageAttachmentsFromMeta(meta: {
+  attachments?: unknown;
+}): MessageAttachmentMetadata[] {
+  if (!Array.isArray(meta.attachments)) {
+    return [];
+  }
+
+  return meta.attachments
+    .map((attachment) => normalizeMessageAttachment(attachment))
+    .filter((attachment): attachment is MessageAttachmentMetadata =>
+      attachment ? isImageAttachment(attachment) : false
+    );
 }
