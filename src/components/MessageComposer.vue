@@ -78,6 +78,14 @@
     </div>
 
     <div class="composer__row">
+      <input
+        ref="mediaFileInputRef"
+        class="composer__file-input"
+        type="file"
+        accept="image/*,video/*,audio/*"
+        @change="handleMediaFileInputChange"
+      />
+
       <q-input
         ref="inputRef"
         v-model="draft"
@@ -98,18 +106,52 @@
         @keydown.up="handleAutocompleteArrowUp"
         @keydown.tab="handleAutocompleteTab"
         @keydown.esc="handleAutocompleteEscape"
+        @paste="handleComposerPaste"
+        @dragover="handleComposerDragOver"
+        @drop="handleComposerDrop"
       >
         <template #prepend>
           <q-btn
             flat
             dense
-            icon="sentiment_satisfied"
-            :aria-label="$t('message.addEmoji')"
-           
+            icon="add"
+            class="composer__menu-trigger"
+            data-testid="message-composer-menu"
+            :aria-label="$t('message.openComposerMenu')"
             @click="rememberSelection"
           >
             <q-menu
+              v-model="isComposerMenuOpen"
+              anchor="top left"
+              self="bottom left"
+              class="nc-pop-menu"
+            >
+              <q-list dense class="composer__menu-list">
+                <q-item clickable v-close-popup @click="handlePhotoVideoAction">
+                  <q-item-section avatar class="composer__menu-icon">
+                    <q-icon name="photo_library" />
+                  </q-item-section>
+                  <q-item-section>{{ $t('message.photoOrVideo') }}</q-item-section>
+                </q-item>
+
+                <q-item clickable v-close-popup @click="handleFileAction">
+                  <q-item-section avatar class="composer__menu-icon">
+                    <q-icon name="insert_drive_file" />
+                  </q-item-section>
+                  <q-item-section>{{ $t('message.file') }}</q-item-section>
+                </q-item>
+
+                <q-item clickable @click="handleEmojiAction">
+                  <q-item-section avatar class="composer__menu-icon">
+                    <q-icon name="sentiment_satisfied" />
+                  </q-item-section>
+                  <q-item-section>{{ $t('message.emoji') }}</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+            <q-menu
               v-model="isEmojiMenuOpen"
+              no-parent-event
               anchor="top right"
               self="bottom right"
               class="nc-pop-menu"
@@ -140,17 +182,99 @@
         @click="handleSendClick"
       />
     </div>
+
+    <AppDialog
+      v-model="isMediaPrivacyDialogOpen"
+      :title="$t('message.photoOrVideo')"
+      :persistent="isNostrBuildAuthInProgress"
+      :show-close="!isNostrBuildAuthInProgress"
+      max-width="420px"
+    >
+      <div class="composer__media-warning">
+        <div>{{ $t('message.mediaUrlWarning') }}</div>
+        <div>{{ $t('message.mediaUpload.usingNostrBuild') }}</div>
+      </div>
+
+      <q-linear-progress
+        v-if="isNostrBuildAuthInProgress"
+        indeterminate
+        rounded
+        color="primary"
+        class="composer__dialog-progress"
+      />
+
+      <template #actions>
+        <q-btn
+          flat
+          no-caps
+          :disable="isNostrBuildAuthInProgress"
+          :label="$t('common.cancel')"
+          @click="handleMediaConsentCancel"
+        />
+        <q-btn
+          unelevated
+          no-caps
+          color="primary"
+          :loading="isNostrBuildAuthInProgress"
+          :label="$t('common.ok')"
+          @click="handleMediaConsentConfirm"
+        />
+      </template>
+    </AppDialog>
+
+    <AppDialog
+      v-model="isMediaUploadDialogOpen"
+      :title="$t('message.mediaUpload.title')"
+      :persistent="isMediaUploadInProgress"
+      :show-close="!isMediaUploadInProgress"
+      max-width="420px"
+    >
+      <div class="composer__media-upload">
+        <q-linear-progress
+          :indeterminate="isMediaUploadInProgress"
+          rounded
+          color="primary"
+          class="composer__dialog-progress"
+        />
+        <div class="composer__media-upload-status">
+          {{ mediaUploadStatusMessage }}
+        </div>
+      </div>
+
+      <template v-if="mediaUploadError" #actions>
+        <q-btn
+          unelevated
+          no-caps
+          color="primary"
+          :label="$t('common.ok')"
+          @click="isMediaUploadDialogOpen = false"
+        />
+      </template>
+    </AppDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
+import AppDialog from 'src/components/AppDialog.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS, filterEmojiEntries, type EmojiOption } from 'src/data/topEmojis';
+import { t } from 'src/i18n';
+import {
+  uploadNostrBuildMedia,
+  validateNostrBuildMediaFile,
+} from 'src/services/nostrBuildUploadService';
 import { useChatStore } from 'src/stores/chatStore';
-import type { MessageReplyPreview } from 'src/types/chat';
+import { useNostrStore } from 'src/stores/nostrStore';
+import type { MessageAttachmentMetadata, MessageReplyPreview } from 'src/types/chat';
+import {
+  hasImageTransferFile,
+  hasTransferFiles,
+  hasTransferText,
+  readFirstImageTransferFile,
+} from 'src/utils/mediaTransfer';
 import { serializeMentionDraft, type NostrMentionProfile } from 'src/utils/nostrMentions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -162,12 +286,22 @@ const props = defineProps<{
 
 const $q = useQuasar();
 const chatStore = useChatStore();
+const nostrStore = useNostrStore();
 const draft = ref('');
 const inputRef = ref<{ $el: HTMLElement } | null>(null);
+const mediaFileInputRef = ref<HTMLInputElement | null>(null);
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
+const isComposerMenuOpen = ref(false);
 const isEmojiMenuOpen = ref(false);
+const isMediaPrivacyDialogOpen = ref(false);
+const isNostrBuildAuthInProgress = ref(false);
+const isMediaUploadDialogOpen = ref(false);
+const isMediaUploadInProgress = ref(false);
+const pendingInlineMediaFile = ref<File | null>(null);
+const mediaUploadStatus = ref<'uploading' | 'sending'>('uploading');
+const mediaUploadError = ref('');
 const shouldRefocusAfterEmojiMenuHide = ref(false);
 const activeMentionAutocompleteIndex = ref(0);
 const activeEmojiAutocompleteIndex = ref(0);
@@ -179,6 +313,7 @@ let suppressNextSendClick = false;
 
 const emit = defineEmits<{
   (event: 'send', payload: { text: string }): void;
+  (event: 'send-media', payload: { attachment: MessageAttachmentMetadata }): void;
   (event: 'cancel-reply'): void;
 }>();
 
@@ -194,6 +329,15 @@ function normalizeChatIdentifier(value: string | null | undefined): string | nul
 const activeChatId = computed(() => normalizeChatIdentifier(props.chatId));
 const sendButtonIcon = computed(() => ($q.screen.lt.md ? 'north' : 'send'));
 const mentionProfiles = computed(() => props.mentionProfiles ?? []);
+const mediaUploadStatusMessage = computed(() => {
+  if (mediaUploadError.value) {
+    return mediaUploadError.value;
+  }
+
+  return mediaUploadStatus.value === 'sending'
+    ? t('message.mediaUpload.sending')
+    : t('message.mediaUpload.uploading');
+});
 
 function setDraftValue(nextDraft: string, options: { persist?: boolean } = {}): void {
   draft.value = nextDraft;
@@ -441,6 +585,12 @@ watch(emojiAutocompleteMatch, () => {
   }
 });
 
+watch(isMediaPrivacyDialogOpen, (isOpen) => {
+  if (!isOpen && !isNostrBuildAuthInProgress.value) {
+    pendingInlineMediaFile.value = null;
+  }
+});
+
 function replaceDraftRange(start: number, end: number, replacement: string): void {
   setDraftValue(`${draft.value.slice(0, start)}${replacement}${draft.value.slice(end)}`);
   const nextCursor = start + replacement.length;
@@ -473,6 +623,198 @@ function handleEmojiMenuHide(): void {
 
   shouldRefocusAfterEmojiMenuHide.value = false;
   focusInputAt(selectionStart.value ?? draft.value.length);
+}
+
+function handlePhotoVideoAction(): void {
+  isComposerMenuOpen.value = false;
+  openMediaPrivacyDialog();
+}
+
+function resetMediaFileInput(): void {
+  if (mediaFileInputRef.value) {
+    mediaFileInputRef.value.value = '';
+  }
+}
+
+function openMediaFileBrowser(): void {
+  resetMediaFileInput();
+  mediaFileInputRef.value?.click();
+}
+
+function openMediaPrivacyDialog(file: File | null = null): void {
+  if (isNostrBuildAuthInProgress.value || isMediaUploadInProgress.value) {
+    return;
+  }
+
+  if (file) {
+    const validationError = validateNostrBuildMediaFile(file);
+    if (validationError) {
+      $q.notify({
+        type: 'warning',
+        message: validationError,
+        position: 'top',
+      });
+      return;
+    }
+  }
+
+  pendingInlineMediaFile.value = file;
+  isMediaPrivacyDialogOpen.value = true;
+}
+
+function handleMediaConsentCancel(): void {
+  if (isNostrBuildAuthInProgress.value) {
+    return;
+  }
+
+  pendingInlineMediaFile.value = null;
+  isMediaPrivacyDialogOpen.value = false;
+}
+
+async function handleMediaConsentConfirm(): Promise<void> {
+  if (isNostrBuildAuthInProgress.value) {
+    return;
+  }
+
+  isNostrBuildAuthInProgress.value = true;
+  try {
+    await nostrStore.ensureNostrBuildUploadAuthentication();
+    const inlineFile = pendingInlineMediaFile.value;
+    pendingInlineMediaFile.value = null;
+    isMediaPrivacyDialogOpen.value = false;
+    if (inlineFile) {
+      void uploadAndSendMediaFile(inlineFile);
+      return;
+    }
+
+    void nextTick(() => {
+      openMediaFileBrowser();
+    });
+  } catch (error) {
+    reportUiError('Failed to authenticate nostr.build upload', error);
+    $q.notify({
+      type: 'negative',
+      message: error instanceof Error ? error.message : t('errors.failedUploadMedia'),
+      position: 'top',
+    });
+  } finally {
+    isNostrBuildAuthInProgress.value = false;
+  }
+}
+
+async function handleMediaFileInputChange(event: Event): Promise<void> {
+  const input = event.target instanceof HTMLInputElement ? event.target : null;
+  const file = input?.files?.[0] ?? null;
+  resetMediaFileInput();
+  if (!file) {
+    return;
+  }
+
+  const validationError = validateNostrBuildMediaFile(file);
+  if (validationError) {
+    $q.notify({
+      type: 'warning',
+      message: validationError,
+      position: 'top',
+    });
+    return;
+  }
+
+  await uploadAndSendMediaFile(file);
+}
+
+function handleComposerPaste(event: ClipboardEvent): void {
+  try {
+    const imageFile = readFirstImageTransferFile(event.clipboardData);
+    if (!imageFile) {
+      return;
+    }
+
+    if (!hasTransferText(event.clipboardData)) {
+      event.preventDefault();
+    }
+
+    openMediaPrivacyDialog(imageFile);
+  } catch (error) {
+    reportUiError('Failed to handle pasted image', error);
+  }
+}
+
+function handleComposerDragOver(event: DragEvent): void {
+  const transfer = event.dataTransfer;
+  if (!hasTransferFiles(transfer)) {
+    return;
+  }
+
+  event.preventDefault();
+  if (transfer) {
+    transfer.dropEffect = hasImageTransferFile(transfer) ? 'copy' : 'none';
+  }
+}
+
+function handleComposerDrop(event: DragEvent): void {
+  try {
+    const transfer = event.dataTransfer;
+    const imageFile = readFirstImageTransferFile(transfer);
+    if (!imageFile) {
+      if (hasTransferFiles(transfer)) {
+        event.preventDefault();
+      }
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    openMediaPrivacyDialog(imageFile);
+  } catch (error) {
+    reportUiError('Failed to handle dropped image', error);
+  }
+}
+
+async function uploadAndSendMediaFile(file: File): Promise<void> {
+  mediaUploadStatus.value = 'uploading';
+  mediaUploadError.value = '';
+  isMediaUploadInProgress.value = true;
+  isMediaUploadDialogOpen.value = true;
+  const minProgressDelay = new Promise((resolve) => window.setTimeout(resolve, 2000));
+
+  try {
+    const uploadResult = await uploadNostrBuildMedia(file, {
+      signUploadAuthHeader: nostrStore.signNostrBuildUploadAuthHeader,
+    });
+    await minProgressDelay;
+    mediaUploadStatus.value = 'sending';
+    emit('send-media', {
+      attachment: uploadResult.attachment,
+    });
+    isMediaUploadDialogOpen.value = false;
+  } catch (error) {
+    await minProgressDelay;
+    reportUiError('Failed to upload media to nostr.build', error);
+    mediaUploadError.value =
+      error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : t('errors.failedUploadMedia');
+  } finally {
+    isMediaUploadInProgress.value = false;
+  }
+}
+
+function handleFileAction(): void {
+  isComposerMenuOpen.value = false;
+  $q.notify({
+    type: 'info',
+    message: t('message.fileUploadNotSupportedYet'),
+    position: 'top'
+  });
+}
+
+function handleEmojiAction(): void {
+  rememberSelection();
+  isComposerMenuOpen.value = false;
+  void nextTick(() => {
+    isEmojiMenuOpen.value = true;
+  });
 }
 
 function handleEmojiAutocompleteSelect(emoji: string): void {
@@ -672,7 +1014,14 @@ watch(
     dismissedEmojiAutocompleteToken.value = '';
     activeMentionAutocompleteIndex.value = 0;
     activeEmojiAutocompleteIndex.value = 0;
+    isComposerMenuOpen.value = false;
     isEmojiMenuOpen.value = false;
+    isMediaPrivacyDialogOpen.value = false;
+    isNostrBuildAuthInProgress.value = false;
+    isMediaUploadDialogOpen.value = false;
+    isMediaUploadInProgress.value = false;
+    pendingInlineMediaFile.value = null;
+    mediaUploadError.value = '';
     shouldRefocusAfterEmojiMenuHide.value = false;
   },
   { immediate: true }
@@ -852,13 +1201,53 @@ defineExpose({
   gap: 10px;
 }
 
+.composer__file-input {
+  display: none;
+}
+
 .composer__input {
   width: 100%;
   flex: 1;
 }
 
-.composer__emoji-trigger {
+.composer__menu-trigger {
   color: var(--nc-text-secondary);
+}
+
+.composer__menu-list {
+  min-width: 190px;
+  padding: 4px;
+}
+
+.composer__menu-list :deep(.q-item) {
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+.composer__menu-icon {
+  min-width: 34px;
+  padding-right: 8px;
+  color: var(--nc-text-secondary);
+}
+
+.composer__media-warning {
+  color: var(--nc-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.composer__dialog-progress {
+  margin-top: 14px;
+}
+
+.composer__media-upload {
+  color: var(--nc-text);
+}
+
+.composer__media-upload-status {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .composer__send {
@@ -975,7 +1364,7 @@ defineExpose({
     padding-bottom: 2px;
   }
 
-  .composer__emoji-trigger {
+  .composer__menu-trigger {
     width: 30px;
     min-width: 30px;
     height: 30px;
@@ -986,11 +1375,11 @@ defineExpose({
     background: #f4f6f7 !important;
   }
 
-  .composer__emoji-trigger :deep(.q-btn__content) {
+  .composer__menu-trigger :deep(.q-btn__content) {
     justify-content: center;
   }
 
-  .composer__emoji-trigger :deep(.q-icon) {
+  .composer__menu-trigger :deep(.q-icon) {
     font-size: 18px;
   }
 
@@ -1034,7 +1423,7 @@ body.body--dark .composer__reply {
     background: color-mix(in srgb, var(--nc-panel-header-bg) 94%, transparent);
   }
 
-  body.body--dark .composer__emoji-trigger {
+  body.body--dark .composer__menu-trigger {
     border-color: #516173;
     background: color-mix(in srgb, var(--nc-panel-header-bg) 94%, #263341 6%) !important;
     color: #a9b8c8 !important;

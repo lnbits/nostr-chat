@@ -1794,6 +1794,46 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return globalThis.btoa(binary);
   }
 
+  async function ensureNostrBuildUploadAuthentication(): Promise<void> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('A logged-in public key is required to upload media.');
+    }
+
+    const signer = await getOrCreateSignerRuntime();
+    if (!signer.pubkey || signer.pubkey.toLowerCase() !== loggedInPubkeyHex) {
+      throw new Error('The active signer does not match the logged-in account.');
+    }
+  }
+
+  async function signNostrBuildUploadAuthHeader(input: { sha256: string }): Promise<string> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('A logged-in public key is required to sign upload auth.');
+    }
+
+    const sha256 = input.sha256.trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/u.test(sha256)) {
+      throw new Error('A valid file hash is required to sign upload auth.');
+    }
+
+    const createdAt = Math.floor(Date.now() / 1000);
+    const authEvent = new NDKEvent(ndk, {
+      kind: 24242,
+      created_at: createdAt,
+      pubkey: loggedInPubkeyHex,
+      content: 'Upload media to nostr.build',
+      tags: [
+        ['t', 'upload'],
+        ['expiration', String(createdAt + 15 * 60)],
+        ['server', 'blossom.nostr.build'],
+        ['x', sha256],
+      ],
+    });
+    await authEvent.sign(await getOrCreateSignerRuntime());
+    return `Nostr ${encodeBase64Utf8(JSON.stringify(await authEvent.toNostrEvent()))}`;
+  }
+
   async function signHttpAuthHeader(input: {
     url: string;
     method: string;
@@ -2179,6 +2219,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     scheduleContactCursorPublish,
     sendGroupEpochTicket,
     sendDirectMessage,
+    ensureNostrBuildUploadAuthentication,
+    signNostrBuildUploadAuthHeader,
     signHttpAuthHeader,
     sendDirectMessageDeletion,
     sendDirectMessageReaction,

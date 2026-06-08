@@ -80,17 +80,17 @@ function makeRumorEvent(options: {
   kind?: number;
   content?: string;
   createdAt?: number;
+  tags?: string[][];
 }): NDKEvent {
+  const tags = options.tags ?? [['p', options.recipientPubkey]];
   return {
     id: options.eventId ?? 'rumor-event',
     kind: options.kind ?? NDKKind.PrivateDirectMessage,
     created_at: options.createdAt ?? 1700000000,
     pubkey: options.senderPubkey ?? 'a'.repeat(64),
     content: options.content ?? 'Hello there',
-    tags: [['p', options.recipientPubkey]],
-    getMatchingTags: vi.fn((tagName: string) =>
-      tagName === 'p' ? [['p', options.recipientPubkey]] : []
-    ),
+    tags,
+    getMatchingTags: vi.fn((tagName: string) => tags.filter((tag) => tag[0] === tagName)),
   } as unknown as NDKEvent;
 }
 
@@ -395,6 +395,83 @@ describe('privateMessagesIngestRuntime', () => {
         chatPubkey: chatPublicKey,
         title: 'Alice Local',
         messageText: 'Named hello',
+      })
+    );
+  });
+
+  it('uses Picture for incoming NIP-92 image-only previews and notifications', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const chatPublicKey = 'a'.repeat(64);
+    const loggedInPubkey = 'b'.repeat(64);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const imageUrl = 'https://nostr.build/i/hello.png';
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: loggedInPubkey,
+      senderPubkey: chatPublicKey,
+      content: `  ${imageUrl}  `,
+      tags: [
+        ['p', loggedInPubkey],
+        ['imeta', `url ${imageUrl}`, 'm image/png', 'size 1234', 'x ABCDEF'],
+      ],
+    });
+
+    deps.resolveIncomingChatInboxStateValue.mockReturnValue('accepted');
+    deps.shouldNotifyForAcceptedChatOnly.mockResolvedValue(true);
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: chatPublicKey,
+      public_key: chatPublicKey,
+      type: 'user',
+      name: 'Alice',
+      last_message: 'Older preview',
+      last_message_at: '2023-11-14T22:00:00.000Z',
+      unread_count: 0,
+      meta: {
+        inbox_state: 'accepted',
+        accepted_at: '2023-11-14T22:00:00.000Z',
+      },
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 46,
+      chat_public_key: chatPublicKey,
+      author_public_key: chatPublicKey,
+      created_at: createdAt,
+      event_id: 'rumor-event',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), loggedInPubkey, {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(serviceMocks.chatDataService.createMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: imageUrl,
+        meta: expect.objectContaining({
+          attachments: [
+            {
+              type: 'media',
+              url: imageUrl,
+              mimeType: 'image/png',
+              size: 1234,
+              sha256: 'abcdef',
+            },
+          ],
+        }),
+      })
+    );
+    expect(serviceMocks.chatDataService.updateChatPreview).toHaveBeenCalledWith(
+      chatPublicKey,
+      'Picture',
+      createdAt,
+      1
+    );
+    expect(deps.showIncomingMessageBrowserNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatPubkey: chatPublicKey,
+        messageText: 'Picture',
       })
     );
   });

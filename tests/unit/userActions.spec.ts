@@ -281,7 +281,8 @@ describe('userActions runtime', () => {
       'r'.repeat(64),
       'hello there',
       123456,
-      'reply-id'
+      'reply-id',
+      undefined
     );
     expect(deps.sendGiftWrappedRumor).toHaveBeenCalledWith(
       'r'.repeat(64),

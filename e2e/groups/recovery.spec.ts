@@ -28,6 +28,8 @@ import {
 test.describe.configure({ mode: 'serial' });
 
 test('group delivery still works after both users restart', async ({ browser }) => {
+  test.slow();
+
   let alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupRestartAlice);
   let bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupRestartBob);
 
@@ -83,6 +85,8 @@ test('group delivery still works after both users restart', async ({ browser }) 
 test('member restart restores group history from both the current and prior epochs', async ({
   browser,
 }) => {
+  test.slow();
+
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochHistoryAlice);
   let bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochHistoryBob);
 

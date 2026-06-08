@@ -92,6 +92,17 @@ export interface MessageMentionMetadata {
   nprofile?: string;
 }
 
+export interface MessageAttachmentMetadata {
+  type: 'media';
+  url: string;
+  mimeType: string;
+  size: number;
+  sha256?: string;
+  name?: string;
+  uploadedAt?: string;
+  service?: string;
+}
+
 export interface MessageMetadata {
   reply?: MessageReplyPreview;
   reactions?: MessageReaction[];
@@ -99,6 +110,7 @@ export interface MessageMetadata {
   group_epoch_notice?: GroupEpochNoticeMetadata;
   mentions?: MessageMentionMetadata[];
   mentions_me?: boolean;
+  attachments?: MessageAttachmentMetadata[];
   [key: string]: unknown;
 }
 

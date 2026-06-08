@@ -64,7 +64,8 @@ interface UserActionsDeps {
     recipientPubkey: string,
     message: string,
     createdAt?: number,
-    replyToEventId?: string | null
+    replyToEventId?: string | null,
+    additionalTags?: string[][]
   ) => NDKEvent;
   createEventDeletionRumorEvent: (
     senderPubkey: string,
@@ -312,7 +313,8 @@ export function createUserActions({
           normalizedRecipientPubkey,
           message,
           createdAt,
-          replyTargetEventId
+          replyTargetEventId,
+          options.additionalTags
         );
       },
       options

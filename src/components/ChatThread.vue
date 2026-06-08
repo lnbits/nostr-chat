@@ -252,6 +252,7 @@
           :mention-profiles="mentionProfiles"
           :reply-to="activeReply"
           @send="handleSend"
+          @send-media="handleSendMedia"
           @cancel-reply="handleCancelReply"
         />
       </div>
@@ -288,7 +289,13 @@ import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import type {
+  Chat,
+  Message,
+  MessageAttachmentMetadata,
+  MessageReaction,
+  MessageReplyPreview,
+} from 'src/types/chat';
 import type { ContactGroupMember, ContactMetadata } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
@@ -329,6 +336,10 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (event: 'send', payload: { text: string; replyTo: MessageReplyPreview | null }): void;
+  (
+    event: 'send-media',
+    payload: { attachment: MessageAttachmentMetadata; replyTo: MessageReplyPreview | null }
+  ): void;
   (event: 'back'): void;
   (event: 'open-profile', publicKey: string): void;
   (
@@ -1490,6 +1501,19 @@ function handleSend(payload: { text: string }): void {
     activeReply.value = null;
   } catch (error) {
     reportUiError('Failed to emit chat thread send event', error);
+  }
+}
+
+function handleSendMedia(payload: { attachment: MessageAttachmentMetadata }): void {
+  try {
+    pendingSentMessageReveal = true;
+    emit('send-media', {
+      attachment: payload.attachment,
+      replyTo: activeReply.value,
+    });
+    activeReply.value = null;
+  } catch (error) {
+    reportUiError('Failed to emit chat thread media send event', error);
   }
 }
 

@@ -164,6 +164,7 @@
           :keyboard-visible="isVisualViewportKeyboardVisible"
           :mobile-viewport-height="visibleViewportHeight"
           @send="handleSend"
+          @send-media="handleSendMedia"
           @back="handleBackToChatList"
           @open-profile="handleOpenProfile"
           @open-chat="handleOpenChat"
@@ -245,7 +246,12 @@ import {
   isMissingContactRelaysError,
   useMessageStore
 } from 'src/stores/messageStore';
-import type { Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import type {
+  Message,
+  MessageAttachmentMetadata,
+  MessageReaction,
+  MessageReplyPreview
+} from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
@@ -664,7 +670,9 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
     }
 
     if (created) {
-      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
+      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt, {
+        messageMeta: created.meta
+      });
       await chatStore.acceptChat(activeChatId.value, {
         lastOutgoingMessageAt: created.sentAt
       });
@@ -672,6 +680,56 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
     }
   } catch (error) {
     reportUiError('Failed to send chat message', error, t('errors.failedSendMessage'));
+  }
+}
+
+async function handleSendMedia(payload: {
+  attachment: MessageAttachmentMetadata;
+  replyTo: MessageReplyPreview | null;
+}): Promise<void> {
+  try {
+    if (!activeChatId.value) {
+      return;
+    }
+
+    let created;
+    try {
+      created = await messageStore.sendMediaAttachment(
+        activeChatId.value,
+        payload.attachment,
+        payload.replyTo
+      );
+    } catch (error) {
+      if (!isMissingContactRelaysError(error)) {
+        throw error;
+      }
+
+      const fallbackRelayUrls = await resolveFallbackRelayUrls(error.chatPublicKey);
+      if (!fallbackRelayUrls) {
+        return;
+      }
+
+      created = await messageStore.sendMediaAttachment(
+        activeChatId.value,
+        payload.attachment,
+        payload.replyTo,
+        {
+          relayUrls: fallbackRelayUrls
+        }
+      );
+    }
+
+    if (created) {
+      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt, {
+        messageMeta: created.meta
+      });
+      await chatStore.acceptChat(activeChatId.value, {
+        lastOutgoingMessageAt: created.sentAt
+      });
+      scheduleAndroidPushNotificationCountReset();
+    }
+  } catch (error) {
+    reportUiError('Failed to send media attachment', error, t('errors.failedSendMessage'));
   }
 }
 
