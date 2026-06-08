@@ -1,3 +1,4 @@
+import { Notify } from 'quasar';
 import { route } from 'quasar/wrappers';
 import {
   clearAndroidPrivateKeySessionMetadata,
@@ -8,6 +9,13 @@ import {
   hasUsableElectronPrivateKeySession,
 } from 'src/services/electronSecurePrivateKeyStorage';
 import { PUBLIC_KEY_STORAGE_KEY } from 'src/stores/nostr/constants';
+import {
+  ALREADY_LOGGED_IN_BUNKER_MESSAGE,
+  readBunkerLoginQueryParam,
+  readTopLevelBunkerLoginQueryParam,
+  removeTopLevelBunkerLoginQueryParam,
+  withoutBunkerLoginQueryParam,
+} from 'src/utils/bunkerLoginQuery';
 import { finalizePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import {
   createMemoryHistory,
@@ -40,6 +48,15 @@ async function hasStoredPublicKey(): Promise<boolean> {
   return true;
 }
 
+function showAlreadyLoggedInBunkerMessage(): void {
+  Notify.create({
+    type: 'info',
+    message: ALREADY_LOGGED_IN_BUNKER_MESSAGE,
+    position: 'top',
+    timeout: 3200,
+  });
+}
+
 export default route(() => {
   const createHistory = process.env.SERVER
     ? createMemoryHistory
@@ -64,6 +81,29 @@ export default route(() => {
 
     const isAuthRoute = to.name === 'auth' || to.name === 'register';
     const hasLoggedInUser = await hasStoredPublicKey();
+    const routeBunkerToken = readBunkerLoginQueryParam(to.query);
+    const topLevelBunkerToken = readTopLevelBunkerLoginQueryParam();
+    const hasBunkerLoginToken = Boolean(routeBunkerToken || topLevelBunkerToken);
+
+    if (hasLoggedInUser && hasBunkerLoginToken) {
+      removeTopLevelBunkerLoginQueryParam();
+      showAlreadyLoggedInBunkerMessage();
+
+      if (isAuthRoute) {
+        return { name: 'chats' };
+      }
+
+      if (routeBunkerToken) {
+        return {
+          path: to.path,
+          query: withoutBunkerLoginQueryParam(to.query),
+          hash: to.hash,
+          replace: true,
+        };
+      }
+
+      return true;
+    }
 
     if (isAuthRoute) {
       return hasLoggedInUser ? { name: 'chats' } : true;
@@ -71,6 +111,15 @@ export default route(() => {
 
     if (hasLoggedInUser) {
       return true;
+    }
+
+    if (routeBunkerToken) {
+      return {
+        name: 'auth',
+        query: {
+          bunker: routeBunkerToken,
+        },
+      };
     }
 
     return '/login';
