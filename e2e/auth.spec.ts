@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import NDK, { NDKNip46Backend, NDKPrivateKeySigner, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
+import { type BrowserContext, expect, test } from '@playwright/test';
 import {
   acceptFirstRequest,
   bootstrapExtensionUser,
@@ -18,6 +19,75 @@ import {
 } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
+
+type TestNip46BunkerBackend = {
+  bunkerUrl: string;
+  publicKey: string;
+  stop: () => void;
+};
+
+type DisconnectableRelay = {
+  disconnect: () => void;
+};
+
+type TestNip46RpcInternals = {
+  pool?: {
+    relays: Map<string, DisconnectableRelay>;
+  };
+};
+
+async function seedAuthContext(context: BrowserContext): Promise<void> {
+  await context.addInitScript(
+    (relayUrls: string[]) => {
+      window.localStorage.setItem(
+        'relays',
+        JSON.stringify(relayUrls.map((url) => ({ url, read: true, write: true })))
+      );
+      window.localStorage.setItem('ui-browser-notifications', '0');
+
+      const notificationMock = Object.assign(function NotificationMock() {}, {
+        permission: 'denied' as NotificationPermission,
+        requestPermission: async (): Promise<NotificationPermission> => 'denied',
+      });
+
+      Object.defineProperty(window, 'Notification', {
+        configurable: true,
+        value: notificationMock,
+      });
+    },
+    [E2E_RELAY_URL]
+  );
+}
+
+async function startTestNip46BunkerBackend(
+  relayUrl = E2E_RELAY_URL
+): Promise<TestNip46BunkerBackend> {
+  const relayUrls = [normalizeRelayUrl(relayUrl)];
+  const ndk = new NDK({
+    explicitRelayUrls: relayUrls,
+  });
+  const signer = new NDKPrivateKeySigner(TEST_ACCOUNTS.nip07Bob.privateKey);
+  ndk.signer = signer;
+  await ndk.connect(5_000);
+
+  const backend = new NDKNip46Backend(ndk, signer, async () => true, relayUrls);
+  await backend.start();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  return {
+    bunkerUrl: `bunker://${signer.pubkey}?relay=${encodeURIComponent(relayUrls[0] ?? relayUrl)}`,
+    publicKey: signer.pubkey,
+    stop: () => {
+      for (const relay of ndk.pool.relays.values()) {
+        relay.disconnect();
+      }
+      const rpcPool = (backend.rpc as unknown as TestNip46RpcInternals).pool;
+      for (const relay of rpcPool?.relays.values() ?? []) {
+        relay.disconnect();
+      }
+    },
+  };
+}
 
 test('generated key login opens profile onboarding before chats', async ({ browser }) => {
   const context = await browser.newContext();
@@ -131,6 +201,85 @@ test('remote signer login generates a nostrconnect QR pairing link', async ({ br
     await expect(page.getByTestId('auth-remote-signer-nostrconnect-uri')).toBeHidden();
   } finally {
     await context.close();
+  }
+});
+
+test('bunker query parameter auto-logs in with a remote signer', async ({ browser }) => {
+  const backend = await startTestNip46BunkerBackend();
+  const context = await browser.newContext();
+  await seedAuthContext(context);
+  const page = await context.newPage();
+
+  try {
+    await page.goto(`/?bunker=${encodeURIComponent(backend.bunkerUrl)}#/`);
+
+    await expect(page.getByTestId('auth-onboarding-relays-next-button')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect.poll(() => page.url(), { timeout: 10_000 }).not.toContain('bunker=');
+    expect(await page.evaluate(() => window.localStorage.getItem('auth-method'))).toBe('nip46');
+    expect(
+      await page.evaluate(() => window.localStorage.getItem('nostr-nip46-signer'))
+    ).toBeTruthy();
+
+    const session = await page.evaluate(async () => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      return bridge.getSessionSnapshot();
+    });
+    expect(session.publicKey).toBe(backend.publicKey);
+
+    await page.getByTestId('auth-onboarding-relays-next-button').click();
+    await expect(page.getByTestId('auth-onboarding-profile-name-input')).toBeVisible();
+    await page.getByTestId('auth-onboarding-profile-start-button').click();
+    await page
+      .getByRole('button', { name: 'Not now', exact: true })
+      .click({ timeout: 3_000 })
+      .catch(() => undefined);
+    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
+  } finally {
+    backend.stop();
+    await context.close();
+  }
+});
+
+test('invalid bunker query leaves the remote signer form ready to retry', async ({ browser }) => {
+  const context = await browser.newContext();
+  await seedAuthContext(context);
+  const page = await context.newPage();
+  const invalidBunkerUrl = 'not-a-bunker-url';
+
+  try {
+    await page.goto(`/#/login?bunker=${encodeURIComponent(invalidBunkerUrl)}`);
+
+    await expect(page.getByTestId('auth-remote-signer-bunker-input')).toHaveValue(invalidBunkerUrl);
+    await expect(
+      page
+        .locator('.auth-onboarding-banner--warning')
+        .filter({ hasText: 'Enter a valid bunker:// connection string with at least one relay.' })
+    ).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => page.url(), { timeout: 10_000 }).not.toContain('bunker=');
+  } finally {
+    await context.close();
+  }
+});
+
+test('logged-in users ignore bunker query parameters with a message', async ({ browser }) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.nip07Alice);
+  const bunkerUrl = `bunker://${'a'.repeat(64)}?relay=${encodeURIComponent(E2E_RELAY_URL)}`;
+
+  try {
+    await alice.page.goto(`/#/chats?bunker=${encodeURIComponent(bunkerUrl)}`);
+    await expect(alice.page.getByText('A user is already logged in.')).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect.poll(() => alice.page.url(), { timeout: 10_000 }).not.toContain('bunker=');
+    await expect.poll(() => alice.page.url(), { timeout: 10_000 }).toMatch(/#\/chats$/);
+  } finally {
+    await disposeUsers(alice);
   }
 });
 

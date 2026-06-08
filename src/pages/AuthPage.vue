@@ -775,8 +775,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { Capacitor } from '@capacitor/core';
 import { normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import { toDataURL as createQrDataUrl } from 'qrcode';
@@ -788,10 +788,17 @@ import type { PublishUserMetadataInput } from 'src/stores/nostrStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { buildAvatarText } from 'src/utils/avatarText';
+import {
+  readBunkerLoginQueryParam,
+  readTopLevelBunkerLoginQueryParam,
+  removeTopLevelBunkerLoginQueryParam,
+  withoutBunkerLoginQueryParam,
+} from 'src/utils/bunkerLoginQuery';
 import { buildRelayLookupKey, uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 import { t } from 'src/i18n';
 
+const route = useRoute();
 const router = useRouter();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
@@ -984,6 +991,52 @@ const canSearchSelectedOnboardingRelays = computed(
 const hasSelectedOnboardingRelays = computed(() => selectedOnboardingRelayUrls.value.length > 0);
 const canCompleteOnboardingProfileSetup = computed(() => !isOnboardingContinuing.value);
 let activeRemoteSignerLogin: ActiveRemoteSignerLogin | null = null;
+let hasAttemptedBunkerQueryLogin = false;
+
+function prepareRemoteSignerBunkerLogin(connectionToken: string): void {
+  relayStore.init();
+  remoteSignerMode.value = 'bunker';
+  remoteSignerBunkerInput.value = connectionToken;
+  clearRemoteSignerPairingState();
+  remoteSignerAuthUrl.value = '';
+  remoteSignerError.value = '';
+  remoteSignerRelayInput.value = relayStore.relays[0] ?? '';
+  loginStep.value = 'remote-signer';
+}
+
+async function removeRouteBunkerQueryParam(): Promise<void> {
+  if (!readBunkerLoginQueryParam(route.query)) {
+    return;
+  }
+
+  await router.replace({
+    path: route.path,
+    query: withoutBunkerLoginQueryParam(route.query),
+    hash: route.hash,
+  });
+}
+
+async function consumeBunkerLoginQueryParam(): Promise<void> {
+  if (hasAttemptedBunkerQueryLogin || isRemoteSignerLoginInProgress.value) {
+    return;
+  }
+
+  const connectionToken =
+    readBunkerLoginQueryParam(route.query) ?? readTopLevelBunkerLoginQueryParam();
+  if (!connectionToken) {
+    return;
+  }
+
+  hasAttemptedBunkerQueryLogin = true;
+  try {
+    removeTopLevelBunkerLoginQueryParam();
+    await removeRouteBunkerQueryParam();
+    prepareRemoteSignerBunkerLogin(connectionToken);
+    await handleRemoteSignerBunkerLogin();
+  } catch (error) {
+    reportUiError('Failed to start NIP-46 bunker login from route query', error);
+  }
+}
 
 function openLoginOptions(): void {
   try {
@@ -1003,14 +1056,7 @@ function openKeyLogin(): void {
 
 function openRemoteSignerLogin(): void {
   try {
-    relayStore.init();
-    remoteSignerMode.value = 'bunker';
-    remoteSignerBunkerInput.value = '';
-    clearRemoteSignerPairingState();
-    remoteSignerAuthUrl.value = '';
-    remoteSignerError.value = '';
-    remoteSignerRelayInput.value = relayStore.relays[0] ?? '';
-    loginStep.value = 'remote-signer';
+    prepareRemoteSignerBunkerLogin('');
   } catch (error) {
     reportUiError('Failed to open remote signer login', error);
   }
@@ -1516,6 +1562,17 @@ watch(
     clearResolvedOnboardingRelayChecks(relayStore.relays);
   }
 );
+
+watch(
+  () => route.fullPath,
+  () => {
+    void consumeBunkerLoginQueryParam();
+  }
+);
+
+onMounted(() => {
+  void consumeBunkerLoginQueryParam();
+});
 
 onBeforeUnmount(() => {
   clearAllOnboardingRelayCheckTimeouts();
