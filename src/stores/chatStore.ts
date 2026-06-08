@@ -8,6 +8,7 @@ import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
 import type { ContactGroupMember, ContactRecord } from 'src/types/contact';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { isIncomingUnreadMessageActivity } from 'src/utils/messageActivity';
+import { buildImageAttachmentPreviewText } from 'src/utils/messageAttachments';
 import { formatGroupMentionsForDisplay } from 'src/utils/nostrMentions';
 import { computed, ref } from 'vue';
 
@@ -32,6 +33,7 @@ interface LiveChatPreviewInput {
   at: string;
   unreadCount: number;
   meta?: Record<string, unknown>;
+  messageMeta?: Record<string, unknown>;
 }
 
 interface ChatActivitySnapshot {
@@ -110,10 +112,12 @@ function cloneGroupMembers(value: unknown): ContactGroupMember[] {
 
 function formatChatLastMessagePreview(
   text: string,
-  meta: Record<string, unknown>,
-  type: Chat['type']
+  chatMeta: Record<string, unknown>,
+  type: Chat['type'],
+  messageMeta?: Record<string, unknown>
 ): string {
-  return type === 'group' ? formatGroupMentionsForDisplay(text, meta) : text;
+  const previewText = buildImageAttachmentPreviewText(text, messageMeta);
+  return type === 'group' ? formatGroupMentionsForDisplay(previewText, chatMeta) : previewText;
 }
 
 function readMetaInboxState(meta: Record<string, unknown>): ChatInboxState | null {
@@ -660,10 +664,16 @@ function buildBlockedChatMeta(meta: Record<string, unknown>, blockedAt: string):
   };
 }
 
-function buildUpdatedChatPreview(chat: Chat, text: string, at: string, isVisible: boolean): Chat {
+function buildUpdatedChatPreview(
+  chat: Chat,
+  text: string,
+  at: string,
+  isVisible: boolean,
+  messageMeta?: Record<string, unknown>
+): Chat {
   return {
     ...chat,
-    lastMessage: formatChatLastMessagePreview(text, chat.meta, chat.type),
+    lastMessage: formatChatLastMessagePreview(text, chat.meta, chat.type, messageMeta),
     lastMessageAt: at,
     unreadCount: isVisible ? 0 : chat.unreadCount,
   };
@@ -1388,14 +1398,19 @@ export const useChatStore = defineStore('chatStore', () => {
     composerDraftsByChatId.value = {};
   }
 
-  async function updateChatPreview(chatId: string, text: string, at: string): Promise<void> {
+  async function updateChatPreview(
+    chatId: string,
+    text: string,
+    at: string,
+    options: { messageMeta?: Record<string, unknown> } = {}
+  ): Promise<void> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
       return;
     }
 
     let nextUnreadCount = 0;
-    let previewText = text;
+    let previewText = buildImageAttachmentPreviewText(text, options.messageMeta);
     let previewChatType: Chat['type'] | null = null;
     chats.value = sortByLatest(
       chats.value.map((chat) => {
@@ -1408,7 +1423,8 @@ export const useChatStore = defineStore('chatStore', () => {
           chat,
           text,
           at,
-          visibleChatId.value === normalizedChatId
+          visibleChatId.value === normalizedChatId,
+          options.messageMeta
         );
         previewText = nextChat.lastMessage;
         nextUnreadCount = nextChat.unreadCount;
@@ -1421,7 +1437,12 @@ export const useChatStore = defineStore('chatStore', () => {
         await contactsService.init();
         const contact = await contactsService.getContactByPublicKey(normalizedChatId);
         const contactPreviewText =
-          contact?.type === 'group' ? formatGroupMentionsForDisplay(text, contact.meta) : text;
+          contact?.type === 'group'
+            ? formatGroupMentionsForDisplay(
+                buildImageAttachmentPreviewText(text, options.messageMeta),
+                contact.meta
+              )
+            : buildImageAttachmentPreviewText(text, options.messageMeta);
         if (contactPreviewText !== text && contactPreviewText !== previewText) {
           previewText = contactPreviewText;
           chats.value = sortByLatest(
@@ -1531,7 +1552,12 @@ export const useChatStore = defineStore('chatStore', () => {
       type: nextType,
       name: nextName,
       avatar: nextAvatar,
-      lastMessage: formatChatLastMessagePreview(input.messageText, nextMeta, nextType),
+      lastMessage: formatChatLastMessagePreview(
+        input.messageText,
+        nextMeta,
+        nextType,
+        input.messageMeta
+      ),
       lastMessageAt: input.at,
       unreadCount: visibleChatId.value === nextChatId ? 0 : Math.max(0, input.unreadCount),
       meta: nextMeta,

@@ -30,6 +30,7 @@ export interface ChatStoreRuntime {
     at: string;
     unreadCount: number;
     meta: Record<string, unknown>;
+    messageMeta?: Record<string, unknown>;
   }) => void;
   recordIncomingActivity: (publicKey: string, at: string) => Promise<void>;
   setUnreadCount: (publicKey: string, unreadCount: number) => Promise<void>;

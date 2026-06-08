@@ -1,6 +1,7 @@
 import type { MessageAttachmentMetadata } from 'src/types/chat';
 
 const IMETA_TAG_NAME = 'imeta';
+export const IMAGE_ATTACHMENT_PREVIEW_TEXT = 'Picture';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -134,10 +135,15 @@ export function isImageAttachment(attachment: MessageAttachmentMetadata): boolea
   return attachment.type === 'media' && /^image\//iu.test(attachment.mimeType);
 }
 
-export function readImageAttachmentsFromMeta(meta: {
-  attachments?: unknown;
-}): MessageAttachmentMetadata[] {
-  if (!Array.isArray(meta.attachments)) {
+export function readImageAttachmentsFromMeta(
+  meta:
+    | {
+        attachments?: unknown;
+      }
+    | null
+    | undefined
+): MessageAttachmentMetadata[] {
+  if (!meta || !Array.isArray(meta.attachments)) {
     return [];
   }
 
@@ -146,4 +152,25 @@ export function readImageAttachmentsFromMeta(meta: {
     .filter((attachment): attachment is MessageAttachmentMetadata =>
       attachment ? isImageAttachment(attachment) : false
     );
+}
+
+export function buildImageAttachmentPreviewText(
+  text: string,
+  meta: { attachments?: unknown } | null | undefined
+): string {
+  const normalizedText = normalizeText(text);
+  const imageAttachments = readImageAttachmentsFromMeta(meta);
+  if (imageAttachments.length === 0) {
+    return normalizedText;
+  }
+
+  const attachmentUrls = new Set(
+    imageAttachments.map((attachment) => attachment.url.trim()).filter(Boolean)
+  );
+  let previewText = normalizedText;
+  for (const url of attachmentUrls) {
+    previewText = previewText.split(url).join(' ');
+  }
+
+  return previewText.replace(/\s+/gu, ' ').trim() || IMAGE_ATTACHMENT_PREVIEW_TEXT;
 }

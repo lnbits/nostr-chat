@@ -2,6 +2,7 @@ import type { MessageAttachmentMetadata } from 'src/types/chat';
 import {
   buildAttachmentMessageMeta,
   buildAttachmentMessageText,
+  buildImageAttachmentPreviewText,
   buildNip92ImetaTag,
   extractMediaAttachmentsFromTags,
   readImageAttachmentsFromMeta,
@@ -96,5 +97,28 @@ describe('message attachment helpers', () => {
         uploadedAt: '2026-06-08T10:00:00.000Z',
       },
     ]);
+  });
+
+  it('builds image attachment preview text without leaking image URLs', () => {
+    const imageMeta = buildAttachmentMessageMeta(attachment);
+
+    expect(buildImageAttachmentPreviewText('https://nostr.build/i/example.png', imageMeta)).toBe(
+      'Picture'
+    );
+    expect(
+      buildImageAttachmentPreviewText('Caption https://nostr.build/i/example.png', imageMeta)
+    ).toBe('Caption');
+    expect(
+      buildImageAttachmentPreviewText('https://nostr.build/v/example.mp4', {
+        attachments: [
+          {
+            type: 'media',
+            url: 'https://nostr.build/v/example.mp4',
+            mimeType: 'video/mp4',
+            size: 456,
+          },
+        ],
+      })
+    ).toBe('https://nostr.build/v/example.mp4');
   });
 });

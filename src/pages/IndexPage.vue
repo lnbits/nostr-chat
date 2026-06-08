@@ -670,7 +670,9 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
     }
 
     if (created) {
-      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
+      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt, {
+        messageMeta: created.meta
+      });
       await chatStore.acceptChat(activeChatId.value, {
         lastOutgoingMessageAt: created.sentAt
       });
@@ -718,7 +720,9 @@ async function handleSendMedia(payload: {
     }
 
     if (created) {
-      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
+      await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt, {
+        messageMeta: created.meta
+      });
       await chatStore.acceptChat(activeChatId.value, {
         lastOutgoingMessageAt: created.sentAt
       });

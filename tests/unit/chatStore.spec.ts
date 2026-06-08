@@ -331,6 +331,50 @@ describe('chatStore logic', () => {
     ).toBe(3);
   });
 
+  it('uses Picture for image-only chat previews and keeps captions', () => {
+    const chat = {
+      id: 'chat-a',
+      publicKey: 'chat-a',
+      epochPublicKey: null,
+      type: 'user',
+      name: 'Alice',
+      avatar: 'A',
+      lastMessage: 'old',
+      lastMessageAt: '2026-01-01T00:00:00.000Z',
+      unreadCount: 0,
+      meta: {},
+    };
+    const messageMeta = {
+      attachments: [
+        {
+          type: 'media',
+          url: 'https://nostr.build/i/example.png',
+          mimeType: 'image/png',
+          size: 1234,
+        },
+      ],
+    };
+
+    expect(
+      buildUpdatedChatPreview(
+        chat as never,
+        'https://nostr.build/i/example.png',
+        '2026-01-05T00:00:00.000Z',
+        false,
+        messageMeta
+      ).lastMessage
+    ).toBe('Picture');
+    expect(
+      buildUpdatedChatPreview(
+        chat as never,
+        'Vacation https://nostr.build/i/example.png',
+        '2026-01-05T00:00:00.000Z',
+        false,
+        messageMeta
+      ).lastMessage
+    ).toBe('Vacation');
+  });
+
   it('picks the first accepted chat as the default selection during chat loading', () => {
     expect(
       resolveDefaultSelectedChatId([
