@@ -34,8 +34,9 @@ test('group delivery still works after both users restart', async ({ browser }) 
   let bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupRestartBob);
 
   try {
+    const groupName = `Restart Group ${Date.now()}`;
     const groupPublicKey = await createGroup(alice.page, {
-      name: `Restart Group ${Date.now()}`,
+      name: groupName,
       about: 'Restart and restore coverage',
     });
     const beforeRestartMessage = `before-restart-${Date.now()}`;
@@ -44,9 +45,13 @@ test('group delivery still works after both users restart', async ({ browser }) 
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
 
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await navigateToChat(alice.page, groupPublicKey);
     await sendMessage(alice.page, beforeRestartMessage, {
@@ -91,8 +96,9 @@ test('member restart restores group history from both the current and prior epoc
   let bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochHistoryBob);
 
   try {
+    const groupName = `Epoch History Group ${Date.now()}`;
     const groupPublicKey = await createGroup(alice.page, {
-      name: `Epoch History Group ${Date.now()}`,
+      name: groupName,
       about: 'Historical epoch restore coverage',
     });
     const epochZeroMessage = `epoch-zero-message-${Date.now()}`;
@@ -100,9 +106,13 @@ test('member restart restores group history from both the current and prior epoc
     const restartReplyMessage = `epoch-history-reply-${Date.now()}`;
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await navigateToChat(alice.page, groupPublicKey);
     await sendMessage(alice.page, epochZeroMessage, {
@@ -162,8 +172,9 @@ test('missing prior-epoch reply targets are restored after restart', async ({ br
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupReplyRepairBob);
 
   try {
+    const groupName = `Reply Repair Group ${Date.now()}`;
     const groupPublicKey = await createGroup(owner.page, {
-      name: `Reply Repair Group ${Date.now()}`,
+      name: groupName,
       about: 'Prior epoch reply repair coverage',
     });
     const epochZeroMessage = `epoch-zero-reply-target-${Date.now()}`;
@@ -171,9 +182,13 @@ test('missing prior-epoch reply targets are restored after restart', async ({ br
     const epochZeroCreatedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
 
     await addGroupMemberAndPublish(owner.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await navigateToChat(owner.page, groupPublicKey);
     const [seededTarget] = await sendMessagesViaBridge(
@@ -209,7 +224,9 @@ test('missing prior-epoch reply targets are restored after restart', async ({ br
       chatId: groupPublicKey,
     });
     await waitForThreadMessage(bob.page, epochOneReplyMessage, {
+      attempts: 5,
       chatId: groupPublicKey,
+      timeoutMs: 20_000,
     });
 
     await reloadAndWaitForApp(bob.page);

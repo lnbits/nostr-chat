@@ -15,6 +15,7 @@ import type {
   DeletedMessageMetadata,
   Message,
   MessageAttachmentMetadata,
+  MessageMetadata,
   MessageReaction,
   MessageReplyPreview,
   NostrEventEntry,
@@ -25,6 +26,7 @@ import {
   buildAttachmentMessageMeta,
   buildAttachmentMessageText,
   buildNip92ImetaTag,
+  normalizeMessageAttachment,
 } from 'src/utils/messageAttachments';
 import {
   areMessageReactionsEqual,
@@ -60,6 +62,12 @@ interface ChatThreadSearchMatch {
   eventId: string | null;
   sentAt: string;
   text: string;
+}
+
+interface ForwardedMessagePayload {
+  text: string;
+  meta: MessageMetadata;
+  additionalTags: string[][];
 }
 
 type NostrStoreModule = typeof import('src/stores/nostrStore');
@@ -167,6 +175,51 @@ function mapMessageRowToMessage(
       ...row.meta,
       ...buildMentionMetadata(row.message, getLoggedInPublicKey()),
     },
+  };
+}
+
+function readForwardableAttachments(meta: MessageMetadata): MessageAttachmentMetadata[] {
+  if (!Array.isArray(meta.attachments)) {
+    return [];
+  }
+
+  const seenUrls = new Set<string>();
+  const attachments: MessageAttachmentMetadata[] = [];
+  for (const attachment of meta.attachments) {
+    const normalized = normalizeMessageAttachment(attachment);
+    const url = normalized?.url.trim();
+    if (!normalized || !url || seenUrls.has(url)) {
+      continue;
+    }
+
+    seenUrls.add(url);
+    attachments.push(normalized);
+  }
+
+  return attachments;
+}
+
+function buildForwardedMessagePayload(
+  message: Pick<Message, 'text' | 'meta'>
+): ForwardedMessagePayload | null {
+  const text = message.text.trim();
+  if (!text) {
+    return null;
+  }
+
+  const attachments = readForwardableAttachments(message.meta);
+  const additionalTags = attachments
+    .map((attachment) => buildNip92ImetaTag(attachment))
+    .filter((tag) => tag.length > 0);
+  const meta: MessageMetadata = {
+    ...buildMentionMetadata(text, getLoggedInPublicKey()),
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
+
+  return {
+    text,
+    meta,
+    additionalTags,
   };
 }
 
@@ -607,6 +660,7 @@ export const __messageStoreTestUtils = {
   buildChatMetaWithUnseenReactionCount: buildChatMetaWithUnseenReactionCountValue,
   buildDeletedMessageMeta,
   buildDefaultChatMessagePaginationState,
+  buildForwardedMessagePayload,
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
@@ -1662,6 +1716,96 @@ export const useMessageStore = defineStore('messageStore', () => {
     return finalMessage;
   }
 
+  async function forwardMessage(
+    chatId: string,
+    message: Pick<Message, 'text' | 'meta'>,
+    options: RelaySendOptions = {}
+  ): Promise<Message | null> {
+    const forwardedPayload = buildForwardedMessagePayload(message);
+    if (!forwardedPayload) {
+      return null;
+    }
+
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return null;
+    }
+
+    await chatDataService.init();
+    const chat = await chatDataService.getChatByPublicKey(normalizedChatId);
+    if (!chat) {
+      return null;
+    }
+
+    const recipientPublicKey = resolveChatRecipientPublicKeyFromRow(chat);
+    if (!recipientPublicKey) {
+      throw new Error('Group chat is missing the current epoch public key.');
+    }
+
+    const recipientRelayUrls = await resolveSendRelayUrls(chat.public_key, options.relayUrls);
+    const createdAt = typeof options.createdAt === 'string' ? options.createdAt.trim() : '';
+
+    const created = await chatDataService.createMessage({
+      chat_public_key: chat.public_key,
+      author_public_key: window.localStorage.getItem('npub'),
+      message: forwardedPayload.text,
+      created_at: createdAt || new Date().toISOString(),
+      ...(Object.keys(forwardedPayload.meta).length > 0 ? { meta: forwardedPayload.meta } : {}),
+    });
+    if (!created) {
+      return null;
+    }
+
+    const newMessage = mapMessageRowToMessage(created, normalizedChatId);
+    const shouldSyncLiveMessage =
+      loadedChatIds.has(normalizedChatId) ||
+      chatStore.selectedChatId === normalizedChatId ||
+      chatStore.visibleChatId === normalizedChatId;
+
+    if (shouldSyncLiveMessage) {
+      loadedChatIds.add(normalizedChatId);
+      upsertMessageInState(normalizedChatId, newMessage, {
+        allowOutsideLoadedWindow: true,
+      });
+    }
+    let sendError: unknown = null;
+
+    try {
+      const nostrStore = await getNostrStore();
+      await nostrStore.sendDirectMessage(recipientPublicKey, newMessage.text, recipientRelayUrls, {
+        localMessageId: created.id,
+        createdAt: created.created_at,
+        publishSelfCopy: shouldPublishSelfCopyForChatRow(chat),
+        ...(forwardedPayload.additionalTags.length > 0
+          ? { additionalTags: forwardedPayload.additionalTags }
+          : {}),
+      });
+    } catch (error) {
+      sendError = error;
+    }
+
+    const updatedMessageRow = await chatDataService.getMessageById(created.id);
+    const finalMessage = updatedMessageRow
+      ? await hydrateMessageRow(updatedMessageRow, normalizedChatId)
+      : newMessage;
+    if (shouldSyncLiveMessage) {
+      replaceMessageInState(normalizedChatId, finalMessage);
+    }
+
+    if (sendError) {
+      throw sendError;
+    }
+
+    try {
+      const nostrStore = await getNostrStore();
+      await nostrStore.ensureRespondedPubkeyIsContact(chat.public_key, chat.name);
+    } catch (error) {
+      console.warn('Failed to add responded pubkey to contacts', chat.public_key, error);
+    }
+
+    return finalMessage;
+  }
+
   async function updateMessageReactions(
     chatId: string,
     messageId: string,
@@ -2284,6 +2428,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     getPaginationState,
     sendMessage,
     sendMediaAttachment,
+    forwardMessage,
     addReaction,
     removeReaction,
     deleteMessage,

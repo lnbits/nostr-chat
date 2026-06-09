@@ -30,17 +30,22 @@ test('hard reload after rotation keeps the higher group epoch current and messag
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochBob);
 
   try {
+    const groupName = `Epoch Restore Group ${Date.now()}`;
     const groupPublicKey = await createGroup(alice.page, {
-      name: `Epoch Restore Group ${Date.now()}`,
+      name: groupName,
       about: 'Stale epoch regression coverage',
     });
     const rotatedOwnerMessage = `epoch-reload-owner-${Date.now()}`;
     const rotatedMemberReply = `epoch-reload-member-${Date.now()}`;
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await rotateGroupEpoch(alice.page, groupPublicKey, [bob.session.publicKey], [E2E_RELAY_URL]);
 
@@ -89,9 +94,13 @@ test('group messages continue both ways after an explicit epoch rotation', async
     const rotatedMemberReply = `member-after-rotation-${Date.now()}`;
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await rotateGroupEpoch(alice.page, groupPublicKey, [bob.session.publicKey], [E2E_RELAY_URL]);
 

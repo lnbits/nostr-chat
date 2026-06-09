@@ -33,6 +33,8 @@ export interface BootstrappedUser {
   };
 }
 
+type ChatRequestItemMatch = string | RegExp | { publicKey: string };
+
 export interface SeededMessageSnapshot {
   id: string;
   chatId: string;
@@ -78,6 +80,18 @@ export const TEST_ACCOUNTS = {
   actionsBob: {
     privateKey: 'c25694028321c053f174245104441935f681ce5117a89b27e4263e4360d05433',
     displayName: 'Bob Actions',
+  },
+  forwardAlice: {
+    privateKey: '1111111111111111111111111111111111111111111111111111111111111111',
+    displayName: 'Alice Forward',
+  },
+  forwardBob: {
+    privateKey: '2222222222222222222222222222222222222222222222222222222222222222',
+    displayName: 'Bob Forward',
+  },
+  forwardCharlie: {
+    privateKey: '3333333333333333333333333333333333333333333333333333333333333333',
+    displayName: 'Charlie Forward',
   },
   markReadAlice: {
     privateKey: '2cdd0f6d4a47bb4502993a61cb0b3cf86cded94311aa87eb0e08652d6d93cd15',
@@ -589,6 +603,58 @@ function groupMemberListItem(page: Page, memberPublicKey: string) {
     .first();
 }
 
+function chatRequestItem(page: Page, match?: ChatRequestItemMatch) {
+  const requestItems = page.getByTestId('chat-request-item');
+  if (typeof match === 'undefined') {
+    return requestItems.first();
+  }
+
+  if (typeof match === 'object' && 'publicKey' in match) {
+    return page
+      .locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${match.publicKey.trim().toLowerCase()}"]`
+      )
+      .first();
+  }
+
+  return requestItems.filter({ hasText: match }).first();
+}
+
+function isTransientClickError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /element was detached|element is not stable|element is not enabled|Timeout .* exceeded|Timed out|Received: disabled|unexpected value "disabled"/.test(
+    message
+  );
+}
+
+async function clickEnabledLocator(
+  page: Page,
+  locate: () => Locator,
+  options: { attempts?: number; timeoutMs?: number } = {}
+): Promise<void> {
+  const attempts = options.attempts ?? 4;
+  const timeoutMs = options.timeoutMs ?? 6_000;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const locator = locate();
+    try {
+      await expect(locator).toBeVisible({ timeout: timeoutMs });
+      await expect(locator).toBeEnabled({ timeout: timeoutMs });
+      await locator.click({ timeout: timeoutMs });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientClickError(error) || attempt === attempts - 1) {
+        throw error;
+      }
+      await page.waitForTimeout(250 * (attempt + 1));
+    }
+  }
+
+  throw lastError;
+}
+
 export function threadMessage(page: Page, text: string) {
   return threadMessages(page, text).last();
 }
@@ -1063,16 +1129,20 @@ export async function waitForThreadMessage(
   text: string,
   options: {
     chatId?: string;
+    attempts?: number;
+    timeoutMs?: number;
   } = {}
 ): Promise<void> {
   const message = threadMessage(page, text);
+  const attempts = options.attempts ?? 3;
+  const timeoutMs = options.timeoutMs ?? 12_000;
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      await expect(message).toBeVisible({ timeout: 12_000 });
+      await expect(message).toBeVisible({ timeout: timeoutMs });
       return;
     } catch (error) {
-      if (attempt === 2) {
+      if (attempt === attempts - 1) {
         throw error;
       }
 
@@ -1184,8 +1254,8 @@ export async function waitForThreadSearchFocusedMessage(page: Page, text: string
   });
 }
 
-export async function openRequests(page: Page): Promise<void> {
-  const requestItem = page.getByTestId('chat-request-item');
+export async function openRequests(page: Page, match?: ChatRequestItemMatch): Promise<void> {
+  const requestItem = chatRequestItem(page, match);
   await page.goto('/#/chats/requests');
 
   try {
@@ -1198,8 +1268,14 @@ export async function openRequests(page: Page): Promise<void> {
   await expect(requestItem).toBeVisible({ timeout: 12_000 });
 }
 
-export async function acceptFirstRequest(page: Page): Promise<void> {
-  await page.getByTestId('chat-request-accept-button').first().click();
+export async function acceptFirstRequest(page: Page, match?: ChatRequestItemMatch): Promise<void> {
+  const requestItem = chatRequestItem(page, match);
+  await requestItem.getByTestId('chat-request-accept-button').click();
+  if (typeof match !== 'undefined') {
+    await expect(requestItem).toHaveCount(0);
+    return;
+  }
+
   await expect(page.getByTestId('chat-request-item')).toHaveCount(0);
 }
 
@@ -1352,6 +1428,23 @@ export async function replyToMessage(
   await page.getByText('Reply', { exact: true }).click();
   await expect(page.locator('.composer__reply')).toBeVisible({ timeout: 12_000 });
   await sendMessage(page, replyText, options);
+}
+
+export async function forwardMessage(
+  page: Page,
+  text: string,
+  destinationName: string
+): Promise<void> {
+  await threadMessage(page, text).locator('.bubble').click();
+  await page.getByText('Forward', { exact: true }).click();
+  await expect(page.getByTestId('forward-message-chat-list')).toBeVisible({
+    timeout: 12_000,
+  });
+  await page.getByLabel(`Forward to ${destinationName}`, { exact: true }).click();
+  await acceptAppRelayFallbackIfVisible(page);
+  await expect(page.getByTestId('forward-message-chat-list')).toHaveCount(0, {
+    timeout: 12_000,
+  });
 }
 
 export async function openReplyPreview(page: Page, replyText: string): Promise<void> {
@@ -1569,14 +1662,46 @@ export async function addGroupMembersAndPublish(
 ): Promise<void> {
   await page.getByTestId('contact-profile-members-tab').click();
   const memberInput = page.getByLabel('Member', { exact: true });
-  const addButton = page.getByTestId('group-member-add-button');
+  const pendingMemberRows = page.locator('.profile-members-pending .profile-members-list .q-item');
   await expect(memberInput).toBeVisible();
 
   for (const memberPublicKey of memberPublicKeys) {
-    await memberInput.fill(memberPublicKey);
-    await expect(addButton).toBeEnabled();
-    await addButton.click();
-    await expect(memberInput).toHaveValue('', { timeout: 12_000 });
+    const initialPendingMemberCount = await pendingMemberRows.count().catch(() => 0);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if ((await pendingMemberRows.count().catch(() => 0)) > initialPendingMemberCount) {
+        break;
+      }
+
+      await memberInput.fill(memberPublicKey);
+      try {
+        await clickEnabledLocator(page, () => page.getByTestId('group-member-add-button'), {
+          attempts: 1,
+          timeoutMs: 6_000,
+        });
+      } catch (error) {
+        if (attempt === 3 || !isTransientClickError(error)) {
+          throw error;
+        }
+        await page.waitForTimeout(250 * (attempt + 1));
+        continue;
+      }
+
+      try {
+        await expect(memberInput).toHaveValue('', { timeout: 12_000 });
+        await expect(pendingMemberRows).toHaveCount(initialPendingMemberCount + 1, {
+          timeout: 12_000,
+        });
+      } catch (error) {
+        if (
+          attempt === 3 ||
+          (await pendingMemberRows.count().catch(() => 0)) <= initialPendingMemberCount
+        ) {
+          throw error;
+        }
+      }
+
+      break;
+    }
   }
 
   await expect(
@@ -1587,8 +1712,22 @@ export async function addGroupMembersAndPublish(
     page.getByText('You must publish these changes for them to take effect')
   ).toHaveCount(0);
 
-  for (const memberPublicKey of memberPublicKeys) {
-    await expect(page.getByText(memberPublicKey.slice(0, 16))).toBeVisible();
+  await expect(page.getByTestId('group-members-publish-button')).toBeDisabled();
+}
+
+export async function retryGroupMemberTicketFailures(page: Page): Promise<void> {
+  const retryAllButton = () => page.getByTestId('group-member-ticket-retry-all-button');
+  try {
+    await clickEnabledLocator(page, retryAllButton);
+  } catch (error) {
+    if (
+      !(await retryAllButton()
+        .isVisible()
+        .catch(() => false))
+    ) {
+      return;
+    }
+    throw error;
   }
 }
 

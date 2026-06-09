@@ -29,8 +29,9 @@ test('group member removal rotates epoch and blocks removed members from new mes
   const removedMember = await bootstrapUser(browser, TEST_ACCOUNTS.groupRemovalCharlie);
 
   try {
+    const groupName = `Removal Group ${Date.now()}`;
     const groupPublicKey = await createGroup(owner.page, {
-      name: `Removal Group ${Date.now()}`,
+      name: groupName,
       about: 'Group epoch rotation coverage',
     });
     const initialMessage = `before-removal-${Date.now()}`;
@@ -41,17 +42,21 @@ test('group member removal rotates epoch and blocks removed members from new mes
       removedMember.session.publicKey,
     ]);
 
-    await openRequests(survivingMember.page);
-    await expect(survivingMember.page.getByTestId('chat-request-item')).toContainText(
-      'Group invitation'
-    );
-    await acceptFirstRequest(survivingMember.page);
+    await openRequests(survivingMember.page, { publicKey: groupPublicKey });
+    await expect(
+      survivingMember.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(survivingMember.page, { publicKey: groupPublicKey });
 
-    await openRequests(removedMember.page);
-    await expect(removedMember.page.getByTestId('chat-request-item')).toContainText(
-      'Group invitation'
-    );
-    await acceptFirstRequest(removedMember.page);
+    await openRequests(removedMember.page, { publicKey: groupPublicKey });
+    await expect(
+      removedMember.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(removedMember.page, { publicKey: groupPublicKey });
 
     await navigateToChat(owner.page, groupPublicKey);
     await sendMessage(owner.page, initialMessage, {
@@ -98,8 +103,9 @@ test('removed group member stays blocked after hard reload and cannot deliver ne
   const removedMember = await bootstrapUser(browser, TEST_ACCOUNTS.groupRemovalReloadCharlie);
 
   try {
+    const groupName = `Removal Reload Group ${Date.now()}`;
     const groupPublicKey = await createGroup(owner.page, {
-      name: `Removal Reload Group ${Date.now()}`,
+      name: groupName,
       about: 'Removed member reload coverage',
     });
     const initialMessage = `before-removal-reload-${Date.now()}`;
@@ -111,10 +117,10 @@ test('removed group member stays blocked after hard reload and cannot deliver ne
       removedMember.session.publicKey,
     ]);
 
-    await openRequests(survivingMember.page);
-    await acceptFirstRequest(survivingMember.page);
-    await openRequests(removedMember.page);
-    await acceptFirstRequest(removedMember.page);
+    await openRequests(survivingMember.page, { publicKey: groupPublicKey });
+    await acceptFirstRequest(survivingMember.page, { publicKey: groupPublicKey });
+    await openRequests(removedMember.page, { publicKey: groupPublicKey });
+    await acceptFirstRequest(removedMember.page, { publicKey: groupPublicKey });
 
     await navigateToChat(owner.page, groupPublicKey);
     await sendMessage(owner.page, initialMessage, {

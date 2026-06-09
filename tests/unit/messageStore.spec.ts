@@ -8,6 +8,7 @@ const {
   buildChatMetaWithUnseenReactionCount,
   buildDefaultChatMessagePaginationState,
   buildDeletedMessageMeta,
+  buildForwardedMessagePayload,
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
@@ -115,6 +116,67 @@ describe('messageStore logic', () => {
 
     expect(merged.map((message) => message.id)).toEqual(['1', '2', '3']);
     expect(merged.find((message) => message.id === '2')?.meta).toEqual({ edited: true });
+  });
+
+  it('builds forwarded payloads without original reply or event provenance metadata', () => {
+    expect(
+      buildForwardedMessagePayload({
+        text: '  hello https://cdn.example/pic.png  ',
+        meta: {
+          reply: {
+            messageId: '1',
+            text: 'original thread',
+            sender: 'them',
+            authorName: 'Alice',
+            authorPublicKey: 'a'.repeat(64),
+            sentAt: '2026-01-01T00:00:00.000Z',
+            eventId: 'e'.repeat(64),
+          },
+          source: 'nostr',
+          wrapper_event_id: 'w'.repeat(64),
+          attachments: [
+            {
+              type: 'media',
+              url: 'https://cdn.example/pic.png',
+              mimeType: 'image/png',
+              size: 4096,
+              sha256: 'ABCDEF',
+            },
+            {
+              type: 'media',
+              url: 'https://cdn.example/pic.png',
+              mimeType: 'image/png',
+              size: 4096,
+            },
+          ],
+        },
+      })
+    ).toEqual({
+      text: 'hello https://cdn.example/pic.png',
+      meta: {
+        attachments: [
+          {
+            type: 'media',
+            url: 'https://cdn.example/pic.png',
+            mimeType: 'image/png',
+            size: 4096,
+            sha256: 'abcdef',
+          },
+        ],
+      },
+      additionalTags: [
+        ['imeta', 'url https://cdn.example/pic.png', 'm image/png', 'size 4096', 'x abcdef'],
+      ],
+    });
+  });
+
+  it('does not build forwarded payloads for empty message content', () => {
+    expect(
+      buildForwardedMessagePayload({
+        text: '   ',
+        meta: {},
+      })
+    ).toBeNull();
   });
 
   it('keeps contiguous author runs at both pagination boundaries', () => {

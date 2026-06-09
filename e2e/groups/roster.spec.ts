@@ -23,8 +23,9 @@ test('group roster subscriptions update regular members and Refresh rebuilds mem
   const charlie = await bootstrapUser(browser, TEST_ACCOUNTS.groupRosterCharlie);
 
   try {
+    const groupName = `Roster Group ${Date.now()}`;
     const groupPublicKey = await createGroup(owner.page, {
-      name: `Roster Group ${Date.now()}`,
+      name: groupName,
       about: 'Shared roster coverage',
     });
     const charlieInitialName = `Charlie Roster Initial ${Date.now()}`;
@@ -36,24 +37,19 @@ test('group roster subscriptions update regular members and Refresh rebuilds mem
     });
 
     await addGroupMemberAndPublish(owner.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await openGroupContact(bob.page, groupPublicKey);
     await bob.page.getByTestId('contact-profile-members-tab').click();
     await expect(bob.page.locator('.profile-members')).not.toContainText(charlieInitialName);
 
-    await owner.page.getByTestId('contact-profile-members-tab').click();
-    await owner.page.getByLabel('Member', { exact: true }).fill(charlie.session.publicKey);
-    await owner.page.getByTestId('group-member-add-button').click();
-    await expect(
-      owner.page.getByText('You must publish these changes for them to take effect')
-    ).toBeVisible();
-    await owner.page.getByTestId('group-members-publish-button').click();
-    await expect(
-      owner.page.getByText('You must publish these changes for them to take effect')
-    ).toHaveCount(0);
+    await addGroupMemberAndPublish(owner.page, charlie.session.publicKey);
 
     await expect(bob.page.locator('.profile-members')).toContainText(charlieInitialName, {
       timeout: 12_000,

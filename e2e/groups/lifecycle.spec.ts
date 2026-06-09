@@ -14,6 +14,7 @@ import {
   openRequests,
   pauseRelayService,
   reloadAndWaitForApp,
+  retryGroupMemberTicketFailures,
   sendMessage,
   TEST_ACCOUNTS,
   threadMessage,
@@ -71,11 +72,10 @@ test('group owner can create a group, invite a member, and exchange messages bot
     ).toBeVisible({
       timeout: 12_000,
     });
-    const retryAllButton = alice.page.getByTestId('group-member-ticket-retry-all-button');
-    await expect(retryAllButton).toBeVisible();
+    await expect(alice.page.getByTestId('group-member-ticket-retry-all-button')).toBeVisible();
 
     await unpauseRelayService('relay-two');
-    await retryAllButton.click();
+    await retryGroupMemberTicketFailures(alice.page);
     await expect(
       failedTicketRelayRow.getByRole('button', { name: 'Retry', exact: true })
     ).toHaveCount(0, {
@@ -92,9 +92,13 @@ test('group owner can create a group, invite a member, and exchange messages bot
       'Members (2)'
     );
 
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await navigateToChat(alice.page, groupPublicKey);
     await alice.page.getByPlaceholder('Write a message').click();
@@ -183,8 +187,9 @@ test('group invite survives hard reload before acceptance and still opens a work
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.inviteReloadBob);
 
   try {
+    const groupName = `Reload Invite Group ${Date.now()}`;
     const groupPublicKey = await createGroup(alice.page, {
-      name: `Reload Invite Group ${Date.now()}`,
+      name: groupName,
       about: 'Invite reload coverage',
     });
     const ownerMessage = `invite-reload-owner-${Date.now()}`;
@@ -192,12 +197,20 @@ test('group invite survives hard reload before acceptance and still opens a work
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
 
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
     await reloadAndWaitForApp(bob.page);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await navigateToChat(alice.page, groupPublicKey);
     await sendMessage(alice.page, ownerMessage, {
