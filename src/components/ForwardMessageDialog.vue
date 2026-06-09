@@ -32,13 +32,13 @@
           clickable
           class="forward-dialog__chat"
           :disable="isSubmitting"
-          :aria-label="$t('message.forward.toChat', { name: chat.name })"
+          :aria-label="$t('message.forward.toChat', { name: chatDisplayName(chat) })"
           @click="selectChat(chat)"
         >
           <q-item-section avatar>
             <CachedAvatar
               :src="chatPicture(chat)"
-              :alt="chat.name"
+              :alt="chatDisplayName(chat)"
               :fallback="chat.avatar"
               size="36px"
               bordered
@@ -46,7 +46,7 @@
           </q-item-section>
 
           <q-item-section class="forward-dialog__chat-main">
-            <q-item-label lines="1">{{ chat.name }}</q-item-label>
+            <q-item-label lines="1">{{ chatDisplayName(chat) }}</q-item-label>
             <q-item-label caption lines="1">{{ chatSubtitle(chat) }}</q-item-label>
           </q-item-section>
 
@@ -111,7 +111,9 @@ const filteredChats = computed(() => {
   }
 
   return props.chats.filter((chat) => {
+    const displayName = chatDisplayName(chat).toLowerCase();
     return (
+      displayName.includes(query) ||
       chat.name.toLowerCase().includes(query) ||
       chat.publicKey.toLowerCase().includes(query) ||
       chat.lastMessage.toLowerCase().includes(query)
@@ -135,6 +137,20 @@ watch(
 function chatPicture(chat: Chat): string {
   const picture = chat.meta.picture;
   return typeof picture === 'string' ? picture.trim() : '';
+}
+
+function chatMetaString(chat: Chat, key: string): string {
+  const value = chat.meta[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function chatDisplayName(chat: Chat): string {
+  return (
+    chatMetaString(chat, 'given_name') ||
+    chatMetaString(chat, 'contact_name') ||
+    chat.name.trim() ||
+    chat.publicKey.slice(0, 32)
+  );
 }
 
 function chatSubtitle(chat: Chat): string {

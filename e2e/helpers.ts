@@ -79,6 +79,18 @@ export const TEST_ACCOUNTS = {
     privateKey: 'c25694028321c053f174245104441935f681ce5117a89b27e4263e4360d05433',
     displayName: 'Bob Actions',
   },
+  forwardAlice: {
+    privateKey: '1111111111111111111111111111111111111111111111111111111111111111',
+    displayName: 'Alice Forward',
+  },
+  forwardBob: {
+    privateKey: '2222222222222222222222222222222222222222222222222222222222222222',
+    displayName: 'Bob Forward',
+  },
+  forwardCharlie: {
+    privateKey: '3333333333333333333333333333333333333333333333333333333333333333',
+    displayName: 'Charlie Forward',
+  },
   markReadAlice: {
     privateKey: '2cdd0f6d4a47bb4502993a61cb0b3cf86cded94311aa87eb0e08652d6d93cd15',
     displayName: 'Alice Mark Read',
@@ -1352,6 +1364,23 @@ export async function replyToMessage(
   await page.getByText('Reply', { exact: true }).click();
   await expect(page.locator('.composer__reply')).toBeVisible({ timeout: 12_000 });
   await sendMessage(page, replyText, options);
+}
+
+export async function forwardMessage(
+  page: Page,
+  text: string,
+  destinationName: string
+): Promise<void> {
+  await threadMessage(page, text).locator('.bubble').click();
+  await page.getByText('Forward', { exact: true }).click();
+  await expect(page.getByTestId('forward-message-chat-list')).toBeVisible({
+    timeout: 12_000,
+  });
+  await page.getByLabel(`Forward to ${destinationName}`, { exact: true }).click();
+  await acceptAppRelayFallbackIfVisible(page);
+  await expect(page.getByTestId('forward-message-chat-list')).toHaveCount(0, {
+    timeout: 12_000,
+  });
 }
 
 export async function openReplyPreview(page: Page, replyText: string): Promise<void> {
