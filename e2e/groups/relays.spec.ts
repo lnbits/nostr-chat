@@ -32,15 +32,20 @@ test('invited members see published group relays and profile refresh restores th
   });
 
   try {
+    const groupName = `Invite Relay Group ${Date.now()}`;
     const groupPublicKey = await createGroup(alice.page, {
-      name: `Invite Relay Group ${Date.now()}`,
+      name: groupName,
       about: 'Invite relay propagation coverage',
     });
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await openGroupContact(bob.page, groupPublicKey);
     await openProfileRelaysSection(bob.page);
@@ -93,16 +98,21 @@ test('group relay changes still deliver after both members restart on the update
   });
 
   try {
+    const groupName = `Relay Switch Group ${Date.now()}`;
     const groupPublicKey = await createGroup(alice.page, {
-      name: `Relay Switch Group ${Date.now()}`,
+      name: groupName,
       about: 'Group relay propagation coverage',
     });
     const postRelayChangeMessage = `after-relay-change-${Date.now()}`;
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await openGroupContact(alice.page, groupPublicKey);
     await openGroupRelaysTab(alice.page);

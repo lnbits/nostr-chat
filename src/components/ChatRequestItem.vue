@@ -1,5 +1,12 @@
 <template>
-  <q-card flat bordered class="request-item" data-testid="chat-request-item">
+  <q-card
+    flat
+    bordered
+    class="request-item"
+    data-testid="chat-request-item"
+    :data-chat-id="chat.id"
+    :data-chat-public-key="chat.publicKey"
+  >
     <q-item clickable class="request-item__content" @click="handleOpen">
       <q-item-section avatar>
         <CachedAvatar

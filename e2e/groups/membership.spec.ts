@@ -26,8 +26,9 @@ test('adding a new group member without rotation keeps the current epoch and mes
   const charlie = await bootstrapUser(browser, TEST_ACCOUNTS.groupAddCharlie);
 
   try {
+    const groupName = `Add Member Group ${Date.now()}`;
     const groupPublicKey = await createGroup(owner.page, {
-      name: `Add Member Group ${Date.now()}`,
+      name: groupName,
       about: 'No-rotation add-member coverage',
     });
     const beforeAddMessage = `before-add-${Date.now()}`;
@@ -35,9 +36,13 @@ test('adding a new group member without rotation keeps the current epoch and mes
     const charlieReply = `charlie-reply-${Date.now()}`;
 
     await addGroupMemberAndPublish(owner.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
+    await openRequests(bob.page, { publicKey: groupPublicKey });
+    await expect(
+      bob.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page, { publicKey: groupPublicKey });
 
     await navigateToChat(owner.page, groupPublicKey);
     await sendMessage(owner.page, beforeAddMessage, {
@@ -53,9 +58,13 @@ test('adding a new group member without rotation keeps the current epoch and mes
     await openGroupEpochsTab(owner.page);
     await expect.poll(() => readGroupEpochNumbers(owner.page), { timeout: 12_000 }).toEqual([0]);
 
-    await openRequests(charlie.page);
-    await expect(charlie.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(charlie.page);
+    await openRequests(charlie.page, { publicKey: groupPublicKey });
+    await expect(
+      charlie.page.locator(
+        `[data-testid="chat-request-item"][data-chat-public-key="${groupPublicKey}"]`
+      )
+    ).toContainText('Group invitation');
+    await acceptFirstRequest(charlie.page, { publicKey: groupPublicKey });
 
     await navigateToChat(owner.page, groupPublicKey);
     await sendMessage(owner.page, afterAddMessage, {
