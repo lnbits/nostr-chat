@@ -52,6 +52,12 @@
               </q-item-section>
               <q-item-section>{{ $t('common.copy') }}</q-item-section>
             </q-item>
+            <q-item v-if="canForwardMessage" clickable v-close-popup @click="handleForward">
+              <q-item-section avatar>
+                <q-icon name="forward" />
+              </q-item-section>
+              <q-item-section>{{ $t('common.forward') }}</q-item-section>
+            </q-item>
             <q-item clickable v-close-popup @click="handlePin">
               <q-item-section avatar>
                 <q-icon name="push_pin" />
@@ -671,6 +677,7 @@ const emit = defineEmits<{
   (event: 'open-reply-target', messageId: string, referenceSentAt?: string): void;
   (event: 'open-profile', publicKey: string): void;
   (event: 'open-mention-chat', publicKey: string): void;
+  (event: 'forward', message: Message): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
@@ -952,6 +959,10 @@ const shouldShowMessageText = computed(() => {
   return isDeletedMessage.value || visibleMessageText.value.length > 0;
 });
 
+const canForwardMessage = computed(() => {
+  return !isDeletedMessage.value && props.message.text.trim().length > 0;
+});
+
 const DEFAULT_QUICK_REACTION_EMOJIS = ['👍', '👎', '🙏', '❤️', '😂'] as const;
 
 const quickReactionEntries = DEFAULT_QUICK_REACTION_EMOJIS
@@ -1142,6 +1153,14 @@ async function copyText(value: string): Promise<void> {
 
 function handleReply(): void {
   emit('reply', props.message);
+}
+
+function handleForward(): void {
+  if (!canForwardMessage.value) {
+    return;
+  }
+
+  emit('forward', props.message);
 }
 
 function handleOpenAuthorProfile(): void {

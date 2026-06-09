@@ -169,6 +169,7 @@
           @open-profile="handleOpenProfile"
           @open-chat="handleOpenChat"
           @react="handleReactToMessage"
+          @forward-message="handleOpenForwardMessage"
           @delete-message="handleDeleteMessage"
           @remove-reaction="handleRemoveReaction"
         />
@@ -229,6 +230,13 @@
         purpose="chat"
         @resolved="handleResolvedContactForNewChat"
       />
+
+      <ForwardMessageDialog
+        v-model="isForwardMessageDialogOpen"
+        :chats="forwardTargetChats"
+        :is-submitting="isForwardingMessage"
+        @forward="handleForwardMessageToChat"
+      />
     </div>
   </q-page>
 </template>
@@ -264,6 +272,9 @@ import { getDateTimeLocale, t } from 'src/i18n';
 const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
 const ChatRequestsPage = defineAsyncComponent(() => import('src/components/ChatRequestsPage.vue'));
 const ChatThread = defineAsyncComponent(() => import('src/components/ChatThread.vue'));
+const ForwardMessageDialog = defineAsyncComponent(
+  () => import('src/components/ForwardMessageDialog.vue')
+);
 
 type NostrStore = ReturnType<typeof useNostrStore>;
 type RelayStoreModule = typeof import('src/stores/relayStore');
@@ -306,6 +317,9 @@ const {
 const isNewChatDialogOpen = ref(false);
 const isCreateGroupDialogOpen = ref(false);
 const isCreatingGroup = ref(false);
+const isForwardMessageDialogOpen = ref(false);
+const isForwardingMessage = ref(false);
+const forwardingMessage = ref<Message | null>(null);
 const newGroupName = ref('');
 const newGroupAbout = ref('');
 type ChatRefreshRangeId =
@@ -359,6 +373,7 @@ const activeChat = computed(() => {
   return chatStore.chats.find((chat) => chat.id === activeChatId.value) ?? null;
 });
 const sidebarChats = computed(() => chatStore.visibleChats);
+const forwardTargetChats = computed(() => chatStore.inboxChats);
 const requestChats = computed(() => chatStore.requestChats);
 const showRequestsRow = computed(() => chatStore.requestCount > 0 || isRequestsRoute.value);
 const requestCount = computed(() => chatStore.requestCount);
@@ -628,11 +643,14 @@ function handleOpenRequestChat(chatId: string): void {
   handleSelectChat(chatId);
 }
 
-async function resolveFallbackRelayUrls(chatPublicKey: string): Promise<string[] | null> {
+async function resolveFallbackRelayUrls(
+  chatPublicKey: string,
+  fallbackName = activeChat.value?.name ?? ''
+): Promise<string[] | null> {
   const relayStore = await getRelayStore();
 
   return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays, {
-    fallbackName: activeChat.value?.name ?? ''
+    fallbackName,
   });
 }
 
@@ -730,6 +748,69 @@ async function handleSendMedia(payload: {
     }
   } catch (error) {
     reportUiError('Failed to send media attachment', error, t('errors.failedSendMessage'));
+  }
+}
+
+function handleOpenForwardMessage(message: Message): void {
+  if (!message.text.trim()) {
+    return;
+  }
+
+  forwardingMessage.value = message;
+  isForwardMessageDialogOpen.value = true;
+}
+
+async function handleForwardMessageToChat(chatId: string): Promise<void> {
+  const message = forwardingMessage.value;
+  const targetChat = findChatById(chatId);
+  if (!message || !targetChat || isForwardingMessage.value) {
+    return;
+  }
+
+  isForwardingMessage.value = true;
+  try {
+    let created;
+    try {
+      created = await messageStore.forwardMessage(targetChat.id, message);
+    } catch (error) {
+      if (!isMissingContactRelaysError(error)) {
+        throw error;
+      }
+
+      const fallbackRelayUrls = await resolveFallbackRelayUrls(
+        error.chatPublicKey,
+        targetChat.name
+      );
+      if (!fallbackRelayUrls) {
+        return;
+      }
+
+      created = await messageStore.forwardMessage(targetChat.id, message, {
+        relayUrls: fallbackRelayUrls,
+      });
+    }
+
+    if (created) {
+      await chatStore.updateChatPreview(targetChat.id, created.text, created.sentAt, {
+        messageMeta: created.meta,
+      });
+      await chatStore.acceptChat(targetChat.id, {
+        lastOutgoingMessageAt: created.sentAt,
+      });
+      scheduleAndroidPushNotificationCountReset();
+      isForwardMessageDialogOpen.value = false;
+      forwardingMessage.value = null;
+      $q.notify({
+        type: 'positive',
+        message: t('message.forward.sent'),
+        position: 'top',
+        timeout: 1600,
+      });
+    }
+  } catch (error) {
+    reportUiError('Failed to forward message', error, t('errors.failedForwardMessage'));
+  } finally {
+    isForwardingMessage.value = false;
   }
 }
 
@@ -1157,6 +1238,12 @@ async function syncChatRoute(): Promise<void> {
 watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   void syncChatRoute();
 }, { immediate: true });
+
+watch(isForwardMessageDialogOpen, (isOpen) => {
+  if (!isOpen && !isForwardingMessage.value) {
+    forwardingMessage.value = null;
+  }
+});
 </script>
 
 <style scoped>

@@ -192,6 +192,7 @@
               @open-profile="handleOpenAuthorProfile"
               @open-mention-chat="handleOpenMentionChat"
               @reply="handleReplyToMessage"
+              @forward="handleForwardMessage"
               @react="handleReactToMessage"
               @delete-message="handleDeleteMessage"
               @remove-reaction="handleRemoveReaction"
@@ -349,9 +350,10 @@ const emit = defineEmits<{
       displayName?: string;
       picture?: string;
       avatar?: string;
-    }
+  }
   ): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
+  (event: 'forward-message', message: Message): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
 }>();
@@ -1532,6 +1534,14 @@ function handleReplyToMessage(message: Message): void {
     queueComposerFocus();
   } catch (error) {
     reportUiError('Failed to prepare reply target', error);
+  }
+}
+
+function handleForwardMessage(message: Message): void {
+  try {
+    emit('forward-message', message);
+  } catch (error) {
+    reportUiError('Failed to emit message forwarding', error);
   }
 }
 
