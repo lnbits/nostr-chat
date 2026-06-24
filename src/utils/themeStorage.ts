@@ -1,10 +1,19 @@
 const THEME_MODE_STORAGE_KEY = 'ui-theme-mode';
 const PANEL_OPACITY_STORAGE_KEY = 'ui-panel-opacity';
 const DESKTOP_SIDEBAR_WIDTH_STORAGE_KEY = 'ui-desktop-sidebar-width';
+export const DESKTOP_MESSAGE_LAYOUT_STORAGE_KEY = 'ui-desktop-message-layout';
+export const DESKTOP_MESSAGE_LAYOUT_CHANGED_EVENT = 'nostr-chat:desktop-message-layout-changed';
 const DEFAULT_PANEL_OPACITY = 75;
 export const DEFAULT_DESKTOP_SIDEBAR_WIDTH = 360;
 export const MIN_DESKTOP_SIDEBAR_WIDTH = 280;
 export const MAX_DESKTOP_SIDEBAR_WIDTH = 4096;
+export const DEFAULT_DESKTOP_MESSAGE_LAYOUT = 'text';
+
+export type DesktopMessageLayoutPreference = 'text' | 'bubbles';
+
+export interface DesktopMessageLayoutPreferenceChangedDetail {
+  layout: DesktopMessageLayoutPreference;
+}
 
 function canUseStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -35,6 +44,14 @@ function normalizeDesktopSidebarWidthPreference(value: unknown): number {
     MAX_DESKTOP_SIDEBAR_WIDTH,
     Math.max(MIN_DESKTOP_SIDEBAR_WIDTH, Math.round(parsedValue))
   );
+}
+
+export function normalizeDesktopMessageLayoutPreference(
+  value: unknown
+): DesktopMessageLayoutPreference {
+  return typeof value === 'string' && value.trim().toLowerCase() === 'bubbles'
+    ? 'bubbles'
+    : DEFAULT_DESKTOP_MESSAGE_LAYOUT;
 }
 
 export function readDarkModePreference(): boolean | null {
@@ -173,4 +190,55 @@ export function saveDesktopSidebarWidthPreference(width: number): void {
   } catch (error) {
     console.error('Failed to persist desktop sidebar width.', error);
   }
+}
+
+export function readDesktopMessageLayoutPreference(): DesktopMessageLayoutPreference {
+  if (!canUseStorage()) {
+    return DEFAULT_DESKTOP_MESSAGE_LAYOUT;
+  }
+
+  try {
+    return normalizeDesktopMessageLayoutPreference(
+      window.localStorage.getItem(DESKTOP_MESSAGE_LAYOUT_STORAGE_KEY)
+    );
+  } catch (error) {
+    console.error('Failed to read saved desktop message layout.', error);
+  }
+
+  return DEFAULT_DESKTOP_MESSAGE_LAYOUT;
+}
+
+export function saveDesktopMessageLayoutPreference(layout: DesktopMessageLayoutPreference): void {
+  const normalizedLayout = normalizeDesktopMessageLayoutPreference(layout);
+
+  if (canUseStorage()) {
+    try {
+      window.localStorage.setItem(DESKTOP_MESSAGE_LAYOUT_STORAGE_KEY, normalizedLayout);
+    } catch (error) {
+      console.error('Failed to persist desktop message layout.', error);
+    }
+  }
+
+  dispatchDesktopMessageLayoutPreferenceChanged(normalizedLayout);
+}
+
+function dispatchDesktopMessageLayoutPreferenceChanged(
+  layout: DesktopMessageLayoutPreference
+): void {
+  if (
+    typeof window === 'undefined' ||
+    typeof window.dispatchEvent !== 'function' ||
+    typeof CustomEvent === 'undefined'
+  ) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent<DesktopMessageLayoutPreferenceChangedDetail>(
+      DESKTOP_MESSAGE_LAYOUT_CHANGED_EVENT,
+      {
+        detail: { layout },
+      }
+    )
+  );
 }

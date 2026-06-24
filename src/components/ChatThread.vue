@@ -183,6 +183,7 @@
               :message="item.message"
               :contact-name="chat.name"
               :contact-relay-urls="contactRelayUrls"
+              :desktop-message-layout="desktopMessageLayout"
               :author-avatar-fallback="item.authorAvatarFallback"
               :author-avatar-src="item.authorAvatarSrc"
               :author-label="item.authorLabel"
@@ -280,7 +281,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
@@ -307,6 +308,12 @@ import {
 } from 'src/utils/messageReactions';
 import { buildMentionProfiles, type NostrMentionProfile } from 'src/utils/nostrMentions';
 import { formatCompactPublicKey } from 'src/utils/publicKeyText';
+import {
+  DESKTOP_MESSAGE_LAYOUT_CHANGED_EVENT,
+  DESKTOP_MESSAGE_LAYOUT_STORAGE_KEY,
+  readDesktopMessageLayoutPreference,
+  type DesktopMessageLayoutPreference
+} from 'src/utils/themeStorage';
 import {
   getWrappedThreadSearchIndex,
   resolveThreadSearchNavigationIndex
@@ -379,6 +386,9 @@ const contactRelayUrls = ref<string[]>([]);
 const groupMentionContactMeta = ref<ContactMetadata | null>(null);
 const selfAvatarImageUrl = ref('');
 const selfAvatarFallback = ref('YO');
+const desktopMessageLayout = ref<DesktopMessageLayoutPreference>(
+  readDesktopMessageLayoutPreference()
+);
 const isThreadSearchOpen = ref(false);
 const threadSearchQuery = ref('');
 const isThreadSearchBusy = ref(false);
@@ -426,6 +436,24 @@ const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at'
 let groupMentionContactRefreshToken = 0;
 let selfAuthorIdentityRefreshToken = 0;
 let authorIdentityRefreshToken = 0;
+
+function refreshDesktopMessageLayoutPreference(): void {
+  desktopMessageLayout.value = readDesktopMessageLayoutPreference();
+}
+
+function handleDesktopMessageLayoutPreferenceChanged(event: Event): void {
+  const nextLayout = (event as CustomEvent<{ layout?: unknown }>).detail?.layout;
+  desktopMessageLayout.value =
+    nextLayout === 'bubbles' || nextLayout === 'text'
+      ? nextLayout
+      : readDesktopMessageLayoutPreference();
+}
+
+function handleDesktopMessageLayoutStorage(event: StorageEvent): void {
+  if (event.key === DESKTOP_MESSAGE_LAYOUT_STORAGE_KEY) {
+    refreshDesktopMessageLayoutPreference();
+  }
+}
 
 function logThreadScrollTrace(label: string, extra: Record<string, unknown> = {}): void {
   void label;
@@ -2389,7 +2417,26 @@ watch(
   { immediate: true }
 );
 
+onMounted(() => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.addEventListener(
+    DESKTOP_MESSAGE_LAYOUT_CHANGED_EVENT,
+    handleDesktopMessageLayoutPreferenceChanged
+  );
+  window.addEventListener('storage', handleDesktopMessageLayoutStorage);
+});
+
 onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener(
+      DESKTOP_MESSAGE_LAYOUT_CHANGED_EVENT,
+      handleDesktopMessageLayoutPreferenceChanged
+    );
+    window.removeEventListener('storage', handleDesktopMessageLayoutStorage);
+  }
   clearReplyTargetHighlight();
   clearPendingThreadSearchDebounce();
   if (scrollFrameId !== null) {

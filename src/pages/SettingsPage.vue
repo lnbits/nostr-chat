@@ -214,7 +214,7 @@ interface SettingsItem {
 const settingsItems: SettingsItem[] = [
   { key: 'profile', labelKey: 'profile.profile', icon: 'face', routeName: 'settings-profile' },
   { key: 'relays', labelKey: 'relays.title', icon: 'satellite_alt', routeName: 'settings-relays' },
-  { key: 'theme', labelKey: 'settings.theme', icon: 'wallpaper', routeName: 'settings-theme' },
+  { key: 'theme', labelKey: 'settings.appearance', icon: 'wallpaper', routeName: 'settings-theme' },
   { key: 'language', labelKey: 'settings.language.titlePlural', icon: 'language', routeName: 'settings-language' },
   {
     key: 'notifications',

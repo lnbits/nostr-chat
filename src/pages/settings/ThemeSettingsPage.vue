@@ -1,33 +1,66 @@
 <template>
-  <SettingsDetailLayout :title="$t('settings.theme')" icon="wallpaper">
+  <SettingsDetailLayout :title="$t('settings.appearance')" icon="wallpaper">
     <q-card flat bordered class="theme-card">
       <q-card-section class="theme-card__section">
-        <div>
-          <div class="text-body1">{{ $t('settings.appearance') }}</div>
-          <div class="text-caption text-grey-6">
-            {{ $t('settings.theme.description') }}
+        <div class="theme-card__setting">
+          <div class="theme-card__copy">
+            <div class="text-body1">{{ $t('settings.appearance') }}</div>
+            <div class="text-caption text-grey-6">
+              {{ $t('settings.theme.description') }}
+            </div>
           </div>
+
+          <q-toggle
+            v-model="darkMode"
+            color="primary"
+            checked-icon="dark_mode"
+            unchecked-icon="light_mode"
+            :label="$t('common.darkMode')"
+            left-label
+            class="theme-card__toggle"
+          />
         </div>
 
-        <q-toggle
-          v-model="darkMode"
-          color="primary"
-          checked-icon="dark_mode"
-          unchecked-icon="light_mode"
-          :label="$t('common.darkMode')"
-          left-label
-          class="theme-card__toggle"
-        />
+        <q-separator />
+
+        <div class="theme-card__setting theme-card__setting--stacked">
+          <div class="theme-card__copy">
+            <div class="text-body1">{{ $t('settings.desktopMessageLayout.title') }}</div>
+            <div class="text-caption text-grey-6">
+              {{ $t('settings.desktopMessageLayout.description') }}
+            </div>
+          </div>
+
+          <q-select
+            v-model="desktopMessageLayout"
+            class="nc-input theme-card__layout-select"
+            data-testid="settings-desktop-message-layout-toggle"
+            outlined
+            dense
+            emit-value
+            map-options
+            option-label="label"
+            option-value="value"
+            :label="$t('settings.desktopMessageLayout.title')"
+            :options="desktopMessageLayoutOptions"
+          />
+        </div>
       </q-card-section>
     </q-card>
   </SettingsDetailLayout>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
-import { saveDarkModePreference } from 'src/utils/themeStorage';
+import { t } from 'src/i18n';
+import {
+  readDesktopMessageLayoutPreference,
+  saveDarkModePreference,
+  saveDesktopMessageLayoutPreference,
+  type DesktopMessageLayoutPreference
+} from 'src/utils/themeStorage';
 
 const $q = useQuasar();
 
@@ -37,6 +70,25 @@ const darkMode = computed({
     $q.dark.set(value);
     saveDarkModePreference(value);
   }
+});
+
+const desktopMessageLayout = ref<DesktopMessageLayoutPreference>(
+  readDesktopMessageLayoutPreference()
+);
+
+const desktopMessageLayoutOptions = computed(() => [
+  {
+    label: t('settings.desktopMessageLayout.text'),
+    value: 'text'
+  },
+  {
+    label: t('settings.desktopMessageLayout.bubbles'),
+    value: 'bubbles'
+  }
+]);
+
+watch(desktopMessageLayout, (value) => {
+  saveDesktopMessageLayoutPreference(value);
 });
 </script>
 
@@ -52,8 +104,25 @@ const darkMode = computed({
   gap: 18px;
 }
 
+.theme-card__setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+}
+
+.theme-card__setting--stacked {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.theme-card__copy {
+  min-width: 0;
+}
+
 .theme-card__toggle {
-  width: 100%;
+  flex: 0 0 auto;
   justify-content: space-between;
 }
 
@@ -69,5 +138,24 @@ const darkMode = computed({
 .theme-card__toggle :deep(.q-toggle__inner + .q-toggle__label),
 .theme-card__toggle :deep(.q-toggle__label + .q-toggle__inner) {
   margin-left: 0;
+}
+
+.theme-card__layout-select {
+  width: min(100%, 360px);
+}
+
+@media (max-width: 599px) {
+  .theme-card__setting {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .theme-card__toggle {
+    width: 100%;
+  }
+
+  .theme-card__layout-select {
+    width: 100%;
+  }
 }
 </style>
