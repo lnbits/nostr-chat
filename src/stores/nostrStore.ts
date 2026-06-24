@@ -47,6 +47,7 @@ import { createMessageMutationRuntime } from 'src/stores/nostr/messageMutationRu
 import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
 import { createMuteListRuntime } from 'src/stores/nostr/muteListRuntime';
 import { createMyRelayListRuntime } from 'src/stores/nostr/myRelayListRuntime';
+import { createAppNdkOptions } from 'src/stores/nostr/ndkOptions';
 import { createOutboundMessageReplayRuntime } from 'src/stores/nostr/outboundMessageReplayRuntime';
 import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
 import { createPrivateContactMembershipRuntime } from 'src/stores/nostr/privateContactMembershipRuntime';
@@ -150,7 +151,7 @@ export type NostrPrivateKeyValidationResult = PrivateKeyValidationResult;
 export { __nostrStoreTestUtils } from 'src/stores/nostr/testUtils';
 
 export const useNostrStore = defineStore('nostrStore', () => {
-  const ndk = new NDK();
+  const ndk = new NDK(createAppNdkOptions());
   const chatStore = useChatStore();
   const nip65RelayStore = useNip65RelayStore();
   const relayStore = useRelayStore();
