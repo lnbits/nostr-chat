@@ -295,12 +295,14 @@
           </div>
         </div>
         <button
-          v-if="canExpandMessage && !isMessageExpanded"
+          v-if="canExpandMessage"
           type="button"
           class="bubble__more"
-          @click.stop="expandMessage"
+          :aria-expanded="isMessageExpanded ? 'true' : 'false'"
+          data-testid="message-text-expand-toggle"
+          @click.stop="toggleMessageExpanded"
         >
-          {{ $t('common.more') }}
+          {{ isMessageExpanded ? $t('common.less') : $t('common.more') }}
         </button>
       </div>
 
@@ -658,6 +660,10 @@ import type { DesktopMessageLayoutPreference } from 'src/utils/themeStorage';
 import { readImageAttachmentsFromMeta } from 'src/utils/messageAttachments';
 import { isReactionUnseenForAuthor } from 'src/utils/messageReactions';
 import {
+  shouldCollapseMessageText,
+  truncateCollapsedMessageText,
+} from 'src/utils/messageTextExpansion';
+import {
   buildNostrMentionTextParts,
   type NostrMentionProfile,
 } from 'src/utils/nostrMentions';
@@ -671,6 +677,7 @@ const props = defineProps<{
   authorLabel?: string;
   contactName?: string;
   contactRelayUrls?: string[];
+  isMessageExpanded?: boolean;
   mentionProfiles?: NostrMentionProfile[];
   showAuthorName?: boolean;
   showAuthorOnMobile?: boolean;
@@ -686,6 +693,7 @@ const emit = defineEmits<{
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
+  (event: 'update-message-expanded', payload: { message: Message; expanded: boolean }): void;
 }>();
 
 const $q = useQuasar();
@@ -890,33 +898,8 @@ const isDeletedMessage = computed(() => deletedMessageMeta.value !== null);
 const canDeleteMessage = computed(() => {
   return isMine.value && !isDeletedMessage.value && Boolean(props.message.eventId);
 });
-const MAX_EXPANDED_MESSAGE_CHARACTERS = 360;
-const MAX_EXPANDED_MESSAGE_LINES = 8;
-const isMessageExpanded = ref(false);
-
-function isMessageTooLong(text: string): boolean {
-  const normalizedText = text.replace(/\r\n/g, '\n');
-  const lineCount = normalizedText.split('\n').length;
-  return (
-    normalizedText.length > MAX_EXPANDED_MESSAGE_CHARACTERS ||
-    lineCount > MAX_EXPANDED_MESSAGE_LINES
-  );
-}
-
-function truncateMessageText(text: string): string {
-  const normalizedText = text.replace(/\r\n/g, '\n');
-  const lines = normalizedText.split('\n');
-  let nextText =
-    lines.length > MAX_EXPANDED_MESSAGE_LINES
-      ? lines.slice(0, MAX_EXPANDED_MESSAGE_LINES).join('\n')
-      : normalizedText;
-
-  if (nextText.length > MAX_EXPANDED_MESSAGE_CHARACTERS) {
-    nextText = nextText.slice(0, MAX_EXPANDED_MESSAGE_CHARACTERS);
-  }
-
-  return `${nextText.trimEnd()}...`;
-}
+const localMessageExpanded = ref(false);
+const isMessageExpanded = computed(() => props.isMessageExpanded ?? localMessageExpanded.value);
 
 const baseVisibleMessageText = computed(() => {
   if (!isDeletedMessage.value) {
@@ -988,7 +971,7 @@ const canExpandMessage = computed(() => {
   return (
     !isDeletedMessage.value &&
     !isSingleEmojiMessage.value &&
-    isMessageTooLong(visibleMessageText.value)
+    shouldCollapseMessageText(visibleMessageText.value)
   );
 });
 const bubbleMessageText = computed(() => {
@@ -996,7 +979,7 @@ const bubbleMessageText = computed(() => {
     return visibleMessageText.value;
   }
 
-  return truncateMessageText(visibleMessageText.value);
+  return truncateCollapsedMessageText(visibleMessageText.value);
 });
 const bubbleMessageTextParts = computed(() => {
   return buildNostrMentionTextParts(bubbleMessageText.value, props.mentionProfiles ?? []);
@@ -1292,8 +1275,19 @@ function openDeletedMessageDialog(): void {
   isDeletedMessageDialogOpen.value = true;
 }
 
-function expandMessage(): void {
-  isMessageExpanded.value = true;
+function setMessageExpanded(expanded: boolean): void {
+  if (props.isMessageExpanded === undefined) {
+    localMessageExpanded.value = expanded;
+  }
+
+  emit('update-message-expanded', {
+    message: props.message,
+    expanded,
+  });
+}
+
+function toggleMessageExpanded(): void {
+  setMessageExpanded(!isMessageExpanded.value);
 }
 
 function isRetrying(item: StatusListItem): boolean {
@@ -1405,7 +1399,7 @@ watch(
 watch(
   () => [props.message.id, props.message.text, isDeletedMessage.value],
   () => {
-    isMessageExpanded.value = false;
+    localMessageExpanded.value = false;
     revealedImageAttachmentKeys.value = [];
     closeImageAttachmentDialog();
   }
