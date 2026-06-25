@@ -24,6 +24,7 @@ function buildCommandEnv() {
 
   return {
     ...process.env,
+    APP_E2E_DISABLE_NDK_OUTBOX: 'true',
     PATH: nextPath.join(path.delimiter)
   };
 }

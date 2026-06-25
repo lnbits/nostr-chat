@@ -264,6 +264,7 @@ export default configure((ctx) => {
         APP_BUNDLE_ID: buildInfo.bundleId,
         APP_BUILD_TIME: buildInfo.builtAt,
         APP_ENABLE_APP_SHELL: enableAppShell,
+        APP_E2E_DISABLE_NDK_OUTBOX: process.env.APP_E2E_DISABLE_NDK_OUTBOX === 'true',
       },
       vitePlugins: enableAppShell ? [createAppShellBuildPlugin(buildInfo)] : [],
     },

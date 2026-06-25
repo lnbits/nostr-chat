@@ -3,7 +3,10 @@
     class="bubble-row"
     :class="[
       isMine ? 'bubble-row--mine' : 'bubble-row--their',
-      { 'bubble-row--show-author-mobile': showAuthorOnMobile }
+      {
+        'bubble-row--show-author-mobile': showAuthorOnMobile,
+        'bubble-row--desktop-bubbles': isDesktopBubbleLayout
+      }
     ]"
   >
     <div class="bubble-stack" :class="isMine ? 'bubble-stack--mine' : 'bubble-stack--their'">
@@ -651,6 +654,7 @@ import type {
 } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useTrustedMediaStore } from 'src/stores/trustedMediaStore';
+import type { DesktopMessageLayoutPreference } from 'src/utils/themeStorage';
 import { readImageAttachmentsFromMeta } from 'src/utils/messageAttachments';
 import { isReactionUnseenForAuthor } from 'src/utils/messageReactions';
 import {
@@ -670,6 +674,7 @@ const props = defineProps<{
   mentionProfiles?: NostrMentionProfile[];
   showAuthorName?: boolean;
   showAuthorOnMobile?: boolean;
+  desktopMessageLayout?: DesktopMessageLayoutPreference;
 }>();
 
 const emit = defineEmits<{
@@ -687,6 +692,7 @@ const $q = useQuasar();
 const nostrStore = useNostrStore();
 const trustedMediaStore = useTrustedMediaStore();
 const isMine = computed(() => props.message.sender === 'me');
+const isDesktopBubbleLayout = computed(() => props.desktopMessageLayout === 'bubbles');
 const showAuthorOnMobile = computed(() => props.showAuthorOnMobile === true);
 const loggedInPublicKey = computed(() => nostrStore.getLoggedInPublicKeyHex()?.toLowerCase() ?? '');
 const actionMenuRef = ref<{ show: (evt?: Event) => void } | null>(null);
@@ -1975,6 +1981,86 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   position: relative;
   z-index: 1;
+}
+
+@media (min-width: 1024px) {
+  .bubble-row--desktop-bubbles {
+    margin-bottom: 8px;
+  }
+
+  .bubble-row--desktop-bubbles.bubble-row--mine {
+    justify-content: flex-end;
+  }
+
+  .bubble-row--desktop-bubbles.bubble-row--their {
+    justify-content: flex-start;
+  }
+
+  .bubble-row--desktop-bubbles .bubble-stack {
+    width: auto;
+    max-width: min(76%, 640px);
+  }
+
+  .bubble-row--desktop-bubbles .bubble-stack--mine {
+    align-items: flex-end;
+  }
+
+  .bubble-row--desktop-bubbles .bubble-stack--their {
+    align-items: flex-start;
+  }
+
+  .bubble-row--desktop-bubbles .bubble {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    padding: 8px 42px 7px 11px;
+    border-radius: 16px;
+  }
+
+  .bubble-row--desktop-bubbles .bubble::before {
+    display: none;
+  }
+
+  .bubble-row--desktop-bubbles .bubble--mine {
+    background: var(--nc-sent);
+    border-bottom-right-radius: 6px;
+  }
+
+  .bubble-row--desktop-bubbles .bubble--their {
+    background: var(--nc-received);
+    border-bottom-left-radius: 6px;
+  }
+
+  .bubble-row--desktop-bubbles .bubble__content {
+    display: block;
+    flex: none;
+    margin-left: 0;
+    max-width: none;
+  }
+
+  .bubble-row--desktop-bubbles .bubble__reply-preview {
+    padding: 6px 8px;
+    border-radius: 12px;
+    background: var(--nc-surface-soft-strong);
+  }
+
+  .bubble-row--desktop-bubbles .bubble__reactions {
+    flex: none;
+    margin-top: -8px;
+    padding-left: 0;
+  }
+
+  .bubble-row--desktop-bubbles.bubble-row--mine .bubble__reactions {
+    justify-content: flex-end;
+  }
+
+  .bubble-row--desktop-bubbles .bubble__meta {
+    align-self: auto;
+    justify-content: flex-end;
+    margin-top: 4px;
+    margin-left: 0;
+    padding-bottom: 0;
+  }
 }
 
 @media (max-width: 1023px) {
