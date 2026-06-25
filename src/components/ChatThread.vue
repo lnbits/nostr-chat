@@ -187,6 +187,7 @@
               :author-avatar-fallback="item.authorAvatarFallback"
               :author-avatar-src="item.authorAvatarSrc"
               :author-label="item.authorLabel"
+              :is-message-expanded="isMessageTextExpanded(item.message.id)"
               :mention-profiles="mentionProfiles"
               :show-author-name="item.showSenderName"
               :show-author-on-mobile="chat?.type === 'group' && item.message.sender === 'them'"
@@ -198,6 +199,7 @@
               @delete-message="handleDeleteMessage"
               @remove-reaction="handleRemoveReaction"
               @open-reply-target="handleOpenReplyTarget"
+              @update-message-expanded="handleMessageExpandedUpdate"
             />
           </div>
         </template>
@@ -411,6 +413,7 @@ const authorIdentityByPublicKey = ref<
     }
   >
 >({});
+const expandedMessageIds = ref<Set<string>>(new Set());
 let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
 let visibleReactionSyncFrameId: number | null = null;
@@ -708,6 +711,42 @@ const authorIdentitySignature = computed(() => {
     .filter(Boolean)
     .join('|');
 });
+
+const messageIdSignature = computed(() => props.messages.map((message) => message.id).join('|'));
+
+function isMessageTextExpanded(messageId: string): boolean {
+  return expandedMessageIds.value.has(messageId);
+}
+
+function handleMessageExpandedUpdate(payload: { message: Message; expanded: boolean }): void {
+  const messageId = payload.message.id;
+  if (!messageId) {
+    return;
+  }
+
+  const nextExpandedMessageIds = new Set(expandedMessageIds.value);
+  if (payload.expanded) {
+    nextExpandedMessageIds.add(messageId);
+  } else {
+    nextExpandedMessageIds.delete(messageId);
+  }
+  expandedMessageIds.value = nextExpandedMessageIds;
+}
+
+function pruneExpandedMessageIds(): void {
+  if (expandedMessageIds.value.size === 0) {
+    return;
+  }
+
+  const visibleMessageIds = new Set(props.messages.map((message) => message.id));
+  const nextExpandedMessageIds = new Set(
+    Array.from(expandedMessageIds.value).filter((messageId) => visibleMessageIds.has(messageId))
+  );
+
+  if (nextExpandedMessageIds.size !== expandedMessageIds.value.size) {
+    expandedMessageIds.value = nextExpandedMessageIds;
+  }
+}
 
 function toComparableTimestamp(value: string | null | undefined): number {
   if (typeof value !== 'string' || !value.trim()) {
@@ -2268,6 +2307,13 @@ watch(
 );
 
 watch(
+  () => messageIdSignature.value,
+  () => {
+    pruneExpandedMessageIds();
+  }
+);
+
+watch(
   isChatActuallyVisible,
   (isVisible) => {
     if (!isVisible) {
@@ -2288,6 +2334,7 @@ watch(
     clearReplyTargetHighlight();
     pendingSentMessageReveal = false;
     pendingPaginationContext = null;
+    expandedMessageIds.value = new Set();
     setThreadScrollLocked(false);
     setAutomaticBottomScrollEnabled(true);
     cancelPendingScrollToBottom();
