@@ -1983,7 +1983,7 @@ onBeforeUnmount(() => {
   }
 
   .bubble-row--desktop-bubbles.bubble-row--mine {
-    justify-content: flex-end;
+    justify-content: flex-start;
   }
 
   .bubble-row--desktop-bubbles.bubble-row--their {
@@ -1996,7 +1996,7 @@ onBeforeUnmount(() => {
   }
 
   .bubble-row--desktop-bubbles .bubble-stack--mine {
-    align-items: flex-end;
+    align-items: flex-start;
   }
 
   .bubble-row--desktop-bubbles .bubble-stack--their {
@@ -2017,7 +2017,8 @@ onBeforeUnmount(() => {
 
   .bubble-row--desktop-bubbles .bubble--mine {
     background: var(--nc-sent);
-    border-bottom-right-radius: 6px;
+    border-bottom-right-radius: 16px;
+    border-bottom-left-radius: 6px;
   }
 
   .bubble-row--desktop-bubbles .bubble--their {
@@ -2045,7 +2046,7 @@ onBeforeUnmount(() => {
   }
 
   .bubble-row--desktop-bubbles.bubble-row--mine .bubble__reactions {
-    justify-content: flex-end;
+    justify-content: flex-start;
   }
 
   .bubble-row--desktop-bubbles .bubble__meta {
